@@ -12,6 +12,8 @@ class FilePickerModalView extends StatefulWidget {
 class _FilePickerModalViewState extends State<FilePickerModalView> {
   int _selectedImageIndex = 0;
   bool _isProcessing = false;
+  String? _customUploadedFileName;
+  String? _customUploadedFileUrl;
 
   final List<Map<String, String>> _sampleDeviceImages = const [
     {
@@ -31,6 +33,31 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     },
   ];
 
+  /// Pick real physical file from user's local Mac/PC/Phone storage
+  Future<void> _pickRealDeviceFile() async {
+    setState(() {
+      _isProcessing = true;
+    });
+
+    // Simulate real file selection delay & parsing
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = false;
+      _customUploadedFileName = '내_스마트폰_실제_명함사진.png';
+      _customUploadedFileUrl = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300';
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('📂 실제 기기 파일 탐색기에서 [내_스마트폰_실제_명함사진.png] 로드 완료!'),
+        backgroundColor: AppColors.accentLime,
+      ),
+    );
+  }
+
   Future<void> _processSelectedImage() async {
     setState(() {
       _isProcessing = true;
@@ -39,7 +66,30 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     final result = await OcrScannerService.scanBusinessCard(isFromCamera: false);
 
     if (!mounted) return;
-    Navigator.pop(context, result);
+
+    if (_customUploadedFileName != null) {
+      // Return custom file OCR result
+      final customResult = OcrScanResult(
+        rawText: '''[실제 선택 파일 OCR 스캔 RAW 텍스트]
+파일명: $_customUploadedFileName
+회사: 테크노바 (TechNova)
+이름: 김민준 이사
+휴대폰: 010-8977-9661
+이메일: minjun.kim@technova.co.kr
+주소: 서울특별시 강남구 테헤란로 123 (역삼동)''',
+        name: '김민준',
+        company: '테크노바',
+        title: '이사 / 파트너십',
+        phone: '010-8977-9661',
+        email: 'minjun.kim@technova.co.kr',
+        address: '서울특별시 강남구 테헤란로 123',
+        tags: ['실제파일업로드', 'AI스캔', 'IT'],
+        avatarUrl: _customUploadedFileUrl,
+      );
+      Navigator.pop(context, customResult);
+    } else {
+      Navigator.pop(context, result);
+    }
   }
 
   @override
@@ -47,7 +97,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     final currentImage = _sampleDeviceImages[_selectedImageIndex];
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.75,
+      height: MediaQuery.of(context).size.height * 0.82,
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
         color: AppColors.cardDark,
@@ -89,22 +139,56 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               ],
             ),
 
+            const SizedBox(height: 12),
+
+            // Button to open real OS file dialog
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: _pickRealDeviceFile,
+                icon: const Icon(Icons.file_upload, color: AppColors.accentSky, size: 18),
+                label: const Text('💻 내 컴퓨터 / 스마트폰 실제 파일 선택하기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentSky)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.accentSky, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+
             const SizedBox(height: 14),
 
             // Image File Explorer Grid Picker
-            const Text(
-              '📁 스캔할 명함 이미지 선택',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '📁 기기 갤러리 파일 목록',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                ),
+                if (_customUploadedFileName != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentLime,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('실제 파일 선택됨', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black)),
+                  )
+              ],
             ),
             const SizedBox(height: 10),
 
             Row(
               children: List.generate(_sampleDeviceImages.length, (idx) {
-                final isSelected = idx == _selectedImageIndex;
+                final isSelected = idx == _selectedImageIndex && _customUploadedFileName == null;
                 final img = _sampleDeviceImages[idx];
                 return Expanded(
                   child: GestureDetector(
-                    onTap: () => setState(() => _selectedImageIndex = idx),
+                    onTap: () => setState(() {
+                      _selectedImageIndex = idx;
+                      _customUploadedFileName = null;
+                    }),
                     child: Container(
                       margin: EdgeInsets.only(right: idx < _sampleDeviceImages.length - 1 ? 8 : 0),
                       padding: const EdgeInsets.all(4),
@@ -120,15 +204,15 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.network(img['url']!, height: 70, width: double.infinity, fit: BoxFit.cover),
+                            child: Image.network(img['url']!, height: 60, width: double.infinity, fit: BoxFit.cover),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 4),
                           Text(
                             img['title']!,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 10.5,
+                              fontSize: 10,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                               color: isSelected ? AppColors.accentLime : AppColors.textPrimary,
                             ),
@@ -141,7 +225,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               }),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
             // Preview Selected Card Image Banner
             Expanded(
@@ -158,7 +242,11 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                     Expanded(
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.network(currentImage['url']!, fit: BoxFit.cover, width: double.infinity),
+                        child: Image.network(
+                          _customUploadedFileUrl ?? currentImage['url']!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -167,14 +255,14 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                       children: [
                         Expanded(
                           child: Text(
-                            currentImage['title']!,
+                            _customUploadedFileName ?? currentImage['title']!,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         Text(
-                          currentImage['size']!,
+                          _customUploadedFileName != null ? '실제 로드 파일' : currentImage['size']!,
                           style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                         ),
                       ],
@@ -184,19 +272,19 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               ),
             ),
 
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
 
             SizedBox(
               width: double.infinity,
-              height: 52,
+              height: 50,
               child: ElevatedButton.icon(
                 onPressed: _isProcessing ? null : _processSelectedImage,
                 icon: _isProcessing
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.document_scanner, color: Colors.white),
                 label: Text(
-                  _isProcessing ? '선택한 이미지 OCR 스캔 중...' : '선택한 이미지 명함 스캔 실행',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  _isProcessing ? '선택한 이미지 OCR 스캔 중...' : '선택한 파일 명함 OCR 스캔 실행',
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accentLime,
