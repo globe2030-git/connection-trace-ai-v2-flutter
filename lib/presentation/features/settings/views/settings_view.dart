@@ -38,7 +38,7 @@ class SettingsView extends StatelessWidget {
                 // Radar Notification Switch
                 GlassCard(
                   child: Row(
-                    mainAxisAlignment: MainStateBetween.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Row(
                         children: const [
@@ -53,7 +53,6 @@ class SettingsView extends StatelessWidget {
                       Switch(
                         value: settings.enabled,
                         onChanged: (val) {},
-                        activeColor: AppColors.accentSky,
                       )
                     ],
                   ),
@@ -76,21 +75,18 @@ class SettingsView extends StatelessWidget {
                         value: 500,
                         groupValue: settings.radiusMeters,
                         onChanged: (val) => radarViewModel.updateRadius(val!),
-                        activeColor: AppColors.accentSky,
                       ),
                       RadioListTile<double>(
                         title: const Text('1km 이내 (권장)'),
                         value: 1000,
                         groupValue: settings.radiusMeters,
                         onChanged: (val) => radarViewModel.updateRadius(val!),
-                        activeColor: AppColors.accentSky,
                       ),
                       RadioListTile<double>(
                         title: const Text('전체 반경 (제한 없음)'),
                         value: double.infinity,
                         groupValue: settings.radiusMeters,
                         onChanged: (val) => radarViewModel.updateRadius(val!),
-                        activeColor: AppColors.accentSky,
                       ),
                     ],
                   ),
@@ -116,7 +112,6 @@ class SettingsView extends StatelessWidget {
                         value: mode,
                         groupValue: settings.batteryMode,
                         onChanged: (val) => radarViewModel.updateBatteryMode(val!),
-                        activeColor: AppColors.accentLime,
                       );
                     }).toList(),
                   ),

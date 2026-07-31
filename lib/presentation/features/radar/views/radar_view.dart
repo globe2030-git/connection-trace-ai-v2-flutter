@@ -35,7 +35,7 @@ class RadarView extends StatelessWidget {
                   children: [
                     // Top App Title & Sub Actions
                     Row(
-                      mainAxisAlignment: MainStateBetween.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text(
                           'Connection Trace',
@@ -172,7 +172,7 @@ class RadarView extends StatelessWidget {
 
                     // Quick Action Control Buttons (Matching reference sample: 켜기, 브리핑, 명함, 설정)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         ActionCircleButton(
                           icon: Icons.radar,

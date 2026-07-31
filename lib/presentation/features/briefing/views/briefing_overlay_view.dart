@@ -32,15 +32,14 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
             // Top Bar with Close button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                Row(
+              child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Row(
-                      children: const [
-                        Icon(Icons.bolt, color: AppColors.accentLime, size: 22),
-                        SizedBox(width: 6),
-                        Text(
+                      children: [
+                        const Icon(Icons.bolt, color: AppColors.accentLime, size: 22),
+                        const SizedBox(width: 6),
+                        const Text(
                           '30초 AI 대화 브리핑',
                           style: TextStyle(
                             fontSize: 18,
@@ -56,7 +55,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     )
                   ],
                 ),
-              ],
             ),
 
             Expanded(
@@ -179,7 +177,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
             // Bottom Sticky Phone Call Button
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: AppColors.cardDark,
                 border: Border(top: BorderSide(color: AppColors.borderDark)),
               ),
