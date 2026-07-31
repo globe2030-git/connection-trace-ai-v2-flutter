@@ -11,6 +11,7 @@ import 'notification_center_modal_view.dart';
 import 'my_profile_modal_view.dart';
 import 'priority_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
+import '../../wallet/views/add_card_modal_view.dart';
 
 class RadarView extends StatelessWidget {
   const RadarView({super.key});
@@ -160,9 +161,9 @@ class RadarView extends StatelessWidget {
                       children: [
                         ActionCircleButton(
                           icon: Icons.radar,
-                          label: '감지 켜기',
+                          label: viewModel.settings.enabled ? '감지 ON' : '감지 OFF',
                           isActive: viewModel.settings.enabled,
-                          onTap: () {},
+                          onTap: () => viewModel.toggleDetection(),
                         ),
                         ActionCircleButton(
                           icon: Icons.description_outlined,
@@ -182,7 +183,7 @@ class RadarView extends StatelessWidget {
                               context: context,
                               isScrollControlled: true,
                               backgroundColor: Colors.transparent,
-                              builder: (_) => const QrCodeModalView(),
+                              builder: (_) => const AddCardModalView(),
                             );
                           },
                         ),
