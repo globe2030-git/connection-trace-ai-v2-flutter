@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/contact_model.dart';
 import '../../core/utils/geo_utils.dart';
 
 class ContactsRepository extends ChangeNotifier {
+  static const String _storageKey = 'saved_contacts_v1';
+
   List<ContactModel> _contacts = [
     const ContactModel(
       id: 'c1',
@@ -11,7 +15,8 @@ class ContactsRepository extends ChangeNotifier {
       title: '이사 / 파트너십',
       phone: '010-8977-9661',
       email: 'minjun.kim@technova.co.kr',
-      geo: GeoPosition(lat: 37.5012, lng: 127.0375), // 140m away
+      address: '서울특별시 강남구 테헤란로 123',
+      geo: GeoPosition(lat: 37.5012, lng: 127.0375),
       tags: ['IT/테크', '핵심인맥', '스타트업'],
       talkingPoints: [
         '최근 테크노바 AI 에이전트 솔루션 출시 축하 인사 나누기',
@@ -28,7 +33,8 @@ class ContactsRepository extends ChangeNotifier {
       title: '팀장 / R&D 파트너십',
       phone: '010-3456-7890',
       email: 'soyul.han@bionext.co.kr',
-      geo: GeoPosition(lat: 37.5035, lng: 127.0392), // 420m away
+      address: '서울특별시 서초구 반포대로 45',
+      geo: GeoPosition(lat: 37.5035, lng: 127.0392),
       tags: ['바이오', '연구개발', '동문'],
       talkingPoints: [
         '최근 상장 준비 관련 축하 및 안부 나누기',
@@ -45,7 +51,8 @@ class ContactsRepository extends ChangeNotifier {
       title: '영업본부장',
       phone: '010-5566-7788',
       email: 'hw.oh@globalconnect.com',
-      geo: GeoPosition(lat: 37.5078, lng: 127.0421), // 950m away
+      address: '서울특별시 영등포구 여의대로 88',
+      geo: GeoPosition(lat: 37.5078, lng: 127.0421),
       tags: ['영업', '글로벌', '마케팅'],
       talkingPoints: [
         '동남아 시장 진출 전략 모범 사례 문의하기',
@@ -55,29 +62,43 @@ class ContactsRepository extends ChangeNotifier {
       isPriority: false,
       memo: '글로벌 마케팅 및 판로 개척 관련 유용한 인사이트가 많으심.',
     ),
-    const ContactModel(
-      id: 'c4',
-      name: '박지민',
-      company: '쿠팡',
-      title: '수석 디자이너',
-      phone: '010-7788-9900',
-      email: 'jimin.park@coupang.com',
-      geo: GeoPosition(lat: 37.5120, lng: 127.0510), // 1.8km away
-      tags: ['디자인', 'UX/UI', '이커머스'],
-      talkingPoints: [
-        '최근 라이브한 디자인 시스템 업데이트 안부 묻기',
-        '모바일 UX 3D 인터랙션 모범 사례 피드백 공유하기'
-      ],
-      isPriority: false,
-      memo: 'UX 디자인 세미나 발표자로 만남.',
-    )
   ];
 
+  ContactsRepository() {
+    _loadFromDisk();
+  }
+
   List<ContactModel> get contacts => List.unmodifiable(_contacts);
+
+  Future<void> _loadFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? jsonString = prefs.getString(_storageKey);
+      if (jsonString != null && jsonString.isNotEmpty) {
+        final List<dynamic> jsonList = jsonDecode(jsonString);
+        _contacts = jsonList.map((j) => ContactModel.fromJson(j as Map<String, dynamic>)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error loading saved contacts: $e');
+    }
+  }
+
+  Future<void> _saveToDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _contacts.map((c) => c.toJson()).toList();
+      final jsonString = jsonEncode(jsonList);
+      await prefs.setString(_storageKey, jsonString);
+    } catch (e) {
+      debugPrint('Error saving contacts to disk: $e');
+    }
+  }
 
   void addContact(ContactModel newContact) {
     _contacts = [newContact, ..._contacts];
     notifyListeners();
+    _saveToDisk();
   }
 
   void togglePriority(String id) {
@@ -88,5 +109,6 @@ class ContactsRepository extends ChangeNotifier {
       return c;
     }).toList();
     notifyListeners();
+    _saveToDisk();
   }
 }

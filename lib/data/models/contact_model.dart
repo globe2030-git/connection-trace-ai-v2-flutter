@@ -29,6 +29,46 @@ class ContactModel {
     this.isPriority = false,
   });
 
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'company': company,
+      'title': title,
+      'phone': phone,
+      'email': email,
+      'address': address,
+      'lat': geo?.lat,
+      'lng': geo?.lng,
+      'tags': tags,
+      'talkingPoints': talkingPoints,
+      'memo': memo,
+      'isPriority': isPriority,
+    };
+  }
+
+  factory ContactModel.fromJson(Map<String, dynamic> json) {
+    return ContactModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      company: json['company'] as String,
+      title: json['title'] as String,
+      phone: json['phone'] as String,
+      email: json['email'] as String,
+      address: json['address'] as String?,
+      geo: json['lat'] != null && json['lng'] != null
+          ? GeoPosition(
+              lat: (json['lat'] as num).toDouble(),
+              lng: (json['lng'] as num).toDouble(),
+            )
+          : null,
+      tags: List<String>.from(json['tags'] ?? []),
+      talkingPoints: List<String>.from(json['talkingPoints'] ?? []),
+      memo: json['memo'] as String?,
+      isPriority: json['isPriority'] as bool? ?? false,
+    );
+  }
+
   ContactModel copyWith({
     String? id,
     String? name,
