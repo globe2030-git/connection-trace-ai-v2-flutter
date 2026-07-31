@@ -7,6 +7,7 @@ class ContactModel {
   final String title;
   final String phone;
   final String email;
+  final String? address;
   final GeoPosition? geo;
   final List<String> tags;
   final List<String> talkingPoints;
@@ -20,6 +21,7 @@ class ContactModel {
     required this.title,
     required this.phone,
     required this.email,
+    this.address,
     this.geo,
     required this.tags,
     required this.talkingPoints,
@@ -34,6 +36,7 @@ class ContactModel {
     String? title,
     String? phone,
     String? email,
+    String? address,
     GeoPosition? geo,
     List<String>? tags,
     List<String>? talkingPoints,
@@ -47,6 +50,7 @@ class ContactModel {
       title: title ?? this.title,
       phone: phone ?? this.phone,
       email: email ?? this.email,
+      address: address ?? this.address,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,
       talkingPoints: talkingPoints ?? this.talkingPoints,
