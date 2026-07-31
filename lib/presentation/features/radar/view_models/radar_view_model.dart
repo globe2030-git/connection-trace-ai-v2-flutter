@@ -114,4 +114,8 @@ class RadarViewModel extends ChangeNotifier {
     _settings = _settings.copyWith(enabled: !_settings.enabled);
     notifyListeners();
   }
+
+  void updateContact(ContactModel contact) {
+    _contactsRepository.updateContact(contact);
+  }
 }

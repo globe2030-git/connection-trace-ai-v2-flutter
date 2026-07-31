@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/glass_card.dart';
+import 'communication_trace_test_modal_view.dart';
 
 class NotificationCenterModalView extends StatelessWidget {
   const NotificationCenterModalView({super.key});
@@ -53,14 +54,40 @@ class NotificationCenterModalView extends StatelessWidget {
 
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: const [
-                Text(
+              children: [
+                const Text(
                   '🔔 알림 센터',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 ),
-                Text(
-                  '모두 읽음 처리',
-                  style: TextStyle(fontSize: 12, color: AppColors.accentSky, fontWeight: FontWeight.w600),
+                InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const CommunicationTraceTestModalView(),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSky.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.5)),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.sync, size: 14, color: AppColors.accentSky),
+                        SizedBox(width: 4),
+                        Text(
+                          '소통 연동 테스트',
+                          style: TextStyle(fontSize: 11.5, color: AppColors.accentSky, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
