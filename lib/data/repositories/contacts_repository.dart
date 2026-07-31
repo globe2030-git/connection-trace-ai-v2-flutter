@@ -78,6 +78,9 @@ class ContactsRepository extends ChangeNotifier {
         final List<dynamic> jsonList = jsonDecode(jsonString);
         _contacts = jsonList.map((j) => ContactModel.fromJson(j as Map<String, dynamic>)).toList();
         notifyListeners();
+      } else {
+        // Save initial seed contacts so future restarts persist
+        await _saveToDisk();
       }
     } catch (e) {
       debugPrint('Error loading saved contacts: $e');

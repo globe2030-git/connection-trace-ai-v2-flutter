@@ -20,22 +20,24 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // Text Controllers
   late TextEditingController _nameController;
   late TextEditingController _companyController;
+  late TextEditingController _titleController;
   late TextEditingController _addressController;
   late TextEditingController _phoneController;
   late TextEditingController _officePhoneController;
-  late TextEditingController _titleController;
   late TextEditingController _emailController;
   late TextEditingController _tagsController;
+  late TextEditingController _memoController;
 
-  // Sequential Focus Nodes to prevent cursor jumping
+  // Strict Contiguous Sequential Focus Nodes to prevent Tab/Enter key jumping
   final _nameFocusNode = FocusNode();
   final _companyFocusNode = FocusNode();
+  final _titleFocusNode = FocusNode();
   final _addressFocusNode = FocusNode();
   final _phoneFocusNode = FocusNode();
   final _officePhoneFocusNode = FocusNode();
-  final _titleFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
   final _tagsFocusNode = FocusNode();
+  final _memoFocusNode = FocusNode();
 
   // Profile Picture Avatar URL State
   String? _selectedAvatarUrl;
@@ -56,33 +58,36 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _selectedAvatarUrl = c?.avatarUrl;
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
+    _titleController = TextEditingController(text: c?.title ?? '');
     _addressController = TextEditingController(text: c?.address ?? '');
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
-    _titleController = TextEditingController(text: c?.title ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
     _tagsController = TextEditingController(text: c != null ? c.tags.join(', ') : 'AI, IT');
+    _memoController = TextEditingController(text: c?.memo ?? '');
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _companyController.dispose();
+    _titleController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
     _officePhoneController.dispose();
-    _titleController.dispose();
     _emailController.dispose();
     _tagsController.dispose();
+    _memoController.dispose();
 
     _nameFocusNode.dispose();
     _companyFocusNode.dispose();
+    _titleFocusNode.dispose();
     _addressFocusNode.dispose();
     _phoneFocusNode.dispose();
     _officePhoneFocusNode.dispose();
-    _titleFocusNode.dispose();
     _emailFocusNode.dispose();
     _tagsFocusNode.dispose();
+    _memoFocusNode.dispose();
     super.dispose();
   }
 
@@ -147,7 +152,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         '다음 비즈니스 미팅 일정 제안하기',
       ],
       isPriority: _isEditing ? widget.contactToEdit!.isPriority : false,
-      memo: _isEditing ? widget.contactToEdit!.memo : null,
+      memo: _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
     );
 
     if (_isEditing) {
@@ -192,220 +197,233 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       ),
       child: SafeArea(
         child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderDark,
-                      borderRadius: BorderRadius.circular(2),
+          child: FocusTraversalGroup(
+            policy: WidgetOrderTraversalPolicy(),
+            child: Form(
+              key: _formKey,
+              autovalidateMode: AutovalidateMode.onUserInteraction,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.borderDark,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    const Text(
-                      '* 필수 입력 항목',
-                      style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600),
-                    )
-                  ],
-                ),
-                const SizedBox(height: 16),
-
-                // 📸 Profile Photo Selector Widget
-                Center(
-                  child: Column(
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      GestureDetector(
-                        onTap: () {
-                          // Cycle through avatar presets
-                          final nextIdx = _selectedAvatarUrl == null
-                              ? 0
-                              : (_avatarPresets.indexOf(_selectedAvatarUrl!) + 1) % (_avatarPresets.length + 1);
-                          setState(() {
-                            _selectedAvatarUrl = nextIdx < _avatarPresets.length ? _avatarPresets[nextIdx] : null;
-                          });
-                        },
-                        child: Stack(
-                          alignment: Alignment.bottomRight,
-                          children: [
-                            CircleAvatar(
-                              radius: 36,
-                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
-                              backgroundImage: _selectedAvatarUrl != null ? NetworkImage(_selectedAvatarUrl!) : null,
-                              child: _selectedAvatarUrl == null
-                                  ? const Icon(Icons.person, size: 36, color: AppColors.accentSky)
-                                  : null,
-                            ),
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: AppColors.accentSky,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
-                            )
-                          ],
-                        ),
+                      Text(
+                        _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
-                      const SizedBox(height: 6),
                       const Text(
-                        '프로필 사진 선택 (터치하여 변경)',
-                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
-                      ),
+                        '* 필수 입력 항목',
+                        style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600),
+                      )
                     ],
                   ),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
-                // 1. 이름 (필수)
-                _buildFormField(
-                  controller: _nameController,
-                  focusNode: _nameFocusNode,
-                  nextFocusNode: _companyFocusNode,
-                  label: '이름 *',
-                  hint: '예: 홍길동',
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return '이름을 입력해 주세요.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // 2. 회사명 (필수)
-                _buildFormField(
-                  controller: _companyController,
-                  focusNode: _companyFocusNode,
-                  nextFocusNode: _addressFocusNode,
-                  label: '회사명 *',
-                  hint: '예: 카카오 / 삼성전자',
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return '회사명을 입력해 주세요.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // 3. 회사 주소 (필수)
-                _buildFormField(
-                  controller: _addressController,
-                  focusNode: _addressFocusNode,
-                  nextFocusNode: _phoneFocusNode,
-                  label: '회사 주소 / 위치 *',
-                  hint: '예: 서울특별시 강남구 테헤란로 123',
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return '회사 주소를 입력해 주세요.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // 4. 휴대폰 번호 (필수 + 실시간 형식 감시)
-                _buildFormField(
-                  controller: _phoneController,
-                  focusNode: _phoneFocusNode,
-                  nextFocusNode: _officePhoneFocusNode,
-                  label: '휴대폰 번호 *',
-                  hint: '예: 010-1234-5678',
-                  keyboardType: TextInputType.phone,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return '휴대폰 번호를 입력해 주세요.';
-                    }
-                    final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
-                    if (!phoneRegExp.hasMatch(val.trim())) {
-                      return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // 5. 사무실 전화번호 (선택)
-                _buildFormField(
-                  controller: _officePhoneController,
-                  focusNode: _officePhoneFocusNode,
-                  nextFocusNode: _titleFocusNode,
-                  label: '사무실 전화번호 (선택)',
-                  hint: '예: 02-123-4567',
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 12),
-
-                // 6. 직함 / 부서 (선택)
-                _buildFormField(
-                  controller: _titleController,
-                  focusNode: _titleFocusNode,
-                  nextFocusNode: _emailFocusNode,
-                  label: '직함 / 부서',
-                  hint: '예: 팀장 / R&D 센터',
-                ),
-                const SizedBox(height: 12),
-
-                // 7. 이메일 (필수!)
-                _buildFormField(
-                  controller: _emailController,
-                  focusNode: _emailFocusNode,
-                  nextFocusNode: _tagsFocusNode,
-                  label: '이메일 *',
-                  hint: '예: example@company.com',
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return '이메일을 입력해 주세요.';
-                    }
-                    if (!val.contains('@') || !val.contains('.')) {
-                      return '올바른 이메일 형식을 입력해 주세요.';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-
-                // 8. 태그 키워드
-                _buildFormField(
-                  controller: _tagsController,
-                  focusNode: _tagsFocusNode,
-                  isLast: true,
-                  label: '태그 키워드 (쉼표 구분)',
-                  hint: '예: AI, 바이오, C-Level',
-                ),
-                const SizedBox(height: 22),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton.icon(
-                    onPressed: _saveCard,
-                    icon: Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
-                    label: Text(_isEditing ? '명함 수정 완료' : '명함 저장하기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accentSky,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  // 📸 Profile Photo Selector Widget
+                  Center(
+                    child: Column(
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            final nextIdx = _selectedAvatarUrl == null
+                                ? 0
+                                : (_avatarPresets.indexOf(_selectedAvatarUrl!) + 1) % (_avatarPresets.length + 1);
+                            setState(() {
+                              _selectedAvatarUrl = nextIdx < _avatarPresets.length ? _avatarPresets[nextIdx] : null;
+                            });
+                          },
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              CircleAvatar(
+                                radius: 36,
+                                backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                                backgroundImage: _selectedAvatarUrl != null ? NetworkImage(_selectedAvatarUrl!) : null,
+                                child: _selectedAvatarUrl == null
+                                    ? const Icon(Icons.person, size: 36, color: AppColors.accentSky)
+                                    : null,
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.accentSky,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                              )
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          '프로필 사진 선택 (터치하여 변경)',
+                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                        ),
+                      ],
                     ),
                   ),
-                )
-              ],
+                  const SizedBox(height: 18),
+
+                  // 1. 이름 (필수)
+                  _buildFormField(
+                    controller: _nameController,
+                    focusNode: _nameFocusNode,
+                    nextFocusNode: _companyFocusNode,
+                    label: '이름 *',
+                    hint: '예: 홍길동',
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '이름을 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 2. 회사명 (필수)
+                  _buildFormField(
+                    controller: _companyController,
+                    focusNode: _companyFocusNode,
+                    nextFocusNode: _titleFocusNode,
+                    label: '회사명 *',
+                    hint: '예: 카카오 / 삼성전자',
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '회사명을 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 3. 직함 / 부서 (선택)
+                  _buildFormField(
+                    controller: _titleController,
+                    focusNode: _titleFocusNode,
+                    nextFocusNode: _addressFocusNode,
+                    label: '직함 / 부서',
+                    hint: '예: 팀장 / R&D 센터',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 4. 회사 주소 (필수)
+                  _buildFormField(
+                    controller: _addressController,
+                    focusNode: _addressFocusNode,
+                    nextFocusNode: _phoneFocusNode,
+                    label: '회사 주소 / 위치 *',
+                    hint: '예: 서울특별시 강남구 테헤란로 123',
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '회사 주소를 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
+                  _buildFormField(
+                    controller: _phoneController,
+                    focusNode: _phoneFocusNode,
+                    nextFocusNode: _officePhoneFocusNode,
+                    label: '휴대폰 번호 *',
+                    hint: '예: 010-1234-5678',
+                    keyboardType: TextInputType.phone,
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '휴대폰 번호를 입력해 주세요.';
+                      }
+                      final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
+                      if (!phoneRegExp.hasMatch(val.trim())) {
+                        return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 6. 사무실 전화번호 (선택)
+                  _buildFormField(
+                    controller: _officePhoneController,
+                    focusNode: _officePhoneFocusNode,
+                    nextFocusNode: _emailFocusNode,
+                    label: '사무실 전화번호 (선택)',
+                    hint: '예: 02-123-4567',
+                    keyboardType: TextInputType.phone,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 7. 이메일 (필수!)
+                  _buildFormField(
+                    controller: _emailController,
+                    focusNode: _emailFocusNode,
+                    nextFocusNode: _tagsFocusNode,
+                    label: '이메일 *',
+                    hint: '예: example@company.com',
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '이메일을 입력해 주세요.';
+                      }
+                      if (!val.contains('@') || !val.contains('.')) {
+                        return '올바른 이메일 형식을 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 8. 태그 키워드
+                  _buildFormField(
+                    controller: _tagsController,
+                    focusNode: _tagsFocusNode,
+                    nextFocusNode: _memoFocusNode,
+                    label: '태그 키워드 (쉼표 구분)',
+                    hint: '예: AI, 바이오, C-Level',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 9. Memo Summary (메모 및 특징 요약)
+                  _buildFormField(
+                    controller: _memoController,
+                    focusNode: _memoFocusNode,
+                    isLast: true,
+                    maxLines: 3,
+                    label: 'Memo Summary (메모 및 특징 요약)',
+                    hint: '인맥에 대한 주요 특징, 비즈니스 연관성, 미팅 메모 등을 자유롭게 입력하세요.',
+                  ),
+                  const SizedBox(height: 22),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _saveCard,
+                      icon: Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
+                      label: Text(_isEditing ? '명함 수정 완료' : '명함 저장하기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accentSky,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  )
+                ],
+              ),
             ),
           ),
         ),
@@ -421,6 +439,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     required String hint,
     TextInputType keyboardType = TextInputType.text,
     bool isLast = false,
+    int maxLines = 1,
     String? Function(String?)? validator,
   }) {
     return Column(
@@ -438,8 +457,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         TextFormField(
           controller: controller,
           focusNode: focusNode,
-          keyboardType: keyboardType,
-          textInputAction: isLast ? TextInputAction.done : TextInputAction.next,
+          keyboardType: maxLines > 1 ? TextInputType.multiline : keyboardType,
+          maxLines: maxLines,
+          textInputAction: maxLines > 1
+              ? TextInputAction.newline
+              : (isLast ? TextInputAction.done : TextInputAction.next),
+          onEditingComplete: () {
+            if (nextFocusNode != null) {
+              nextFocusNode.requestFocus();
+            } else {
+              FocusScope.of(context).unfocus();
+            }
+          },
           onFieldSubmitted: (_) {
             if (nextFocusNode != null) {
               FocusScope.of(context).requestFocus(nextFocusNode);

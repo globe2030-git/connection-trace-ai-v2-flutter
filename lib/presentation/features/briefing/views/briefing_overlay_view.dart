@@ -162,7 +162,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     if (contact.memo != null) ...[
                       const SizedBox(height: 14),
                       const Text(
-                        '📝 메모 서머리',
+                        '📝 Memo Summary',
                         style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
                       const SizedBox(height: 8),
