@@ -13,7 +13,7 @@ class AppTheme {
         surface: AppColors.cardDark,
         onSurface: AppColors.textPrimary,
       ),
-      textTheme: GoogleFonts.pretendardTextTheme(
+      textTheme: GoogleFonts.notoSansKrTextTheme(
         ThemeData.dark().textTheme.copyWith(
           displayLarge: const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -1.0),
           titleLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.textPrimary, letterSpacing: -0.5),
