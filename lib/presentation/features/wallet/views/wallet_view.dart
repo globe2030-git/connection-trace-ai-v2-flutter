@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/wallet_view_model.dart';
+import 'add_card_modal_view.dart';
 
 class WalletView extends StatelessWidget {
   const WalletView({super.key});
@@ -37,7 +38,14 @@ class WalletView extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle, color: AppColors.accentSky, size: 28),
-                      onPressed: () {},
+                      onPressed: () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const AddCardModalView(),
+                        );
+                      },
                     )
                   ],
                 ),

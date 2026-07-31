@@ -60,4 +60,8 @@ class WalletViewModel extends ChangeNotifier {
   void togglePriority(String id) {
     _contactsRepository.togglePriority(id);
   }
+
+  void addContact(ContactModel contact) {
+    _contactsRepository.addContact(contact);
+  }
 }
