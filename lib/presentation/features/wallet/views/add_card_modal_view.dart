@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/services/address_geocoding_service.dart';
+import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../view_models/wallet_view_model.dart';
 
@@ -39,8 +41,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _tagsFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
 
-  // Profile Picture Avatar URL State
+  // Profile Picture Avatar URL State & OCR Raw Text State
   String? _selectedAvatarUrl;
+  String? _scannedRawText;
+  bool _isScanningOcr = false;
+  bool _showRawTextCard = false;
 
   final List<String> _avatarPresets = const [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
@@ -91,8 +96,49 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     super.dispose();
   }
 
+  /// AI OCR Business Card Scanner (Camera / Image Gallery)
+  Future<void> _performOcrScan({required bool isFromCamera}) async {
+    setState(() {
+      _isScanningOcr = true;
+    });
+
+    try {
+      final result = await OcrScannerService.scanBusinessCard(isFromCamera: isFromCamera);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isScanningOcr = false;
+        _scannedRawText = result.rawText;
+        _showRawTextCard = true;
+        _nameController.text = result.name;
+        _companyController.text = result.company;
+        _titleController.text = result.title;
+        _addressController.text = result.address;
+        _phoneController.text = result.phone;
+        _emailController.text = result.email;
+        _tagsController.text = result.tags.join(', ');
+        if (result.avatarUrl != null) {
+          _selectedAvatarUrl = result.avatarUrl;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 명함 이미지 스캔이 완료되었습니다!'),
+          backgroundColor: AppColors.accentSky,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isScanningOcr = false;
+      });
+    }
+  }
+
   void _saveCard() {
-    // Check validation and automatically jump/focus to the first invalid field
+    // 1. Basic required validations
     if (_nameController.text.trim().isEmpty) {
       _focusAndShowError(_nameFocusNode, '⚠️ 이름을 입력해 주세요.');
       return;
@@ -101,7 +147,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _focusAndShowError(_companyFocusNode, '⚠️ 회사명을 입력해 주세요.');
       return;
     }
-    if (_addressController.text.trim().isEmpty) {
+
+    final rawAddress = _addressController.text.trim();
+    if (rawAddress.isEmpty) {
       _focusAndShowError(_addressFocusNode, '⚠️ 회사 주소를 입력해 주세요.');
       return;
     }
@@ -121,7 +169,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _focusAndShowError(_emailFocusNode, '⚠️ 이메일을 입력해 주세요.');
       return;
     } else if (!emailVal.contains('@') || !emailVal.contains('.')) {
-      _focusAndShowError(_emailFocusNode, '⚠️ 올바른 이메일 형식(예: example@company.com)으로 입력해 주세요.');
+      _focusAndShowError(_emailFocusNode, '⚠️ 올바른 이메일 형식을 입력해 주세요.');
       return;
     }
 
@@ -129,6 +177,142 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
+    // 2. Address Geocoding & Road Name Address Conversion Dialog
+    final addressResult = AddressGeocodingService.validateAndConvert(rawAddress);
+
+    if (!addressResult.isValid) {
+      // Unresolvable address prompt
+      _showUnresolvableAddressDialog(rawAddress);
+      return;
+    }
+
+    // Check if Road Name Address conversion prompt is needed
+    if (addressResult.roadNameAddress != null &&
+        addressResult.roadNameAddress != rawAddress &&
+        !rawAddress.contains('(도로명')) {
+      _showRoadNameConversionDialog(addressResult);
+    } else {
+      _executeFinalSave(addressResult.roadNameAddress ?? rawAddress, addressResult.geoPosition);
+    }
+  }
+
+  void _showUnresolvableAddressDialog(String rawAddress) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('📍 주소 위치 확인 필요', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '입력하신 주소 ("$rawAddress")의 GPS 위치를 정밀하게 찾을 수 없습니다.',
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            if (_scannedRawText != null) ...[
+              const Text(
+                '💡 명함 RAW 스캔 텍스트:',
+                style: TextStyle(color: AppColors.accentSky, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.bgDarkSlate,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  _scannedRawText!,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            const Text(
+              '건물명이나 도로명 주소(예: 테헤란로 123)로 직접 수정하여 입력해 주세요.',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addressFocusNode.requestFocus();
+            },
+            child: const Text('주소 수정하기', style: TextStyle(color: AppColors.accentSky, fontWeight: FontWeight.bold)),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _showRoadNameConversionDialog(AddressValidationResult result) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('🛣️ 도로명 주소 자동 변환', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '입력하신 주소를 표준 정밀 도로명 주소로 자동 변환하시겠습니까?',
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.bgDarkSlate,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.borderDark),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '• 기존 입력 주소: ${result.originalAddress}',
+                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '• 변경 도로명 주소: ${result.roadNameAddress}',
+                    style: const TextStyle(color: AppColors.accentLime, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeFinalSave(result.originalAddress, result.geoPosition);
+            },
+            child: const Text('기존 입력 유지', style: TextStyle(color: AppColors.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _addressController.text = result.roadNameAddress!;
+              _executeFinalSave(result.roadNameAddress!, result.geoPosition);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentSky),
+            child: const Text('네, 도로명으로 변경', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _executeFinalSave(String finalAddress, GeoPosition? resolvedGeo) {
     final tags = _tagsController.text
         .split(',')
         .map((t) => t.trim())
@@ -140,13 +324,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
       title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
-      address: _addressController.text.trim(),
-      phone: phoneVal,
+      address: finalAddress,
+      phone: _phoneController.text.trim(),
       officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
-      email: emailVal,
+      email: _emailController.text.trim(),
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
-      geo: _isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276),
+      geo: resolvedGeo ?? (_isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276)),
       talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : [
         '최근 프로젝트 진행 상황 공유하기',
         '다음 비즈니스 미팅 일정 제안하기',
@@ -233,6 +417,57 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 16),
 
+                  // 📸 OCR Camera & Gallery Scan Action Buttons
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.bgDarkSlate,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.borderDark),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '📷 명함 자동 스캔 (OCR)',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _isScanningOcr ? null : () => _performOcrScan(isFromCamera: true),
+                                icon: _isScanningOcr
+                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                                label: const Text('명함 촬영 스캔', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.white)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accentSky,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isScanningOcr ? null : () => _performOcrScan(isFromCamera: false),
+                                icon: const Icon(Icons.photo_library, size: 16, color: AppColors.accentLime),
+                                label: const Text('이미지 업로드', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.accentLime)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: AppColors.accentLime),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // 📸 Profile Photo Selector Widget
                   Center(
                     child: Column(
@@ -276,7 +511,49 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
+
+                  const SizedBox(height: 16),
+
+                  // Collapsible RAW Scanned Text Card
+                  if (_scannedRawText != null) ...[
+                    GestureDetector(
+                      onTap: () => setState(() => _showRawTextCard = !_showRawTextCard),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentSky.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                            ),
+                            Icon(_showRawTextCard ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.accentSky, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_showRawTextCard) ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgDarkSlate,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.borderDark),
+                        ),
+                        child: Text(
+                          _scannedRawText!,
+                          style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary, fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                  ],
 
                   // 1. 이름 (필수)
                   _buildFormField(
