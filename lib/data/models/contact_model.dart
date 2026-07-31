@@ -6,6 +6,7 @@ class ContactModel {
   final String company;
   final String title;
   final String phone;
+  final String? officePhone;
   final String email;
   final String? address;
   final GeoPosition? geo;
@@ -20,6 +21,7 @@ class ContactModel {
     required this.company,
     required this.title,
     required this.phone,
+    this.officePhone,
     required this.email,
     this.address,
     this.geo,
@@ -36,6 +38,7 @@ class ContactModel {
       'company': company,
       'title': title,
       'phone': phone,
+      'officePhone': officePhone,
       'email': email,
       'address': address,
       'lat': geo?.lat,
@@ -54,6 +57,7 @@ class ContactModel {
       company: json['company'] as String,
       title: json['title'] as String,
       phone: json['phone'] as String,
+      officePhone: json['officePhone'] as String?,
       email: json['email'] as String,
       address: json['address'] as String?,
       geo: json['lat'] != null && json['lng'] != null
@@ -75,6 +79,7 @@ class ContactModel {
     String? company,
     String? title,
     String? phone,
+    String? officePhone,
     String? email,
     String? address,
     GeoPosition? geo,
@@ -89,6 +94,7 @@ class ContactModel {
       company: company ?? this.company,
       title: title ?? this.title,
       phone: phone ?? this.phone,
+      officePhone: officePhone ?? this.officePhone,
       email: email ?? this.email,
       address: address ?? this.address,
       geo: geo ?? this.geo,

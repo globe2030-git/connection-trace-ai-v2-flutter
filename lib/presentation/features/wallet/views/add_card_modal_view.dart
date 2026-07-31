@@ -20,6 +20,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _titleController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
+  final _officePhoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _tagsController = TextEditingController(text: 'AI, IT');
 
@@ -30,6 +31,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _titleController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
+    _officePhoneController.dispose();
     _emailController.dispose();
     _tagsController.dispose();
     super.dispose();
@@ -59,6 +61,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
       address: _addressController.text.trim(),
       phone: _phoneController.text.trim(),
+      officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
       email: _emailController.text.trim(),
       tags: tags.isEmpty ? ['신규'] : tags,
       geo: const GeoPosition(lat: 37.4979, lng: 127.0276),
@@ -171,15 +174,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 ),
                 const SizedBox(height: 12),
 
-                // 4. 전화번호 (필수 + 실시간 형식 감시)
+                // 4. 휴대폰 번호 (필수 + 실시간 형식 감시)
                 _buildFormField(
                   controller: _phoneController,
-                  label: '전화번호 *',
+                  label: '휴대폰 번호 *',
                   hint: '예: 010-1234-5678',
                   keyboardType: TextInputType.phone,
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) {
-                      return '전화번호를 입력해 주세요.';
+                      return '휴대폰 번호를 입력해 주세요.';
                     }
                     final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
                     if (!phoneRegExp.hasMatch(val.trim())) {
@@ -187,6 +190,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 12),
+
+                // 4-2. 사무실 전화번호 (선택)
+                _buildFormField(
+                  controller: _officePhoneController,
+                  label: '사무실 전화번호 (선택)',
+                  hint: '예: 02-123-4567',
+                  keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 12),
 

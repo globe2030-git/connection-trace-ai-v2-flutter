@@ -8,6 +8,7 @@ class RadarViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
   NotificationSettings _settings = const NotificationSettings();
   GeoPosition _currentPosition = GeoUtils.fallbackLocation;
+  bool _isRefreshingLocation = false;
   ContactModel? _selectedContactForBriefing;
   ContactModel? _previewContact;
 
@@ -24,8 +25,21 @@ class RadarViewModel extends ChangeNotifier {
 
   NotificationSettings get settings => _settings;
   GeoPosition get currentPosition => _currentPosition;
+  bool get isRefreshingLocation => _isRefreshingLocation;
   ContactModel? get selectedContactForBriefing => _selectedContactForBriefing;
   ContactModel? get previewContact => _previewContact;
+
+  Future<void> refreshLocation() async {
+    _isRefreshingLocation = true;
+    notifyListeners();
+
+    await Future.delayed(const Duration(milliseconds: 600));
+
+    // Refresh position around Yeoksam / Gangnam Tech Hub
+    _currentPosition = const GeoPosition(lat: 37.5000, lng: 127.0360);
+    _isRefreshingLocation = false;
+    notifyListeners();
+  }
 
   List<ContactModel> get filteredContacts {
     final contacts = _contactsRepository.contacts;

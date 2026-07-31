@@ -269,9 +269,9 @@ class RadarView extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    // Status & Battery Optimization Translucent Pills
+                    // Status & Battery Optimization Translucent Pills + Location Refresh Button
                     GlassCard(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       child: Row(
                         children: [
                           const Icon(Icons.bolt, color: AppColors.accentLime, size: 18),
@@ -283,6 +283,34 @@ class RadarView extends StatelessWidget {
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: viewModel.isRefreshingLocation ? null : viewModel.refreshLocation,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentSky.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.5)),
+                              ),
+                              child: Row(
+                                children: [
+                                  viewModel.isRefreshingLocation
+                                      ? const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentSky),
+                                        )
+                                      : const Icon(Icons.my_location, color: AppColors.accentSky, size: 14),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    viewModel.isRefreshingLocation ? 'GPS 갱신 중...' : '내 위치 갱신',
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                  ),
+                                ],
                               ),
                             ),
                           ),

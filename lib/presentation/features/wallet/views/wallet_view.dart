@@ -168,7 +168,7 @@ class WalletView extends StatelessWidget {
                             ),
                              IconButton(
                                icon: const Icon(Icons.phone_outlined, color: AppColors.accentSky),
-                               onPressed: () => PhoneCallService.makeCall(contact.phone),
+                               onPressed: () => PhoneCallService.showCallPicker(context, contact),
                              ),
                              IconButton(
                                icon: Icon(

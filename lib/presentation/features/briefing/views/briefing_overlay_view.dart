@@ -187,8 +187,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                 height: 52,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    await PhoneCallService.makeCall(contact.phone);
                     widget.onClose();
+                    await PhoneCallService.showCallPicker(context, contact);
                   },
                   icon: const Icon(Icons.phone, color: Colors.white),
                   label: const Text(
