@@ -39,41 +39,20 @@ class _MainTabScreenState extends State<MainTabScreen> {
           elevation: 0,
           selectedItemColor: AppColors.textPrimary,
           unselectedItemColor: AppColors.textMuted,
-          items: [
+          items: const [
             BottomNavigationBarItem(
-              icon: Image.asset('assets/icons3d/radar.png', width: 24, height: 24),
-              activeIcon: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.accentSky.withOpacity(0.2),
-                ),
-                child: Image.asset('assets/icons3d/radar.png', width: 26, height: 26),
-              ),
+              icon: Icon(Icons.radar_outlined, size: 24),
+              activeIcon: Icon(Icons.radar, size: 26, color: AppColors.accentSky),
               label: '레이더',
             ),
             BottomNavigationBarItem(
-              icon: Image.asset('assets/icons3d/wallet.png', width: 24, height: 24),
-              activeIcon: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.accentSky.withOpacity(0.2),
-                ),
-                child: Image.asset('assets/icons3d/wallet.png', width: 26, height: 26),
-              ),
+              icon: Icon(Icons.credit_card_outlined, size: 24),
+              activeIcon: Icon(Icons.credit_card, size: 26, color: AppColors.accentSky),
               label: '명함 지갑',
             ),
             BottomNavigationBarItem(
-              icon: Image.asset('assets/icons3d/settings.png', width: 24, height: 24),
-              activeIcon: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.accentSky.withOpacity(0.2),
-                ),
-                child: Image.asset('assets/icons3d/settings.png', width: 26, height: 26),
-              ),
+              icon: Icon(Icons.settings_outlined, size: 24),
+              activeIcon: Icon(Icons.settings, size: 26, color: AppColors.accentSky),
               label: '설정',
             ),
           ],

@@ -76,9 +76,13 @@ class WalletView extends StatelessWidget {
                           onSelected: (_) => viewModel.toggleTag(tag),
                           selectedColor: AppColors.accentSky,
                           backgroundColor: AppColors.cardDark,
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                          labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                          visualDensity: VisualDensity.compact,
                           labelStyle: TextStyle(
+                            fontSize: 12,
                             color: isSelected ? Colors.white : AppColors.textSecondary,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                           ),
                         ),
                       );

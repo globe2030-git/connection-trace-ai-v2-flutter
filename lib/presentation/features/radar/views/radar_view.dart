@@ -6,6 +6,9 @@ import '../../../../core/utils/motion_strategy.dart';
 import '../../../common/glass_card.dart';
 import '../../../common/action_circle_button.dart';
 import '../view_models/radar_view_model.dart';
+import 'qr_code_modal_view.dart';
+import 'notification_center_modal_view.dart';
+import 'my_profile_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 
 class RadarView extends StatelessWidget {
@@ -50,15 +53,36 @@ class RadarView extends StatelessWidget {
                           children: [
                             IconButton(
                               icon: const Icon(Icons.qr_code_scanner, color: AppColors.textPrimary, size: 22),
-                              onPressed: () {},
+                              onPressed: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => const QrCodeModalView(),
+                                );
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.notifications_none, color: AppColors.textPrimary, size: 22),
-                              onPressed: () {},
+                              onPressed: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => const NotificationCenterModalView(),
+                                );
+                              },
                             ),
                             IconButton(
                               icon: const Icon(Icons.person_outline, color: AppColors.textPrimary, size: 22),
-                              onPressed: () {},
+                              onPressed: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => const MyProfileModalView(),
+                                );
+                              },
                             ),
                           ],
                         )
