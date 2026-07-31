@@ -105,4 +105,8 @@ class RadarViewModel extends ChangeNotifier {
     _selectedContactForBriefing = null;
     notifyListeners();
   }
+
+  void togglePriority(String id) {
+    _contactsRepository.togglePriority(id);
+  }
 }

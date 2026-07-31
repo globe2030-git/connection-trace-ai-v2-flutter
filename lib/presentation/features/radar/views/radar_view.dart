@@ -9,6 +9,7 @@ import '../view_models/radar_view_model.dart';
 import 'qr_code_modal_view.dart';
 import 'notification_center_modal_view.dart';
 import 'my_profile_modal_view.dart';
+import 'priority_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 
 class RadarView extends StatelessWidget {
@@ -186,9 +187,17 @@ class RadarView extends StatelessWidget {
                           },
                         ),
                         ActionCircleButton(
-                          icon: Icons.warning_amber_rounded,
+                          icon: Icons.star,
                           label: '우선 알림',
-                          onTap: () {},
+                          isActive: true,
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => const PriorityModalView(),
+                            );
+                          },
                         ),
                       ],
                     ),
