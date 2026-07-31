@@ -6,6 +6,8 @@ import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../view_models/wallet_view_model.dart';
+import 'camera_scan_modal_view.dart';
+import 'file_picker_modal_view.dart';
 
 class AddCardModalView extends StatefulWidget {
   final ContactModel? contactToEdit;
@@ -98,45 +100,50 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
   Future<void> _performOcrScan({required bool isFromCamera}) async {
+    OcrScanResult? result;
+
+    if (isFromCamera) {
+      // Open camera scanner view with viewfinder shutter
+      result = await Navigator.push<OcrScanResult>(
+        context,
+        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+      );
+    } else {
+      // Open interactive gallery / file explorer picker view
+      result = await showModalBottomSheet<OcrScanResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const FilePickerModalView(),
+      );
+    }
+
+    if (result == null || !mounted) return;
+
     setState(() {
-      _isScanningOcr = true;
+      _isScanningOcr = false;
+      _scannedRawText = result!.rawText;
+      _showRawTextCard = true;
+      _nameController.text = result.name;
+      _companyController.text = result.company;
+      _titleController.text = result.title;
+      _addressController.text = result.address;
+      _phoneController.text = result.phone;
+      _officePhoneController.text = '02-555-1234';
+      _emailController.text = result.email;
+      _tagsController.text = result.tags.join(', ');
+      _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+      if (result.avatarUrl != null) {
+        _selectedAvatarUrl = result.avatarUrl;
+      }
     });
 
-    try {
-      final result = await OcrScannerService.scanBusinessCard(isFromCamera: isFromCamera);
-
-      if (!mounted) return;
-
-      setState(() {
-        _isScanningOcr = false;
-        _scannedRawText = result.rawText;
-        _showRawTextCard = true;
-        _nameController.text = result.name;
-        _companyController.text = result.company;
-        _titleController.text = result.title;
-        _addressController.text = result.address;
-        _phoneController.text = result.phone;
-        _officePhoneController.text = '02-555-1234';
-        _emailController.text = result.email;
-        _tagsController.text = result.tags.join(', ');
-        _memoController.text = 'AI OCR 스캔으로 자동 파싱된 프로필 및 주소 정보입니다.';
-        if (result.avatarUrl != null) {
-          _selectedAvatarUrl = result.avatarUrl;
-        }
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 명함 이미지 스캔이 완료되었습니다!'),
-          backgroundColor: AppColors.accentSky,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isScanningOcr = false;
-      });
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
+        backgroundColor: AppColors.accentSky,
+      ),
+    );
   }
 
   void _saveCard() {
