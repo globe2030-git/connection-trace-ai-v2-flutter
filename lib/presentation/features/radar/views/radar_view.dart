@@ -91,7 +91,7 @@ class RadarView extends StatelessWidget {
 
                     const SizedBox(height: 16),
 
-                    // Big Hero Proximity Metric (Matching reference design sample!)
+                    // Big Hero Proximity Metric
                     Center(
                       child: Column(
                         children: [
@@ -144,57 +144,16 @@ class RadarView extends StatelessWidget {
                       ),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // Hero Radar Interactive Avatar Container
+                    // Hero Animated Radar Pulse Beacon Container (ME Center + Surrounding Contact Blips)
                     Center(
-                      child: Container(
-                        width: 220,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.accentSky.withOpacity(0.15),
-                              blurRadius: 20,
-                              spreadRadius: 2,
-                            )
-                          ],
-                        ),
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Icon(Icons.radar, size: 120, color: AppColors.accentSky.withOpacity(0.3)),
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                CircleAvatar(
-                                  radius: 28,
-                                  backgroundColor: AppColors.accentSky,
-                                  child: const Icon(Icons.person, color: Colors.white, size: 30),
-                                ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentSky,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Text(
-                                    'ME',
-                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-                                  ),
-                                )
-                              ],
-                            )
-                          ],
-                        ),
-                      ),
+                      child: RadarPulseHeroWidget(nearbyContact: nearby),
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // Quick Action Control Buttons (Matching reference sample: 켜기, 브리핑, 명함, 설정)
+                    // Quick Action Control Buttons
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -234,9 +193,9 @@ class RadarView extends StatelessWidget {
                       ],
                     ),
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
 
-                    // Rounded Capsule Search Bar (Matching reference sample: High contrast white search capsule)
+                    // Rounded Capsule Search Bar
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
@@ -244,7 +203,7 @@ class RadarView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(30),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
+                            color: Colors.black.withValues(alpha: 0.15),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           )
@@ -320,7 +279,7 @@ class RadarView extends StatelessWidget {
 
                     const SizedBox(height: 12),
 
-                    // Proximity List Pill Widgets
+                    // Proximity List Pill Widgets (Sorted by Distance first, Name alphabetical second)
                     Text(
                       '근접 인맥 리스트 (${viewModel.filteredContacts.length}명)',
                       style: const TextStyle(
@@ -341,11 +300,14 @@ class RadarView extends StatelessWidget {
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: AppColors.accentSky.withOpacity(0.2),
-                              child: Text(
-                                contact.name.substring(0, 1),
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentSky),
-                              ),
+                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                              backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
+                              child: contact.avatarUrl == null
+                                  ? Text(
+                                      contact.name.substring(0, 1),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
@@ -354,7 +316,7 @@ class RadarView extends StatelessWidget {
                                 children: [
                                   Text(
                                     '${contact.name} ${contact.title}',
-                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                                   ),
                                   Text(
                                     contact.company,
@@ -366,12 +328,12 @@ class RadarView extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: AppColors.accentSky.withOpacity(0.15),
+                                color: AppColors.accentSky.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 GeoUtils.formatDistanceLabel(distance),
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.accentSky),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accentSky),
                               ),
                             )
                           ],
@@ -392,6 +354,160 @@ class RadarView extends StatelessWidget {
             onClose: viewModel.closeBriefing,
           ),
       ],
+    );
+  }
+}
+
+/// Pulsing Animated Wi-Fi / Radar Beacon Widget for ME vs Nearby Contacts
+class RadarPulseHeroWidget extends StatefulWidget {
+  final dynamic nearbyContact;
+
+  const RadarPulseHeroWidget({super.key, this.nearbyContact});
+
+  @override
+  State<RadarPulseHeroWidget> createState() => _RadarPulseHeroWidgetState();
+}
+
+class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 280,
+      height: 160,
+      decoration: BoxDecoration(
+        color: AppColors.cardDark.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.borderDark),
+      ),
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          final pulseVal = _pulseController.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // Expanding Wi-Fi / Radar Pulse Waves centered on ME
+              Container(
+                width: 60 + (pulseVal * 120),
+                height: 60 + (pulseVal * 120),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.accentSky.withValues(alpha: (1.0 - pulseVal) * 0.5),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+              Container(
+                width: 40 + (pulseVal * 60),
+                height: 40 + (pulseVal * 60),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.accentLime.withValues(alpha: (1.0 - pulseVal) * 0.6),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+
+              // ME Central Pulsing Beacon (Compact size with bright indicator)
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.bgDarkSlate,
+                      border: Border.all(color: AppColors.accentLime, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accentLime.withValues(alpha: 0.5),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        )
+                      ],
+                    ),
+                    child: const CircleAvatar(
+                      radius: 16,
+                      backgroundColor: AppColors.accentLime,
+                      child: Icon(Icons.wifi_tethering, color: Colors.black, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentLime,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Text(
+                      'ME (내 위치)',
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black),
+                    ),
+                  )
+                ],
+              ),
+
+              // Nearby Contact Blip Positioned on Radar Ring (Distinctly distinguished!)
+              if (widget.nearbyContact != null)
+                Positioned(
+                  top: 18,
+                  right: 28,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.accentSky),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.accentSky.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                        )
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 10,
+                          backgroundColor: AppColors.accentSky,
+                          child: Text(
+                            widget.nearbyContact.name.substring(0, 1),
+                            style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${widget.nearbyContact.name} 140m',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

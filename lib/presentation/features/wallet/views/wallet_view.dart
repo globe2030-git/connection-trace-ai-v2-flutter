@@ -113,15 +113,18 @@ class WalletView extends StatelessWidget {
                           children: [
                             CircleAvatar(
                               radius: 24,
-                              backgroundColor: AppColors.accentSky.withOpacity(0.2),
-                              child: Text(
-                                contact.name.substring(0, 1),
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentSky,
-                                ),
-                              ),
+                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                              backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
+                              child: contact.avatarUrl == null
+                                  ? Text(
+                                      contact.name.substring(0, 1),
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.accentSky,
+                                      ),
+                                    )
+                                  : null,
                             ),
                             const SizedBox(width: 14),
                             Expanded(

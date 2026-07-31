@@ -37,12 +37,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _emailFocusNode = FocusNode();
   final _tagsFocusNode = FocusNode();
 
+  // Profile Picture Avatar URL State
+  String? _selectedAvatarUrl;
+
+  final List<String> _avatarPresets = const [
+    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
+    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+  ];
+
   bool get _isEditing => widget.contactToEdit != null;
 
   @override
   void initState() {
     super.initState();
     final c = widget.contactToEdit;
+    _selectedAvatarUrl = c?.avatarUrl;
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
     _addressController = TextEditingController(text: c?.address ?? '');
@@ -128,6 +139,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       phone: phoneVal,
       officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
       email: emailVal,
+      avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
       geo: _isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276),
       talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : [
@@ -213,6 +225,52 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ],
                 ),
                 const SizedBox(height: 16),
+
+                // 📸 Profile Photo Selector Widget
+                Center(
+                  child: Column(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          // Cycle through avatar presets
+                          final nextIdx = _selectedAvatarUrl == null
+                              ? 0
+                              : (_avatarPresets.indexOf(_selectedAvatarUrl!) + 1) % (_avatarPresets.length + 1);
+                          setState(() {
+                            _selectedAvatarUrl = nextIdx < _avatarPresets.length ? _avatarPresets[nextIdx] : null;
+                          });
+                        },
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 36,
+                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                              backgroundImage: _selectedAvatarUrl != null ? NetworkImage(_selectedAvatarUrl!) : null,
+                              child: _selectedAvatarUrl == null
+                                  ? const Icon(Icons.person, size: 36, color: AppColors.accentSky)
+                                  : null,
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: AppColors.accentSky,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                            )
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '프로필 사진 선택 (터치하여 변경)',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
 
                 // 1. 이름 (필수)
                 _buildFormField(

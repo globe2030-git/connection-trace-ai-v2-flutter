@@ -9,6 +9,7 @@ class ContactModel {
   final String? officePhone;
   final String email;
   final String? address;
+  final String? avatarUrl;
   final GeoPosition? geo;
   final List<String> tags;
   final List<String> talkingPoints;
@@ -24,6 +25,7 @@ class ContactModel {
     this.officePhone,
     required this.email,
     this.address,
+    this.avatarUrl,
     this.geo,
     required this.tags,
     required this.talkingPoints,
@@ -41,6 +43,7 @@ class ContactModel {
       'officePhone': officePhone,
       'email': email,
       'address': address,
+      'avatarUrl': avatarUrl,
       'lat': geo?.lat,
       'lng': geo?.lng,
       'tags': tags,
@@ -60,6 +63,7 @@ class ContactModel {
       officePhone: json['officePhone'] as String?,
       email: json['email'] as String,
       address: json['address'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
       geo: json['lat'] != null && json['lng'] != null
           ? GeoPosition(
               lat: (json['lat'] as num).toDouble(),
@@ -82,6 +86,7 @@ class ContactModel {
     String? officePhone,
     String? email,
     String? address,
+    String? avatarUrl,
     GeoPosition? geo,
     List<String>? tags,
     List<String>? talkingPoints,
@@ -97,6 +102,7 @@ class ContactModel {
       officePhone: officePhone ?? this.officePhone,
       email: email ?? this.email,
       address: address ?? this.address,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,
       talkingPoints: talkingPoints ?? this.talkingPoints,

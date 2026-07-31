@@ -43,11 +43,25 @@ class RadarViewModel extends ChangeNotifier {
 
   List<ContactModel> get filteredContacts {
     final contacts = _contactsRepository.contacts;
-    return contacts.where((c) {
+    final list = contacts.where((c) {
       if (c.geo == null) return false;
       final distance = GeoUtils.getDistanceMeters(_currentPosition, c.geo);
       return distance <= _settings.radiusMeters;
     }).toList();
+
+    // Primary: distance ascending (closest first), Secondary: Korean alphabetical (가나다순)
+    list.sort((a, b) {
+      final distA = GeoUtils.getDistanceMeters(_currentPosition, a.geo);
+      final distB = GeoUtils.getDistanceMeters(_currentPosition, b.geo);
+
+      final compDist = distA.compareTo(distB);
+      if (compDist != 0) {
+        return compDist;
+      }
+      return a.name.compareTo(b.name);
+    });
+
+    return list;
   }
 
   ContactModel? get nearbyAlertContact {
