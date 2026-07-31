@@ -116,8 +116,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _titleController.text = result.title;
         _addressController.text = result.address;
         _phoneController.text = result.phone;
+        _officePhoneController.text = '02-555-1234';
         _emailController.text = result.email;
         _tagsController.text = result.tags.join(', ');
+        _memoController.text = 'AI OCR 스캔으로 자동 파싱된 프로필 및 주소 정보입니다.';
         if (result.avatarUrl != null) {
           _selectedAvatarUrl = result.avatarUrl;
         }
@@ -335,6 +337,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         '최근 프로젝트 진행 상황 공유하기',
         '다음 비즈니스 미팅 일정 제안하기',
       ],
+      commLogs: _isEditing ? widget.contactToEdit!.commLogs : [],
       isPriority: _isEditing ? widget.contactToEdit!.isPriority : false,
       memo: _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
     );

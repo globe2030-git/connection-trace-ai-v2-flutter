@@ -159,6 +159,102 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       );
                     }),
 
+                    // Recent Communication History Integration Trace
+                    const SizedBox(height: 16),
+                    const Text(
+                      '💬 최근 소통 Trace 연동 (통화 / 문자 / 이메일 / 카카오톡)',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+
+                    if (contact.commLogs.isEmpty)
+                      GlassCard(
+                        child: const Text(
+                          '최근 소통 기록이 없습니다. 이메일/문자/카카오톡 연동 대기 중...',
+                          style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                        ),
+                      )
+                    else
+                      ...contact.commLogs.map((log) {
+                        IconData icon;
+                        Color color;
+                        String badge;
+
+                        switch (log.type) {
+                          case 'call':
+                            icon = Icons.phone_in_talk;
+                            color = AppColors.accentSky;
+                            badge = '최근통화';
+                            break;
+                          case 'sms':
+                            icon = Icons.sms_outlined;
+                            color = AppColors.accentLime;
+                            badge = '문자';
+                            break;
+                          case 'email':
+                            icon = Icons.email_outlined;
+                            color = Colors.amber;
+                            badge = '이메일';
+                            break;
+                          case 'kakao':
+                          default:
+                            icon = Icons.chat_bubble_outline;
+                            color = const Color(0xFFFEE500);
+                            badge = '카카오톡';
+                            break;
+                        }
+
+                        return GlassCard(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(icon, size: 16, color: color),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: color.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            badge,
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${log.timestamp.month}월 ${log.timestamp.day}일 ${log.timestamp.hour}:${log.timestamp.minute.toString().padLeft(2, '0')}',
+                                          style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      log.summary,
+                                      style: const TextStyle(fontSize: 12.5, color: AppColors.textPrimary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+
                     if (contact.memo != null) ...[
                       const SizedBox(height: 14),
                       const Text(

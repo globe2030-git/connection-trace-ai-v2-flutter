@@ -1,5 +1,30 @@
 import '../../core/utils/geo_utils.dart';
 
+class CommunicationLogModel {
+  final String type; // 'call', 'sms', 'email', 'kakao'
+  final String summary;
+  final DateTime timestamp;
+
+  const CommunicationLogModel({
+    required this.type,
+    required this.summary,
+    required this.timestamp,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'summary': summary,
+        'timestamp': timestamp.toIso8601String(),
+      };
+
+  factory CommunicationLogModel.fromJson(Map<String, dynamic> json) =>
+      CommunicationLogModel(
+        type: json['type'] as String? ?? 'call',
+        summary: json['summary'] as String? ?? '',
+        timestamp: DateTime.parse(json['timestamp'] as String),
+      );
+}
+
 class ContactModel {
   final String id;
   final String name;
@@ -13,6 +38,7 @@ class ContactModel {
   final GeoPosition? geo;
   final List<String> tags;
   final List<String> talkingPoints;
+  final List<CommunicationLogModel> commLogs;
   final String? memo;
   final bool isPriority;
 
@@ -29,6 +55,7 @@ class ContactModel {
     this.geo,
     required this.tags,
     required this.talkingPoints,
+    this.commLogs = const [],
     this.memo,
     this.isPriority = false,
   });
@@ -48,6 +75,7 @@ class ContactModel {
       'lng': geo?.lng,
       'tags': tags,
       'talkingPoints': talkingPoints,
+      'commLogs': commLogs.map((l) => l.toJson()).toList(),
       'memo': memo,
       'isPriority': isPriority,
     };
@@ -72,6 +100,10 @@ class ContactModel {
           : null,
       tags: List<String>.from(json['tags'] ?? []),
       talkingPoints: List<String>.from(json['talkingPoints'] ?? []),
+      commLogs: (json['commLogs'] as List<dynamic>?)
+              ?.map((l) => CommunicationLogModel.fromJson(l as Map<String, dynamic>))
+              .toList() ??
+          [],
       memo: json['memo'] as String?,
       isPriority: json['isPriority'] as bool? ?? false,
     );
@@ -90,6 +122,7 @@ class ContactModel {
     GeoPosition? geo,
     List<String>? tags,
     List<String>? talkingPoints,
+    List<CommunicationLogModel>? commLogs,
     String? memo,
     bool? isPriority,
   }) {
@@ -106,6 +139,7 @@ class ContactModel {
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,
       talkingPoints: talkingPoints ?? this.talkingPoints,
+      commLogs: commLogs ?? this.commLogs,
       memo: memo ?? this.memo,
       isPriority: isPriority ?? this.isPriority,
     );
