@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/services/phone_call_service.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/wallet_view_model.dart';
 
@@ -157,13 +158,17 @@ class WalletView extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            IconButton(
-                              icon: Icon(
-                                contact.isPriority ? Icons.star : Icons.star_border,
-                                color: contact.isPriority ? AppColors.accentLime : AppColors.textMuted,
-                              ),
-                              onPressed: () => viewModel.togglePriority(contact.id),
-                            )
+                             IconButton(
+                               icon: const Icon(Icons.phone_outlined, color: AppColors.accentSky),
+                               onPressed: () => PhoneCallService.makeCall(contact.phone),
+                             ),
+                             IconButton(
+                               icon: Icon(
+                                 contact.isPriority ? Icons.star : Icons.star_border,
+                                 color: contact.isPriority ? AppColors.accentLime : AppColors.textMuted,
+                               ),
+                               onPressed: () => viewModel.togglePriority(contact.id),
+                             )
                           ],
                         ),
                       );

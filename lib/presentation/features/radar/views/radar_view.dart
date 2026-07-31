@@ -215,9 +215,16 @@ class RadarView extends StatelessWidget {
                           },
                         ),
                         ActionCircleButton(
-                          icon: Icons.credit_card,
-                          label: '명함 지갑',
-                          onTap: () {},
+                          icon: Icons.add_card,
+                          label: '명함 등록',
+                          onTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => const QrCodeModalView(),
+                            );
+                          },
                         ),
                         ActionCircleButton(
                           icon: Icons.warning_amber_rounded,

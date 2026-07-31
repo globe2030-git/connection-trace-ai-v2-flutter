@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../core/services/phone_call_service.dart';
 import '../../../common/glass_card.dart';
 
 class BriefingOverlayView extends StatefulWidget {
@@ -185,7 +186,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton.icon(
-                  onPressed: widget.onClose,
+                  onPressed: () async {
+                    await PhoneCallService.makeCall(contact.phone);
+                    widget.onClose();
+                  },
                   icon: const Icon(Icons.phone, color: Colors.white),
                   label: const Text(
                     '안부 전화 걸기',
