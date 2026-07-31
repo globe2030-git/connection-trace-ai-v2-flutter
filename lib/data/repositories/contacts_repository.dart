@@ -101,6 +101,23 @@ class ContactsRepository extends ChangeNotifier {
     _saveToDisk();
   }
 
+  void updateContact(ContactModel updatedContact) {
+    _contacts = _contacts.map((c) {
+      if (c.id == updatedContact.id) {
+        return updatedContact;
+      }
+      return c;
+    }).toList();
+    notifyListeners();
+    _saveToDisk();
+  }
+
+  void deleteContact(String id) {
+    _contacts.removeWhere((c) => c.id == id);
+    notifyListeners();
+    _saveToDisk();
+  }
+
   void togglePriority(String id) {
     _contacts = _contacts.map((c) {
       if (c.id == id) {

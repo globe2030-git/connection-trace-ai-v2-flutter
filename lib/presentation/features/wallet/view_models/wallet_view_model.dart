@@ -64,4 +64,12 @@ class WalletViewModel extends ChangeNotifier {
   void addContact(ContactModel contact) {
     _contactsRepository.addContact(contact);
   }
+
+  void updateContact(ContactModel contact) {
+    _contactsRepository.updateContact(contact);
+  }
+
+  void deleteContact(String id) {
+    _contactsRepository.deleteContact(id);
+  }
 }

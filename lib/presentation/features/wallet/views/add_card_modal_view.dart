@@ -6,7 +6,9 @@ import '../../../../data/models/contact_model.dart';
 import '../view_models/wallet_view_model.dart';
 
 class AddCardModalView extends StatefulWidget {
-  const AddCardModalView({super.key});
+  final ContactModel? contactToEdit;
+
+  const AddCardModalView({super.key, this.contactToEdit});
 
   @override
   State<AddCardModalView> createState() => _AddCardModalViewState();
@@ -16,14 +18,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _formKey = GlobalKey<FormState>();
 
   // Text Controllers
-  final _nameController = TextEditingController();
-  final _companyController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _officePhoneController = TextEditingController();
-  final _titleController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _tagsController = TextEditingController(text: 'AI, IT');
+  late TextEditingController _nameController;
+  late TextEditingController _companyController;
+  late TextEditingController _addressController;
+  late TextEditingController _phoneController;
+  late TextEditingController _officePhoneController;
+  late TextEditingController _titleController;
+  late TextEditingController _emailController;
+  late TextEditingController _tagsController;
 
   // Sequential Focus Nodes to prevent cursor jumping
   final _nameFocusNode = FocusNode();
@@ -34,6 +36,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _titleFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
   final _tagsFocusNode = FocusNode();
+
+  bool get _isEditing => widget.contactToEdit != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = widget.contactToEdit;
+    _nameController = TextEditingController(text: c?.name ?? '');
+    _companyController = TextEditingController(text: c?.company ?? '');
+    _addressController = TextEditingController(text: c?.address ?? '');
+    _phoneController = TextEditingController(text: c?.phone ?? '');
+    _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
+    _titleController = TextEditingController(text: c?.title ?? '');
+    _emailController = TextEditingController(text: c?.email ?? '');
+    _tagsController = TextEditingController(text: c != null ? c.tags.join(', ') : 'AI, IT');
+  }
 
   @override
   void dispose() {
@@ -101,8 +119,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         .where((t) => t.isNotEmpty)
         .toList();
 
-    final newContact = ContactModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+    final contact = ContactModel(
+      id: _isEditing ? widget.contactToEdit!.id : DateTime.now().millisecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
       title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
@@ -111,20 +129,26 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
       email: emailVal,
       tags: tags.isEmpty ? ['신규'] : tags,
-      geo: const GeoPosition(lat: 37.4979, lng: 127.0276),
-      talkingPoints: [
+      geo: _isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276),
+      talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : [
         '최근 프로젝트 진행 상황 공유하기',
         '다음 비즈니스 미팅 일정 제안하기',
       ],
-      isPriority: false,
+      isPriority: _isEditing ? widget.contactToEdit!.isPriority : false,
+      memo: _isEditing ? widget.contactToEdit!.memo : null,
     );
 
-    context.read<WalletViewModel>().addContact(newContact);
+    if (_isEditing) {
+      context.read<WalletViewModel>().updateContact(contact);
+    } else {
+      context.read<WalletViewModel>().addContact(contact);
+    }
+    
     Navigator.pop(context);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('🎉 ${newContact.name} 님의 명함이 성공적으로 저장되었습니다!'),
+        content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
         backgroundColor: AppColors.accentSky,
       ),
     );
@@ -177,12 +201,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
+                  children: [
                     Text(
-                      '🎴 새 명함 직접 등록',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                     ),
-                    Text(
+                    const Text(
                       '* 필수 입력 항목',
                       style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600),
                     )
@@ -315,8 +339,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   height: 52,
                   child: ElevatedButton.icon(
                     onPressed: _saveCard,
-                    icon: const Icon(Icons.check, color: Colors.white),
-                    label: const Text('명함 저장하기', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                    icon: Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
+                    label: Text(_isEditing ? '명함 수정 완료' : '명함 저장하기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.accentSky,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

@@ -167,6 +167,17 @@ class WalletView extends StatelessWidget {
                               ),
                             ),
                              IconButton(
+                               icon: const Icon(Icons.edit_outlined, color: AppColors.textSecondary, size: 20),
+                               onPressed: () {
+                                 showModalBottomSheet(
+                                   context: context,
+                                   isScrollControlled: true,
+                                   backgroundColor: Colors.transparent,
+                                   builder: (_) => AddCardModalView(contactToEdit: contact),
+                                 );
+                               },
+                             ),
+                             IconButton(
                                icon: const Icon(Icons.phone_outlined, color: AppColors.accentSky),
                                onPressed: () => PhoneCallService.showCallPicker(context, contact),
                              ),
