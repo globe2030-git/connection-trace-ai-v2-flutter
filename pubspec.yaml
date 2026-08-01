@@ -49,6 +49,23 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.6
+
+# 앱 최초 로딩 시(엔진 초기화가 끝나기도 전에) 보이는 네이티브 스플래시 화면 설정.
+# `dart run flutter_native_splash:create`를 실행하면 이 설정을 읽어 Android/iOS/Web
+# 각 플랫폼용 스플래시 리소스를 실제로 생성한다. 배경은 앱 다크 테마 배경(#0B0E14)과
+# 맞춰 로고가 뜬 뒤 실제 앱으로 넘어갈 때 색이 갑자기 바뀌는 깜빡임이 없게 했다.
+flutter_native_splash:
+  color: "#0B0E14"
+  image: assets/이메일서명.png
+  color_dark: "#0B0E14"
+  image_dark: assets/이메일서명.png
+  android_12:
+    color: "#0B0E14"
+    image: assets/이메일서명.png
+    color_dark: "#0B0E14"
+    image_dark: assets/이메일서명.png
+  web: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -64,6 +81,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icons3d/
+    - assets/이메일서명.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
