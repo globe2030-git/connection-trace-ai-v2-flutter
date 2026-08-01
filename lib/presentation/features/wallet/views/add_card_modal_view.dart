@@ -392,7 +392,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       child: SafeArea(
         child: SingleChildScrollView(
           child: FocusTraversalGroup(
-            policy: WidgetOrderTraversalPolicy(),
+            // WidgetOrderTraversalPolicy는 위젯 트리에 포커스 노드가 "붙는(attach)" 순서를
+            // 따르는데, TextFormField의 에러 텍스트가 유효성 검사 상태에 따라 나타났다
+            // 사라졌다 하면서 트리가 다시 빌드될 때 이 순서가 뒤틀려 Tab이 필드를 건너뛰는
+            // 문제가 있었다(실사용 재현: 회사 주소 필드에서 Tab이 사무실 전화번호로 건너뜀).
+            // OrderedTraversalPolicy + 아래 각 _buildFormField의 FocusTraversalOrder로
+            // 순서를 명시적으로 고정해 이 문제를 근본적으로 없앤다.
+            policy: OrderedTraversalPolicy(),
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -569,6 +575,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _nameController,
                     focusNode: _nameFocusNode,
+                    order: 1,
                     nextFocusNode: _companyFocusNode,
                     label: '이름 *',
                     hint: '예: 홍길동',
@@ -585,6 +592,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _companyController,
                     focusNode: _companyFocusNode,
+                    order: 2,
                     nextFocusNode: _titleFocusNode,
                     label: '회사명 *',
                     hint: '예: 카카오 / 삼성전자',
@@ -601,6 +609,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _titleController,
                     focusNode: _titleFocusNode,
+                    order: 3,
                     nextFocusNode: _addressFocusNode,
                     label: '직함 / 부서',
                     hint: '예: 팀장 / R&D 센터',
@@ -611,6 +620,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _addressController,
                     focusNode: _addressFocusNode,
+                    order: 4,
                     nextFocusNode: _phoneFocusNode,
                     label: '회사 주소 / 위치 *',
                     hint: '예: 서울특별시 강남구 테헤란로 123',
@@ -627,6 +637,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _phoneController,
                     focusNode: _phoneFocusNode,
+                    order: 5,
                     nextFocusNode: _officePhoneFocusNode,
                     label: '휴대폰 번호 *',
                     hint: '예: 010-1234-5678',
@@ -648,6 +659,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _officePhoneController,
                     focusNode: _officePhoneFocusNode,
+                    order: 6,
                     nextFocusNode: _emailFocusNode,
                     label: '사무실 전화번호 (선택)',
                     hint: '예: 02-123-4567',
@@ -659,6 +671,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _emailController,
                     focusNode: _emailFocusNode,
+                    order: 7,
                     nextFocusNode: _tagsFocusNode,
                     label: '이메일 *',
                     hint: '예: example@company.com',
@@ -679,6 +692,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _tagsController,
                     focusNode: _tagsFocusNode,
+                    order: 8,
                     nextFocusNode: _memoFocusNode,
                     label: '태그 키워드 (쉼표 구분)',
                     hint: '예: AI, 바이오, C-Level',
@@ -689,6 +703,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   _buildFormField(
                     controller: _memoController,
                     focusNode: _memoFocusNode,
+                    order: 9,
                     isLast: true,
                     maxLines: 3,
                     label: 'Memo Summary (메모 및 특징 요약)',
@@ -721,6 +736,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   Widget _buildFormField({
     required TextEditingController controller,
     required FocusNode focusNode,
+    required double order,
     FocusNode? nextFocusNode,
     required String label,
     required String hint,
@@ -729,7 +745,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     int maxLines = 1,
     String? Function(String?)? validator,
   }) {
-    return Column(
+    return FocusTraversalOrder(
+      order: NumericFocusOrder(order),
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -789,6 +807,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ),
         ),
       ],
+      ),
     );
   }
 }
