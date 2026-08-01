@@ -44,6 +44,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _tagsFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
 
+  // [버그 수정] Tab 키가 필드를 건너뛰던 문제 — 필드별 FocusTraversalOrder와 필드별
+  // Focus.onKeyEvent 가로채기를 둘 다 시도했지만 실사용에서 재현 계속됨(이름→회사명
+  // 건너뛰고 직함/부서로 이동). Flutter Web html renderer는 필드마다 실제 <input>
+  // DOM 엘리먼트를 만드는데, 필드 단위 접근으로는 브라우저 자체의 네이티브 Tab 처리를
+  // 완전히 억제하지 못했던 것으로 보인다(KeyEventResult.handled를 반환해도 브라우저
+  // 기본 동작이 별도로 한 번 더 진행되어 한 Tab에 두 칸씩 이동). 이번엔 폼 전체
+  // 최상단 하나에서 Shortcuts+Actions로 Tab의 의미 자체를 재정의한다 — 이게
+  // Flutter가 "Tab이 하는 일을 바꾸고 싶을 때" 공식적으로 권장하는 방식이라 필드별
+  // 임시방편보다 안정적이다. 이 리스트 순서가 실제 Tab 이동 순서의 유일한 기준이 된다.
+  late final List<FocusNode> _fieldFocusOrder;
+
   // Profile Picture Avatar URL State & OCR Raw Text State
   String? _selectedAvatarUrl;
   String? _scannedRawText;
@@ -73,6 +84,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _emailController = TextEditingController(text: c?.email ?? '');
     _tagsController = TextEditingController(text: c != null ? c.tags.join(', ') : 'AI, IT');
     _memoController = TextEditingController(text: c?.memo ?? '');
+    _fieldFocusOrder = [
+      _nameFocusNode,
+      _companyFocusNode,
+      _titleFocusNode,
+      _addressFocusNode,
+      _phoneFocusNode,
+      _officePhoneFocusNode,
+      _emailFocusNode,
+      _tagsFocusNode,
+      _memoFocusNode,
+    ];
   }
 
   @override
@@ -97,6 +119,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _tagsFocusNode.dispose();
     _memoFocusNode.dispose();
     super.dispose();
+  }
+
+  // _fieldFocusOrder 리스트 기준으로 현재 포커스된 필드를 찾아 delta칸 이동한다
+  // (+1 = 정방향 Tab, -1 = Shift+Tab). 위젯 트리 순서나 브라우저 네이티브 DOM
+  // 탭 순서와 무관하게 오직 이 리스트만이 이동 순서를 결정한다.
+  void _moveFocus(int delta) {
+    final currentIndex = _fieldFocusOrder.indexWhere((n) => n.hasFocus);
+    if (currentIndex == -1) return;
+    final nextIndex = currentIndex + delta;
+    if (nextIndex < 0 || nextIndex >= _fieldFocusOrder.length) {
+      FocusScope.of(context).unfocus();
+      return;
+    }
+    _fieldFocusOrder[nextIndex].requestFocus();
   }
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
@@ -379,7 +415,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Shortcuts(
+      shortcuts: <ShortcutActivator, Intent>{
+        const SingleActivator(LogicalKeyboardKey.tab): const NextFocusIntent(),
+        const SingleActivator(LogicalKeyboardKey.tab, shift: true): const PreviousFocusIntent(),
+      },
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          NextFocusIntent: CallbackAction<NextFocusIntent>(onInvoke: (_) => _moveFocus(1)),
+          PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(onInvoke: (_) => _moveFocus(-1)),
+        },
+        child: Container(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -392,15 +438,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       ),
       child: SafeArea(
         child: SingleChildScrollView(
-          child: FocusTraversalGroup(
-            // WidgetOrderTraversalPolicy는 위젯 트리에 포커스 노드가 "붙는(attach)" 순서를
-            // 따르는데, TextFormField의 에러 텍스트가 유효성 검사 상태에 따라 나타났다
-            // 사라졌다 하면서 트리가 다시 빌드될 때 이 순서가 뒤틀려 Tab이 필드를 건너뛰는
-            // 문제가 있었다(실사용 재현: 회사 주소 필드에서 Tab이 사무실 전화번호로 건너뜀).
-            // OrderedTraversalPolicy + 아래 각 _buildFormField의 FocusTraversalOrder로
-            // 순서를 명시적으로 고정해 이 문제를 근본적으로 없앤다.
-            policy: OrderedTraversalPolicy(),
-            child: Form(
+          child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
               child: Column(
@@ -741,6 +779,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -756,9 +795,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     int maxLines = 1,
     String? Function(String?)? validator,
   }) {
-    return FocusTraversalOrder(
-      order: NumericFocusOrder(order),
-      child: Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -770,30 +807,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ),
         ),
         const SizedBox(height: 4),
-        // [버그 수정] Flutter Web(html renderer)에서 실제 <input> DOM 엘리먼트가
-        // 생성되기 때문에, 정방향 Tab 키가 브라우저 네이티브 DOM 탭 순서와 Flutter의
-        // FocusTraversalPolicy(OrderedTraversalPolicy) 양쪽에서 동시에 처리되면서 한 번의
-        // Tab에 포커스가 2칸씩 전진해(예: 이름→회사명→직함으로 건너뜀) 사용자가 실제로
-        // 재현/보고함. 아래 Focus.onKeyEvent로 정방향 Tab만 여기서 직접 가로채 다음
-        // 필드로 명시적으로 이동시키고 KeyEventResult.handled로 이벤트를 완전히
-        // 소비해서, 다른 어떤 경로로도 같은 Tab 입력이 중복 처리되지 않게 한다.
-        // Shift+Tab(역방향)은 사용자가 이미 정상 동작한다고 확인해줘서 그대로 둔다
-        // (여기서 처리하지 않고 return ignored로 흘려보내 기존 기본 동작 유지).
-        Focus(
-          onKeyEvent: (node, event) {
-            if (event is KeyDownEvent &&
-                event.logicalKey == LogicalKeyboardKey.tab &&
-                !HardwareKeyboard.instance.isShiftPressed) {
-              if (nextFocusNode != null) {
-                nextFocusNode.requestFocus();
-              } else {
-                node.unfocus();
-              }
-              return KeyEventResult.handled;
-            }
-            return KeyEventResult.ignored;
-          },
-          child: TextFormField(
+        TextFormField(
           controller: controller,
           focusNode: focusNode,
           keyboardType: maxLines > 1 ? TextInputType.multiline : keyboardType,
@@ -839,10 +853,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
             ),
           ),
-          ),
         ),
       ],
-      ),
     );
   }
 }
