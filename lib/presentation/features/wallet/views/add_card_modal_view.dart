@@ -126,6 +126,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 탭 순서와 무관하게 오직 이 리스트만이 이동 순서를 결정한다.
   void _moveFocus(int delta) {
     final currentIndex = _fieldFocusOrder.indexWhere((n) => n.hasFocus);
+    // ignore: avoid_print
+    print('[TAB-DEBUG] _moveFocus 호출됨 delta=$delta currentIndex=$currentIndex');
     if (currentIndex == -1) return;
     final nextIndex = currentIndex + delta;
     if (nextIndex < 0 || nextIndex >= _fieldFocusOrder.length) {
