@@ -421,15 +421,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      Expanded(
+                        child: Text(
+                          _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        ),
                       ),
-                      const Text(
-                        '* 필수 입력 항목',
-                        style: TextStyle(fontSize: 12, color: AppColors.destructive, fontWeight: FontWeight.w600),
-                      )
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                        tooltip: '입력 취소',
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ],
+                  ),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '* 필수 입력 항목',
+                      style: TextStyle(fontSize: 12, color: AppColors.destructive, fontWeight: FontWeight.w600),
+                    ),
                   ),
                   const SizedBox(height: 16),
 
