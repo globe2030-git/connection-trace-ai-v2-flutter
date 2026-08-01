@@ -126,15 +126,29 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 탭 순서와 무관하게 오직 이 리스트만이 이동 순서를 결정한다.
   void _moveFocus(int delta) {
     final currentIndex = _fieldFocusOrder.indexWhere((n) => n.hasFocus);
-    // ignore: avoid_print
-    print('[TAB-DEBUG] _moveFocus 호출됨 delta=$delta currentIndex=$currentIndex');
     if (currentIndex == -1) return;
     final nextIndex = currentIndex + delta;
     if (nextIndex < 0 || nextIndex >= _fieldFocusOrder.length) {
       FocusScope.of(context).unfocus();
       return;
     }
-    _fieldFocusOrder[nextIndex].requestFocus();
+    final target = _fieldFocusOrder[nextIndex];
+    target.requestFocus();
+    // [버그 수정] 디버그 로그로 Dart 레벨 currentIndex는 매 Tab마다 정확히 한 칸씩만
+    // 증가하는 게 확인됐다(0→1→2...) — 즉 이 시점까지 로직 자체는 완전히 정상. 그런데도
+    // 화면에서는 건너뛰는 것처럼 보인다는 건, requestFocus() 직후 브라우저 자체의 기본
+    // Tab 동작이 뒤이어 한 번 더 실행되며 실제 DOM 포커스를 다시 옮겨버리고 있다는
+    // 뜻으로 보인다(Flutter의 Dart 상태와 실제 브라우저 포커스가 어긋남). 현재 이벤트
+    // 루프 턴이 완전히 끝난 뒤(microtask 이후) 같은 타겟으로 포커스를 한 번 더
+    // 강제해서, 그 사이 끼어든 브라우저 기본 동작을 덮어씌운다.
+    Future.delayed(Duration.zero, () {
+      if (!mounted) return;
+      // ignore: avoid_print
+      print('[TAB-DEBUG] 지연 재확인 — target.hasFocus=${target.hasFocus} (false면 브라우저가 그 사이 가로챈 것)');
+      if (!target.hasFocus) {
+        target.requestFocus();
+      }
+    });
   }
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
