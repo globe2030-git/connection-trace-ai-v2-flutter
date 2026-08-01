@@ -17,7 +17,7 @@ class WalletView extends StatelessWidget {
       backgroundColor: AppColors.bgDarkSlate,
       body: Container(
         decoration: const BoxDecoration(
-          gradient: AppColors.bgGradient,
+          color: AppColors.bgDarkSlate,
         ),
         child: SafeArea(
           child: Padding(
@@ -37,7 +37,7 @@ class WalletView extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.add_circle, color: AppColors.accentSky, size: 28),
+                      icon: const Icon(Icons.add_circle, color: AppColors.accentText, size: 28),
                       onPressed: () {
                         showModalBottomSheet(
                           context: context,
@@ -83,7 +83,7 @@ class WalletView extends StatelessWidget {
                           label: Text('#$tag'),
                           selected: isSelected,
                           onSelected: (_) => viewModel.toggleTag(tag),
-                          selectedColor: AppColors.accentSky,
+                          selectedColor: AppColors.accentText,
                           backgroundColor: AppColors.cardDark,
                           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
                           labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
@@ -113,7 +113,7 @@ class WalletView extends StatelessWidget {
                           children: [
                             CircleAvatar(
                               radius: 24,
-                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                              backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                               backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
                               child: contact.avatarUrl == null
                                   ? Text(
@@ -121,7 +121,7 @@ class WalletView extends StatelessWidget {
                                       style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
-                                        color: AppColors.accentSky,
+                                        color: AppColors.accentText,
                                       ),
                                     )
                                   : null,
@@ -155,7 +155,7 @@ class WalletView extends StatelessWidget {
                                     contact.company,
                                     style: const TextStyle(
                                       fontSize: 13,
-                                      color: AppColors.accentSky,
+                                      color: AppColors.accentText,
                                     ),
                                   ),
                                   const SizedBox(height: 4),
@@ -181,13 +181,13 @@ class WalletView extends StatelessWidget {
                                },
                              ),
                              IconButton(
-                               icon: const Icon(Icons.phone_outlined, color: AppColors.accentSky),
+                               icon: const Icon(Icons.phone_outlined, color: AppColors.accentText),
                                onPressed: () => PhoneCallService.showCallPicker(context, contact),
                              ),
                              IconButton(
                                icon: Icon(
                                  contact.isPriority ? Icons.star : Icons.star_border,
-                                 color: contact.isPriority ? AppColors.accentLime : AppColors.textMuted,
+                                 color: contact.isPriority ? AppColors.accentText : AppColors.textMuted,
                                ),
                                onPressed: () => viewModel.togglePriority(contact.id),
                              )

@@ -26,7 +26,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
     final contact = widget.contact;
 
     return Container(
-      color: Colors.black.withOpacity(0.85),
+      color: Colors.black.withValues(alpha: 0.85),
       child: SafeArea(
         child: Column(
           children: [
@@ -38,7 +38,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.bolt, color: AppColors.accentLime, size: 22),
+                        const Icon(Icons.bolt, color: AppColors.accentText, size: 22),
                         const SizedBox(width: 6),
                         const Text(
                           '30초 AI 대화 브리핑',
@@ -70,12 +70,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                         children: [
                           CircleAvatar(
                             radius: 30,
-                            backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                            backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                             backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
                             child: contact.avatarUrl == null
                                 ? Text(
                                     contact.name.substring(0, 1),
-                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                    style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.accentText),
                                   )
                                 : null,
                           ),
@@ -99,12 +99,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                     return Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: AppColors.accentSky.withOpacity(0.15),
+                                        color: AppColors.accentText.withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                       child: Text(
                                         '#$tag',
-                                        style: const TextStyle(fontSize: 11, color: AppColors.accentSky, fontWeight: FontWeight.w600),
+                                        style: const TextStyle(fontSize: 11, color: AppColors.accentText, fontWeight: FontWeight.w600),
                                       ),
                                     );
                                   }).toList(),
@@ -133,14 +133,14 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       return GlassCard(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(14),
-                        borderColor: isSelected ? AppColors.accentSky : null,
-                        backgroundColor: isSelected ? AppColors.accentSky.withOpacity(0.15) : null,
+                        borderColor: isSelected ? AppColors.accentText : null,
+                        backgroundColor: isSelected ? AppColors.accentText.withValues(alpha: 0.15) : null,
                         onTap: () => setState(() => _selectedIndex = idx),
                         child: Row(
                           children: [
                             Icon(
                               isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
-                              color: isSelected ? AppColors.accentSky : AppColors.textMuted,
+                              color: isSelected ? AppColors.accentText : AppColors.textMuted,
                               size: 20,
                             ),
                             const SizedBox(width: 12),
@@ -183,23 +183,23 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                         switch (log.type) {
                           case 'call':
                             icon = Icons.phone_in_talk;
-                            color = AppColors.accentSky;
+                            color = AppColors.channelCall;
                             badge = '최근통화';
                             break;
                           case 'sms':
                             icon = Icons.sms_outlined;
-                            color = AppColors.accentLime;
+                            color = AppColors.channelSms;
                             badge = '문자';
                             break;
                           case 'email':
                             icon = Icons.email_outlined;
-                            color = Colors.amber;
+                            color = AppColors.channelEmail;
                             badge = '이메일';
                             break;
                           case 'kakao':
                           default:
                             icon = Icons.chat_bubble_outline;
-                            color = const Color(0xFFFEE500);
+                            color = AppColors.channelKakao;
                             badge = '카카오톡';
                             break;
                         }
@@ -295,7 +295,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accentSky,
+                    backgroundColor: AppColors.accent,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
                   ),
                 ),

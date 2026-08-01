@@ -44,7 +44,7 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: !_isScannerMode ? AppColors.accentSky : Colors.transparent,
+                        color: !_isScannerMode ? AppColors.accentText : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -65,7 +65,7 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: _isScannerMode ? AppColors.accentSky : Colors.transparent,
+                        color: _isScannerMode ? AppColors.accentText : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -129,11 +129,11 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                           width: 180,
                           height: 180,
                           decoration: BoxDecoration(
-                            border: Border.all(color: AppColors.accentLime, width: 2),
+                            border: Border.all(color: AppColors.accentText, width: 2),
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        const Icon(Icons.qr_code_scanner, size: 80, color: AppColors.accentLime),
+                        const Icon(Icons.qr_code_scanner, size: 80, color: AppColors.accentText),
                       ],
                     ),
                     const SizedBox(height: 16),

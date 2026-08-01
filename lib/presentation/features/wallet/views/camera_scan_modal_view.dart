@@ -65,7 +65,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: const [
-                            CircularProgressIndicator(color: AppColors.accentSky),
+                            CircularProgressIndicator(color: AppColors.accentText),
                             SizedBox(height: 16),
                             Text(
                               '📸 명함 촬영 완료! AI 텍스트 추출 중...',
@@ -96,7 +96,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                     style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
-                    icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, color: _isFlashOn ? AppColors.accentLime : Colors.white, size: 24),
+                    icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, color: _isFlashOn ? AppColors.accentText : Colors.white, size: 24),
                     onPressed: () => setState(() => _isFlashOn = !_isFlashOn),
                   ),
                 ],
@@ -114,14 +114,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.accentSky, width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accentSky.withValues(alpha: 0.2),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        )
-                      ],
+                      border: Border.all(color: AppColors.accentText, width: 1.5),
                     ),
                     child: Stack(
                       children: [
@@ -135,16 +128,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                               right: 10,
                               child: Container(
                                 height: 2,
-                                decoration: BoxDecoration(
-                                  color: AppColors.accentLime,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.accentLime.withValues(alpha: 0.8),
-                                      blurRadius: 8,
-                                      spreadRadius: 2,
-                                    )
-                                  ],
-                                ),
+                                color: AppColors.accentText,
                               ),
                             );
                           },
@@ -189,7 +173,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                     ),
                     child: Container(
                       decoration: const BoxDecoration(
-                        color: AppColors.accentSky,
+                        color: AppColors.accent,
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.camera_alt, color: Colors.white, size: 36),

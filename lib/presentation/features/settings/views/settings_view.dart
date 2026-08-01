@@ -17,7 +17,7 @@ class SettingsView extends StatelessWidget {
       backgroundColor: AppColors.bgDarkSlate,
       body: Container(
         decoration: const BoxDecoration(
-          gradient: AppColors.bgGradient,
+          color: AppColors.bgDarkSlate,
         ),
         child: SafeArea(
           child: SingleChildScrollView(
@@ -42,7 +42,7 @@ class SettingsView extends StatelessWidget {
                     children: [
                       Row(
                         children: const [
-                          Icon(Icons.radar, color: AppColors.accentSky, size: 22),
+                          Icon(Icons.radar, color: AppColors.accentText, size: 22),
                           SizedBox(width: 10),
                           Text(
                             '주변 인맥 감지 알림',
@@ -126,7 +126,7 @@ class SettingsView extends StatelessWidget {
                     children: const [
                       Row(
                         children: [
-                          Icon(Icons.shield_outlined, color: AppColors.accentLime, size: 18),
+                          Icon(Icons.shield_outlined, color: AppColors.accentText, size: 18),
                           SizedBox(width: 8),
                           Text('데이터 및 권한 안내', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                         ],

@@ -30,7 +30,7 @@ class RadarView extends StatelessWidget {
           backgroundColor: AppColors.bgDarkSlate,
           body: Container(
             decoration: const BoxDecoration(
-              gradient: AppColors.bgGradient,
+              color: AppColors.bgDarkSlate,
             ),
             child: SafeArea(
               child: SingleChildScrollView(
@@ -127,7 +127,7 @@ class RadarView extends StatelessWidget {
                             width: 120,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: AppColors.accentLime,
+                              color: AppColors.accentText,
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -211,13 +211,7 @@ class RadarView extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: AppColors.capsuleInputBg,
                         borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.15),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
+                        border: Border.all(color: AppColors.borderDark),
                       ),
                       child: Row(
                         children: const [
@@ -243,7 +237,7 @@ class RadarView extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                       child: Row(
                         children: [
-                          const Icon(Icons.bolt, color: AppColors.accentLime, size: 18),
+                          const Icon(Icons.bolt, color: AppColors.accentText, size: 18),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -261,9 +255,9 @@ class RadarView extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
-                                color: AppColors.accentSky.withValues(alpha: 0.2),
+                                color: AppColors.accentText.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.5)),
+                                border: Border.all(color: AppColors.accentText.withValues(alpha: 0.5)),
                               ),
                               child: Row(
                                 children: [
@@ -271,13 +265,13 @@ class RadarView extends StatelessWidget {
                                       ? const SizedBox(
                                           width: 14,
                                           height: 14,
-                                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentSky),
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentText),
                                         )
-                                      : const Icon(Icons.my_location, color: AppColors.accentSky, size: 14),
+                                      : const Icon(Icons.my_location, color: AppColors.accentText, size: 14),
                                   const SizedBox(width: 6),
                                   Text(
                                     viewModel.isRefreshingLocation ? 'GPS 갱신 중...' : '내 위치 갱신',
-                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.accentText),
                                   ),
                                 ],
                               ),
@@ -310,12 +304,12 @@ class RadarView extends StatelessWidget {
                           children: [
                             CircleAvatar(
                               radius: 20,
-                              backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                              backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                               backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
                               child: contact.avatarUrl == null
                                   ? Text(
                                       contact.name.substring(0, 1),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentText),
                                     )
                                   : null,
                             ),
@@ -338,12 +332,12 @@ class RadarView extends StatelessWidget {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: AppColors.accentSky.withValues(alpha: 0.15),
+                                color: AppColors.accentText.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 GeoUtils.formatDistanceLabel(distance),
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.accentText),
                               ),
                             )
                           ],
@@ -420,7 +414,7 @@ class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with Single
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppColors.accentSky.withValues(alpha: (1.0 - pulseVal) * 0.5),
+                    color: AppColors.accentText.withValues(alpha: (1.0 - pulseVal) * 0.5),
                     width: 1.5,
                   ),
                 ),
@@ -431,7 +425,7 @@ class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with Single
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: AppColors.accentLime.withValues(alpha: (1.0 - pulseVal) * 0.6),
+                    color: AppColors.accentText.withValues(alpha: (1.0 - pulseVal) * 0.6),
                     width: 1.5,
                   ),
                 ),
@@ -446,31 +440,24 @@ class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with Single
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: AppColors.bgDarkSlate,
-                      border: Border.all(color: AppColors.accentLime, width: 2),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accentLime.withValues(alpha: 0.5),
-                          blurRadius: 10,
-                          spreadRadius: 2,
-                        )
-                      ],
+                      border: Border.all(color: AppColors.accentText, width: 1.5),
                     ),
                     child: const CircleAvatar(
                       radius: 16,
-                      backgroundColor: AppColors.accentLime,
-                      child: Icon(Icons.wifi_tethering, color: Colors.black, size: 20),
+                      backgroundColor: AppColors.accent,
+                      child: Icon(Icons.wifi_tethering, color: Colors.white, size: 20),
                     ),
                   ),
                   const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppColors.accentLime,
+                      color: AppColors.accent,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Text(
                       'ME (내 위치)',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.black),
+                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white),
                     ),
                   )
                 ],
@@ -486,20 +473,14 @@ class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with Single
                     decoration: BoxDecoration(
                       color: AppColors.cardDark,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.accentSky),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accentSky.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                        )
-                      ],
+                      border: Border.all(color: AppColors.accentText),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircleAvatar(
                           radius: 10,
-                          backgroundColor: AppColors.accentSky,
+                          backgroundColor: AppColors.accent,
                           child: Text(
                             widget.nearbyContact.name.substring(0, 1),
                             style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),

@@ -53,7 +53,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('📂 실제 기기 파일 탐색기에서 [내_스마트폰_실제_명함사진.png] 로드 완료!'),
-        backgroundColor: AppColors.accentLime,
+        backgroundColor: AppColors.accent,
       ),
     );
   }
@@ -124,7 +124,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.folder_open, color: AppColors.accentLime, size: 22),
+                    Icon(Icons.folder_open, color: AppColors.accentText, size: 22),
                     SizedBox(width: 8),
                     Text(
                       '기기 갤러리 / 이미지 파일 탐색기',
@@ -147,10 +147,10 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               height: 44,
               child: OutlinedButton.icon(
                 onPressed: _pickRealDeviceFile,
-                icon: const Icon(Icons.file_upload, color: AppColors.accentSky, size: 18),
-                label: const Text('💻 내 컴퓨터 / 스마트폰 실제 파일 선택하기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentSky)),
+                icon: const Icon(Icons.file_upload, color: AppColors.accentText, size: 18),
+                label: const Text('💻 내 컴퓨터 / 스마트폰 실제 파일 선택하기', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentText)),
                 style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.accentSky, width: 1.5),
+                  side: const BorderSide(color: AppColors.accentText, width: 1.5),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
               ),
@@ -170,7 +170,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: AppColors.accentLime,
+                      color: AppColors.accentText,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Text('실제 파일 선택됨', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.black)),
@@ -196,7 +196,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                         color: AppColors.bgDarkSlate,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: isSelected ? AppColors.accentLime : AppColors.borderDark,
+                          color: isSelected ? AppColors.accentText : AppColors.borderDark,
                           width: isSelected ? 2 : 1,
                         ),
                       ),
@@ -214,7 +214,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              color: isSelected ? AppColors.accentLime : AppColors.textPrimary,
+                              color: isSelected ? AppColors.accentText : AppColors.textPrimary,
                             ),
                           )
                         ],
@@ -287,7 +287,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accentLime,
+                  backgroundColor: AppColors.accent,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),

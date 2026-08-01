@@ -66,7 +66,7 @@ class PhoneCallService {
                     children: [
                       const CircleAvatar(
                         radius: 20,
-                        backgroundColor: AppColors.accentSky,
+                        backgroundColor: AppColors.accent,
                         child: Icon(Icons.smartphone, color: Colors.white, size: 20),
                       ),
                       const SizedBox(width: 14),
@@ -96,8 +96,8 @@ class PhoneCallService {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: AppColors.accentLime.withValues(alpha: 0.2),
-                        child: const Icon(Icons.phone_in_talk, color: AppColors.accentLime, size: 20),
+                        backgroundColor: AppColors.accent.withValues(alpha: 0.2),
+                        child: const Icon(Icons.phone_in_talk, color: AppColors.accentText, size: 20),
                       ),
                       const SizedBox(width: 14),
                       Expanded(

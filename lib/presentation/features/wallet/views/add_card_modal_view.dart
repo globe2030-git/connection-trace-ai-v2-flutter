@@ -141,7 +141,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
-        backgroundColor: AppColors.accentSky,
+        backgroundColor: AppColors.accent,
       ),
     );
   }
@@ -224,7 +224,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             if (_scannedRawText != null) ...[
               const Text(
                 '💡 명함 RAW 스캔 텍스트:',
-                style: TextStyle(color: AppColors.accentSky, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(color: AppColors.accentText, fontSize: 12, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
               Container(
@@ -252,7 +252,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               Navigator.pop(ctx);
               _addressFocusNode.requestFocus();
             },
-            child: const Text('주소 수정하기', style: TextStyle(color: AppColors.accentSky, fontWeight: FontWeight.bold)),
+            child: const Text('주소 수정하기', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
           )
         ],
       ),
@@ -292,7 +292,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   const SizedBox(height: 6),
                   Text(
                     '• 변경 도로명 주소: ${result.roadNameAddress}',
-                    style: const TextStyle(color: AppColors.accentLime, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(color: AppColors.accentText, fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -313,7 +313,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               _addressController.text = result.roadNameAddress!;
               _executeFinalSave(result.roadNameAddress!, result.geoPosition);
             },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accentSky),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
             child: const Text('네, 도로명으로 변경', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -360,7 +360,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
-        backgroundColor: AppColors.accentSky,
+        backgroundColor: AppColors.accent,
       ),
     );
   }
@@ -370,7 +370,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.redAccent,
+        backgroundColor: AppColors.destructive,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -421,7 +421,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       ),
                       const Text(
                         '* 필수 입력 항목',
-                        style: TextStyle(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 12, color: AppColors.destructive, fontWeight: FontWeight.w600),
                       )
                     ],
                   ),
@@ -440,7 +440,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       children: [
                         const Text(
                           '📷 명함 자동 스캔 (OCR)',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentText),
                         ),
                         const SizedBox(height: 8),
                         Row(
@@ -453,7 +453,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                     : const Icon(Icons.camera_alt, size: 16, color: Colors.white),
                                 label: const Text('명함 촬영 스캔', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.white)),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accentSky,
+                                  backgroundColor: AppColors.accent,
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                               ),
@@ -462,10 +462,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                             Expanded(
                               child: OutlinedButton.icon(
                                 onPressed: _isScanningOcr ? null : () => _performOcrScan(isFromCamera: false),
-                                icon: const Icon(Icons.photo_library, size: 16, color: AppColors.accentLime),
-                                label: const Text('이미지 업로드', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.accentLime)),
+                                icon: const Icon(Icons.photo_library, size: 16, color: AppColors.accentText),
+                                label: const Text('이미지 업로드', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.accentText)),
                                 style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: AppColors.accentLime),
+                                  side: const BorderSide(color: AppColors.accentText),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                 ),
                               ),
@@ -496,16 +496,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                             children: [
                               CircleAvatar(
                                 radius: 36,
-                                backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                                backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                                 backgroundImage: _selectedAvatarUrl != null ? NetworkImage(_selectedAvatarUrl!) : null,
                                 child: _selectedAvatarUrl == null
-                                    ? const Icon(Icons.person, size: 36, color: AppColors.accentSky)
+                                    ? const Icon(Icons.person, size: 36, color: AppColors.accentText)
                                     : null,
                               ),
                               Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: const BoxDecoration(
-                                  color: AppColors.accentSky,
+                                  color: AppColors.accentText,
                                   shape: BoxShape.circle,
                                 ),
                                 child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
@@ -531,18 +531,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: AppColors.accentSky.withValues(alpha: 0.15),
+                          color: AppColors.accentText.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.3)),
+                          border: Border.all(color: AppColors.accentText.withValues(alpha: 0.3)),
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
                               '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentText),
                             ),
-                            Icon(_showRawTextCard ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.accentSky, size: 18),
+                            Icon(_showRawTextCard ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.accentText, size: 18),
                           ],
                         ),
                       ),
@@ -704,7 +704,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       icon: Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
                       label: Text(_isEditing ? '명함 수정 완료' : '명함 저장하기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accentSky,
+                        backgroundColor: AppColors.accent,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                     ),
@@ -737,7 +737,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: label.contains('*') ? AppColors.accentSky : AppColors.textSecondary,
+            color: label.contains('*') ? AppColors.accentText : AppColors.textSecondary,
           ),
         ),
         const SizedBox(height: 4),
@@ -769,22 +769,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             filled: true,
             fillColor: AppColors.bgDarkSlate,
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            errorStyle: const TextStyle(color: Colors.redAccent, fontSize: 11.5, fontWeight: FontWeight.bold),
+            errorStyle: const TextStyle(color: AppColors.destructive, fontSize: 11.5, fontWeight: FontWeight.bold),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.borderDark),
+              borderSide: const BorderSide(color: AppColors.borderFunctional),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.borderDark),
+              borderSide: const BorderSide(color: AppColors.borderFunctional),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.accentSky, width: 1.5),
+              borderSide: const BorderSide(color: AppColors.accentText, width: 1.5),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+              borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
             ),
           ),
         ),

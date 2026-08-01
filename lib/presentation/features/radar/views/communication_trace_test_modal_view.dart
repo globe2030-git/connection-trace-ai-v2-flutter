@@ -57,7 +57,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 children: [
                   const Row(
                     children: [
-                      Icon(Icons.sync, color: AppColors.accentSky, size: 22),
+                      Icon(Icons.sync, color: AppColors.accentText, size: 22),
                       SizedBox(width: 8),
                       Text(
                         '소통 Trace 연동 실시간 테스트',
@@ -102,7 +102,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 decoration: BoxDecoration(
                   color: AppColors.bgDarkSlate,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.4)),
+                  border: Border.all(color: AppColors.accentText.withValues(alpha: 0.4)),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
@@ -140,7 +140,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               // 1. 최근 통화 연동 버튼
               _buildChannelButton(
                 icon: Icons.phone_in_talk,
-                color: AppColors.accentSky,
+                color: AppColors.channelCall,
                 title: '📞 최근 통화 수신 연동 테스트',
                 subtitle: '수신 통화 (03분 15초) - 신규 프로젝트 추진 안건',
                 onTap: () => _triggerCommLog(
@@ -154,7 +154,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               // 2. 카카오톡 연동 버튼
               _buildChannelButton(
                 icon: Icons.chat_bubble_outline,
-                color: const Color(0xFFFEE500),
+                color: AppColors.channelKakao,
                 title: '💬 카카오톡 메세지 연동 테스트',
                 subtitle: '카카오톡 - "다음 주 화요일 미팅 장소 테헤란로로 확정했습니다!"',
                 onTap: () => _triggerCommLog(
@@ -168,7 +168,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               // 3. 이메일 연동 버튼
               _buildChannelButton(
                 icon: Icons.email_outlined,
-                color: Colors.amber,
+                color: AppColors.channelEmail,
                 title: '✉️ 이메일 수신 연동 테스트',
                 subtitle: '이메일 - [테크노바] 2026 하반기 파트너십 계약서 최종본.pdf',
                 onTap: () => _triggerCommLog(
@@ -182,7 +182,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               // 4. SMS 문자 연동 버튼
               _buildChannelButton(
                 icon: Icons.sms_outlined,
-                color: AppColors.accentLime,
+                color: AppColors.channelSms,
                 title: '📱 SMS 문자 메세지 연동 테스트',
                 subtitle: '문자 - "역삼동 사무실 도착했습니다. 로비 1층에서 뵐게요."',
                 onTap: () => _triggerCommLog(
@@ -271,7 +271,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('🎉 ${contact.name} 님의 [${_getTypeName(type)}] 소통 연동 신호가 발생하여 AI 브리핑에 반영되었습니다!'),
-        backgroundColor: AppColors.accentSky,
+        backgroundColor: AppColors.accent,
       ),
     );
   }

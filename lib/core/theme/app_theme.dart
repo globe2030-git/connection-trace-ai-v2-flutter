@@ -9,7 +9,7 @@ class AppTheme {
       brightness: Brightness.dark,
       scaffoldBackgroundColor: AppColors.bgDarkSlate,
       colorScheme: const ColorScheme.dark(
-        primary: AppColors.accentSky,
+        primary: AppColors.accentText,
         surface: AppColors.cardDark,
         onSurface: AppColors.textPrimary,
       ),
@@ -23,10 +23,10 @@ class AppTheme {
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: AppColors.bgDarkObsidian,
-        selectedItemColor: AppColors.textPrimary,
+        selectedItemColor: AppColors.accentText,
         unselectedItemColor: AppColors.textMuted,
         type: BottomNavigationBarType.fixed,
-        elevation: 12,
+        elevation: 0,
       ),
     );
   }

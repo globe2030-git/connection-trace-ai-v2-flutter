@@ -73,17 +73,17 @@ class NotificationCenterModalView extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.accentSky.withValues(alpha: 0.2),
+                      color: AppColors.accentText.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.5)),
+                      border: Border.all(color: AppColors.accentText.withValues(alpha: 0.5)),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.sync, size: 14, color: AppColors.accentSky),
+                        Icon(Icons.sync, size: 14, color: AppColors.accentText),
                         SizedBox(width: 4),
                         Text(
                           '소통 연동 테스트',
-                          style: TextStyle(fontSize: 11.5, color: AppColors.accentSky, fontWeight: FontWeight.bold),
+                          style: TextStyle(fontSize: 11.5, color: AppColors.accentText, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -96,19 +96,19 @@ class NotificationCenterModalView extends StatelessWidget {
             ...notifications.map((n) {
               return GlassCard(
                 margin: const EdgeInsets.only(bottom: 10),
-                borderColor: (n['isNew'] as bool) ? AppColors.accentSky : null,
+                borderColor: (n['isNew'] as bool) ? AppColors.accentText : null,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CircleAvatar(
                       radius: 18,
                       backgroundColor: (n['isNew'] as bool)
-                          ? AppColors.accentSky.withValues(alpha: 0.2)
+                          ? AppColors.accentText.withValues(alpha: 0.2)
                           : AppColors.borderDark,
                       child: Icon(
                         Icons.notifications_active_outlined,
                         size: 18,
-                        color: (n['isNew'] as bool) ? AppColors.accentSky : AppColors.textMuted,
+                        color: (n['isNew'] as bool) ? AppColors.accentText : AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(width: 12),

@@ -28,25 +28,16 @@ class ActionCircleButton extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: isActive
-                  ? AppColors.accentSky.withOpacity(0.2)
-                  : AppColors.cardDark.withOpacity(0.9),
+                  ? AppColors.accentText.withValues(alpha: 0.2)
+                  : AppColors.cardDark,
               border: Border.all(
-                color: isActive ? AppColors.accentSky : AppColors.borderDark,
-                width: 1.5,
+                color: isActive ? AppColors.accentText : AppColors.borderDark,
+                width: 1,
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: isActive
-                      ? AppColors.accentSky.withOpacity(0.3)
-                      : Colors.black.withOpacity(0.2),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                )
-              ],
             ),
             child: Icon(
               icon,
-              color: isActive ? AppColors.accentSky : AppColors.textPrimary,
+              color: isActive ? AppColors.accentText : AppColors.textPrimary,
               size: 26,
             ),
           ),

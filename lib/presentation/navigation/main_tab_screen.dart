@@ -42,17 +42,17 @@ class _MainTabScreenState extends State<MainTabScreen> {
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.radar_outlined, size: 24),
-              activeIcon: Icon(Icons.radar, size: 26, color: AppColors.accentSky),
+              activeIcon: Icon(Icons.radar, size: 26, color: AppColors.accentText),
               label: '레이더',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.credit_card_outlined, size: 24),
-              activeIcon: Icon(Icons.credit_card, size: 26, color: AppColors.accentSky),
+              activeIcon: Icon(Icons.credit_card, size: 26, color: AppColors.accentText),
               label: '명함 지갑',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined, size: 24),
-              activeIcon: Icon(Icons.settings, size: 26, color: AppColors.accentSky),
+              activeIcon: Icon(Icons.settings, size: 26, color: AppColors.accentText),
               label: '설정',
             ),
           ],

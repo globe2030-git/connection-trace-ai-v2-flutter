@@ -38,7 +38,7 @@ class MyProfileModalView extends StatelessWidget {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.edit_note, color: AppColors.accentSky, size: 24),
+                  icon: const Icon(Icons.edit_note, color: AppColors.accentText, size: 24),
                   onPressed: () {},
                 )
               ],
@@ -55,10 +55,10 @@ class MyProfileModalView extends StatelessWidget {
                     children: [
                       CircleAvatar(
                         radius: 28,
-                        backgroundColor: AppColors.accentSky.withValues(alpha: 0.2),
+                        backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                         child: const Text(
                           '홍',
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -114,7 +114,7 @@ class MyProfileModalView extends StatelessWidget {
                 icon: const Icon(Icons.share, color: Colors.white, size: 18),
                 label: const Text('디지털 명함 공유하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accentSky,
+                  backgroundColor: AppColors.accent,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
               ),

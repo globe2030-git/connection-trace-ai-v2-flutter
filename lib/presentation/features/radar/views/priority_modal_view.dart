@@ -40,7 +40,7 @@ class PriorityModalView extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.star, color: AppColors.accentLime, size: 22),
+                    Icon(Icons.star, color: AppColors.accentText, size: 22),
                     SizedBox(width: 8),
                     Text(
                       '우선 감지 (VIP 알림) 설정',
@@ -51,13 +51,13 @@ class PriorityModalView extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.accentLime.withValues(alpha: 0.2),
+                    color: AppColors.accentText.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.accentLime),
+                    border: Border.all(color: AppColors.accentText),
                   ),
                   child: Text(
                     'VIP ${priorityContacts.length}명 등록됨',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentLime),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentText),
                   ),
                 )
               ],
@@ -78,7 +78,7 @@ class PriorityModalView extends StatelessWidget {
                 children: const [
                   Text(
                     '💡 우선 감지 기능이란?',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentSky),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentText),
                   ),
                   SizedBox(height: 6),
                   Text(
@@ -121,18 +121,18 @@ class PriorityModalView extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.bgDarkSlate,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.accentLime.withValues(alpha: 0.4)),
+                    border: Border.all(color: AppColors.accentText.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     children: [
                       CircleAvatar(
                         radius: 18,
-                        backgroundColor: AppColors.accentLime.withValues(alpha: 0.2),
+                        backgroundColor: AppColors.accent.withValues(alpha: 0.2),
                         backgroundImage: contact.avatarUrl != null ? NetworkImage(contact.avatarUrl!) : null,
                         child: contact.avatarUrl == null
                             ? Text(
                                 contact.name.substring(0, 1),
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentLime),
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.accentText),
                               )
                             : null,
                       ),
@@ -151,7 +151,7 @@ class PriorityModalView extends StatelessWidget {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.accentLime,
+                                    color: AppColors.accentText,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: const Text(
@@ -169,7 +169,7 @@ class PriorityModalView extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.star, color: AppColors.accentLime),
+                        icon: const Icon(Icons.star, color: AppColors.accentText),
                         onPressed: () => viewModel.togglePriority(contact.id),
                       )
                     ],
@@ -185,7 +185,7 @@ class PriorityModalView extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.accentSky,
+                  backgroundColor: AppColors.accent,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 child: const Text('확인 완료', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
