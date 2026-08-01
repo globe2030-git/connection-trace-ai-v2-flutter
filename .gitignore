@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# 버그 재현용으로 사용자가 임시로 넣는 화면 녹화 영상 — 용량이 크고 저장소에 남길
+# 필요 없어서 추적 제외
+/debug_uploads/

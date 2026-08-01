@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
@@ -44,15 +44,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _tagsFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
 
-  // [버그 수정] Tab 키가 필드를 건너뛰던 문제 — 필드별 FocusTraversalOrder와 필드별
-  // Focus.onKeyEvent 가로채기를 둘 다 시도했지만 실사용에서 재현 계속됨(이름→회사명
-  // 건너뛰고 직함/부서로 이동). Flutter Web html renderer는 필드마다 실제 <input>
-  // DOM 엘리먼트를 만드는데, 필드 단위 접근으로는 브라우저 자체의 네이티브 Tab 처리를
-  // 완전히 억제하지 못했던 것으로 보인다(KeyEventResult.handled를 반환해도 브라우저
-  // 기본 동작이 별도로 한 번 더 진행되어 한 Tab에 두 칸씩 이동). 이번엔 폼 전체
-  // 최상단 하나에서 Shortcuts+Actions로 Tab의 의미 자체를 재정의한다 — 이게
-  // Flutter가 "Tab이 하는 일을 바꾸고 싶을 때" 공식적으로 권장하는 방식이라 필드별
-  // 임시방편보다 안정적이다. 이 리스트 순서가 실제 Tab 이동 순서의 유일한 기준이 된다.
+  // [버그 수정] Tab 키가 필드를 건너뛰던 문제 — FocusTraversalOrder, 필드별
+  // Focus.onKeyEvent, 폼 전체 Shortcuts+Actions(NextFocusIntent 재정의)까지 Dart
+  // 레벨에서 세 가지를 시도했지만 전부 재현 계속됨. 디버그 로그로 확인해보니 Dart
+  // 쪽 currentIndex 자체는 Tab마다 정확히 1씩 증가하는데, 그 직후 "브라우저의 기본
+  // Tab 동작"이 별도로 한 번 더 끼어들어 실제 화면 포커스를 그 다음 칸으로 밀어버려
+  // 결과적으로 한 칸 더 건너뛰는 것으로 나타남 — 즉 Dart 레벨 어떤 방식으로도 브라우저
+  // 자체의 네이티브 Tab 기본 동작을 완전히 못 막았던 것. 그래서 web_tab_guard.dart에서
+  // document keydown을 capture 단계에서 직접 가로채 preventDefault로 브라우저 기본
+  // 동작 자체를 원천 차단하고, 포커스 이동은 오직 이 리스트 순서 기준 _moveFocus만
+  // 담당한다(initState에서 WebTabGuard.install로 연결).
   late final List<FocusNode> _fieldFocusOrder;
 
   // Profile Picture Avatar URL State & OCR Raw Text State
@@ -95,10 +96,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _tagsFocusNode,
       _memoFocusNode,
     ];
+    WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
   }
 
   @override
   void dispose() {
+    WebTabGuard.uninstall();
     _nameController.dispose();
     _companyController.dispose();
     _titleController.dispose();
@@ -132,23 +135,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       FocusScope.of(context).unfocus();
       return;
     }
-    final target = _fieldFocusOrder[nextIndex];
-    target.requestFocus();
-    // [버그 수정] 디버그 로그로 Dart 레벨 currentIndex는 매 Tab마다 정확히 한 칸씩만
-    // 증가하는 게 확인됐다(0→1→2...) — 즉 이 시점까지 로직 자체는 완전히 정상. 그런데도
-    // 화면에서는 건너뛰는 것처럼 보인다는 건, requestFocus() 직후 브라우저 자체의 기본
-    // Tab 동작이 뒤이어 한 번 더 실행되며 실제 DOM 포커스를 다시 옮겨버리고 있다는
-    // 뜻으로 보인다(Flutter의 Dart 상태와 실제 브라우저 포커스가 어긋남). 현재 이벤트
-    // 루프 턴이 완전히 끝난 뒤(microtask 이후) 같은 타겟으로 포커스를 한 번 더
-    // 강제해서, 그 사이 끼어든 브라우저 기본 동작을 덮어씌운다.
-    Future.delayed(Duration.zero, () {
-      if (!mounted) return;
-      // ignore: avoid_print
-      print('[TAB-DEBUG] 지연 재확인 — target.hasFocus=${target.hasFocus} (false면 브라우저가 그 사이 가로챈 것)');
-      if (!target.hasFocus) {
-        target.requestFocus();
-      }
-    });
+    _fieldFocusOrder[nextIndex].requestFocus();
   }
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
@@ -431,17 +418,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: <ShortcutActivator, Intent>{
-        const SingleActivator(LogicalKeyboardKey.tab): const NextFocusIntent(),
-        const SingleActivator(LogicalKeyboardKey.tab, shift: true): const PreviousFocusIntent(),
-      },
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          NextFocusIntent: CallbackAction<NextFocusIntent>(onInvoke: (_) => _moveFocus(1)),
-          PreviousFocusIntent: CallbackAction<PreviousFocusIntent>(onInvoke: (_) => _moveFocus(-1)),
-        },
-        child: Container(
+    return Container(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -795,8 +772,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
           ),
         ),
-      ),
-      ),
     );
   }
 
