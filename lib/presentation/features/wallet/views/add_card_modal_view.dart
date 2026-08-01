@@ -642,6 +642,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     focusNode: _nameFocusNode,
                     order: 1,
                     nextFocusNode: _companyFocusNode,
+                    autofocus: true,
                     label: '이름 *',
                     hint: '예: 홍길동',
                     validator: (val) {
@@ -809,6 +810,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     TextInputType keyboardType = TextInputType.text,
     bool isLast = false,
     int maxLines = 1,
+    bool autofocus = false,
     String? Function(String?)? validator,
   }) {
     return Column(
@@ -826,6 +828,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         TextFormField(
           controller: controller,
           focusNode: focusNode,
+          autofocus: autofocus,
           keyboardType: maxLines > 1 ? TextInputType.multiline : keyboardType,
           maxLines: maxLines,
           textInputAction: maxLines > 1
