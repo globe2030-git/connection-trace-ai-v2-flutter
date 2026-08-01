@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
@@ -769,7 +770,30 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ),
         ),
         const SizedBox(height: 4),
-        TextFormField(
+        // [버그 수정] Flutter Web(html renderer)에서 실제 <input> DOM 엘리먼트가
+        // 생성되기 때문에, 정방향 Tab 키가 브라우저 네이티브 DOM 탭 순서와 Flutter의
+        // FocusTraversalPolicy(OrderedTraversalPolicy) 양쪽에서 동시에 처리되면서 한 번의
+        // Tab에 포커스가 2칸씩 전진해(예: 이름→회사명→직함으로 건너뜀) 사용자가 실제로
+        // 재현/보고함. 아래 Focus.onKeyEvent로 정방향 Tab만 여기서 직접 가로채 다음
+        // 필드로 명시적으로 이동시키고 KeyEventResult.handled로 이벤트를 완전히
+        // 소비해서, 다른 어떤 경로로도 같은 Tab 입력이 중복 처리되지 않게 한다.
+        // Shift+Tab(역방향)은 사용자가 이미 정상 동작한다고 확인해줘서 그대로 둔다
+        // (여기서 처리하지 않고 return ignored로 흘려보내 기존 기본 동작 유지).
+        Focus(
+          onKeyEvent: (node, event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.tab &&
+                !HardwareKeyboard.instance.isShiftPressed) {
+              if (nextFocusNode != null) {
+                nextFocusNode.requestFocus();
+              } else {
+                node.unfocus();
+              }
+              return KeyEventResult.handled;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: TextFormField(
           controller: controller,
           focusNode: focusNode,
           keyboardType: maxLines > 1 ? TextInputType.multiline : keyboardType,
@@ -814,6 +838,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
             ),
+          ),
           ),
         ),
       ],
