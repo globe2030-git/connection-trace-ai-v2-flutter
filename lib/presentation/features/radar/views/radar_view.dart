@@ -224,7 +224,7 @@ class RadarView extends StatelessWidget {
                               '이름, 회사명, 키워드로 검색해 보세요',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Color(0xFF64748B),
+                                color: AppColors.textMuted,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),

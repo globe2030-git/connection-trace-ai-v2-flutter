@@ -61,6 +61,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _scannedRawText;
   bool _isScanningOcr = false;
   bool _showRawTextCard = false;
+  bool _isSavingCard = false;
 
   final List<String> _avatarPresets = const [
     'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
@@ -186,7 +187,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
-  void _saveCard() {
+  Future<void> _saveCard() async {
     // 1. Basic required validations
     if (_nameController.text.trim().isEmpty) {
       _focusAndShowError(_nameFocusNode, '⚠️ 이름을 입력해 주세요.');
@@ -227,7 +228,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
 
     // 2. Address Geocoding & Road Name Address Conversion Dialog
-    final addressResult = AddressGeocodingService.validateAndConvert(rawAddress);
+    setState(() => _isSavingCard = true);
+    final addressResult = await AddressGeocodingService.validateAndConvert(rawAddress);
+    if (!mounted) return;
+    setState(() => _isSavingCard = false);
 
     if (!addressResult.isValid) {
       // Unresolvable address prompt
@@ -758,9 +762,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton.icon(
-                      onPressed: _saveCard,
-                      icon: Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
-                      label: Text(_isEditing ? '명함 수정 완료' : '명함 저장하기', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                      onPressed: _isSavingCard ? null : _saveCard,
+                      icon: _isSavingCard
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
+                      label: Text(
+                        _isSavingCard ? '주소 확인 중...' : (_isEditing ? '명함 수정 완료' : '명함 저장하기'),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

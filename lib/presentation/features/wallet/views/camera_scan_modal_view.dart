@@ -30,15 +30,27 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
   }
 
   Future<void> _capturePhoto() async {
+    // 실제 네이티브 카메라 앱을 열어 사진을 찍는다. 이 화면의 가이드 프레임/레이저
+    // 애니메이션은 "명함을 어떻게 맞춰 찍을지" 안내용 UI로 남겨두고, 실제 촬영
+    // 자체는 기기 카메라 앱에 맡긴다(커스텀 라이브 프리뷰를 새로 구현하는 대신).
+    final image = await OcrScannerService.pickImage(fromCamera: true);
+    if (image == null || !mounted) return;
+
     setState(() {
       _isCapturing = true;
     });
 
-    // Simulate shutter capture & AI OCR extraction
-    final scanResult = await OcrScannerService.scanBusinessCard(isFromCamera: true);
-
-    if (!mounted) return;
-    Navigator.pop(context, scanResult);
+    try {
+      final scanResult = await OcrScannerService.scanBusinessCard(image);
+      if (!mounted) return;
+      Navigator.pop(context, scanResult);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCapturing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ 명함 인식에 실패했습니다: $e'), backgroundColor: AppColors.destructive),
+      );
+    }
   }
 
   @override
@@ -52,7 +64,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
             Container(
               width: double.infinity,
               height: double.infinity,
-              color: const Color(0xFF0F172A),
+              color: AppColors.bgDarkSlate,
               child: Stack(
                 alignment: Alignment.center,
                 children: [

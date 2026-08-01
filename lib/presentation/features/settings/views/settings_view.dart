@@ -52,7 +52,7 @@ class SettingsView extends StatelessWidget {
                       ),
                       Switch(
                         value: settings.enabled,
-                        onChanged: (val) {},
+                        onChanged: (_) => radarViewModel.toggleDetection(),
                       )
                     ],
                   ),

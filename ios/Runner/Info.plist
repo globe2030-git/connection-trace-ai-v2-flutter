@@ -68,5 +68,11 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>주변 인맥과의 거리를 계산하기 위해 현재 위치 정보가 필요합니다.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>명함을 촬영해 자동으로 인식하기 위해 카메라 접근 권한이 필요합니다.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>갤러리에 저장된 명함 이미지를 불러와 자동으로 인식하기 위해 사진 라이브러리 접근 권한이 필요합니다.</string>
 	</dict>
 </plist>

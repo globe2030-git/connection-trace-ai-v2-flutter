@@ -38,6 +38,14 @@ dependencies:
   google_fonts: ^8.2.0
   url_launcher: ^6.3.0
   shared_preferences: ^2.3.5
+  # main.dart에서 FlutterNativeSplash.preserve()/.remove()를 런타임에 직접
+  # 호출해 페이드아웃 전환을 구현하므로(SplashGate) 빌드 시점에만 쓰이는
+  # dev_dependencies가 아니라 dependencies에 있어야 함.
+  flutter_native_splash: ^2.4.6
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+  google_mlkit_text_recognition: ^0.15.0
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
@@ -49,7 +57,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  flutter_native_splash: ^2.4.6
+
+# path_provider_foundation 2.6.0부터 objective_c(Dart 네이티브 에셋/FFI 브리징) 의존이
+# 추가됐는데, 이 Flutter SDK(3.44.8)의 native-assets 처리기가 objective_c의
+# 아키텍처별 프레임워크 이름 불일치(objective_c.framework vs objective_c1.framework)를
+# 파싱하다 "Null check operator used on a null value"로 크래시하는 툴체인 버그가 있음
+# (iOS 시뮬레이터 빌드 시 100% 재현). google_fonts가 path_provider를 통해 이를
+# 전이 의존하므로, objective_c 의존이 없는 마지막 버전으로 고정해서 우회한다.
+dependency_overrides:
+  path_provider_foundation: 2.5.1
 
 # 앱 최초 로딩 시(엔진 초기화가 끝나기도 전에) 보이는 네이티브 스플래시 화면 설정.
 # `dart run flutter_native_splash:create`를 실행하면 이 설정을 읽어 Android/iOS/Web

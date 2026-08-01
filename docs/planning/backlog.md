@@ -2,6 +2,55 @@
 
 ## 작업 로그
 
+### 2026-08-02
+
+**한 일 — "다음에 할 일" 백로그 4건 전부 완료**
+1. **스플래시 페이드아웃 전환** — `main.dart`에서 `FlutterNativeSplash.preserve()`
+   호출, 새 [SplashGate](../../lib/presentation/common/splash_gate.dart) 위젯이
+   네이티브 스플래시와 동일한 배경색/로고를 첫 프레임에 그대로 덮어 두었다가
+   `.remove()` 후 500ms 페이드아웃. `flutter_native_splash`를
+   `dev_dependencies` → `dependencies`로 이동 완료.
+2. **실제 GPS 연동** — `geolocator` 패키지로 [location_service.dart](../../lib/core/services/location_service.dart)
+   신규 작성. 권한 없음/위치서비스 꺼짐 등 실패 시 예외 없이 null 반환 →
+   `RadarViewModel`이 기존 fallback(강남역) 좌표로 조용히 폴백. 화면 진입 시
+   자동으로 한 번 시도.
+3. **실제 지오코딩 연동** — `geocoding` 패키지로 `address_geocoding_service.dart`를
+   비동기로 전면 재작성(정방향 지오코딩 + 역지오코딩으로 도로명 주소 조합 생성).
+   호출부(`add_card_modal_view.dart`의 `_saveCard`)를 async로 변경하고 저장
+   버튼에 "주소 확인 중..." 로딩 상태 추가.
+4. **실제 OCR 연동** — `google_mlkit_text_recognition`(온디바이스 텍스트 인식) +
+   `image_picker`(실제 카메라/갤러리 접근)로 `ocr_scanner_service.dart` 전면
+   재작성. 정규식 기반으로 전화/이메일/주소는 정확히, 이름/회사/직함은 "가장
+   그럴듯한 남은 줄" 휴리스틱으로 채움(완벽한 필드 분류는 전용 명함 파싱 모델
+   없이는 한계 — 사용자가 폼에서 직접 수정 가능). `camera_scan_modal_view.dart`
+   (기존 가이드 UI 유지, 촬영은 네이티브 카메라로)와 `file_picker_modal_view.dart`
+   (가짜 갤러리 그리드 제거하고 실제 `image_picker` 갤러리 선택으로 교체) 반영.
+   iOS/Android 권한 문자열(카메라·사진·위치) 추가.
+5. **2색 팔레트 전 화면 점검** — 전 lib/ 대상 하드코딩 hex 색상 grep 감사 →
+   2건 발견해 `AppColors` 토큰으로 교체(`camera_scan_modal_view.dart`,
+   `radar_view.dart`). 점검 중 발견한 별도 버그도 수정: 설정 화면의 "주변 인맥
+   감지 알림" 스위치가 `onChanged: (val) {}`로 아무 동작도 안 하던 것을
+   `radarViewModel.toggleDetection()` 연결로 수정.
+
+**검증 관련 메모**
+- `flutter analyze` 전체 통과(에러 0, 기존에 있던 info성 경고만 남음).
+- 웹 빌드로 콘솔 에러 없이 로드되는 것 확인(스플래시/GPS 폴백 정상 동작).
+- 이번 기회에 **이 프로젝트 최초로 iOS 시뮬레이터 빌드**를 시도해 실제
+  네이티브 툴체인 이슈를 하나 잡음 — 자세한 원인·해결은
+  [error-notes.md](error-notes.md) 참고(`path_provider_foundation` 2.6.0의
+  objective_c 네이티브 에셋 관련 Flutter 툴체인 크래시, iOS 배포 타겟 상향
+  필요 등). `flutter build ios --simulator` 최종 성공.
+- 다만 이 세션에서는 시뮬레이터 화면에 대한 Claude 접근 권한이 사용자에게
+  승인되지 않아("Let Claude use it") 빌드된 앱을 실제로 실행해서 눈으로
+  확인하지는 못했음 — 다음에 시뮬레이터 패널에서 권한을 승인해주면 실제
+  기기 동작(카메라 촬영→OCR, 실제 GPS 권한 프롬프트, 지오코딩)을 직접
+  확인할 수 있음. 또한 Google ML Kit iOS SDK가 Apple Silicon(arm64)
+  시뮬레이터 아키텍처를 지원하지 않는다는 경고가 빌드 로그에 떴음(Google
+  쪽 알려진 제약) — OCR을 시뮬레이터에서 테스트하려면 실기기이거나 Rosetta
+  시뮬레이터가 필요할 수 있음. 실기기(iPhone)에서는 문제 없음.
+
+---
+
 ### 2026-08-01
 
 **한 일**
@@ -35,6 +84,8 @@
 3. 나머지 화면(명함 지갑/설정/각종 모달)이 2색 팔레트로 올바르게 렌더링되는지
    `flutter run -d chrome`으로 직접 확인 필요(아래 항목 참고).
 
+   *(이 3건 전부 2026-08-02에 완료 — 위 로그 참고)*
+
 ---
 
 ## 향후 후보 (미착수)
@@ -55,19 +106,19 @@
   3. `RadarViewModel.filteredContacts`/`nearbyAlertContact` getter가 호출될
      때마다 전체 인맥 거리 계산을 캐싱 없이 다시 수행 — 같은 프레임에 두 getter가
      같이 호출되면 거리 계산이 중복됨.
-- **(2026-08 실제 기능 전환 결정)** OCR/GPS/지오코딩이 전부 하드코딩된 mock임을
-  실측 확인(Antigravity가 만든 초기 버전) — 실제 Tesseract/ML Kit OCR, 실제
-  Geolocator 기반 GPS, 실제 Nominatim(또는 유사) 지오코딩으로 교체 필요. 다음
-  주요 작업 단계.
+- ~~**(2026-08 실제 기능 전환 결정)** OCR/GPS/지오코딩 실제 구현 교체~~ →
+  **2026-08-02 완료** (위 작업 로그 참고).
 - **(2026-08 결정)** 소통 이력(통화/문자/이메일/카카오톡) 연동: 기본은 수동 메모,
   통화/문자/이메일은 사용자가 선택적으로 연동 가능하게 구성. 아이폰은 OS 정책상
   통화/문자 로그 접근이 원천적으로 불가해 수동 메모만 가능(편의성 고려해서 설계
   필요) — 안드로이드는 `READ_CALL_LOG` 등 권한으로 제한적으로 가능하나 Play
   Store 심사 반려 리스크 있음. 카카오톡은 어느 플랫폼에서도 개인 대화 읽기 API가
   존재하지 않아 연동 자체가 불가(수동 메모만 가능).
-- **(2026-08 UI 리디자인에서 파생)** 나머지 화면(명함 지갑, 설정, 각종 모달)이
-  다크 뉴트럴 + 액센트 #004EA2 2색 팔레트로 올바르게 렌더링되는지 사용자가
-  직접 `flutter run -d chrome`으로 확인 필요 — 이 개발 환경의 브라우저 자동화가
-  Flutter Web 클릭/키보드 이벤트를 인식하지 못해(html renderer 특성) 탭 전환
-  클릭 기반 검증을 못 함(알려진 툴링 제약, React 프로젝트의 네이티브 파일
-  다이얼로그 제약과 같은 카테고리).
+- ~~**(2026-08 UI 리디자인에서 파생)** 나머지 화면 2색 팔레트 렌더링 확인~~ →
+  **2026-08-02 완료**(grep 기반 전수 감사로 하드코딩 색상 2건 발견·수정 — 이
+  개발 환경은 여전히 Flutter Web 클릭/키보드 이벤트를 인식 못 해 클릭 기반
+  화면 전환 검증 자체는 못 함, 알려진 툴링 제약).
+- **(2026-08-02 iOS 최초 빌드에서 발견)** Google ML Kit iOS SDK가 Apple
+  Silicon(arm64) 시뮬레이터를 지원하지 않음(Google 쪽 알려진 제약) — OCR을
+  시뮬레이터에서 테스트하려면 Rosetta 시뮬레이터가 필요할 수 있음. 실기기는
+  문제 없음. 사용자가 실기기 또는 Rosetta 시뮬레이터로 테스트할 때 참고.

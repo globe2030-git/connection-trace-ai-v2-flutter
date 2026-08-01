@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-08-02 — iOS 시뮬레이터 최초 빌드 시 Flutter 툴체인 크래시
+
+### 증상
+실제 OCR/GPS/지오코딩 기능을 붙이면서 이 프로젝트 최초로
+`flutter build ios --simulator`를 시도했더니, CocoaPods까지는 통과했는데
+Flutter 자체가 "Oops; flutter has exited unexpectedly: Null check operator
+used on a null value"로 죽으면서 빌드가 실패함(`parseOtoolArchitectureSections`
+in `native_assets_host.dart`).
+
+### 원인
+새로 추가한 패키지(`geolocator`/`image_picker`/`google_mlkit_text_recognition`)
+때문이 아니라, 기존에 이미 있던 `google_fonts` → `path_provider` →
+`path_provider_foundation` 체인이 원인이었음. `path_provider_foundation`
+2.6.0부터 `objective_c`(Dart의 네이티브 에셋/FFI 브리징 패키지)에 의존하게
+됐는데, 이 Flutter SDK(3.44.8, `enable-native-assets` 실험적 기능 켜진 채널)의
+otool 아키텍처 파싱 로직이 `objective_c` xcframework의 아키텍처별 프레임워크
+이름 불일치(`objective_c.framework` vs `objective_c1.framework`)를 처리하다
+죽는, Flutter 툴체인 자체의 버그였음. 이 프로젝트는 지금까지 계속 Flutter Web
+으로만 테스트해왔기 때문에(이 개발 환경 자체가 iOS 실기기/시뮬레이터 접근이
+제한적) 이 잠재적 문제가 이번에 처음 iOS 빌드를 시도하면서 드러난 것.
+
+### 해결
+`pubspec.yaml`에 `dependency_overrides`로 `path_provider_foundation`을
+`objective_c` 의존이 생기기 직전 버전인 `2.5.1`로 고정. 부수적으로 iOS 배포
+타겟도 13.0 → 15.5로 올려야 했음(`google_mlkit_commons`가 15.5 이상을 요구,
+`ios/Podfile`의 `platform :ios` 및 `ios/Runner.xcodeproj/project.pbxproj`의
+`IPHONEOS_DEPLOYMENT_TARGET` 둘 다 수정).
+
+### 다시 만날 수 있는 패턴 (교훈)
+- Flutter Web에서만 테스트해온 프로젝트라도, 네이티브 플랫폼(iOS/Android)
+  전이 의존성 체인 어딘가에 "빌드 자체가 안 되는" 잠재 문제가 숨어 있을 수
+  있다 — 새 네이티브 플러그인을 추가하는 시점이 그걸 처음 발견하기 좋은
+  때임(플러그인 자체 문제가 아니어도).
+- `flutter pub upgrade`로 안 올라가는 패키지를 특정 버전에 묶고 싶을 땐
+  `dependency_overrides:`가 표준적인 방법. `dart pub deps --style=compact`로
+  전이 의존 트리에서 문제 패키지를 요청하는 실제 상위 패키지를 찾을 수 있다.
+- Google ML Kit iOS SDK는 Apple Silicon(arm64) 시뮬레이터를 지원하지 않는다
+  (Google 쪽 알려진 제약, Flutter 문제 아님) — 시뮬레이터에서 OCR을 테스트하려면
+  Rosetta 시뮬레이터가 필요할 수 있고, 실기기는 문제 없음.
+
+---
+
 ## 2026-08-01 — 명함 등록 폼 Tab 키 필드 건너뛰기 + Assertion 크래시
 
 ### 증상

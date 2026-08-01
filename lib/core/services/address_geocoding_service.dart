@@ -1,3 +1,4 @@
+import 'package:geocoding/geocoding.dart' as geocoding;
 import '../utils/geo_utils.dart';
 
 class AddressValidationResult {
@@ -17,42 +18,13 @@ class AddressValidationResult {
 }
 
 class AddressGeocodingService {
-  /// Known Tech Hub Landmarks & Geocoding Mapping Database
-  static final Map<String, Map<String, dynamic>> _addressDatabase = {
-    '테헤란로': {
-      'road': '서울특별시 강남구 테헤란로 123 (역삼동)',
-      'lat': 37.5000,
-      'lng': 127.0360,
-    },
-    '역삼동': {
-      'road': '서울특별시 강남구 테헤란로 210 (역삼동)',
-      'lat': 37.5012,
-      'lng': 127.0375,
-    },
-    '반포대로': {
-      'road': '서울특별시 서초구 반포대로 45 (서초동)',
-      'lat': 37.5035,
-      'lng': 127.0392,
-    },
-    '여의대로': {
-      'road': '서울특별시 영등포구 여의대로 88 (여의도동)',
-      'lat': 37.5078,
-      'lng': 127.0421,
-    },
-    '판교역로': {
-      'road': '경기도 성남시 분당구 판교역로 235 (삼평동)',
-      'lat': 37.4020,
-      'lng': 127.1086,
-    },
-    '강남대로': {
-      'road': '서울특별시 강남구 강남대로 390 (역삼동)',
-      'lat': 37.4979,
-      'lng': 127.0276,
-    },
-  };
-
-  /// Validate address and check if it can be converted to standard Road Name Address
-  static AddressValidationResult validateAndConvert(String address) {
+  /// 입력한 주소를 실제 지오코딩(iOS: CLGeocoder / Android: 네이티브 Geocoder)으로
+  /// 검증하고 위경도 좌표를 얻는다. 좌표를 다시 역지오코딩해서 얻은 행정구역/도로명
+  /// 구성요소로 정돈된 주소 문자열도 함께 만들어 "도로명 주소 변환 제안"에 쓴다.
+  /// 웹처럼 geocoding 플랫폼 구현체가 없거나, 주소를 못 찾거나, 기기에 네트워크가
+  /// 없는 등 실패 상황에서는 예외를 그대로 던지지 않고 실패 결과를 반환해서 호출
+  /// 쪽이 "위치를 찾을 수 없는 주소" 안내를 보여줄 수 있게 한다.
+  static Future<AddressValidationResult> validateAndConvert(String address) async {
     final trimmed = address.trim();
     if (trimmed.isEmpty) {
       return const AddressValidationResult(
@@ -62,48 +34,58 @@ class AddressGeocodingService {
       );
     }
 
-    // Check if address matches known database
-    for (var entry in _addressDatabase.entries) {
-      if (trimmed.contains(entry.key)) {
-        final data = entry.value;
-        final roadName = data['road'] as String;
-        final lat = data['lat'] as double;
-        final lng = data['lng'] as double;
-
+    try {
+      final locations = await geocoding.locationFromAddress(trimmed);
+      if (locations.isEmpty) {
         return AddressValidationResult(
-          isValid: true,
+          isValid: false,
           originalAddress: trimmed,
-          roadNameAddress: roadName,
-          geoPosition: GeoPosition(lat: lat, lng: lng),
-          message: '정밀 도로명 주소를 찾았습니다.',
+          message: '위치를 찾을 수 없는 주소입니다. 건물명이나 도로명 주소를 확인해 주세요.',
         );
       }
-    }
 
-    // Heuristic check for general Korean addresses (시/구/동/로/길)
-    final hasGeneralStructure = RegExp(r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주|[가-힣]+시|[가-힣]+구|[가-힣]+동|[가-힣]+로|[가-힣]+길)')
-        .hasMatch(trimmed);
-
-    if (hasGeneralStructure) {
-      // General valid address without exact database match -> auto generate formatted road address
-      final formattedRoad = trimmed.contains('로') || trimmed.contains('길')
-          ? '$trimmed (도로명 정밀 주소)'
-          : '$trimmed (도로명 주소 변환 권장)';
+      final location = locations.first;
+      final geoPosition = GeoPosition(lat: location.latitude, lng: location.longitude);
+      final roadNameAddress = await _reverseGeocodeToRoadName(location);
 
       return AddressValidationResult(
         isValid: true,
         originalAddress: trimmed,
-        roadNameAddress: formattedRoad,
-        geoPosition: const GeoPosition(lat: 37.5000, lng: 127.0360),
-        message: '주소 위치가 정상 확인되었습니다.',
+        roadNameAddress: roadNameAddress,
+        geoPosition: geoPosition,
+        message: '주소 위치를 확인했습니다.',
+      );
+    } catch (_) {
+      return AddressValidationResult(
+        isValid: false,
+        originalAddress: trimmed,
+        message: '위치를 찾을 수 없는 주소입니다. 건물명이나 도로명 주소를 확인해 주세요.',
       );
     }
+  }
 
-    // Unresolvable address (e.g. random text "abcde", "가나다")
-    return AddressValidationResult(
-      isValid: false,
-      originalAddress: trimmed,
-      message: '위치를 찾을 수 없는 주소입니다. 건물명이나 도로명 주소를 확인해 주세요.',
-    );
+  static Future<String?> _reverseGeocodeToRoadName(geocoding.Location location) async {
+    try {
+      final placemarks = await geocoding.placemarkFromCoordinates(
+        location.latitude,
+        location.longitude,
+      );
+      if (placemarks.isEmpty) return null;
+
+      final p = placemarks.first;
+      final parts = [
+        p.administrativeArea,
+        p.subAdministrativeArea,
+        p.thoroughfare,
+        p.subThoroughfare,
+      ].where((s) => s != null && s.trim().isNotEmpty).toList();
+
+      if (parts.isEmpty) return null;
+      return parts.join(' ');
+    } catch (_) {
+      // 역지오코딩 실패는 치명적이지 않음 — 정방향 지오코딩으로 얻은 좌표는
+      // 이미 유효하므로 원본 주소를 그대로 쓰면 된다.
+      return null;
+    }
   }
 }

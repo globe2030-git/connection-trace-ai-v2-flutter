@@ -3,18 +3,24 @@ import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/notification_settings.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/services/location_service.dart';
 
 class RadarViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
   NotificationSettings _settings = const NotificationSettings();
   GeoPosition _currentPosition = GeoUtils.fallbackLocation;
   bool _isRefreshingLocation = false;
+  bool _usingRealGps = false;
   ContactModel? _selectedContactForBriefing;
   ContactModel? _previewContact;
 
   RadarViewModel({required ContactsRepository contactsRepository})
       : _contactsRepository = contactsRepository {
     _contactsRepository.addListener(notifyListeners);
+    // 화면이 뜨자마자 실제 GPS 위치를 한 번 시도한다. 권한이 없거나 위치
+    // 서비스가 꺼져 있으면 LocationService가 null을 반환하므로 이 경우
+    // 기존 fallback(강남역 기준) 좌표를 그대로 유지한 채 조용히 넘어간다.
+    refreshLocation();
   }
 
   @override
@@ -26,6 +32,9 @@ class RadarViewModel extends ChangeNotifier {
   NotificationSettings get settings => _settings;
   GeoPosition get currentPosition => _currentPosition;
   bool get isRefreshingLocation => _isRefreshingLocation;
+  // 실제 GPS 좌표를 못 가져와 fallback(강남역 기준) 좌표를 쓰고 있는지 여부 —
+  // 설정 화면 등에서 "위치 권한 필요" 안내를 보여줄 때 참고용.
+  bool get usingRealGps => _usingRealGps;
   ContactModel? get selectedContactForBriefing => _selectedContactForBriefing;
   ContactModel? get previewContact => _previewContact;
 
@@ -33,10 +42,14 @@ class RadarViewModel extends ChangeNotifier {
     _isRefreshingLocation = true;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 600));
+    final realPosition = await LocationService.getCurrentPosition();
+    if (realPosition != null) {
+      _currentPosition = realPosition;
+      _usingRealGps = true;
+    } else {
+      _usingRealGps = false;
+    }
 
-    // Refresh position around Yeoksam / Gangnam Tech Hub
-    _currentPosition = const GeoPosition(lat: 37.5000, lng: 127.0360);
     _isRefreshingLocation = false;
     notifyListeners();
   }
