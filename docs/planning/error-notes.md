@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-08-02 — iOS 실기기 최초 연결: 모듈 검증 빌드 실패 + "로고 뜨다 죽음"
+
+### 증상 1 — 실기기 빌드가 "double-quoted include ... expected angle-bracketed" 에러로 실패
+시뮬레이터 빌드는 되는데 실제 아이폰(iphoneos 타겟) 빌드만 nanopb,
+GTMSessionFetcher, google_mlkit_commons/text_recognition 쪽에서 각각
+"expected angle-bracketed instead" 에러가 나며 실패.
+
+**원인**: 최신 Xcode의 "모듈 검증(Module Verifier)" 기능. 이 pod들의 헤더가
+`#import "Header.h"`(큰따옴표)를 쓰는데, Module Verifier가 프레임워크 헤더는
+`#import <Framework/Header.h>`(꺾쇠괄호)여야 한다고 엄격하게 검사함 — 기능
+문제가 아니라 새로 생긴 검사가 오래된 pod들과 안 맞는 것. 게다가 관련 빌드
+설정 키가 **두 개**(`CLANG_ENABLE_MODULE_VERIFIER`와 `ENABLE_MODULE_VERIFIER`)
+라서, 하나만 끄면 나머지 하나가 여전히 켜져 있어서 google_mlkit_* pod
+자체에서 "Flutter/Flutter.h 못 찾음" 에러가 남아 있었음(Module Verifier가
+격리된 상태로 검증을 시도하다 보니 Flutter.framework를 못 찾는 것).
+
+**해결**: `ios/Podfile`의 `post_install`에서 두 키 다 `'NO'`로 설정.
+```ruby
+config.build_settings['CLANG_ENABLE_MODULE_VERIFIER'] = 'NO'
+config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+```
+확인 방법: `xcodebuild -showBuildSettings -project Pods/Pods.xcodeproj -target <pod이름> | grep -i verifier`로 실제 적용됐는지 볼 수 있음.
+
+### 증상 2 — 빌드/설치는 됐는데 앱이 "로고만 보이다가 바로 죽음"
+`flutter run`이 "Timed out waiting for CONFIGURATION_BUILD_DIR to update"로
+실기기에 자동 실행을 못 시켜서, `xcrun devicectl device install app` +
+`process launch`로 직접 설치·실행했더니 로고(네이티브 스플래시)까지는 뜨는데
+그 직후 죽음.
+
+**원인**: **디버그 모드로 빌드된 앱은 `flutter run` 툴링이 실행 내내 붙어있어야만
+Flutter 엔진이 초기화된다**(디버그 모드는 커널 스냅샷을 툴링이 실시간으로
+공급하는 구조). `devicectl`로 독립 실행시키면 네이티브 스플래시(=로고)는 뜨지만
+Flutter 엔진 초기화 시점에 "Cannot create a FlutterEngine instance in debug
+mode without Flutter tooling or Xcode"로 즉시 죽음(콘솔에 `--console` 옵션으로
+보면 이 메시지가 정확히 찍힘).
+
+**해결**: `flutter build ios --release`(디버그 아님, AOT 컴파일이라 툴링
+필요 없음)로 빌드한 뒤 `devicectl`로 설치·실행하면 정상 동작. `flutter run`
+의 Automation 관련 타임아웃 자체는 별도 macOS 권한 이슈로 보이며, 이 우회
+방법으로는 막히지 않음.
+
+### 다시 만날 수 있는 패턴 (교훈)
+- 실기기 빌드가 안 되면 Xcode 버전이 새로 올라간 뒤 생긴 "Module Verifier"류
+  엄격한 검사를 의심해볼 것 — 오래된(특히 Google/Firebase 계열) pod에서 흔함.
+- `flutter run`으로 실기기 실행이 막히면(Automation 타임아웃 등),
+  `flutter build ios --release`(또는 `--profile`) + `xcrun devicectl device
+  install app` / `process launch`로 우회 가능 — 단 **디버그 빌드는 이 방식으로
+  절대 못 띄운다**(항상 크래시). release/profile 빌드만 독립 실행 가능.
+
+---
+
 ## 2026-08-02 — 안드로이드 실기기(에뮬레이터) 최초 검증: 한글 OCR 즉시 크래시
 
 ### 증상
