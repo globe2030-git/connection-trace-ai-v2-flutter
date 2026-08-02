@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -689,6 +691,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     label: '휴대폰 번호 *',
                     hint: '예: 010-1234-5678',
                     keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
                     validator: (val) {
                       if (val == null || val.trim().isEmpty) {
                         return '휴대폰 번호를 입력해 주세요.';
@@ -711,6 +714,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     label: '사무실 전화번호 (선택)',
                     hint: '예: 02-123-4567',
                     keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
                   ),
                   const SizedBox(height: 12),
 
@@ -796,6 +800,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     int maxLines = 1,
     bool autofocus = false,
     String? Function(String?)? validator,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,6 +819,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           focusNode: focusNode,
           autofocus: autofocus,
           keyboardType: maxLines > 1 ? TextInputType.multiline : keyboardType,
+          inputFormatters: inputFormatters,
           maxLines: maxLines,
           textInputAction: maxLines > 1
               ? TextInputAction.newline
