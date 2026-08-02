@@ -40,7 +40,10 @@ class ContactModel {
   final String phone;
   final String? officePhone;
   final String email;
+  // 주소1 — 도로명 등 기본 주소. 지오코딩(위치 정보)의 기준이 되는 부분.
   final String? address;
+  // 상세주소 — 건물명/동/호수 등. 지오코딩에는 쓰이지 않고 표시용으로만 보관.
+  final String? addressDetail;
   final String? avatarUrl;
   final GeoPosition? geo;
   final List<String> tags;
@@ -58,6 +61,7 @@ class ContactModel {
     this.officePhone,
     required this.email,
     this.address,
+    this.addressDetail,
     this.avatarUrl,
     this.geo,
     required this.tags,
@@ -77,6 +81,7 @@ class ContactModel {
       'officePhone': officePhone,
       'email': email,
       'address': address,
+      'addressDetail': addressDetail,
       'avatarUrl': avatarUrl,
       'lat': geo?.lat,
       'lng': geo?.lng,
@@ -98,6 +103,7 @@ class ContactModel {
       officePhone: json['officePhone'] as String?,
       email: json['email'] as String,
       address: json['address'] as String?,
+      addressDetail: json['addressDetail'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       geo: json['lat'] != null && json['lng'] != null
           ? GeoPosition(
@@ -125,6 +131,7 @@ class ContactModel {
     String? officePhone,
     String? email,
     String? address,
+    String? addressDetail,
     String? avatarUrl,
     GeoPosition? geo,
     List<String>? tags,
@@ -142,6 +149,7 @@ class ContactModel {
       officePhone: officePhone ?? this.officePhone,
       email: email ?? this.email,
       address: address ?? this.address,
+      addressDetail: addressDetail ?? this.addressDetail,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,

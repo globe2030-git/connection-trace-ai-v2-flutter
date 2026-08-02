@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/glass_card.dart';
+import 'my_profile_edit_modal_view.dart';
 
 class MyProfileModalView extends StatelessWidget {
   const MyProfileModalView({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final profile = context.watch<MyProfileRepository>().profile;
+    final fullAddress = (profile.addressDetail != null && profile.addressDetail!.trim().isNotEmpty)
+        ? '${profile.address} ${profile.addressDetail}'
+        : profile.address;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
@@ -39,7 +47,15 @@ class MyProfileModalView extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.edit_note, color: AppColors.accentText, size: 24),
-                  onPressed: () {},
+                  tooltip: '정보 수정',
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const MyProfileEditModalView(),
+                    );
+                  },
                 )
               ],
             ),
@@ -56,18 +72,18 @@ class MyProfileModalView extends StatelessWidget {
                       CircleAvatar(
                         radius: 28,
                         backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                        child: const Text(
-                          '홍',
-                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
+                        child: Text(
+                          profile.name.isNotEmpty ? profile.name.substring(0, 1) : '?',
+                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
                         ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text('홍길동 대표', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                            Text('커넥션 트레이스 AI / C-Level', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                          children: [
+                            Text(profile.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                            Text('${profile.company} / ${profile.title}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                           ],
                         ),
                       )
@@ -76,27 +92,27 @@ class MyProfileModalView extends StatelessWidget {
                   const SizedBox(height: 16),
                   const Divider(color: AppColors.borderDark),
                   const SizedBox(height: 12),
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.phone_iphone, size: 16, color: AppColors.textMuted),
-                      SizedBox(width: 8),
-                      Text('010-1234-5678', style: TextStyle(fontSize: 13, color: AppColors.textPrimary)),
+                      const Icon(Icons.phone_iphone, size: 16, color: AppColors.textMuted),
+                      const SizedBox(width: 8),
+                      Text(profile.phone, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.email_outlined, size: 16, color: AppColors.textMuted),
-                      SizedBox(width: 8),
-                      Text('gildong.hong@connectiontrace.ai', style: TextStyle(fontSize: 13, color: AppColors.textPrimary)),
+                      const Icon(Icons.email_outlined, size: 16, color: AppColors.textMuted),
+                      const SizedBox(width: 8),
+                      Text(profile.email, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.location_on_outlined, size: 16, color: AppColors.textMuted),
-                      SizedBox(width: 8),
-                      Text('서울특별시 강남구 테헤란로 123', style: TextStyle(fontSize: 13, color: AppColors.textPrimary)),
+                      const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textMuted),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(fullAddress, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary))),
                     ],
                   ),
                 ],

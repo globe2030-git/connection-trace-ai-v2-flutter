@@ -40,8 +40,14 @@ class OcrScannerService {
   static Future<XFile?> pickImage({required bool fromCamera}) {
     return _picker.pickImage(
       source: fromCamera ? ImageSource.camera : ImageSource.gallery,
-      imageQuality: 85,
-      maxWidth: 2000,
+      // 명함은 상대방에게 받아서 촬영하는 물건이라 후면 카메라가 기본이어야
+      // 함(전면 카메라는 셀카용). image_picker 자체 기본값도 rear이긴 하지만,
+      // 명시적으로 지정해서 의도를 분명히 하고 혹시 모를 플랫폼별 예외를 막는다.
+      preferredCameraDevice: CameraDevice.rear,
+      // OCR 인식률은 원본 해상도/압축 손실에 크게 좌우된다(명함 글자가 작아서
+      // 저해상도·저품질이면 특히 취약함) — maxWidth를 두지 않아 카메라 원본
+      // 해상도를 그대로 쓰고, JPEG 압축 손실도 최소화한다.
+      imageQuality: 100,
     );
   }
 

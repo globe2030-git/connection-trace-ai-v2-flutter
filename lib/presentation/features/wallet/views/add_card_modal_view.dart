@@ -29,6 +29,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _companyController;
   late TextEditingController _titleController;
   late TextEditingController _addressController;
+  late TextEditingController _addressDetailController;
   late TextEditingController _phoneController;
   late TextEditingController _officePhoneController;
   late TextEditingController _emailController;
@@ -40,6 +41,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _companyFocusNode = FocusNode();
   final _titleFocusNode = FocusNode();
   final _addressFocusNode = FocusNode();
+  final _addressDetailFocusNode = FocusNode();
   final _phoneFocusNode = FocusNode();
   final _officePhoneFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
@@ -83,6 +85,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
     _addressController = TextEditingController(text: c?.address ?? '');
+    _addressDetailController = TextEditingController(text: c?.addressDetail ?? '');
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
@@ -93,6 +96,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _companyFocusNode,
       _titleFocusNode,
       _addressFocusNode,
+      _addressDetailFocusNode,
       _phoneFocusNode,
       _officePhoneFocusNode,
       _emailFocusNode,
@@ -109,6 +113,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _companyController.dispose();
     _titleController.dispose();
     _addressController.dispose();
+    _addressDetailController.dispose();
     _phoneController.dispose();
     _officePhoneController.dispose();
     _emailController.dispose();
@@ -119,6 +124,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _companyFocusNode.dispose();
     _titleFocusNode.dispose();
     _addressFocusNode.dispose();
+    _addressDetailFocusNode.dispose();
     _phoneFocusNode.dispose();
     _officePhoneFocusNode.dispose();
     _emailFocusNode.dispose();
@@ -380,6 +386,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       company: _companyController.text.trim(),
       title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
       address: finalAddress,
+      addressDetail: _addressDetailController.text.trim().isEmpty ? null : _addressDetailController.text.trim(),
       phone: _phoneController.text.trim(),
       officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
       email: _emailController.text.trim(),
@@ -665,13 +672,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 12),
 
-                  // 4. 회사 주소 (필수)
+                  // 4. 회사 주소 — 도로명까지(위치 정보/지오코딩의 기준이 되는 부분)
                   _buildFormField(
                     controller: _addressController,
                     focusNode: _addressFocusNode,
                     order: 4,
-                    nextFocusNode: _phoneFocusNode,
-                    label: '회사 주소 / 위치 *',
+                    nextFocusNode: _addressDetailFocusNode,
+                    label: '회사 주소 (도로명) *',
                     hint: '예: 서울특별시 강남구 테헤란로 123',
                     validator: (val) {
                       if (val == null || val.trim().isEmpty) {
@@ -679,6 +686,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       }
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 4-1. 상세주소(선택) — 건물명/층/호수 등. 위치 정보에는 안 쓰이고
+                  // 표시용으로만 별도 보관.
+                  _buildFormField(
+                    controller: _addressDetailController,
+                    focusNode: _addressDetailFocusNode,
+                    order: 4.5,
+                    nextFocusNode: _phoneFocusNode,
+                    label: '상세주소 (선택)',
+                    hint: '예: 5층 501호',
                   ),
                   const SizedBox(height: 12),
 

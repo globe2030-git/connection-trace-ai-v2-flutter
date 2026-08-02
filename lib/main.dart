@@ -3,6 +3,7 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'data/repositories/contacts_repository.dart';
+import 'data/repositories/my_profile_repository.dart';
 import 'presentation/common/splash_gate.dart';
 import 'presentation/features/radar/view_models/radar_view_model.dart';
 import 'presentation/features/wallet/view_models/wallet_view_model.dart';
@@ -22,6 +23,7 @@ class ConnectionTraceApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ContactsRepository()),
+        ChangeNotifierProvider(create: (_) => MyProfileRepository()),
         ChangeNotifierProxyProvider<ContactsRepository, RadarViewModel>(
           create: (ctx) => RadarViewModel(
             contactsRepository: ctx.read<ContactsRepository>(),
