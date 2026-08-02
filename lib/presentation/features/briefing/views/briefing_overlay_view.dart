@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/services/comm_log_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../core/services/phone_call_service.dart';
@@ -165,6 +166,17 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       '💬 최근 소통 Trace 연동 (통화 / 문자 / 이메일 / 카카오톡)',
                       style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                     ),
+                    const SizedBox(height: 6),
+                    // 아이폰에서 이 목록을 보고 "자동으로 연동되는구나"라고 오해하지
+                    // 않도록, 플랫폼별로 실제 가능한 것을 명확히 안내한다 — 통화/문자는
+                    // 안드로이드에서만 실제 연동되고, 카카오톡/이메일은 어느 플랫폼에서도
+                    // 아직 데모 데이터다.
+                    Text(
+                      CommLogSyncService.isSupportedOnThisPlatform
+                          ? '통화·문자는 실제 기기 데이터와 연동 가능(🔄 배지), 카카오톡·이메일은 아직 데모입니다.'
+                          : '이 기기(iOS)에서는 자동 연동이 불가능합니다 — 아래는 전부 데모 데이터입니다.',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic),
+                    ),
                     const SizedBox(height: 8),
 
                     if (contact.commLogs.isEmpty)
@@ -240,6 +252,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                           '${log.timestamp.month}월 ${log.timestamp.day}일 ${log.timestamp.hour}:${log.timestamp.minute.toString().padLeft(2, '0')}',
                                           style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
                                         ),
+                                        if (log.isAutoSynced) ...[
+                                          const SizedBox(width: 6),
+                                          const Text('🔄 자동 연동', style: TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 3),

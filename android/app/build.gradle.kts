@@ -14,6 +14,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // call_log 패키지가 core library desugaring을 요구함(Java 8+ API를
+        // 오래된 Android API 레벨에서도 쓸 수 있게 변환해주는 기능).
+        isCoreLibraryDesugaringEnabled = true
     }
 
     defaultConfig {
@@ -53,4 +56,5 @@ flutter {
 // 명함에 한글이 들어가는 게 기본 시나리오라 한국어 모델을 명시적으로 포함시킨다.
 dependencies {
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

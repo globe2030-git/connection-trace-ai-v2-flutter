@@ -3,6 +3,12 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- 통화/문자 자동 연동(안드로이드 전용) — call_log/flutter_sms_inbox가 실제로
+         사용하는 권한. READ_PHONE_STATE는 call_log 패키지가 통화 기록 조회에
+         필요로 함. -->
+    <uses-permission android:name="android.permission.READ_CALL_LOG"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+    <uses-permission android:name="android.permission.READ_SMS"/>
     <application
         android:label="connection_trace_ai_flutter"
         android:name="${applicationName}"

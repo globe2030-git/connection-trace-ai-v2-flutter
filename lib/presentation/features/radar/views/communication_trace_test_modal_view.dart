@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/comm_log_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../view_models/radar_view_model.dart';
@@ -13,6 +14,8 @@ class CommunicationTraceTestModalView extends StatefulWidget {
 
 class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTestModalView> {
   String? _selectedContactId;
+  bool _isSyncingCall = false;
+  bool _isSyncingSms = false;
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +63,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                       Icon(Icons.sync, color: AppColors.accentText, size: 22),
                       SizedBox(width: 8),
                       Text(
-                        '소통 Trace 연동 실시간 테스트',
+                        '소통 이력 연동',
                         style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
                     ],
@@ -74,17 +77,34 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
 
               const SizedBox(height: 14),
 
-              // Description banner
+              // Description banner — 플랫폼에 따라 실제로 가능한 것과 불가능한 것이
+              // 다르므로(안드로이드: 통화/문자 자동 연동 가능, iOS: OS 정책상 불가),
+              // 문구를 명확히 나눠서 "iOS에서도 자동 연동되는 것처럼" 오해하지 않게 함.
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.bgDarkSlate,
+                  color: CommLogSyncService.isSupportedOnThisPlatform
+                      ? AppColors.bgDarkSlate
+                      : AppColors.destructive.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.borderDark),
+                  border: Border.all(
+                    color: CommLogSyncService.isSupportedOnThisPlatform
+                        ? AppColors.borderDark
+                        : AppColors.destructive.withValues(alpha: 0.35),
+                  ),
                 ),
-                child: const Text(
-                  '💡 스마트폰 실제 환경에서는 시스템 권한(Call Log, SMS, KakaoTalk, Email API)을 통해 자동 연동됩니다. 아래 버튼을 터치하면 각 채널별 연동 신호를 실시간으로 가상 발생시켜 테스트할 수 있습니다.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+                child: Text(
+                  CommLogSyncService.isSupportedOnThisPlatform
+                      ? '🔄 이 기기(Android)에서는 통화·문자 기록을 실제로 읽어와 자동 연동할 수 있습니다. 카카오톡·이메일은 아직 준비 중이라 데모 데이터로만 확인할 수 있습니다.'
+                      : '📱 iOS는 OS 정책상 앱이 통화기록·문자·카카오톡에 접근하는 것 자체가 불가능해 자동 연동을 지원하지 않습니다. 아래는 전부 데모 데이터이며, 실제 사용 시에는 수동 입력 기능(준비 중)을 이용하게 됩니다.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: CommLogSyncService.isSupportedOnThisPlatform
+                        ? AppColors.textSecondary
+                        : AppColors.destructive,
+                    height: 1.4,
+                    fontWeight: CommLogSyncService.isSupportedOnThisPlatform ? FontWeight.normal : FontWeight.w600,
+                  ),
                 ),
               ),
 
@@ -131,33 +151,54 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
 
               const SizedBox(height: 18),
 
-              const Text(
-                '📱 4개 채널 실시간 소통 연동 신호 발생',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              Text(
+                CommLogSyncService.isSupportedOnThisPlatform ? '🔄 자동 연동 (실제 기기 데이터)' : '🔒 자동 연동 (이 플랫폼에서는 불가)',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
 
-              // 1. 최근 통화 연동 버튼
+              // 1. 최근 통화 연동 버튼 — 안드로이드에서는 실제 통화기록 API 연동
               _buildChannelButton(
                 icon: Icons.phone_in_talk,
                 color: AppColors.channelCall,
-                title: '📞 최근 통화 수신 연동 테스트',
-                subtitle: '수신 통화 (03분 15초) - 신규 프로젝트 추진 안건',
-                onTap: () => _triggerCommLog(
-                  contact: selectedContact,
-                  type: 'call',
-                  summary: '수신 통화 (03분 15초) - 신규 프로젝트 추진 안건 논의',
-                ),
+                title: '📞 최근 통화 기록 연동',
+                subtitle: CommLogSyncService.isSupportedOnThisPlatform
+                    ? '${selectedContact.name} 님과의 통화 기록을 실제로 불러옵니다'
+                    : 'iOS에서는 지원되지 않는 기능입니다',
+                isLoading: _isSyncingCall,
+                enabled: CommLogSyncService.isSupportedOnThisPlatform,
+                onTap: () => _syncCallLogs(selectedContact),
               ),
               const SizedBox(height: 10),
 
-              // 2. 카카오톡 연동 버튼
+              // 2. SMS 문자 연동 버튼 — 안드로이드에서는 실제 문자함 API 연동
+              _buildChannelButton(
+                icon: Icons.sms_outlined,
+                color: AppColors.channelSms,
+                title: '📱 문자 메시지 연동',
+                subtitle: CommLogSyncService.isSupportedOnThisPlatform
+                    ? '${selectedContact.name} 님과 주고받은 문자를 실제로 불러옵니다'
+                    : 'iOS에서는 지원되지 않는 기능입니다',
+                isLoading: _isSyncingSms,
+                enabled: CommLogSyncService.isSupportedOnThisPlatform,
+                onTap: () => _syncSmsMessages(selectedContact),
+              ),
+
+              const SizedBox(height: 18),
+
+              const Text(
+                '📝 수동/데모 항목 (준비 중 — 실제 연동 아님)',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 10),
+
+              // 3. 카카오톡 — 어떤 플랫폼도 개인 대화 읽기 API가 없어 항상 데모/수동만 가능
               _buildChannelButton(
                 icon: Icons.chat_bubble_outline,
                 color: AppColors.channelKakao,
-                title: '💬 카카오톡 메세지 연동 테스트',
+                title: '💬 카카오톡 메시지 (데모)',
                 subtitle: '카카오톡 - "다음 주 화요일 미팅 장소 테헤란로로 확정했습니다!"',
-                onTap: () => _triggerCommLog(
+                onTap: () => _triggerDemoCommLog(
                   contact: selectedContact,
                   type: 'kakao',
                   summary: '카카오톡 메세지 - "다음 주 화요일 미팅 장소 테헤란로로 확정했습니다!"',
@@ -165,30 +206,16 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               ),
               const SizedBox(height: 10),
 
-              // 3. 이메일 연동 버튼
+              // 4. 이메일 — 실제 연동은 OAuth 등 별도 작업 필요, 아직 데모만
               _buildChannelButton(
                 icon: Icons.email_outlined,
                 color: AppColors.channelEmail,
-                title: '✉️ 이메일 수신 연동 테스트',
+                title: '✉️ 이메일 (데모)',
                 subtitle: '이메일 - [테크노바] 2026 하반기 파트너십 계약서 최종본.pdf',
-                onTap: () => _triggerCommLog(
+                onTap: () => _triggerDemoCommLog(
                   contact: selectedContact,
                   type: 'email',
                   summary: '이메일 수신 - [${selectedContact.company}] 2026 하반기 파트너십 계약서 최종본.pdf',
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // 4. SMS 문자 연동 버튼
-              _buildChannelButton(
-                icon: Icons.sms_outlined,
-                color: AppColors.channelSms,
-                title: '📱 SMS 문자 메세지 연동 테스트',
-                subtitle: '문자 - "역삼동 사무실 도착했습니다. 로비 1층에서 뵐게요."',
-                onTap: () => _triggerCommLog(
-                  contact: selectedContact,
-                  type: 'sms',
-                  summary: '문자 메시지 - "역삼동 사무실 도착했습니다. 로비 1층에서 뵐게요."',
                 ),
               ),
 
@@ -206,46 +233,126 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool enabled = true,
+    bool isLoading = false,
   }) {
+    final effectiveColor = enabled ? color : AppColors.textMuted;
     return InkWell(
-      onTap: onTap,
+      onTap: isLoading ? null : onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: AppColors.bgDarkSlate,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
+          border: Border.all(color: effectiveColor.withValues(alpha: 0.4)),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
+                color: effectiveColor.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 20),
+              child: isLoading
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: effectiveColor),
+                    )
+                  : Icon(enabled ? icon : Icons.lock_outline, color: effectiveColor, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: color)),
+                  Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: effectiveColor)),
                   const SizedBox(height: 2),
                   Text(subtitle, style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, size: 14, color: AppColors.textMuted),
+            if (enabled) const Icon(Icons.arrow_forward_ios, size: 14, color: AppColors.textMuted),
           ],
         ),
       ),
     );
   }
 
-  void _triggerCommLog({
+  Future<void> _syncCallLogs(ContactModel contact) async {
+    if (!CommLogSyncService.isSupportedOnThisPlatform) return;
+    setState(() => _isSyncingCall = true);
+    try {
+      final logs = await CommLogSyncService.syncCallLogs(contact.phone);
+      if (!mounted) return;
+      if (logs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('일치하는 통화 기록을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
+        );
+        return;
+      }
+      _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '통화');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ 통화 기록 연동 실패: $e'), backgroundColor: AppColors.destructive),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingCall = false);
+    }
+  }
+
+  Future<void> _syncSmsMessages(ContactModel contact) async {
+    if (!CommLogSyncService.isSupportedOnThisPlatform) return;
+    setState(() => _isSyncingSms = true);
+    try {
+      final logs = await CommLogSyncService.syncSmsMessages(contact.phone);
+      if (!mounted) return;
+      if (logs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('일치하는 문자 메시지를 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
+        );
+        return;
+      }
+      _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '문자');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ 문자 메시지 연동 실패: $e'), backgroundColor: AppColors.destructive),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingSms = false);
+    }
+  }
+
+  void _mergeSyncedLogsAndShowBriefing(
+    ContactModel contact,
+    List<CommunicationLogModel> newLogs, {
+    required String channelLabel,
+  }) {
+    // 같은 타임스탬프를 가진 항목은 이미 연동된 것으로 보고 중복 추가하지 않음.
+    final existingTimestamps = contact.commLogs.map((l) => l.timestamp).toSet();
+    final toAdd = newLogs.where((l) => !existingTimestamps.contains(l.timestamp)).toList();
+    final updatedLogs = [...toAdd, ...contact.commLogs]..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final updatedContact = contact.copyWith(commLogs: updatedLogs);
+
+    final viewModel = context.read<RadarViewModel>();
+    viewModel.updateContact(updatedContact);
+
+    Navigator.pop(context);
+    viewModel.openBriefing(updatedContact);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('🎉 ${contact.name} 님의 실제 $channelLabel 기록 ${toAdd.length}건을 연동했습니다!'),
+        backgroundColor: AppColors.accent,
+      ),
+    );
+  }
+
+  void _triggerDemoCommLog({
     required ContactModel contact,
     required String type,
     required String summary,

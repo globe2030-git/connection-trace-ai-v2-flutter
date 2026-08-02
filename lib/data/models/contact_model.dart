@@ -4,17 +4,23 @@ class CommunicationLogModel {
   final String type; // 'call', 'sms', 'email', 'kakao'
   final String summary;
   final DateTime timestamp;
+  // 기기의 실제 통화기록/문자 API로 자동 연동된 항목인지 여부. false면 데모
+  // 데이터이거나(초기 목업 인맥) 수동으로 입력한 항목이라는 뜻 — 브리핑
+  // 화면에서 "자동 연동" 배지를 붙여 사용자가 실제 연동인지 구분할 수 있게 함.
+  final bool isAutoSynced;
 
   const CommunicationLogModel({
     required this.type,
     required this.summary,
     required this.timestamp,
+    this.isAutoSynced = false,
   });
 
   Map<String, dynamic> toJson() => {
         'type': type,
         'summary': summary,
         'timestamp': timestamp.toIso8601String(),
+        'isAutoSynced': isAutoSynced,
       };
 
   factory CommunicationLogModel.fromJson(Map<String, dynamic> json) =>
@@ -22,6 +28,7 @@ class CommunicationLogModel {
         type: json['type'] as String? ?? 'call',
         summary: json['summary'] as String? ?? '',
         timestamp: DateTime.parse(json['timestamp'] as String),
+        isAutoSynced: json['isAutoSynced'] as bool? ?? false,
       );
 }
 
