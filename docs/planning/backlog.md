@@ -2,6 +2,47 @@
 
 ## 작업 로그
 
+### 2026-08-02 (추가 8) — iOS 한글 OCR 근본 원인 수정 + 전체 하드코딩 데이터 감사
+
+사용자가 "카메라/UI는 좋은데 한글을 제대로 못 읽는다"고 재확인. 조사 결과
+**iOS에서만 발생하는 네이티브 링킹 문제**였음:
+`google_mlkit_text_recognition`의 iOS podspec이 `GoogleMLKit/TextRecognition`
+(라틴 전용) 서브스펙만 의존성으로 선언하고, 한국어 서브스펙
+(`GoogleMLKit/TextRecognitionKorean`)은 선언하지 않음. 플러그인 네이티브
+코드(`GoogleMlKitTextRecognitionPlugin.m`)가
+`#if __has_include(<MLKitTextRecognitionKorean/...>)`로 컴파일 타임에 해당
+pod의 존재 여부를 체크하는 구조라, 이 pod이 없으면 `case 4`(한국어) 분기
+자체가 컴파일에서 통째로 빠짐 — Dart에서 `TextRecognitionScript.korean`을
+지정해도 조용히 `default`(라틴 전용) 인식기로 폴백. **iOS에서는 그동안 한
+번도 한국어 OCR 모델이 실제로 쓰인 적이 없었음**(안드로이드는
+`build.gradle.kts`에 `com.google.mlkit:text-recognition-korean` gradle
+의존성이 이미 있어서 문제 없었음 — 그래서 플랫폼 간 체감 차이가 컸을 것).
+
+**수정**: `ios/Podfile`의 `target 'Runner'` 블록에
+`pod 'GoogleMLKit/TextRecognitionKorean', '~> 9.0.0'` 직접 추가 → `pod
+install`로 `MLKitTextRecognitionKorean 6.0.0` 설치 확인, 릴리스 빌드 성공
+(앱 크기 77.2MB→79.0MB로 증가, 한국어 모델 번들링 반영).
+
+이어서 "하드코딩된 데이터 전체 점검해줘" 요청으로 `lib/` 전체 재감사 —
+grep으로 전화번호/이메일/좌표/이름 패턴을 훑고 각 화면을 다시 확인:
+- **레이더 화면 히어로 지표**: 근처에 감지된 인맥이 진짜로 없을 때도 항상
+  "140m · 김민준 이사 · 테크노바 근접중"이라는 가짜 값이 표시되고 있었음 —
+  사용자가 실제로는 아무도 없는데 근처에 누가 있다고 착각할 수 있는 심각한
+  문제. `nearby == null`일 때 "--"/"주변에 감지된 인맥이 없습니다"로 수정.
+- **레이더 화면 상단 검색창**: `TextField`도 `onChanged`도 없이 텍스트만
+  그려진 완전 장식용 위젯이었음(명함 지갑 화면의 검색창은 이미 실제로
+  동작했는데 레이더 화면 것만 가짜였음) — `RadarViewModel`에
+  `searchTerm`/`setSearchTerm` 추가해 이름·회사·직함 필터링이 실제로
+  동작하도록 수정.
+- 3개 데모 인맥 시드 데이터(`contacts_repository.dart`)와 기본 프로필
+  placeholder(`my_profile_model.dart`)는 최초 실행 1회만 시딩되고 이후
+  로컬 저장값을 우선하는 정상 온보딩 설계로 확인 — 문제 아님.
+
+실기기 설치+실행까지 확인. 실제 한글 인식률 개선 여부는 사용자가 진짜
+명함으로 재테스트해야 확인 가능.
+
+---
+
 ### 2026-08-02 (추가 7) — OCR 회사 전화번호 버그 수정 + 필드 분류 정확도 개선
 
 카메라 프리뷰/크롭 개선(추가 6) 이후에도 사용자가 "스캔 인식률이 그대로"라고
