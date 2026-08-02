@@ -74,5 +74,20 @@
 		<string>명함을 촬영해 자동으로 인식하기 위해 카메라 접근 권한이 필요합니다.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>갤러리에 저장된 명함 이미지를 불러와 자동으로 인식하기 위해 사진 라이브러리 접근 권한이 필요합니다.</string>
+		<!-- 이메일(Gmail) 연동을 위한 Google 로그인 설정 — Google Cloud Console에서
+		     발급받은 iOS OAuth 클라이언트 ID. -->
+		<key>GIDClientID</key>
+		<string>1000564658393-btkjfad5a348071e9lk0psl6v4vi1hs0.apps.googleusercontent.com</string>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<!-- 클라이언트 ID를 거꾸로 뒤집은 형태(Google 로그인 콜백을 앱으로
+					     되돌려받기 위한 URL 스킴) -->
+					<string>com.googleusercontent.apps.1000564658393-btkjfad5a348071e9lk0psl6v4vi1hs0</string>
+				</array>
+			</dict>
+		</array>
 	</dict>
 </plist>
