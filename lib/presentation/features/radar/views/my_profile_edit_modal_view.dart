@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/my_profile_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/address_search_view.dart';
+import '../../wallet/views/camera_scan_modal_view.dart';
+import '../../wallet/views/file_picker_modal_view.dart';
 
 class MyProfileEditModalView extends StatefulWidget {
   const MyProfileEditModalView({super.key});
@@ -23,6 +26,12 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   late final TextEditingController _emailController;
   late final TextEditingController _addressController;
   late final TextEditingController _addressDetailController;
+
+  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
+  // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 안 보이고,
+  // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다(add_card_modal_view.dart
+  // 에서 실기기로 확인된 문제) — 폼 안에 직접 그리는 배너로 우회한다.
+  String? _inlineNoticeText;
 
   @override
   void initState() {
@@ -57,6 +66,39 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     if (result != null && result.trim().isNotEmpty && mounted) {
       setState(() => _addressController.text = result.trim());
     }
+  }
+
+  /// 내 명함도 실물 명함을 스캔해서 채울 수 있어야 한다는 요청으로 추가 —
+  /// 명함 등록 화면과 동일한 카메라/파일 스캔을 재사용한다. 이 화면은 "이미
+  /// 채워진 프로필을 고치는" 폼이라 명함 등록 때처럼 빈 칸만 채우는 방식이
+  /// 아니라, 스캔으로 실제 읽힌 값만(빈 문자열은 무시) 기존 값 위에 덮어써
+  /// "실물 명함으로 프로필을 최신화"하는 의도에 맞춘다.
+  Future<void> _performOcrScan({required bool isFromCamera}) async {
+    OcrScanResult? result;
+    if (isFromCamera) {
+      result = await Navigator.push<OcrScanResult>(
+        context,
+        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+      );
+    } else {
+      result = await showModalBottomSheet<OcrScanResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => const FilePickerModalView(),
+      );
+    }
+    if (result == null || !mounted) return;
+
+    setState(() {
+      if (result!.name.trim().isNotEmpty) _nameController.text = result.name.trim();
+      if (result.title.trim().isNotEmpty) _titleController.text = result.title.trim();
+      if (result.company.trim().isNotEmpty) _companyController.text = result.company.trim();
+      if (result.phone.trim().isNotEmpty) _phoneController.text = result.phone.trim();
+      if (result.email.trim().isNotEmpty) _emailController.text = result.email.trim();
+      if (result.address.trim().isNotEmpty) _addressController.text = result.address.trim();
+      _inlineNoticeText = '📸 스캔한 명함 정보로 채웠습니다. 내용을 확인하고 저장해 주세요.';
+    });
   }
 
   void _save() {
@@ -122,6 +164,44 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   ),
                   const SizedBox(height: 16),
 
+                  if (OcrScannerService.isSupportedOnThisPlatform) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _performOcrScan(isFromCamera: true),
+                            icon: const Icon(Icons.camera_alt_outlined, size: 18, color: AppColors.accentText),
+                            label: const Text('내 명함 카메라 스캔', style: TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.accentText),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _performOcrScan(isFromCamera: false),
+                            icon: const Icon(Icons.folder_open, size: 18, color: AppColors.textSecondary),
+                            label: const Text('파일에서 스캔', style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: AppColors.borderDark),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
+                  if (_inlineNoticeText != null) ...[
+                    _buildInlineNotice(),
+                    const SizedBox(height: 12),
+                  ],
+
                   _buildField(controller: _nameController, label: '이름 / 직책 *', hint: '예: 홍길동 대표', required: true),
                   const SizedBox(height: 12),
                   _buildField(controller: _titleController, label: '직함', hint: '예: C-Level'),
@@ -184,6 +264,33 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildInlineNotice() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _inlineNoticeText!,
+              style: const TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.close, size: 16, color: AppColors.accentText),
+            onPressed: () => setState(() => _inlineNoticeText = null),
+          ),
+        ],
       ),
     );
   }
