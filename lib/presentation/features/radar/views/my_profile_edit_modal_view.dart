@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../data/models/my_profile_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
+import '../../../common/address_search_view.dart';
 
 class MyProfileEditModalView extends StatefulWidget {
   const MyProfileEditModalView({super.key});
@@ -46,6 +47,16 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _addressController.dispose();
     _addressDetailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _openAddressSearch() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+    );
+    if (result != null && result.trim().isNotEmpty && mounted) {
+      setState(() => _addressController.text = result.trim());
+    }
   }
 
   void _save() {
@@ -139,7 +150,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  _buildField(controller: _addressController, label: '주소 (도로명) *', hint: '예: 서울특별시 강남구 테헤란로 123', required: true),
+                  _buildField(
+                    controller: _addressController,
+                    label: '주소 (도로명) *',
+                    hint: '예: 서울특별시 강남구 테헤란로 123',
+                    required: true,
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.search, color: AppColors.accentText),
+                      tooltip: '도로명주소 검색',
+                      onPressed: _openAddressSearch,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   _buildField(controller: _addressDetailController, label: '상세주소 (선택)', hint: '예: 5층 501호'),
 
@@ -175,6 +196,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     bool required = false,
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
+    Widget? suffixIcon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -199,6 +221,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.borderFunctional)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.accentText, width: 1.5)),
             errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.destructive, width: 1.5)),
+            suffixIcon: suffixIcon,
           ),
           validator: validator ?? (required ? (val) => (val == null || val.trim().isEmpty) ? '${label.replaceAll(' *', '')}을(를) 입력해 주세요.' : null : null),
         ),

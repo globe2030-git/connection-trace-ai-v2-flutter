@@ -63,6 +63,9 @@ dependencies:
   # 디지털 명함 QR 코드 표시(qr_flutter)와 상대방 QR 코드 실시간 스캔(mobile_scanner).
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.0
+  # 도로명주소 검색 — 다음(카카오) 우편번호 서비스를 웹뷰로 띄운다. API 키가
+  # 필요 없는 무료 공개 서비스라 별도 개발자 계정 설정 없이 바로 쓸 수 있다.
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:
@@ -115,6 +118,7 @@ flutter:
   assets:
     - assets/icons3d/
     - assets/CI.png
+    - assets/web/address_search.html
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

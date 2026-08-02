@@ -8,6 +8,7 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../common/address_search_view.dart';
 import '../view_models/wallet_view_model.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
@@ -259,6 +260,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _inlineNoticeAction = null;
       _inlineNoticeActionLabel = null;
     });
+  }
+
+  Future<void> _openAddressSearch() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+    );
+    if (result != null && result.trim().isNotEmpty && mounted) {
+      setState(() => _addressController.text = result.trim());
+    }
   }
 
   void _fillIfEmpty(TextEditingController controller, String value) {
@@ -756,6 +767,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       }
                       return null;
                     },
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.search, color: AppColors.accentText),
+                      tooltip: '도로명주소 검색',
+                      onPressed: _openAddressSearch,
+                    ),
                   ),
                   const SizedBox(height: 12),
 
@@ -929,6 +945,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     bool autofocus = false,
     String? Function(String?)? validator,
     List<TextInputFormatter>? inputFormatters,
+    Widget? suffixIcon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -989,6 +1006,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
             ),
+            suffixIcon: suffixIcon,
           ),
         ),
       ],
