@@ -181,7 +181,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _titleController.text = result.title;
       _addressController.text = result.address;
       _phoneController.text = result.phone;
-      _officePhoneController.text = '02-555-1234';
+      _officePhoneController.text = result.officePhone;
       _emailController.text = result.email;
       _tagsController.text = result.tags.join(', ');
       _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';

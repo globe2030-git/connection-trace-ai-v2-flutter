@@ -8,6 +8,7 @@ class OcrScanResult {
   final String company;
   final String title;
   final String phone;
+  final String officePhone;
   final String email;
   final String address;
   final List<String> tags;
@@ -20,6 +21,7 @@ class OcrScanResult {
     required this.company,
     required this.title,
     required this.phone,
+    required this.officePhone,
     required this.email,
     required this.address,
     required this.tags,
@@ -49,12 +51,12 @@ class OcrScannerService {
   }
 
   /// 실제로 캡처/선택된 명함 이미지에서 ML Kit 온디바이스 텍스트 인식으로 텍스트를
-  /// 추출하고, 정규식 기반 휴리스틱으로 이름/전화/이메일/주소 등 필드를 채운다.
-  /// 명함 레이아웃은 회사마다 제각각이라(이름이 위/아래, 회사명이 크게/작게 등)
-  /// 전용 명함 파싱 모델 없이는 완벽한 필드 분류가 불가능하다 — 전화번호·이메일·
-  /// 주소처럼 형식이 명확한 항목은 정확히 뽑고, 이름/회사/직함은 "가장 그럴듯한
-  /// 남은 줄" 수준의 합리적 근사치로 채운 뒤 사용자가 폼에서 직접 수정하는 것을
-  /// 전제로 한다.
+  /// 추출하고, 위치 기반 재정렬 + 키워드 휴리스틱으로 이름/전화/이메일/주소 등
+  /// 필드를 채운다. 명함 레이아웃은 회사마다 제각각이라(2단 레이아웃, 이름이
+  /// 위/아래 등) 전용 명함 파싱 모델 없이는 완벽한 필드 분류가 불가능하다 —
+  /// 전화번호·이메일·주소처럼 형식이 명확한 항목은 정확히 뽑고, 이름/회사/직함은
+  /// 직함·회사 키워드로 우선 매칭한 뒤 남은 줄은 순서 기반으로 채워 사용자가
+  /// 폼에서 직접 수정하는 것을 전제로 한다.
   static Future<OcrScanResult> scanBusinessCard(XFile imageFile) async {
     if (kIsWeb) {
       throw UnsupportedError('OCR 명함 인식은 현재 모바일(Android/iOS) 기기에서만 지원됩니다.');
@@ -64,19 +66,63 @@ class OcrScannerService {
     try {
       final inputImage = InputImage.fromFilePath(imageFile.path);
       final recognizedText = await recognizer.processImage(inputImage);
-      return _parse(recognizedText.text, imageFile.path);
+      final orderedLines = _extractOrderedLines(recognizedText);
+      return _parse(orderedLines, imageFile.path);
     } finally {
       await recognizer.close();
     }
   }
 
-  static OcrScanResult _parse(String rawText, String imagePath) {
-    final lines = rawText
-        .split('\n')
-        .map((l) => l.trim())
-        .where((l) => l.isNotEmpty)
-        .toList();
+  /// ML Kit이 반환하는 `RecognizedText.text`는 내부 휴리스틱으로 줄 순서를
+  /// 정하는데, 명함처럼 로고/QR과 텍스트가 좌우로 나뉜 2단 레이아웃에서는 이
+  /// 순서가 뒤섞이기 쉽다(왼쪽 단 중간 줄 다음에 오른쪽 단 줄이 끼어드는 식).
+  /// 각 줄의 실제 화면 좌표(boundingBox)를 기준으로 위→아래, 같은 줄 안에서는
+  /// 왼→오 순으로 다시 정렬해 실제 명함을 읽는 순서에 가깝게 재구성한다.
+  static List<String> _extractOrderedLines(RecognizedText recognizedText) {
+    final allLines = <TextLine>[];
+    for (final block in recognizedText.blocks) {
+      allLines.addAll(block.lines);
+    }
+    if (allLines.isEmpty) return [];
 
+    allLines.sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));
+
+    final avgHeight = allLines.map((l) => l.boundingBox.height).reduce((a, b) => a + b) / allLines.length;
+    final rowTolerance = avgHeight * 0.6;
+
+    final rows = <List<TextLine>>[];
+    for (final line in allLines) {
+      if (rows.isNotEmpty) {
+        final rowTop = rows.last.map((l) => l.boundingBox.top).reduce((a, b) => a < b ? a : b);
+        if ((line.boundingBox.top - rowTop).abs() <= rowTolerance) {
+          rows.last.add(line);
+          continue;
+        }
+      }
+      rows.add([line]);
+    }
+
+    return rows.map((row) {
+      row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+      return row.map((l) => l.text.trim()).where((t) => t.isNotEmpty).join(' ');
+    }).where((l) => l.isNotEmpty).toList();
+  }
+
+  static const _titleKeywords = [
+    '대표이사', '대표', '이사', '상무', '전무', '부사장', '부장', '차장', '과장',
+    '대리', '사원', '팀장', '실장', '본부장', '지점장', '원장', '소장', '매니저',
+    '연구원', '교수', 'CEO', 'CTO', 'CFO', 'COO', 'President', 'Director',
+    'Manager', 'Founder', 'VP', 'Lead',
+  ];
+
+  static const _companyKeywords = [
+    '주식회사', '(주)', '㈜', 'Corp', 'Corporation', 'Inc.', 'Inc', 'Co.,',
+    'Co.', 'Ltd', '그룹', 'Group', '컴퍼니', 'Company',
+  ];
+
+  static final _koreanNameRegExp = RegExp(r'^[가-힣]{2,4}$');
+
+  static OcrScanResult _parse(List<String> lines, String imagePath) {
     final emailRegExp = RegExp(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}');
     final mobileRegExp = RegExp(r'01[0-9][-.\s]?\d{3,4}[-.\s]?\d{4}');
     final officeRegExp = RegExp(r'0(2|[3-6][0-9])[-.\s]?\d{3,4}[-.\s]?\d{4}');
@@ -114,16 +160,42 @@ class OcrScannerService {
       remaining.add(line);
     }
 
-    final name = remaining.isNotEmpty ? remaining.removeAt(0) : '';
-    final company = remaining.isNotEmpty ? remaining.removeAt(0) : '';
-    final title = remaining.isNotEmpty ? remaining.removeAt(0) : '';
+    // 직함/회사 키워드로 먼저 매칭하고, 순수 한글 2~4자 줄은 이름 후보로 잡는다.
+    // 셋 다 못 찾은 나머지는 예전처럼 "남은 줄 중 앞에서부터" 순서로 채운다.
+    String? titleLine;
+    String? companyLine;
+    String? nameLine;
+    final leftover = <String>[];
+
+    for (final line in remaining) {
+      if (titleLine == null && _titleKeywords.any((k) => line.contains(k))) {
+        titleLine = line;
+        continue;
+      }
+      if (companyLine == null && _companyKeywords.any((k) => line.contains(k))) {
+        companyLine = line;
+        continue;
+      }
+      if (nameLine == null && _koreanNameRegExp.hasMatch(line)) {
+        nameLine = line;
+        continue;
+      }
+      leftover.add(line);
+    }
+
+    final name = nameLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
+    final company = companyLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
+    final title = titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
+
+    final rawText = lines.join('\n');
 
     return OcrScanResult(
       rawText: rawText.isEmpty ? '[텍스트를 인식하지 못했습니다]' : rawText,
       name: name,
       company: company,
       title: title,
-      phone: mobile ?? office ?? '',
+      phone: mobile ?? '',
+      officePhone: office ?? '',
       email: email ?? '',
       address: address ?? '',
       tags: const [],
