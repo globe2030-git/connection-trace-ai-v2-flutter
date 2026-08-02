@@ -32,6 +32,16 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # google_mlkit_text_recognition의 iOS podspec은 GoogleMLKit/TextRecognition
+  # (라틴 전용) 서브스펙만 의존성으로 선언한다 — 한국어 인식 서브스펙은 여기서
+  # 직접 추가해줘야 링크된다. 플러그인 네이티브 코드(GoogleMlKitTextRecognitionPlugin.m)
+  # 가 `#if __has_include(<MLKitTextRecognitionKorean/...>)`로 컴파일 타임에
+  # 존재 여부를 체크하는데, 이 pod이 없으면 그 분기 자체가 컴파일에서 빠져서
+  # Dart에서 TextRecognitionScript.korean을 지정해도 조용히 라틴 인식기로
+  # 폴백해버린다. 그동안 iOS에서 명함 한글이 제대로 인식되지 않은 근본 원인.
+  pod 'GoogleMLKit/TextRecognitionKorean', '~> 9.0.0'
+
   target 'RunnerTests' do
     inherit! :search_paths
   end

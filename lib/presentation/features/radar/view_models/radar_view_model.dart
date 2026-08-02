@@ -13,6 +13,7 @@ class RadarViewModel extends ChangeNotifier {
   bool _usingRealGps = false;
   ContactModel? _selectedContactForBriefing;
   ContactModel? _previewContact;
+  String _searchTerm = '';
 
   RadarViewModel({required ContactsRepository contactsRepository})
       : _contactsRepository = contactsRepository {
@@ -37,6 +38,12 @@ class RadarViewModel extends ChangeNotifier {
   bool get usingRealGps => _usingRealGps;
   ContactModel? get selectedContactForBriefing => _selectedContactForBriefing;
   ContactModel? get previewContact => _previewContact;
+  String get searchTerm => _searchTerm;
+
+  void setSearchTerm(String term) {
+    _searchTerm = term;
+    notifyListeners();
+  }
 
   Future<void> refreshLocation() async {
     _isRefreshingLocation = true;
@@ -56,10 +63,15 @@ class RadarViewModel extends ChangeNotifier {
 
   List<ContactModel> get filteredContacts {
     final contacts = _contactsRepository.contacts;
+    final query = _searchTerm.trim().toLowerCase();
     final list = contacts.where((c) {
       if (c.geo == null) return false;
       final distance = GeoUtils.getDistanceMeters(_currentPosition, c.geo);
-      return distance <= _settings.radiusMeters;
+      if (distance > _settings.radiusMeters) return false;
+      if (query.isEmpty) return true;
+      return c.name.toLowerCase().contains(query) ||
+          c.company.toLowerCase().contains(query) ||
+          c.title.toLowerCase().contains(query);
     }).toList();
 
     // Primary: distance ascending (closest first), Secondary: Korean alphabetical (가나다순)

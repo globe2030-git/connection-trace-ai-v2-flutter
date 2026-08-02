@@ -116,7 +116,9 @@ class RadarView extends StatelessWidget {
                             textBaseline: TextBaseline.alphabetic,
                             children: [
                               Text(
-                                nearbyDistance != null ? (nearbyDistance < 1000 ? '${nearbyDistance.round()}' : (nearbyDistance / 1000).toStringAsFixed(1)) : '140',
+                                nearbyDistance != null
+                                    ? (nearbyDistance < 1000 ? '${nearbyDistance.round()}' : (nearbyDistance / 1000).toStringAsFixed(1))
+                                    : '--',
                                 style: const TextStyle(
                                   fontSize: 48,
                                   fontWeight: FontWeight.w900,
@@ -124,15 +126,17 @@ class RadarView extends StatelessWidget {
                                   letterSpacing: -1.0,
                                 ),
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                nearbyDistance != null ? (nearbyDistance < 1000 ? 'm' : 'km') : 'm',
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.textSecondary,
+                              if (nearbyDistance != null) ...[
+                                const SizedBox(width: 4),
+                                Text(
+                                  nearbyDistance < 1000 ? 'm' : 'km',
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textSecondary,
+                                  ),
                                 ),
-                              )
+                              ],
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -148,7 +152,7 @@ class RadarView extends StatelessWidget {
                           Text(
                             nearby != null
                                 ? '${nearby.name} ${nearby.title} (${nearby.company})'
-                                : '김민준 이사 · 테크노바 근접중',
+                                : '주변에 감지된 인맥이 없습니다',
                             style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
@@ -218,27 +222,37 @@ class RadarView extends StatelessWidget {
 
                     const SizedBox(height: 20),
 
-                    // Rounded Capsule Search Bar
+                    // Rounded Capsule Search Bar — 근접 인맥 리스트를 이름/회사/직함으로 필터링
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
                         color: AppColors.capsuleInputBg,
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(color: AppColors.borderDark),
                       ),
                       child: Row(
-                        children: const [
+                        children: [
                           Expanded(
-                            child: Text(
-                              '이름, 회사명, 키워드로 검색해 보세요',
-                              style: TextStyle(
+                            child: TextField(
+                              onChanged: viewModel.setSearchTerm,
+                              style: const TextStyle(
                                 fontSize: 13,
-                                color: AppColors.textMuted,
+                                color: AppColors.capsuleInputText,
                                 fontWeight: FontWeight.w500,
+                              ),
+                              decoration: const InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: '이름, 회사명, 키워드로 검색해 보세요',
+                                hintStyle: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ),
-                          Icon(Icons.search, color: AppColors.capsuleInputText, size: 22),
+                          const Icon(Icons.search, color: AppColors.capsuleInputText, size: 22),
                         ],
                       ),
                     ),
