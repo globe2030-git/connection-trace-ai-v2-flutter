@@ -1,4 +1,4 @@
-import 'package:geocoding/geocoding.dart' as geocoding;
+import 'package:geocoding/geocoding.dart';
 import '../utils/geo_utils.dart';
 
 class AddressValidationResult {
@@ -18,6 +18,10 @@ class AddressValidationResult {
 }
 
 class AddressGeocodingService {
+  // geocoding 5.x부터 top-level 함수(geocoding.locationFromAddress(...))가 아니라
+  // Geocoding 인스턴스 메서드로 API가 바뀜(4.x대 breaking change).
+  static final Geocoding _geocoder = Geocoding();
+
   /// 입력한 주소를 실제 지오코딩(iOS: CLGeocoder / Android: 네이티브 Geocoder)으로
   /// 검증하고 위경도 좌표를 얻는다. 좌표를 다시 역지오코딩해서 얻은 행정구역/도로명
   /// 구성요소로 정돈된 주소 문자열도 함께 만들어 "도로명 주소 변환 제안"에 쓴다.
@@ -35,7 +39,7 @@ class AddressGeocodingService {
     }
 
     try {
-      final locations = await geocoding.locationFromAddress(trimmed);
+      final locations = await _geocoder.locationFromAddress(trimmed);
       if (locations.isEmpty) {
         return AddressValidationResult(
           isValid: false,
@@ -64,9 +68,9 @@ class AddressGeocodingService {
     }
   }
 
-  static Future<String?> _reverseGeocodeToRoadName(geocoding.Location location) async {
+  static Future<String?> _reverseGeocodeToRoadName(Location location) async {
     try {
-      final placemarks = await geocoding.placemarkFromCoordinates(
+      final placemarks = await _geocoder.placemarkFromCoordinates(
         location.latitude,
         location.longitude,
       );

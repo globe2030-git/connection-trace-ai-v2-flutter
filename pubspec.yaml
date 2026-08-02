@@ -43,7 +43,7 @@ dependencies:
   # dev_dependencies가 아니라 dependencies에 있어야 함.
   flutter_native_splash: ^2.4.6
   geolocator: ^13.0.2
-  geocoding: ^3.0.0
+  geocoding: ^5.0.0
   google_mlkit_text_recognition: ^0.15.0
   image_picker: ^1.1.2
 

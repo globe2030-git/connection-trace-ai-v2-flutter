@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.connectiontrace.connection_trace_ai_flutter"
-    compileSdk = flutter.compileSdkVersion
+    // geocoding_android(androidx.exifinterface/annotation-experimental)가 API 34+
+    // 컴파일을 요구해서 Flutter 기본값(33)보다 올려야 함.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -42,4 +44,13 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+// google_mlkit_text_recognition은 한글/중국어/일본어/데바나가리 스크립트 모델을
+// compileOnly로만 선언해서(APK 용량 절약을 위해 앱이 opt-in하도록 설계됨), 실제
+// 기기에서 TextRecognitionScript.korean으로 인식기를 만들면
+// NoClassDefFoundError(KoreanTextRecognizerOptions$Builder)로 즉시 크래시했다.
+// 명함에 한글이 들어가는 게 기본 시나리오라 한국어 모델을 명시적으로 포함시킨다.
+dependencies {
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
 }
