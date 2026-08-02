@@ -172,30 +172,71 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     if (result == null || !mounted) return;
 
+    // 명함 앞/뒷면에 정보가 나뉘어 있는 경우가 흔해서(예: 앞면엔 이름·직함만,
+    // 뒷면에 전화번호·주소·이메일) 새 스캔 결과로 폼을 통째로 덮어쓰지 않고
+    // "이미 채워진 필드는 그대로 두고, 비어 있는 필드만" 채운다 — 뒷면을 이어서
+    // 스캔해도 앞면에서 읽은 값이 날아가지 않게.
     setState(() {
       _isScanningOcr = false;
-      _scannedRawText = result!.rawText;
       _showRawTextCard = true;
-      _nameController.text = result.name;
-      _companyController.text = result.company;
-      _titleController.text = result.title;
-      _addressController.text = result.address;
-      _phoneController.text = result.phone;
-      _officePhoneController.text = result.officePhone;
-      _emailController.text = result.email;
-      _tagsController.text = result.tags.join(', ');
-      _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+      _scannedRawText = (_scannedRawText == null || _scannedRawText!.trim().isEmpty)
+          ? result!.rawText
+          : '${_scannedRawText!}\n---\n${result!.rawText}';
+      _fillIfEmpty(_nameController, result.name);
+      _fillIfEmpty(_companyController, result.company);
+      _fillIfEmpty(_titleController, result.title);
+      _fillIfEmpty(_addressController, result.address);
+      _fillIfEmpty(_phoneController, result.phone);
+      _fillIfEmpty(_officePhoneController, result.officePhone);
+      _fillIfEmpty(_emailController, result.email);
+      if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
+        _tagsController.text = result.tags.join(', ');
+      }
+      if (_memoController.text.trim().isEmpty) {
+        _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+      }
       if (result.avatarUrl != null) {
         _selectedAvatarUrl = result.avatarUrl;
       }
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
-        backgroundColor: AppColors.accent,
-      ),
-    );
+    final missingFields = <String>[
+      if (_nameController.text.trim().isEmpty) '이름',
+      if (_companyController.text.trim().isEmpty) '회사명',
+      if (_addressController.text.trim().isEmpty) '주소',
+      if (_phoneController.text.trim().isEmpty) '휴대폰 번호',
+      if (_emailController.text.trim().isEmpty) '이메일',
+    ];
+
+    if (!mounted) return;
+
+    if (missingFields.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
+          backgroundColor: AppColors.accent,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.'),
+          backgroundColor: AppColors.destructive,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: '뒷면 스캔',
+            textColor: Colors.white,
+            onPressed: () => _performOcrScan(isFromCamera: isFromCamera),
+          ),
+        ),
+      );
+    }
+  }
+
+  void _fillIfEmpty(TextEditingController controller, String value) {
+    if (controller.text.trim().isEmpty && value.trim().isNotEmpty) {
+      controller.text = value;
+    }
   }
 
   Future<void> _saveCard() async {
