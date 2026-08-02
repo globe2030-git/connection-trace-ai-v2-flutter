@@ -1,43 +1,27 @@
 # Connection Trace AI v2 (Flutter) — Planning Backlog
 
-## ⚠️ 사용자 액션 필요 — 이메일(Gmail) 연동 OAuth 설정 (미완료)
+## 작업 로그
 
-소통 이력 연동 #3(이메일 실제 연동) 코드는 다 만들어놨지만, **Google Cloud
-Console에서 OAuth 클라이언트를 발급받아야 실제로 로그인이 됩니다.** 이건
-Claude가 대신 할 수 없는 부분(사용자 본인의 Google 계정으로 콘솔에 로그인해서
-직접 만들어야 함)이라 여기에 남겨둠.
+### 2026-08-02 (추가 5) — 소통 이력 연동 완료 확인 (Gmail OAuth 실기기 검증)
 
-**해야 할 일:**
-1. https://console.cloud.google.com/ 접속해서 프로젝트 생성(또는 기존 프로젝트 선택)
-2. **API 및 서비스 → 라이브러리**에서 **Gmail API** 검색 → 사용 설정
-3. **API 및 서비스 → OAuth 동의 화면** 설정
-   - User Type: External (개인 Gmail 계정으로 테스트할 거면 이걸로)
-   - 앱 이름/이메일 등 기본 정보 입력
-   - **범위(Scopes)** 추가: `https://www.googleapis.com/auth/gmail.readonly`
-   - **테스트 사용자**에 실제 로그인할 본인 Gmail 주소 추가(앱이 "게시" 상태가
-     아니면 여기 등록된 계정만 로그인 가능 — Google 심사 없이 바로 테스트하려면
-     이 방식이 제일 빠름)
-4. **API 및 서비스 → 사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID**
-   - **안드로이드용**:
-     - 패키지 이름: `com.connectiontrace.connection_trace_ai_flutter`
-     - SHA-1 인증서 지문(디버그 키): `C3:92:26:2A:73:45:F7:25:B8:CE:6E:5E:1B:0F:3C:DA:1D:0D:DC:4B`
-       (배포용 빌드를 만들게 되면 release 키스토어의 SHA-1도 별도로 추가해야 함)
-   - **iOS용**:
-     - 번들 ID: `com.connectiontrace.connectionTraceAiFlutter`
-     - 여기서 발급된 클라이언트 ID를 `ios/Runner/Info.plist`에
-       `GIDClientID` 키로 추가하고, "역방향 클라이언트 ID"를 URL Scheme으로도
-       등록해야 함(Claude가 실제 클라이언트 ID 값을 받으면 이어서 처리 가능)
-5. 안드로이드는 클라이언트 ID를 코드에 따로 넣을 필요 없음(패키지명+SHA-1로
-   Play 서비스가 자동 매칭). iOS/웹은 클라이언트 ID를 앱에 직접 등록해야 하므로,
-   iOS 클라이언트 ID를 만드셨으면 그 값을 Claude에게 알려주시면 Info.plist에
-   반영하겠습니다.
+사용자가 Google Cloud Console에서 OAuth 설정을 직접 완료(프로젝트 생성,
+Gmail API 활성화, OAuth 동의 화면 + 테스트 사용자 등록, Android/iOS 클라이언트
+ID 발급). iOS 클라이언트 ID(`1000564658393-btkjfad5a348071e9lk0psl6v4vi1hs0
+.apps.googleusercontent.com`)를 전달받아 `ios/Runner/Info.plist`에
+`GIDClientID` + 콜백 URL Scheme(`com.googleusercontent.apps.<client-id>`)로
+반영.
 
-이 설정이 끝나기 전까지는 "Google 계정으로 로그인" 버튼을 눌러도 로그인이
-실패합니다(코드 자체는 정상 — 외부 설정 문제).
+과정에서 "403 access_denied" 에러(테스트 사용자 미등록)를 실기기 스크린샷으로
+잡아서 바로 안내 → 사용자가 테스트 사용자 추가 후 **실제 아이폰에서 Gmail
+연동 성공 확인**("연동 잘되네").
+
+**결론: 소통 이력 연동 4채널(통화/문자/이메일/카카오톡) 전부 완료.**
+- 통화·문자: 안드로이드 전용, 실제 기기 데이터 연동 확인됨
+- 이메일: 전 플랫폼, Google OAuth 연동 확인됨(iOS 실기기 검증 완료)
+- 카카오톡: API 부재로 수동 입력이 최종 형태(설계대로)
+- 수동 입력: 모든 채널 대상 공통 폴백, 브리핑 화면에서 확인됨
 
 ---
-
-## 작업 로그
 
 ### 2026-08-02 (추가 4) — 소통 이력 연동 #3: 이메일 실제 연동(Gmail API) 코드 완료
 
