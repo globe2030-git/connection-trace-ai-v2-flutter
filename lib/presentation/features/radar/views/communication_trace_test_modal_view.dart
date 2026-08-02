@@ -15,6 +15,11 @@ class CommunicationTraceTestModalView extends StatefulWidget {
 }
 
 class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTestModalView> {
+  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
+  // ScaffoldMessenger.of(context)를 그대로 쓰면 동기화 진행/완료 스낵바가 이
+  // 모달 뒤 페이지의 Scaffold로 가서 모달에 가려 안 보인다 — 로컬
+  // ScaffoldMessenger로 우회.
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   String? _selectedContactId;
   bool _isSyncingCall = false;
   bool _isSyncingSms = false;
@@ -35,7 +40,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       orElse: () => contacts.first,
     );
 
-    return Container(
+    return ScaffoldMessenger(
+      key: _messengerKey,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
         color: AppColors.cardDark,
@@ -249,6 +258,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
           ),
         ),
       ),
+        ),
+      ),
     );
   }
 
@@ -313,7 +324,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await CommLogSyncService.syncCallLogs(contact.phone);
       if (!mounted) return;
       if (logs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messengerKey.currentState?.showSnackBar(
           const SnackBar(content: Text('일치하는 통화 기록을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
         );
         return;
@@ -321,7 +332,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '통화');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('⚠️ 통화 기록 연동 실패: $e'), backgroundColor: AppColors.destructive),
       );
     } finally {
@@ -336,7 +347,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await CommLogSyncService.syncSmsMessages(contact.phone);
       if (!mounted) return;
       if (logs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messengerKey.currentState?.showSnackBar(
           const SnackBar(content: Text('일치하는 문자 메시지를 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
         );
         return;
@@ -344,7 +355,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '문자');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('⚠️ 문자 메시지 연동 실패: $e'), backgroundColor: AppColors.destructive),
       );
     } finally {
@@ -360,7 +371,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('⚠️ Google 로그인 실패: $e'), backgroundColor: AppColors.destructive),
       );
     } finally {
@@ -380,7 +391,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await EmailSyncService.syncEmails(contact.email);
       if (!mounted) return;
       if (logs.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _messengerKey.currentState?.showSnackBar(
           const SnackBar(content: Text('일치하는 이메일을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
         );
         return;
@@ -388,7 +399,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '이메일');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('⚠️ 이메일 연동 실패: $e'), backgroundColor: AppColors.destructive),
       );
     } finally {
@@ -413,6 +424,9 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
     Navigator.pop(context);
     viewModel.openBriefing(updatedContact);
 
+    // 위에서 이미 이 모달을 닫았으므로(_messengerKey가 달린 ScaffoldMessenger도
+    // 함께 사라짐) 로컬 키가 아니라 바깥(레이더 화면)의 ScaffoldMessenger를
+    // 찾아가야 스낵바가 뜬다.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('🎉 ${contact.name} 님의 실제 $channelLabel 기록 ${toAdd.length}건을 연동했습니다!'),

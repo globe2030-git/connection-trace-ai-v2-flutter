@@ -167,7 +167,7 @@ class RadarView extends StatelessWidget {
 
                     // Hero Animated Radar Pulse Beacon Container (ME Center + Surrounding Contact Blips)
                     Center(
-                      child: RadarPulseHeroWidget(nearbyContact: nearby),
+                      child: RadarPulseHeroWidget(nearbyContact: nearby, nearbyDistanceMeters: nearbyDistance),
                     ),
 
                     const SizedBox(height: 20),
@@ -392,8 +392,9 @@ class RadarView extends StatelessWidget {
 /// Pulsing Animated Wi-Fi / Radar Beacon Widget for ME vs Nearby Contacts
 class RadarPulseHeroWidget extends StatefulWidget {
   final dynamic nearbyContact;
+  final double? nearbyDistanceMeters;
 
-  const RadarPulseHeroWidget({super.key, this.nearbyContact});
+  const RadarPulseHeroWidget({super.key, this.nearbyContact, this.nearbyDistanceMeters});
 
   @override
   State<RadarPulseHeroWidget> createState() => _RadarPulseHeroWidgetState();
@@ -515,7 +516,7 @@ class _RadarPulseHeroWidgetState extends State<RadarPulseHeroWidget> with Single
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '${widget.nearbyContact.name} 140m',
+                          '${widget.nearbyContact.name} ${GeoUtils.formatDistanceLabel(widget.nearbyDistanceMeters).replaceAll(' 근접', '')}',
                           style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                         ),
                       ],

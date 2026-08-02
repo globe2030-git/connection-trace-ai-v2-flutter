@@ -125,7 +125,9 @@ class OcrScannerService {
   static OcrScanResult _parse(List<String> lines, String imagePath) {
     final emailRegExp = RegExp(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}');
     final mobileRegExp = RegExp(r'01[0-9][-.\s]?\d{3,4}[-.\s]?\d{4}');
-    final officeRegExp = RegExp(r'0(2|[3-6][0-9])[-.\s]?\d{3,4}[-.\s]?\d{4}');
+    // 02(서울)/031~069(지역 국번) 외에 070(인터넷전화)도 요즘 명함에 흔히
+    // 쓰이는데 빠져 있었음 — 회사 전화번호가 있어도 인식이 안 되는 원인이었음.
+    final officeRegExp = RegExp(r'0(2|[3-6][0-9]|70)[-.\s]?\d{3,4}[-.\s]?\d{4}');
     final addressRegExp = RegExp(
       r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)[^\n]*(로|길|동|구)[^\n]*',
     );

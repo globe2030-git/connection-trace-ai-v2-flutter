@@ -26,6 +26,13 @@ class AddCardModalView extends StatefulWidget {
 
 class _AddCardModalViewState extends State<AddCardModalView> {
   final _formKey = GlobalKey<FormState>();
+  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서,
+  // ScaffoldMessenger.of(context)를 그대로 쓰면 이 모달 뒤에 깔린 페이지의
+  // Scaffold를 찾아가 스낵바가 모달 시트에 가려 사용자 눈에 전혀 안 보이는
+  // 문제가 있었다(특히 키보드까지 열려 있으면 더더욱). 이 화면 전용
+  // ScaffoldMessenger를 로컬로 두고 키로 직접 참조해 모달 위에 스낵바가
+  // 뜨도록 한다.
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   // Text Controllers
   late TextEditingController _nameController;
@@ -211,14 +218,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     if (!mounted) return;
 
     if (missingFields.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(
           content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
           backgroundColor: AppColors.accent,
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(
           content: Text('⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.'),
           backgroundColor: AppColors.destructive,
@@ -454,7 +461,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     
     Navigator.pop(context);
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
         backgroundColor: AppColors.accent,
@@ -464,7 +471,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   void _focusAndShowError(FocusNode focusNode, String message) {
     focusNode.requestFocus();
-    ScaffoldMessenger.of(context).showSnackBar(
+    _messengerKey.currentState?.showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: AppColors.destructive,
@@ -475,7 +482,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ScaffoldMessenger(
+      key: _messengerKey,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Container(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -848,6 +859,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
           ),
         ),
+        ),
+      ),
     );
   }
 

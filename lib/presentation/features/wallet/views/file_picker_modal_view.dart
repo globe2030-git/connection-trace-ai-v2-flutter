@@ -12,6 +12,10 @@ class FilePickerModalView extends StatefulWidget {
 }
 
 class _FilePickerModalViewState extends State<FilePickerModalView> {
+  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
+  // ScaffoldMessenger.of(context)를 그대로 쓰면 스낵바가 이 모달 뒤 페이지의
+  // Scaffold로 가서 모달에 가려 안 보인다 — 로컬 ScaffoldMessenger로 우회.
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
   XFile? _pickedImage;
   Uint8List? _pickedImageBytes;
   bool _isPicking = false;
@@ -45,7 +49,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isProcessing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      _messengerKey.currentState?.showSnackBar(
         SnackBar(content: Text('⚠️ 명함 인식에 실패했습니다: $e'), backgroundColor: AppColors.destructive),
       );
     }
@@ -53,7 +57,11 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ScaffoldMessenger(
+      key: _messengerKey,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Container(
       height: MediaQuery.of(context).size.height * 0.75,
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
@@ -192,6 +200,8 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               ),
             ),
           ],
+        ),
+      ),
         ),
       ),
     );
