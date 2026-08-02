@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/motion_strategy.dart';
+import '../../../../data/models/contact_model.dart';
 import '../../../common/glass_card.dart';
 import '../../../common/action_circle_button.dart';
 import '../view_models/radar_view_model.dart';
@@ -60,12 +61,20 @@ class RadarView extends StatelessWidget {
                             IconButton(
                               icon: const Icon(Icons.qr_code_scanner, color: AppColors.textPrimary, size: 22),
                               onPressed: () {
-                                showModalBottomSheet(
+                                showModalBottomSheet<ContactModel>(
                                   context: context,
                                   isScrollControlled: true,
                                   backgroundColor: Colors.transparent,
                                   builder: (_) => const QrCodeModalView(),
-                                );
+                                ).then((scannedContact) {
+                                  if (scannedContact == null || !context.mounted) return;
+                                  showModalBottomSheet(
+                                    context: context,
+                                    isScrollControlled: true,
+                                    backgroundColor: Colors.transparent,
+                                    builder: (_) => AddCardModalView(prefillData: scannedContact),
+                                  );
+                                });
                               },
                             ),
                             IconButton(

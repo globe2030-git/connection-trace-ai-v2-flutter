@@ -20,7 +20,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
   Future<void> _pickFromGallery() async {
     setState(() => _isPicking = true);
     try {
-      final image = await OcrScannerService.pickImage(fromCamera: false);
+      final image = await OcrScannerService.pickImageFromGallery();
       if (image == null) return;
       final bytes = await image.readAsBytes();
       if (!mounted) return;

@@ -134,7 +134,7 @@ class SettingsView extends StatelessWidget {
                       SizedBox(height: 8),
                       Text('📍 위치 서비스 (GPS): 내 주변 인맥과의 거리 측정에 사용됩니다.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       SizedBox(height: 4),
-                      Text('🔒 데이터 보관: 모든 명함 정보는 기기 내부 및 암호화 DB에 안전하게 보관됩니다.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      Text('🔒 데이터 보관: 모든 명함 정보는 서버로 전송되지 않고 이 기기의 로컬 저장소에만 보관됩니다.', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
                 )

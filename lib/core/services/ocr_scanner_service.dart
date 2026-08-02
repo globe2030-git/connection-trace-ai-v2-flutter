@@ -35,18 +35,15 @@ class OcrScannerService {
   /// 없다 — 화면단에서 이 값을 보고 시도하기 전에 안내를 보여주는 데 쓴다.
   static bool get isSupportedOnThisPlatform => !kIsWeb;
 
-  /// 실제 카메라(네이티브 카메라 앱) 또는 갤러리에서 이미지를 고른다.
-  /// 사용자가 취소하면 null.
-  static Future<XFile?> pickImage({required bool fromCamera}) {
+  /// 갤러리에서 명함 이미지를 고른다. 사용자가 취소하면 null.
+  /// (카메라 촬영은 실시간 프리뷰/후면 렌즈 제어가 필요해 camera 패키지로
+  /// CameraScanModalView에서 직접 처리하고, 여기서는 갤러리 선택만 담당한다.)
+  static Future<XFile?> pickImageFromGallery() {
     return _picker.pickImage(
-      source: fromCamera ? ImageSource.camera : ImageSource.gallery,
-      // 명함은 상대방에게 받아서 촬영하는 물건이라 후면 카메라가 기본이어야
-      // 함(전면 카메라는 셀카용). image_picker 자체 기본값도 rear이긴 하지만,
-      // 명시적으로 지정해서 의도를 분명히 하고 혹시 모를 플랫폼별 예외를 막는다.
-      preferredCameraDevice: CameraDevice.rear,
+      source: ImageSource.gallery,
       // OCR 인식률은 원본 해상도/압축 손실에 크게 좌우된다(명함 글자가 작아서
-      // 저해상도·저품질이면 특히 취약함) — maxWidth를 두지 않아 카메라 원본
-      // 해상도를 그대로 쓰고, JPEG 압축 손실도 최소화한다.
+      // 저해상도·저품질이면 특히 취약함) — maxWidth를 두지 않아 원본 해상도를
+      // 그대로 쓰고, JPEG 압축 손실도 최소화한다.
       imageQuality: 100,
     );
   }

@@ -14,8 +14,11 @@ import 'file_picker_modal_view.dart';
 
 class AddCardModalView extends StatefulWidget {
   final ContactModel? contactToEdit;
+  // QR 스캔 등으로 미리 채워 넣을 값 — contactToEdit과 달리 "새 명함"으로
+  // 저장된다(기존 id를 덮어쓰지 않음). 필드 초기값 채우는 용도로만 쓰임.
+  final ContactModel? prefillData;
 
-  const AddCardModalView({super.key, this.contactToEdit});
+  const AddCardModalView({super.key, this.contactToEdit, this.prefillData});
 
   @override
   State<AddCardModalView> createState() => _AddCardModalViewState();
@@ -79,7 +82,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   @override
   void initState() {
     super.initState();
-    final c = widget.contactToEdit;
+    final c = widget.contactToEdit ?? widget.prefillData;
     _selectedAvatarUrl = c?.avatarUrl;
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');

@@ -107,7 +107,51 @@ class WalletView extends StatelessWidget {
                     itemCount: viewModel.filteredContacts.length,
                     itemBuilder: (context, index) {
                       final contact = viewModel.filteredContacts[index];
-                      return GlassCard(
+                      return Dismissible(
+                        key: ValueKey(contact.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          alignment: Alignment.centerRight,
+                          decoration: BoxDecoration(
+                            color: AppColors.destructive,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: const Icon(Icons.delete_outline, color: Colors.white),
+                        ),
+                        confirmDismiss: (_) async {
+                          return await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: AppColors.cardDark,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  title: const Text('🗑️ 명함 삭제', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  content: Text(
+                                    '${contact.name}님의 디지털 명함을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+                                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, false),
+                                      child: const Text('취소', style: TextStyle(color: AppColors.textSecondary)),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(ctx, true),
+                                      child: const Text('삭제', style: TextStyle(color: AppColors.destructive, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              ) ??
+                              false;
+                        },
+                        onDismissed: (_) {
+                          viewModel.deleteContact(contact.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('🗑️ ${contact.name}님의 명함을 삭제했습니다.'), backgroundColor: AppColors.destructive),
+                          );
+                        },
+                        child: GlassCard(
                         margin: const EdgeInsets.only(bottom: 10),
                         child: Row(
                           children: [
@@ -192,6 +236,7 @@ class WalletView extends StatelessWidget {
                                onPressed: () => viewModel.togglePriority(contact.id),
                              )
                           ],
+                        ),
                         ),
                       );
                     },

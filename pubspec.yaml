@@ -56,6 +56,13 @@ dependencies:
   # 실제로 로그인이 된다(코드만으론 안 되는 부분 — README/오류노트 참고).
   google_sign_in: ^7.2.0
   http: ^1.2.0
+  # 명함 스캔 화면에서 실제 후면 카메라 실시간 프리뷰를 보여주고, 가이드 프레임에
+  # 맞춰 촬영 결과를 크롭하기 위한 패키지들.
+  camera: ^0.11.0+2
+  image: ^4.3.0
+  # 디지털 명함 QR 코드 표시(qr_flutter)와 상대방 QR 코드 실시간 스캔(mobile_scanner).
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^7.4.0
 
 dev_dependencies:
   flutter_test:
