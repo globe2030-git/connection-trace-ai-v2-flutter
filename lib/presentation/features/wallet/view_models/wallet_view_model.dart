@@ -20,6 +20,9 @@ class WalletViewModel extends ChangeNotifier {
 
   String get searchTerm => _searchTerm;
   List<String> get selectedTags => List.unmodifiable(_selectedTags);
+  // 검색/태그 필터와 무관한 전체 목록 — 중복 인맥(휴대폰 번호 일치) 검사처럼
+  // 필터링된 filteredContacts로는 놓칠 수 있는 조회에 쓴다.
+  List<ContactModel> get contacts => _contactsRepository.contacts;
 
   List<String> get allTags {
     final tagsSet = <String>{};

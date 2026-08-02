@@ -456,12 +456,32 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
-  void _executeFinalSave(String finalAddress, GeoPosition? resolvedGeo) {
+  Future<void> _executeFinalSave(String finalAddress, GeoPosition? resolvedGeo) async {
     final tags = _tagsController.text
         .split(',')
         .map((t) => t.trim())
         .where((t) => t.isNotEmpty)
         .toList();
+
+    // 신규 등록일 때만 중복 검사 — 수정(_isEditing)은 이미 어떤 명함을 고치는지
+    // 확정된 상태라 검사할 필요가 없다. 휴대폰 번호가 "같은 사람"을 가장
+    // 신뢰할 수 있게 식별하는 값이라(이직해도 개인 번호는 잘 안 바뀜) 이걸로
+    // 매칭한다.
+    if (!_isEditing) {
+      final duplicate = _findDuplicateContact(_phoneController.text.trim());
+      if (duplicate != null) {
+        final wantsUpdate = await _showDuplicateFoundDialog(duplicate);
+        if (!mounted) return;
+        if (wantsUpdate != true) return; // 취소 또는 "기존 정보 유지" — 저장하지 않고 폼에 남는다.
+
+        final deleteOldRecord = await _showKeepHistoryDialog();
+        if (!mounted) return;
+        if (deleteOldRecord == null) return; // 대화상자 닫힘 — 저장 보류
+
+        _applyUpdateToExisting(duplicate, finalAddress, resolvedGeo, tags, deleteOldRecord: deleteOldRecord);
+        return;
+      }
+    }
 
     final contact = ContactModel(
       id: _isEditing ? widget.contactToEdit!.id : DateTime.now().millisecondsSinceEpoch.toString(),
@@ -498,6 +518,156 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
+        backgroundColor: AppColors.accent,
+      ),
+    );
+  }
+
+  String _normalizeDuplicatePhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length > 9 ? digits.substring(digits.length - 9) : digits;
+  }
+
+  // "같은 사람"을 식별하는 기준은 휴대폰 번호 — 이직해서 회사/직함/이메일이
+  // 바뀌어도 개인 번호는 잘 안 바뀌기 때문에 가장 신뢰할 수 있는 값이다.
+  ContactModel? _findDuplicateContact(String phone) {
+    final normalized = _normalizeDuplicatePhone(phone);
+    if (normalized.isEmpty) return null;
+    for (final c in context.read<WalletViewModel>().contacts) {
+      if (_normalizeDuplicatePhone(c.phone) == normalized) return c;
+    }
+    return null;
+  }
+
+  Future<bool?> _showDuplicateFoundDialog(ContactModel existing) {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('📇 이미 등록된 인맥입니다', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '휴대폰 번호가 같은 기존 명함이 있습니다. 어떻게 할까요?',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: AppColors.bgDarkSlate, borderRadius: BorderRadius.circular(12)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('기존 정보', style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${existing.name} · ${existing.title} · ${existing.company}',
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text('새로 입력한 정보', style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_nameController.text.trim()} · ${_titleController.text.trim()} · ${_companyController.text.trim()}',
+                    style: const TextStyle(color: AppColors.accentText, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('기존 정보 유지', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('최신 정보로 업데이트', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool?> _showKeepHistoryDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('🗂️ 기존 정보 처리', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          '업데이트하면 기존 명함 정보(회사·직함·연락처 등)는 어떻게 할까요?\n"기록으로 남기기"를 선택하면 메모에 이전 정보가 남습니다.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('기록으로 남기기', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제', style: TextStyle(color: AppColors.destructive, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyUpdateToExisting(
+    ContactModel existing,
+    String finalAddress,
+    GeoPosition? resolvedGeo,
+    List<String> tags, {
+    required bool deleteOldRecord,
+  }) {
+    final newMemo = _memoController.text.trim();
+    String? mergedMemo;
+    if (deleteOldRecord) {
+      mergedMemo = newMemo.isEmpty ? null : newMemo;
+    } else {
+      final dateLabel = DateTime.now().toIso8601String().substring(0, 10);
+      final oldFields = [
+        existing.company,
+        existing.title,
+        existing.phone,
+        if (existing.officePhone != null && existing.officePhone!.isNotEmpty) existing.officePhone,
+        if (existing.email.isNotEmpty) existing.email,
+        if (existing.address != null && existing.address!.isNotEmpty) existing.address,
+      ].join(' / ');
+      final oldSnapshot = '[이전 정보 · $dateLabel] $oldFields';
+      mergedMemo = [oldSnapshot, if (newMemo.isNotEmpty) newMemo].join('\n');
+    }
+
+    // id/talkingPoints/commLogs/isPriority는 copyWith에서 안 건드리면 기존
+    // 값 그대로 유지됨 — "같은 사람"의 소통 이력·우선순위는 명함 버전이
+    // 바뀌어도 이어지는 게 맞다.
+    final updated = existing.copyWith(
+      name: _nameController.text.trim(),
+      company: _companyController.text.trim(),
+      title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
+      address: finalAddress,
+      addressDetail: _addressDetailController.text.trim().isEmpty ? null : _addressDetailController.text.trim(),
+      phone: _phoneController.text.trim(),
+      officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
+      email: _emailController.text.trim(),
+      avatarUrl: _selectedAvatarUrl ?? existing.avatarUrl,
+      tags: tags.isEmpty ? existing.tags : tags,
+      geo: resolvedGeo ?? existing.geo,
+      memo: mergedMemo,
+    );
+
+    context.read<WalletViewModel>().updateContact(updated);
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('🔄 ${updated.name} 님의 정보를 최신 정보로 업데이트했습니다.'),
         backgroundColor: AppColors.accent,
       ),
     );
