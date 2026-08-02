@@ -2,6 +2,39 @@
 
 ## 작업 로그
 
+### 2026-08-02 (추가 11) — 직전 Scaffold 래핑 수정이 낸 회귀 버그 긴급 수정
+
+(추가 10)에서 "스낵바가 모달에 가려 안 보이는 문제"를 고친다며 각 모달을
+`Scaffold(backgroundColor: transparent)`로 감쌌는데, 사용자가 바로 "명함
+등록 +를 누르면 이름 필드만 뜬다"고 재보고. 화면 녹화를 요청해 확인한 결과
+이름 필드 아래로 폼 전체가 통째로 안 보이는 심각한 레이아웃 회귀였음.
+
+**원인**: `showModalBottomSheet`는 콘텐츠의 실제 높이를 보고 시트 크기를
+스스로 계산하는데, 그 안에 `Scaffold`를 중첩하면 Scaffold 자체의 레이아웃
+알고리즘(자식에게 고정 크기 제약을 주는 방식)과 충돌해 폼이 한 줄만 그려짐.
+더 나아가 Flutter SDK 소스(`scaffold.dart`)를 직접 확인해보니
+`ScaffoldMessenger.showSnackBar`는 등록된 `Scaffold`가 하나도 없으면
+`_updateScaffolds()`가 할 일이 없어 스낵바가 조용히 안 뜨는 구조였음(디버그
+모드에서만 assert로 걸러짐, 릴리스 빌드에선 그냥 무음 실패) — 즉 (추가 10)
+의 "Scaffold 없이 ScaffoldMessenger만 쓰기" 접근도 애초에 근본적으로 틀린
+방향이었음.
+
+**수정**: Scaffold/ScaffoldMessenger에 기대는 걸 완전히 포기하고, 각 모달이
+자기 폼 안에 직접 배너 위젯을 그리는 방식으로 교체
+(`add_card_modal_view.dart`의 `_buildInlineNotice`,
+`file_picker_modal_view.dart`/`communication_trace_test_modal_view.dart`도
+동일 패턴) — 어떤 상황에서도 모달 위에 확실히 보이고, `showModalBottomSheet`
+의 자체 높이 계산과도 전혀 충돌하지 않는 가장 안전한 방식. 모달을 이미 닫은
+뒤(`Navigator.pop` 이후) 호출되는 스낵바(저장 완료, 연동 완료 등)는 원래대로
+바깥 `ScaffoldMessenger.of(context)`를 그대로 사용(부모 화면에 정상 표시).
+
+추가로 사용자 요청으로 명함 촬영 가이드 프레임 테두리 색을 accentText에서
+흰색으로 변경.
+
+실기기 설치+실행 확인.
+
+---
+
 ### 2026-08-02 (추가 10) — 모달 스낵바 안 보이던 근본 원인 수정 (화면 녹화로 진단)
 
 사용자가 "필수 정보 없을 때 뒷면 스캔 안내가 안 뜬다"고 재보고. 텍스트만
