@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../common/glass_card.dart';
+import 'manual_comm_log_modal_view.dart';
 
 class BriefingOverlayView extends StatefulWidget {
   final ContactModel contact;
@@ -162,19 +163,39 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
 
                     // Recent Communication History Integration Trace
                     const SizedBox(height: 16),
-                    const Text(
-                      '💬 최근 소통 Trace 연동 (통화 / 문자 / 이메일 / 카카오톡)',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '💬 최근 소통 Trace 연동 (통화 / 문자 / 이메일 / 카카오톡)',
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                          ),
+                        ),
+                        TextButton.icon(
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => ManualCommLogModalView(contact: contact),
+                            );
+                          },
+                          icon: const Icon(Icons.add_circle_outline, size: 16, color: AppColors.accentText),
+                          label: const Text('직접 추가', style: TextStyle(fontSize: 12, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     // 아이폰에서 이 목록을 보고 "자동으로 연동되는구나"라고 오해하지
                     // 않도록, 플랫폼별로 실제 가능한 것을 명확히 안내한다 — 통화/문자는
                     // 안드로이드에서만 실제 연동되고, 카카오톡/이메일은 어느 플랫폼에서도
-                    // 아직 데모 데이터다.
+                    // 아직 데모 데이터다. "직접 추가"(수동 입력)는 모든 플랫폼에서 항상 가능.
                     Text(
                       CommLogSyncService.isSupportedOnThisPlatform
-                          ? '통화·문자는 실제 기기 데이터와 연동 가능(🔄 배지), 카카오톡·이메일은 아직 데모입니다.'
-                          : '이 기기(iOS)에서는 자동 연동이 불가능합니다 — 아래는 전부 데모 데이터입니다.',
+                          ? '통화·문자는 실제 기기 데이터와 연동 가능(🔄 배지), 카카오톡·이메일은 "직접 추가"로 기록하세요.'
+                          : '이 기기(iOS)에서는 자동 연동이 불가능합니다 — "직접 추가"로 기록해 주세요.',
                       style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic),
                     ),
                     const SizedBox(height: 8),
@@ -182,7 +203,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     if (contact.commLogs.isEmpty)
                       GlassCard(
                         child: const Text(
-                          '최근 소통 기록이 없습니다. 이메일/문자/카카오톡 연동 대기 중...',
+                          '최근 소통 기록이 없습니다. 위 "직접 추가" 버튼으로 통화·문자·이메일·카카오톡 내용을 기록해 보세요.',
                           style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
                         ),
                       )

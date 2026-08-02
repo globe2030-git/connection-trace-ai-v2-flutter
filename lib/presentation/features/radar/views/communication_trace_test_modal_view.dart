@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/services/comm_log_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../briefing/views/manual_comm_log_modal_view.dart';
 import '../view_models/radar_view_model.dart';
 
 class CommunicationTraceTestModalView extends StatefulWidget {
@@ -95,8 +96,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 ),
                 child: Text(
                   CommLogSyncService.isSupportedOnThisPlatform
-                      ? '🔄 이 기기(Android)에서는 통화·문자 기록을 실제로 읽어와 자동 연동할 수 있습니다. 카카오톡·이메일은 아직 준비 중이라 데모 데이터로만 확인할 수 있습니다.'
-                      : '📱 iOS는 OS 정책상 앱이 통화기록·문자·카카오톡에 접근하는 것 자체가 불가능해 자동 연동을 지원하지 않습니다. 아래는 전부 데모 데이터이며, 실제 사용 시에는 수동 입력 기능(준비 중)을 이용하게 됩니다.',
+                      ? '🔄 이 기기(Android)에서는 통화·문자 기록을 실제로 읽어와 자동 연동할 수 있습니다. 카카오톡·이메일은 API 자체가 없어 직접 입력으로 기록합니다.'
+                      : '📱 iOS는 OS 정책상 앱이 통화기록·문자·카카오톡에 접근하는 것 자체가 불가능해 자동 연동을 지원하지 않습니다. 아래에서 직접 입력으로 기록해 주세요.',
                   style: TextStyle(
                     fontSize: 12,
                     color: CommLogSyncService.isSupportedOnThisPlatform
@@ -187,36 +188,28 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               const SizedBox(height: 18),
 
               const Text(
-                '📝 수동/데모 항목 (준비 중 — 실제 연동 아님)',
+                '📝 수동 입력 (카카오톡·이메일은 이 방식으로 기록)',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 10),
 
-              // 3. 카카오톡 — 어떤 플랫폼도 개인 대화 읽기 API가 없어 항상 데모/수동만 가능
+              // 3. 카카오톡 — 어떤 플랫폼도 개인 대화 읽기 API가 없어 항상 수동 입력만 가능
               _buildChannelButton(
                 icon: Icons.chat_bubble_outline,
                 color: AppColors.channelKakao,
-                title: '💬 카카오톡 메시지 (데모)',
-                subtitle: '카카오톡 - "다음 주 화요일 미팅 장소 테헤란로로 확정했습니다!"',
-                onTap: () => _triggerDemoCommLog(
-                  contact: selectedContact,
-                  type: 'kakao',
-                  summary: '카카오톡 메세지 - "다음 주 화요일 미팅 장소 테헤란로로 확정했습니다!"',
-                ),
+                title: '💬 카카오톡 메시지 직접 입력',
+                subtitle: '카카오톡으로 나눈 대화 내용을 직접 기록합니다',
+                onTap: () => _openManualEntry(selectedContact, 'kakao'),
               ),
               const SizedBox(height: 10),
 
-              // 4. 이메일 — 실제 연동은 OAuth 등 별도 작업 필요, 아직 데모만
+              // 4. 이메일 — 실제 연동은 OAuth 등 별도 작업 필요, 그때까진 수동 입력
               _buildChannelButton(
                 icon: Icons.email_outlined,
                 color: AppColors.channelEmail,
-                title: '✉️ 이메일 (데모)',
-                subtitle: '이메일 - [테크노바] 2026 하반기 파트너십 계약서 최종본.pdf',
-                onTap: () => _triggerDemoCommLog(
-                  contact: selectedContact,
-                  type: 'email',
-                  summary: '이메일 수신 - [${selectedContact.company}] 2026 하반기 파트너십 계약서 최종본.pdf',
-                ),
+                title: '✉️ 이메일 직접 입력',
+                subtitle: '주고받은 이메일 내용을 직접 기록합니다',
+                onTap: () => _openManualEntry(selectedContact, 'email'),
               ),
 
               const SizedBox(height: 16),
@@ -352,48 +345,13 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
     );
   }
 
-  void _triggerDemoCommLog({
-    required ContactModel contact,
-    required String type,
-    required String summary,
-  }) {
-    final newLog = CommunicationLogModel(
-      type: type,
-      summary: summary,
-      timestamp: DateTime.now(),
+  void _openManualEntry(ContactModel contact, String initialType) {
+    Navigator.pop(context); // 이 테스트 모달을 닫고
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => ManualCommLogModalView(contact: contact, initialType: initialType),
     );
-
-    final updatedLogs = [newLog, ...contact.commLogs];
-    final updatedContact = contact.copyWith(commLogs: updatedLogs);
-
-    final viewModel = context.read<RadarViewModel>();
-    // Update contact in repository
-    viewModel.updateContact(updatedContact);
-
-    Navigator.pop(context);
-
-    // Immediately open Briefing Overlay for the updated contact so user sees the new log!
-    viewModel.openBriefing(updatedContact);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('🎉 ${contact.name} 님의 [${_getTypeName(type)}] 소통 연동 신호가 발생하여 AI 브리핑에 반영되었습니다!'),
-        backgroundColor: AppColors.accent,
-      ),
-    );
-  }
-
-  String _getTypeName(String type) {
-    switch (type) {
-      case 'call':
-        return '최근통화';
-      case 'sms':
-        return '문자';
-      case 'email':
-        return '이메일';
-      case 'kakao':
-      default:
-        return '카카오톡';
-    }
   }
 }
