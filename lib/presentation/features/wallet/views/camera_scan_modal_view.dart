@@ -17,12 +17,26 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   static const _guideFrameSize = Size(320, 200);
 
+  // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
+  // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
+  // 눌러서 생기는 순간적인 흔들림(모션 블러)이 OCR 인식률을 떨어뜨리는
+  // 주된 원인이라, 사용자가 직접 누르지 않아도 되게 하는 게 목적.
+  static const _requiredStableFrames = 8;
+  static const _stabilityDiffThreshold = 6.0;
+  static const _sampleGridSize = 24;
+  static const _autoCaptureWarmup = Duration(milliseconds: 900);
+
   late AnimationController _laserController;
   CameraController? _controller;
   bool _isInitializing = true;
   String? _initError;
   bool _isFlashOn = false;
   bool _isCapturing = false;
+  bool _isStreamingForAutoCapture = false;
+  bool _isFrameStable = false;
+  int _stableFrameCount = 0;
+  List<int>? _previousLumaSample;
+  DateTime? _streamStartedAt;
 
   @override
   void initState() {
@@ -50,7 +64,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         backCamera,
         ResolutionPreset.veryHigh,
         enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        // takePicture()의 실제 촬영 결과물 포맷과는 무관하고(항상 JPEG),
+        // startImageStream()으로 안정성(흔들림) 감지용 프레임을 받아오기
+        // 위한 포맷 — yuv420이 플랫폼 간 가장 널리 지원됨.
+        imageFormatGroup: ImageFormatGroup.yuv420,
       );
       await controller.initialize();
       if (!mounted) {
@@ -61,6 +78,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         _controller = controller;
         _isInitializing = false;
       });
+      await _startAutoCaptureStream();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -75,6 +93,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _isStreamingForAutoCapture = false;
       controller.dispose();
       _controller = null;
     } else if (state == AppLifecycleState.resumed) {
@@ -103,11 +122,104 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     }
   }
 
+  /// 카메라 프리뷰 스트림을 받아 연속된 프레임 간 밝기 차이(흔들림 정도)를
+  /// 측정한다. 일정 프레임 이상 안정 상태가 유지되면 자동으로 촬영한다.
+  /// 정밀한 카드 사각형 인식(엣지 검출)까지는 아니고 "흔들리지 않고 멈춰
+  /// 있는가"만 보는 가벼운 방식이지만, 셔터를 손으로 눌러서 생기는 흔들림을
+  /// 없애는 실제 목적에는 충분하다.
+  Future<void> _startAutoCaptureStream() async {
+    final controller = _controller;
+    if (controller == null || _isStreamingForAutoCapture) return;
+    _streamStartedAt = DateTime.now();
+    _stableFrameCount = 0;
+    _previousLumaSample = null;
+    try {
+      await controller.startImageStream(_onCameraFrame);
+      _isStreamingForAutoCapture = true;
+    } catch (_) {
+      // 스트리밍이 안 되는 기기/상태면 조용히 포기 — 수동 셔터 버튼은 계속 동작.
+    }
+  }
+
+  Future<void> _stopAutoCaptureStream() async {
+    final controller = _controller;
+    if (controller == null || !_isStreamingForAutoCapture) return;
+    _isStreamingForAutoCapture = false;
+    try {
+      await controller.stopImageStream();
+    } catch (_) {}
+  }
+
+  void _onCameraFrame(CameraImage image) {
+    if (_isCapturing || !mounted) return;
+    // 카메라가 막 열렸을 때 자동 노출/초점이 안정되기 전까지는 안정 여부
+    // 판단을 건너뛴다 — 오탐(초점 잡는 중인데 "안정됨"으로 오인) 방지.
+    final startedAt = _streamStartedAt;
+    if (startedAt != null && DateTime.now().difference(startedAt) < _autoCaptureWarmup) {
+      return;
+    }
+
+    final sample = _sampleLuma(image);
+    final previous = _previousLumaSample;
+    _previousLumaSample = sample;
+    if (previous == null || previous.length != sample.length) return;
+
+    double diffSum = 0;
+    for (var i = 0; i < sample.length; i++) {
+      diffSum += (sample[i] - previous[i]).abs();
+    }
+    final avgDiff = diffSum / sample.length;
+
+    if (avgDiff < _stabilityDiffThreshold) {
+      _stableFrameCount++;
+    } else {
+      _stableFrameCount = 0;
+    }
+
+    final nowStable = _stableFrameCount >= 3;
+    if (nowStable != _isFrameStable) {
+      setState(() => _isFrameStable = nowStable);
+    }
+
+    if (_stableFrameCount >= _requiredStableFrames) {
+      _stableFrameCount = 0;
+      _capturePhoto();
+    }
+  }
+
+  /// 프레임 전체를 다 볼 필요 없이 Y(밝기) 평면에서 격자 형태로 샘플링만
+  /// 해서 가볍게 비교한다 — 매 프레임 호출되므로 연산량을 최소화해야 함.
+  List<int> _sampleLuma(CameraImage image) {
+    final plane = image.planes.first;
+    final bytesPerRow = plane.bytesPerRow;
+    final height = image.height;
+    final width = image.width;
+    final result = <int>[];
+    for (var gy = 0; gy < _sampleGridSize; gy++) {
+      final y = (gy * height ~/ _sampleGridSize).clamp(0, height - 1);
+      for (var gx = 0; gx < _sampleGridSize; gx++) {
+        final x = (gx * width ~/ _sampleGridSize).clamp(0, width - 1);
+        final index = y * bytesPerRow + x;
+        if (index >= 0 && index < plane.bytes.length) {
+          result.add(plane.bytes[index]);
+        }
+      }
+    }
+    return result;
+  }
+
   Future<void> _capturePhoto() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _isCapturing) return;
 
-    setState(() => _isCapturing = true);
+    // takePicture()는 이미지 스트림이 활성화된 상태에서 호출하면 실패하는
+    // 기기가 있어서, 촬영 직전엔 항상 스트림을 먼저 멈춘다.
+    await _stopAutoCaptureStream();
+
+    setState(() {
+      _isCapturing = true;
+      _isFrameStable = false;
+    });
 
     try {
       final rawFile = await controller.takePicture();
@@ -123,6 +235,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('⚠️ 명함 인식에 실패했습니다: $e'), backgroundColor: AppColors.destructive),
       );
+      // 실패해서 다시 화면이 보이는 상태로 남으면, 재시도할 수 있게 안정성
+      // 감지를 다시 시작한다.
+      await _startAutoCaptureStream();
     }
   }
 
@@ -304,13 +419,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
                     width: _guideFrameSize.width,
                     height: _guideFrameSize.height,
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      border: Border.all(
+                        color: _isFrameStable ? Colors.greenAccent : Colors.white,
+                        width: _isFrameStable ? 3 : 1.5,
+                      ),
                     ),
                     child: Stack(
                       children: [
@@ -342,9 +461,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      '가이드 틀 안에 명함을 맞추어 촬영해 주세요',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w500),
+                    child: Text(
+                      _isFrameStable ? '고정됨 · 자동으로 촬영합니다' : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                      style: TextStyle(
+                        color: _isFrameStable ? Colors.greenAccent : AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   )
                 ],
