@@ -97,6 +97,30 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
             ),
             const SizedBox(height: 16),
 
+            if (!OcrScannerService.isSupportedOnThisPlatform)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.destructive.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.destructive.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: AppColors.destructive, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '웹 브라우저에서는 OCR 인식이 지원되지 않습니다. 이미지 선택은 미리 볼 수 있지만, 실제 텍스트 인식은 모바일(Android/iOS) 앱에서만 가능합니다.',
+                        style: TextStyle(color: AppColors.destructive, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // 실제 기기 갤러리에서 고른 이미지 미리보기 / 선택 트리거
             Expanded(
               child: Container(
@@ -151,7 +175,9 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton.icon(
-                onPressed: (_pickedImage == null || _isProcessing) ? null : _processSelectedImage,
+                onPressed: (_pickedImage == null || _isProcessing || !OcrScannerService.isSupportedOnThisPlatform)
+                    ? null
+                    : _processSelectedImage,
                 icon: _isProcessing
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.document_scanner, color: Colors.white),

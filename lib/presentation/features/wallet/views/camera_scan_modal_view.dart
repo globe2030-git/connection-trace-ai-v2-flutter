@@ -96,21 +96,39 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
               top: 16,
               left: 16,
               right: 16,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                    onPressed: () => Navigator.pop(context),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                      const Text(
+                        '명함 카메라 스캔',
+                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, color: _isFlashOn ? AppColors.accentText : Colors.white, size: 24),
+                        onPressed: () => setState(() => _isFlashOn = !_isFlashOn),
+                      ),
+                    ],
                   ),
-                  const Text(
-                    '명함 카메라 스캔',
-                    style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-                  ),
-                  IconButton(
-                    icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, color: _isFlashOn ? AppColors.accentText : Colors.white, size: 24),
-                    onPressed: () => setState(() => _isFlashOn = !_isFlashOn),
-                  ),
+                  if (!OcrScannerService.isSupportedOnThisPlatform)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.destructive.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text(
+                        '웹 브라우저에서는 OCR 인식이 지원되지 않습니다. 모바일 앱에서 테스트해 주세요.',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -174,7 +192,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
               right: 0,
               child: Center(
                 child: GestureDetector(
-                  onTap: _isCapturing ? null : _capturePhoto,
+                  onTap: (_isCapturing || !OcrScannerService.isSupportedOnThisPlatform) ? null : _capturePhoto,
                   child: Container(
                     width: 76,
                     height: 76,
@@ -184,8 +202,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView> with SingleTi
                       border: Border.all(color: Colors.white, width: 4),
                     ),
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: AppColors.accent,
+                      decoration: BoxDecoration(
+                        color: OcrScannerService.isSupportedOnThisPlatform ? AppColors.accent : AppColors.textMuted,
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(Icons.camera_alt, color: Colors.white, size: 36),

@@ -31,6 +31,10 @@ class OcrScanResult {
 class OcrScannerService {
   static final ImagePicker _picker = ImagePicker();
 
+  /// Google ML Kit은 온디바이스 전용 SDK라 웹(브라우저)에서는 아예 실행할 수
+  /// 없다 — 화면단에서 이 값을 보고 시도하기 전에 안내를 보여주는 데 쓴다.
+  static bool get isSupportedOnThisPlatform => !kIsWeb;
+
   /// 실제 카메라(네이티브 카메라 앱) 또는 갤러리에서 이미지를 고른다.
   /// 사용자가 취소하면 null.
   static Future<XFile?> pickImage({required bool fromCamera}) {
