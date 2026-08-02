@@ -190,12 +190,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     const SizedBox(height: 6),
                     // 아이폰에서 이 목록을 보고 "자동으로 연동되는구나"라고 오해하지
                     // 않도록, 플랫폼별로 실제 가능한 것을 명확히 안내한다 — 통화/문자는
-                    // 안드로이드에서만 실제 연동되고, 카카오톡/이메일은 어느 플랫폼에서도
-                    // 아직 데모 데이터다. "직접 추가"(수동 입력)는 모든 플랫폼에서 항상 가능.
+                    // 안드로이드에서만, 이메일은 Google 로그인하면 모든 플랫폼에서 실제
+                    // 연동 가능하고, 카카오톡은 API가 없어 "직접 추가"만 가능.
                     Text(
                       CommLogSyncService.isSupportedOnThisPlatform
-                          ? '통화·문자는 실제 기기 데이터와 연동 가능(🔄 배지), 카카오톡·이메일은 "직접 추가"로 기록하세요.'
-                          : '이 기기(iOS)에서는 자동 연동이 불가능합니다 — "직접 추가"로 기록해 주세요.',
+                          ? '통화·문자·이메일은 실제 데이터와 연동 가능(🔄 배지, "소통 연동" 화면에서), 카카오톡은 "직접 추가"로 기록하세요.'
+                          : '이 기기(iOS)에서는 통화·문자 자동 연동이 불가능하지만, 이메일은 Google 로그인으로 연동할 수 있습니다("소통 연동" 화면 참고).',
                       style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic),
                     ),
                     const SizedBox(height: 8),

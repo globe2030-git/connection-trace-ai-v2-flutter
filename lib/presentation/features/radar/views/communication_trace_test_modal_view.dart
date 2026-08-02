@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/services/comm_log_sync_service.dart';
+import '../../../../core/services/email_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../briefing/views/manual_comm_log_modal_view.dart';
@@ -17,6 +18,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
   String? _selectedContactId;
   bool _isSyncingCall = false;
   bool _isSyncingSms = false;
+  bool _isSyncingEmail = false;
+  bool _isSigningInEmail = false;
 
   @override
   Widget build(BuildContext context) {
@@ -96,8 +99,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 ),
                 child: Text(
                   CommLogSyncService.isSupportedOnThisPlatform
-                      ? '🔄 이 기기(Android)에서는 통화·문자 기록을 실제로 읽어와 자동 연동할 수 있습니다. 카카오톡·이메일은 API 자체가 없어 직접 입력으로 기록합니다.'
-                      : '📱 iOS는 OS 정책상 앱이 통화기록·문자·카카오톡에 접근하는 것 자체가 불가능해 자동 연동을 지원하지 않습니다. 아래에서 직접 입력으로 기록해 주세요.',
+                      ? '🔄 이 기기(Android)에서는 통화·문자 기록을 실제로 읽어와 자동 연동할 수 있습니다. 이메일은 Google 계정 로그인 후 모든 플랫폼에서 연동 가능하고, 카카오톡은 API 자체가 없어 직접 입력으로만 기록합니다.'
+                      : '📱 iOS는 OS 정책상 앱이 통화기록·문자·카카오톡에 접근하는 것 자체가 불가능합니다. 다만 이메일은 Google 계정 로그인으로 이 플랫폼에서도 연동 가능합니다.',
                   style: TextStyle(
                     fontSize: 12,
                     color: CommLogSyncService.isSupportedOnThisPlatform
@@ -152,9 +155,9 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
 
               const SizedBox(height: 18),
 
-              Text(
-                CommLogSyncService.isSupportedOnThisPlatform ? '🔄 자동 연동 (실제 기기 데이터)' : '🔒 자동 연동 (이 플랫폼에서는 불가)',
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              const Text(
+                '🔄 자동 연동 (실제 기기/계정 데이터 — 통화·문자는 Android만, 이메일은 전 플랫폼)',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
               ),
               const SizedBox(height: 10),
 
@@ -184,32 +187,61 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 enabled: CommLogSyncService.isSupportedOnThisPlatform,
                 onTap: () => _syncSmsMessages(selectedContact),
               ),
+              const SizedBox(height: 10),
+
+              // 3. 이메일 — Gmail API + Google 로그인, 모든 플랫폼에서 동일하게 동작
+              if (!EmailSyncService.isSignedIn)
+                _buildChannelButton(
+                  icon: Icons.login,
+                  color: AppColors.channelEmail,
+                  title: '✉️ Google 계정으로 로그인',
+                  subtitle: '로그인하면 이메일도 실제로 연동할 수 있습니다',
+                  isLoading: _isSigningInEmail,
+                  onTap: _signInEmail,
+                )
+              else ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildChannelButton(
+                        icon: Icons.email_outlined,
+                        color: AppColors.channelEmail,
+                        title: '✉️ 이메일 기록 연동',
+                        subtitle: '${selectedContact.name} 님과 주고받은 이메일을 실제로 불러옵니다',
+                        isLoading: _isSyncingEmail,
+                        onTap: () => _syncEmails(selectedContact),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _signOutEmail,
+                    child: Text(
+                      '${EmailSyncService.signedInEmail} 로그아웃',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                    ),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 18),
 
               const Text(
-                '📝 수동 입력 (카카오톡·이메일은 이 방식으로 기록)',
+                '📝 수동 입력 (카카오톡은 이 방식만 가능)',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 10),
 
-              // 3. 카카오톡 — 어떤 플랫폼도 개인 대화 읽기 API가 없어 항상 수동 입력만 가능
+              // 4. 카카오톡 — 어떤 플랫폼도 개인 대화 읽기 API가 없어 항상 수동 입력만 가능
               _buildChannelButton(
                 icon: Icons.chat_bubble_outline,
                 color: AppColors.channelKakao,
                 title: '💬 카카오톡 메시지 직접 입력',
                 subtitle: '카카오톡으로 나눈 대화 내용을 직접 기록합니다',
                 onTap: () => _openManualEntry(selectedContact, 'kakao'),
-              ),
-              const SizedBox(height: 10),
-
-              // 4. 이메일 — 실제 연동은 OAuth 등 별도 작업 필요, 그때까진 수동 입력
-              _buildChannelButton(
-                icon: Icons.email_outlined,
-                color: AppColors.channelEmail,
-                title: '✉️ 이메일 직접 입력',
-                subtitle: '주고받은 이메일 내용을 직접 기록합니다',
-                onTap: () => _openManualEntry(selectedContact, 'email'),
               ),
 
               const SizedBox(height: 16),
@@ -317,6 +349,50 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       );
     } finally {
       if (mounted) setState(() => _isSyncingSms = false);
+    }
+  }
+
+  Future<void> _signInEmail() async {
+    setState(() => _isSigningInEmail = true);
+    try {
+      await EmailSyncService.signIn();
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ Google 로그인 실패: $e'), backgroundColor: AppColors.destructive),
+      );
+    } finally {
+      if (mounted) setState(() => _isSigningInEmail = false);
+    }
+  }
+
+  Future<void> _signOutEmail() async {
+    await EmailSyncService.signOut();
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _syncEmails(ContactModel contact) async {
+    setState(() => _isSyncingEmail = true);
+    try {
+      final logs = await EmailSyncService.syncEmails(contact.email);
+      if (!mounted) return;
+      if (logs.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('일치하는 이메일을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
+        );
+        return;
+      }
+      _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '이메일');
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('⚠️ 이메일 연동 실패: $e'), backgroundColor: AppColors.destructive),
+      );
+    } finally {
+      if (mounted) setState(() => _isSyncingEmail = false);
     }
   }
 
