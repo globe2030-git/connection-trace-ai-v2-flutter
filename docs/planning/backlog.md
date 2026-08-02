@@ -2,6 +2,51 @@
 
 ## 작업 로그
 
+### 2026-08-02 (추가 10) — 모달 스낵바 안 보이던 근본 원인 수정 (화면 녹화로 진단)
+
+사용자가 "필수 정보 없을 때 뒷면 스캔 안내가 안 뜬다"고 재보고. 텍스트만
+으로는 원인이 안 잡혀서 화면 녹화 영상을 요청 → `~/Downloads`에서 받아
+`ffmpeg`로 프레임 추출해 직접 확인.
+
+영상으로 확인한 실제 카드 내용("크림하우스(주)" / 이희규 / ICT사업본부|상무
+/ M010 4504 8595 / D 070 5084 2601 / E globe@creamhouse.co.kr, 주소 없음)과
+스캔 결과 폼을 대조한 결과: **OCR 파싱 자체는 정확했음**(이름/회사/직함/
+휴대폰/이메일 전부 정확히 추출, 주소는 카드에 실제로 없어서 정상적으로
+빈 채로 검증 에러 표시됨) — 문제는 "뒷면 스캔" 안내가 **떴는데 안 보인
+것**이었음.
+
+**근본 원인**: `add_card_modal_view.dart`를 비롯한 여러 bottom-sheet 모달
+화면이 자체 `Scaffold` 없이 `Container`만 반환하는 구조라, 그 안에서
+`ScaffoldMessenger.of(context)`를 호출하면 이 모달 뒤에 깔린 페이지
+(RadarView 등)의 Scaffold를 찾아가 버림 — 스낵바가 모달 시트에 완전히
+가려진 위치에 렌더링돼 사용자 눈에는 안 보였음(특히 키보드까지 열려 있으면
+더더욱 안 보임).
+
+**수정**:
+- `add_card_modal_view.dart` / `file_picker_modal_view.dart` /
+  `communication_trace_test_modal_view.dart`에 로컬
+  `GlobalKey<ScaffoldMessengerState>`를 두고 `build()`를 투명 배경
+  `Scaffold`로 감싸서, 모달이 열려 있는 동안 뜨는 스낵바는 로컬 키로 모달
+  위에 뜨도록 수정.
+- `communication_trace_test_modal_view.dart`의 연동 성공 스낵바 1건은
+  `Navigator.pop`으로 모달을 이미 닫은 뒤 호출되는 케이스라 로컬 키가 이미
+  사라진 상태라 예외적으로 바깥 `ScaffoldMessenger.of(context)`를 그대로
+  둠(부모 화면에 정상적으로 뜸). `manual_comm_log_modal_view.dart` /
+  `my_profile_edit_modal_view.dart`는 원래부터 pop을 먼저 호출하는 구조라
+  문제없어 그대로 둠.
+
+영상으로 실제 카드를 보다가 추가로 발견한 것들:
+- 사무실 전화번호 정규식이 02/031~069만 잡고 070(인터넷전화)을 놓치고
+  있었음 — `ocr_scanner_service.dart` 정규식에 070 추가.
+- 레이더 히어로 위젯의 근접 인맥 말풍선이 실제 거리와 무관하게 항상
+  "140m"로 하드코딩돼 있었음(메인 숫자는 실제 계산값인데 이 말풍선만
+  가짜였음) — `RadarPulseHeroWidget`이 실제 계산된 거리를 받아 표시하도록
+  수정.
+
+실기기 설치 확인(폰 잠금 상태라 실행 재확인은 사용자 몫).
+
+---
+
 ### 2026-08-02 (추가 9) — 명함 앞/뒷면 나눠 스캔 지원
 
 한글 OCR 근본 수정(추가 8) 후 사용자가 실기기에서 재확인: "한글 인식 잘
