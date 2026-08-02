@@ -190,9 +190,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     setState(() {
       _isScanningOcr = false;
       _showRawTextCard = true;
-      _scannedRawText = (_scannedRawText == null || _scannedRawText!.trim().isEmpty)
-          ? result!.rawText
-          : '${_scannedRawText!}\n---\n${result!.rawText}';
+      // RAW 텍스트 박스는 "방금 스캔한 사진에서 뭘 읽었는지" 확인용이라 앞/뒷면을
+      // 여러 번 스캔해도 누적시키지 않고 가장 최근 스캔 결과만 보여준다 — 계속
+      // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
+      // 확인하기 어려워짐(폼 필드 자체는 _fillIfEmpty로 이미 누적되고 있음).
+      _scannedRawText = result!.rawText;
       _fillIfEmpty(_nameController, result.name);
       _fillIfEmpty(_companyController, result.company);
       _fillIfEmpty(_titleController, result.title);
