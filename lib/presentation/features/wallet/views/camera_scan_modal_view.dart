@@ -310,7 +310,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.accentText, width: 1.5),
+                      border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: Stack(
                       children: [

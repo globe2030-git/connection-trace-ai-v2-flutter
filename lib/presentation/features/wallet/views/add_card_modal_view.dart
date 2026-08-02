@@ -26,13 +26,17 @@ class AddCardModalView extends StatefulWidget {
 
 class _AddCardModalViewState extends State<AddCardModalView> {
   final _formKey = GlobalKey<FormState>();
-  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서,
-  // ScaffoldMessenger.of(context)를 그대로 쓰면 이 모달 뒤에 깔린 페이지의
-  // Scaffold를 찾아가 스낵바가 모달 시트에 가려 사용자 눈에 전혀 안 보이는
-  // 문제가 있었다(특히 키보드까지 열려 있으면 더더욱). 이 화면 전용
-  // ScaffoldMessenger를 로컬로 두고 키로 직접 참조해 모달 위에 스낵바가
-  // 뜨도록 한다.
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
+  // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 시트에
+  // 가려 안 보인다. 그렇다고 이 화면을 Scaffold로 감싸면 showModalBottomSheet가
+  // 콘텐츠 높이를 스스로 계산하는 방식과 충돌해 폼이 한 줄만 그려지고 나머지가
+  // 통째로 안 보이는 훨씬 심각한 레이아웃 버그가 남(실기기로 확인됨). 그래서
+  // Scaffold/ScaffoldMessenger에 기대지 않고, 폼 안에 직접 배너를 그려서
+  // 안내 메시지를 표시한다 — 어떤 상황에서도 확실히 모달 위에 보임.
+  String? _inlineNoticeText;
+  bool _inlineNoticeIsError = false;
+  VoidCallback? _inlineNoticeAction;
+  String? _inlineNoticeActionLabel;
 
   // Text Controllers
   late TextEditingController _nameController;
@@ -218,26 +222,41 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     if (!mounted) return;
 
     if (missingFields.isEmpty) {
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text(isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!'),
-          backgroundColor: AppColors.accent,
-        ),
+      _showInlineNotice(
+        isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!',
+        isError: false,
       );
     } else {
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(
-          content: Text('⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.'),
-          backgroundColor: AppColors.destructive,
-          duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: '뒷면 스캔',
-            textColor: Colors.white,
-            onPressed: () => _performOcrScan(isFromCamera: isFromCamera),
-          ),
-        ),
+      _showInlineNotice(
+        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
+        isError: true,
+        actionLabel: '뒷면 스캔',
+        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
       );
     }
+  }
+
+  // ScaffoldMessenger 대신 폼 안에 직접 그리는 안내 배너 — 위쪽 설명 참고.
+  void _showInlineNotice(
+    String text, {
+    required bool isError,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    setState(() {
+      _inlineNoticeText = text;
+      _inlineNoticeIsError = isError;
+      _inlineNoticeActionLabel = actionLabel;
+      _inlineNoticeAction = onAction;
+    });
+  }
+
+  void _dismissInlineNotice() {
+    setState(() {
+      _inlineNoticeText = null;
+      _inlineNoticeAction = null;
+      _inlineNoticeActionLabel = null;
+    });
   }
 
   void _fillIfEmpty(TextEditingController controller, String value) {
@@ -461,7 +480,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     
     Navigator.pop(context);
 
-    _messengerKey.currentState?.showSnackBar(
+    // 여기서는 이미 모달을 닫았으므로(위 pop) 폼 내부 배너가 아니라 바깥
+    // (명함 지갑 화면)의 ScaffoldMessenger를 찾아가야 스낵바가 뜬다.
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
         backgroundColor: AppColors.accent,
@@ -471,22 +492,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   void _focusAndShowError(FocusNode focusNode, String message) {
     focusNode.requestFocus();
-    _messengerKey.currentState?.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.destructive,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    _showInlineNotice(message, isError: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      key: _messengerKey,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
+    return Container(
       padding: EdgeInsets.only(
         left: 20,
         right: 20,
@@ -542,6 +553,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  _buildInlineNotice(),
 
                   // 📸 OCR Camera & Gallery Scan Action Buttons
                   Container(
@@ -859,7 +872,44 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
           ),
         ),
-        ),
+    );
+  }
+
+  Widget _buildInlineNotice() {
+    if (_inlineNoticeText == null) return const SizedBox.shrink();
+    final color = _inlineNoticeIsError ? AppColors.destructive : AppColors.accent;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              _inlineNoticeText!,
+              style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600, height: 1.3),
+            ),
+          ),
+          if (_inlineNoticeActionLabel != null && _inlineNoticeAction != null)
+            TextButton(
+              onPressed: () {
+                _dismissInlineNotice();
+                _inlineNoticeAction?.call();
+              },
+              child: Text(_inlineNoticeActionLabel!, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+            ),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: Icon(Icons.close, size: 16, color: color),
+            onPressed: _dismissInlineNotice,
+          ),
+        ],
       ),
     );
   }

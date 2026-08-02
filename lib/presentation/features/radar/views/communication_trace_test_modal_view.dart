@@ -16,10 +16,11 @@ class CommunicationTraceTestModalView extends StatefulWidget {
 
 class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTestModalView> {
   // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
-  // ScaffoldMessenger.of(context)를 그대로 쓰면 동기화 진행/완료 스낵바가 이
-  // 모달 뒤 페이지의 Scaffold로 가서 모달에 가려 안 보인다 — 로컬
-  // ScaffoldMessenger로 우회.
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 안 보이고,
+  // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다(실기기로 확인됨)
+  // — 폼 안에 직접 그리는 배너로 우회한다.
+  String? _noticeText;
+  bool _noticeIsError = false;
   String? _selectedContactId;
   bool _isSyncingCall = false;
   bool _isSyncingSms = false;
@@ -40,11 +41,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       orElse: () => contacts.first,
     );
 
-    return ScaffoldMessenger(
-      key: _messengerKey,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
+    return Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
         color: AppColors.cardDark,
@@ -89,6 +86,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               ),
 
               const SizedBox(height: 14),
+
+              if (_noticeText != null) _buildNoticeBanner(),
 
               // Description banner — 플랫폼에 따라 실제로 가능한 것과 불가능한 것이
               // 다르므로(안드로이드: 통화/문자 자동 연동 가능, iOS: OS 정책상 불가),
@@ -258,7 +257,42 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
           ),
         ),
       ),
-        ),
+    );
+  }
+
+  // ScaffoldMessenger 대신 폼 안에 직접 그리는 안내 배너 — 위쪽 설명 참고.
+  void _showNotice(String text, {required bool isError}) {
+    setState(() {
+      _noticeText = text;
+      _noticeIsError = isError;
+    });
+  }
+
+  Widget _buildNoticeBanner() {
+    final color = _noticeIsError ? AppColors.destructive : AppColors.textMuted;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _noticeText!,
+              style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: Icon(Icons.close, size: 16, color: color),
+            onPressed: () => setState(() => _noticeText = null),
+          ),
+        ],
       ),
     );
   }
@@ -324,17 +358,13 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await CommLogSyncService.syncCallLogs(contact.phone);
       if (!mounted) return;
       if (logs.isEmpty) {
-        _messengerKey.currentState?.showSnackBar(
-          const SnackBar(content: Text('일치하는 통화 기록을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
-        );
+        _showNotice('일치하는 통화 기록을 찾지 못했습니다.', isError: false);
         return;
       }
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '통화');
     } catch (e) {
       if (!mounted) return;
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('⚠️ 통화 기록 연동 실패: $e'), backgroundColor: AppColors.destructive),
-      );
+      _showNotice('⚠️ 통화 기록 연동 실패: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSyncingCall = false);
     }
@@ -347,17 +377,13 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await CommLogSyncService.syncSmsMessages(contact.phone);
       if (!mounted) return;
       if (logs.isEmpty) {
-        _messengerKey.currentState?.showSnackBar(
-          const SnackBar(content: Text('일치하는 문자 메시지를 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
-        );
+        _showNotice('일치하는 문자 메시지를 찾지 못했습니다.', isError: false);
         return;
       }
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '문자');
     } catch (e) {
       if (!mounted) return;
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('⚠️ 문자 메시지 연동 실패: $e'), backgroundColor: AppColors.destructive),
-      );
+      _showNotice('⚠️ 문자 메시지 연동 실패: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSyncingSms = false);
     }
@@ -371,9 +397,7 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       setState(() {});
     } catch (e) {
       if (!mounted) return;
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('⚠️ Google 로그인 실패: $e'), backgroundColor: AppColors.destructive),
-      );
+      _showNotice('⚠️ Google 로그인 실패: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSigningInEmail = false);
     }
@@ -391,17 +415,13 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       final logs = await EmailSyncService.syncEmails(contact.email);
       if (!mounted) return;
       if (logs.isEmpty) {
-        _messengerKey.currentState?.showSnackBar(
-          const SnackBar(content: Text('일치하는 이메일을 찾지 못했습니다.'), backgroundColor: AppColors.textMuted),
-        );
+        _showNotice('일치하는 이메일을 찾지 못했습니다.', isError: false);
         return;
       }
       _mergeSyncedLogsAndShowBriefing(contact, logs, channelLabel: '이메일');
     } catch (e) {
       if (!mounted) return;
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('⚠️ 이메일 연동 실패: $e'), backgroundColor: AppColors.destructive),
-      );
+      _showNotice('⚠️ 이메일 연동 실패: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSyncingEmail = false);
     }

@@ -13,9 +13,10 @@ class FilePickerModalView extends StatefulWidget {
 
 class _FilePickerModalViewState extends State<FilePickerModalView> {
   // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
-  // ScaffoldMessenger.of(context)를 그대로 쓰면 스낵바가 이 모달 뒤 페이지의
-  // Scaffold로 가서 모달에 가려 안 보인다 — 로컬 ScaffoldMessenger로 우회.
-  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 안 보이고,
+  // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다 — 폼 안에 직접
+  // 그리는 배너로 우회한다(add_card_modal_view.dart와 동일 패턴).
+  String? _errorNotice;
   XFile? _pickedImage;
   Uint8List? _pickedImageBytes;
   bool _isPicking = false;
@@ -48,20 +49,16 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
       Navigator.pop(context, result);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isProcessing = false);
-      _messengerKey.currentState?.showSnackBar(
-        SnackBar(content: Text('⚠️ 명함 인식에 실패했습니다: $e'), backgroundColor: AppColors.destructive),
-      );
+      setState(() {
+        _isProcessing = false;
+        _errorNotice = '⚠️ 명함 인식에 실패했습니다: $e';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      key: _messengerKey,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Container(
+    return Container(
       height: MediaQuery.of(context).size.height * 0.75,
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
@@ -104,6 +101,36 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               ],
             ),
             const SizedBox(height: 16),
+
+            if (_errorNotice != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.destructive.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.destructive.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: AppColors.destructive, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorNotice!,
+                        style: const TextStyle(color: AppColors.destructive, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(Icons.close, size: 16, color: AppColors.destructive),
+                      onPressed: () => setState(() => _errorNotice = null),
+                    ),
+                  ],
+                ),
+              ),
 
             if (!OcrScannerService.isSupportedOnThisPlatform)
               Container(
@@ -200,8 +227,6 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               ),
             ),
           ],
-        ),
-      ),
         ),
       ),
     );
