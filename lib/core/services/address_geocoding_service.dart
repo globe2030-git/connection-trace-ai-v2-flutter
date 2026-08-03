@@ -39,7 +39,11 @@ class AddressGeocodingService {
     }
 
     try {
-      final locations = await _geocoder.locationFromAddress(trimmed);
+      // Android 네이티브 Geocoder는 백엔드 서비스가 응답을 안 주면 예외를
+      // 던지지도 않고 Future가 영원히 안 끝나는 경우가 있다("주소 확인 중..."
+      // 상태로 멈추는 문제로 실기기에서 확인됨) — 타임아웃을 걸어서 일정
+      // 시간 안에 안 끝나면 실패로 처리한다.
+      final locations = await _geocoder.locationFromAddress(trimmed).timeout(const Duration(seconds: 10));
       if (locations.isEmpty) {
         return AddressValidationResult(
           isValid: false,
@@ -70,10 +74,9 @@ class AddressGeocodingService {
 
   static Future<String?> _reverseGeocodeToRoadName(Location location) async {
     try {
-      final placemarks = await _geocoder.placemarkFromCoordinates(
-        location.latitude,
-        location.longitude,
-      );
+      final placemarks = await _geocoder
+          .placemarkFromCoordinates(location.latitude, location.longitude)
+          .timeout(const Duration(seconds: 10));
       if (placemarks.isEmpty) return null;
 
       final p = placemarks.first;
