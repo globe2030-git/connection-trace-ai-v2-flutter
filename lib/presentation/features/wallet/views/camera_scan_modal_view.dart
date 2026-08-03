@@ -33,7 +33,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 다시 좁혔다 — 실제로 카드-가이드 겹침 비율을 픽셀 단위로 재는 건 아니고
   // (별도의 문서 경계 검출이 필요한 더 큰 작업), 전체 화면 흔들림 허용치를
   // 좁혀서 더 정확히 멈춰야만 "안정"으로 인정되게 하는 근사치.
-  static const _stabilityDiffThreshold = 7.0;
+  static const _stabilityDiffThreshold = 8.0;
   static const _requiredStableDuration = Duration(seconds: 1);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
