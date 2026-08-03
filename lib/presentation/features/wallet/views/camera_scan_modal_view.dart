@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -15,11 +16,10 @@ class CameraScanModalView extends StatefulWidget {
 
 class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1)에 맞춘 크기. 기존
-  // 320x200(1.6:1)은 실제 명함보다 정사각형에 가까워서, 위아래를 가이드에
-  // 맞추면 좌우가 넓은 명함일수록 옆으로 삐져나가 버리는 문제가 있었다
-  // ("가이드 선이 위아래엔 들어왔는데 좌우 넓은 명함이라 벗어난다"는 피드백).
-  static const _guideFrameSize = Size(330, 184);
+  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1). 화면 방향(세로/가로)에
+  // 따라 실제 픽셀 크기는 [_guideFrameSizeFor]가 화면 크기 기준으로 다시
+  // 계산한다 — 고정값이 아님.
+  static const _cardAspectRatio = 330 / 184;
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
   // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
@@ -58,6 +58,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
+    // 명함이 가로로 긴 형태라 폰을 가로로 눕혀 두 손으로 잡으면 흔들림이
+    // 줄어든다는 피드백에 따라, 이 화면에 있는 동안만 가로 방향으로 고정한다
+    // (앱의 나머지 화면은 세로 전용이라 나갈 때 dispose에서 다시 되돌림).
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _initCamera();
   }
 
@@ -86,6 +93,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         await controller.dispose();
         return;
       }
+      // 화면을 가로로 고정했으니 촬영 결과물도 그 방향으로 고정 — 안 그러면
+      // 기기가 가로/세로 어느 쪽으로 눕혀졌는지에 따라 결과 이미지가 매번
+      // 다르게 회전되어 나올 수 있다.
+      try {
+        await controller.lockCaptureOrientation();
+      } catch (_) {}
       setState(() {
         _controller = controller;
         _isInitializing = false;
@@ -138,6 +151,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     WidgetsBinding.instance.removeObserver(this);
     _laserController.dispose();
     _controller?.dispose();
+    // 앱의 나머지 화면은 세로 전용이라 이 화면을 나갈 때 다시 세로로 되돌린다.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
@@ -275,6 +290,21 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     }
   }
 
+  /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
+  /// 명함 표준 가로세로비(1.8:1)는 항상 유지하되, 세로 화면보다 짧은 가로
+  /// 화면 높이에 맞춰 크기를 다시 잡아야 해서 고정값 대신 매번 계산한다.
+  Size _guideFrameSizeFor(Size screenSize) {
+    final maxW = screenSize.width * 0.86;
+    final maxH = screenSize.height * 0.62;
+    var w = maxW;
+    var h = w / _cardAspectRatio;
+    if (h > maxH) {
+      h = maxH;
+      w = h * _cardAspectRatio;
+    }
+    return Size(w, h);
+  }
+
   /// 화면에 보이는 가이드 프레임(카드 사각형) 위치를 실제 촬영본의 픽셀 좌표로
   /// 환산해 크롭한다. 프리뷰는 [_buildCameraPreview]에서 cover 방식(화면을
   /// 꽉 채우고 넘치는 부분은 잘림)으로 그리므로, 화면 중심 기준 비율을 그대로
@@ -307,8 +337,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final offsetY = (imgH - visibleImgH) / 2;
 
       const margin = 1.3;
-      final guideW = _guideFrameSize.width * margin;
-      final guideH = _guideFrameSize.height * margin;
+      final guideSize = _guideFrameSizeFor(screenSize);
+      final guideW = guideSize.width * margin;
+      final guideH = guideSize.height * margin;
       final scaleX = visibleImgW / screenSize.width;
       final scaleY = visibleImgH / screenSize.height;
 
@@ -358,6 +389,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   @override
   Widget build(BuildContext context) {
     final isReady = _controller != null && _controller!.value.isInitialized;
+    final guideSize = _guideFrameSizeFor(MediaQuery.of(context).size);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -456,8 +488,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                 children: [
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    width: _guideFrameSize.width,
-                    height: _guideFrameSize.height,
+                    width: guideSize.width,
+                    height: guideSize.height,
                     decoration: BoxDecoration(
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
@@ -473,7 +505,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           animation: _laserController,
                           builder: (context, child) {
                             return Positioned(
-                              top: _laserController.value * (_guideFrameSize.height - 10),
+                              top: _laserController.value * (guideSize.height - 10),
                               left: 10,
                               right: 10,
                               child: Container(
