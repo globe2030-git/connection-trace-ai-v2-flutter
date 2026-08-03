@@ -13,6 +13,7 @@ import 'my_profile_modal_view.dart';
 import 'priority_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
+import '../../../common/connection_sense_background_painter.dart';
 
 class RadarView extends StatelessWidget {
   const RadarView({super.key});
@@ -33,7 +34,14 @@ class RadarView extends StatelessWidget {
             decoration: const BoxDecoration(
               color: AppColors.bgDarkSlate,
             ),
-            child: SafeArea(
+            child: Stack(
+              children: [
+                const Positioned.fill(
+                  child: RepaintBoundary(
+                    child: CustomPaint(painter: ConnectionSenseBackgroundPainter()),
+                  ),
+                ),
+                SafeArea(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                 child: Column(
@@ -45,7 +53,7 @@ class RadarView extends StatelessWidget {
                       children: [
                         const Expanded(
                           child: Text(
-                            'Connection Trace',
+                            '커넥션센스',
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 22,
@@ -374,6 +382,8 @@ class RadarView extends StatelessWidget {
                   ],
                 ),
               ),
+            ),
+              ],
             ),
           ),
         ),
