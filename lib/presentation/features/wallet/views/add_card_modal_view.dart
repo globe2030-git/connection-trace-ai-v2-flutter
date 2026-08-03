@@ -403,25 +403,37 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   }
 
   /// 원래 입력 주소에서 새 도로명 주소 부분을 뺀 나머지(건물명/층/호수 등
-  /// 상세 정보)를 뽑아낸다. 도로명 주소가 원본의 접두어로 들어있는 흔한
-  /// 경우(끝에 상세 정보가 붙어 있던 경우)뿐 아니라, 원본 안 어딘가에
-  /// 부분 문자열로 들어있는 경우까지 처리한다. 못 찾으면 null.
+  /// 상세 정보)를 뽑아낸다. 도로명 주소는 지오코딩 좌표를 다시 역지오코딩해서
+  /// 행정구역 구성요소로 새로 조립한 문자열이라(_reverseGeocodeToRoadName),
+  /// 스캔 원본과 표기가 미묘하게 다를 수 있다(예: "역삼동"이 삽입되거나
+  /// 구/동 표기 순서가 다름) — 그래서 전체 문자열을 통째로 비교하면 실제로는
+  /// 못 찾는 경우가 많았다. 대신 도로명 주소의 마지막 토큰(보통 건물번호,
+  /// 예: "123")만 원본에서 찾아 그 뒤를 상세정보로 보는 방식이 훨씬 안정적이다.
   String? _extractAddressRemainder(String original, String roadName) {
     final trimmedOriginal = original.trim();
     final trimmedRoadName = roadName.trim();
     if (trimmedRoadName.isEmpty || trimmedOriginal == trimmedRoadName) return null;
 
+    // 1. 도로명 주소 전체가 원본의 접두어로 그대로 들어있는 가장 흔한 경우.
     if (trimmedOriginal.startsWith(trimmedRoadName)) {
       final remainder = trimmedOriginal.substring(trimmedRoadName.length).trim();
       return remainder.isEmpty ? null : remainder;
     }
 
-    final idx = trimmedOriginal.indexOf(trimmedRoadName);
-    if (idx >= 0) {
-      final before = trimmedOriginal.substring(0, idx).trim();
-      final after = trimmedOriginal.substring(idx + trimmedRoadName.length).trim();
-      final remainder = [before, after].where((s) => s.isNotEmpty).join(' ');
-      return remainder.isEmpty ? null : remainder;
+    // 2. 마지막 토큰(건물번호)을 원본에서 찾아 그 뒤를 상세정보로 취급.
+    final roadTokens = trimmedRoadName.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    if (roadTokens.isNotEmpty) {
+      final lastToken = roadTokens.last;
+      final idx = trimmedOriginal.lastIndexOf(lastToken);
+      if (idx >= 0) {
+        final afterIdx = idx + lastToken.length;
+        final remainder = trimmedOriginal.substring(afterIdx).trim();
+        // 남은 문자열이 숫자/하이픈으로 바로 이어지면(예: "123-45") 건물번호의
+        // 나머지 일부일 수 있으니 상세정보로 보지 않는다.
+        if (remainder.isNotEmpty && !RegExp(r'^[-\d]').hasMatch(remainder)) {
+          return remainder;
+        }
+      }
     }
 
     return null;
@@ -469,10 +481,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _executeFinalSave(result.originalAddress, result.geoPosition);
-            },
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('기존 입력 유지', style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
@@ -482,12 +491,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               // 도로명 주소엔 안 들어가서 그냥 사라져 버리는 문제가 있었다 —
               // 원래 입력 주소에서 새 도로명 주소를 뺀 나머지를 상세주소로
               // 옮겨 담아 보존한다(상세주소를 이미 직접 입력해 뒀으면 덮어쓰지 않음).
+              // 그리고 곧바로 저장하지 않고 폼으로 돌아가서 사용자가 상세주소가
+              // 제대로 채워졌는지 직접 확인한 뒤 "명함 저장하기"를 눌러 저장하게
+              // 한다(자동 저장 시 확인 없이 등록돼 버리는 문제가 있었음).
               final remainder = _extractAddressRemainder(result.originalAddress, result.roadNameAddress!);
-              if (remainder != null && _addressDetailController.text.trim().isEmpty) {
-                _addressDetailController.text = remainder;
-              }
-              _addressController.text = result.roadNameAddress!;
-              _executeFinalSave(result.roadNameAddress!, result.geoPosition);
+              setState(() {
+                _addressController.text = result.roadNameAddress!;
+                if (remainder != null && _addressDetailController.text.trim().isEmpty) {
+                  _addressDetailController.text = remainder;
+                }
+              });
+              _showInlineNotice(
+                '🛣️ 도로명 주소로 변경했습니다. 상세주소가 올바른지 확인하고 저장해 주세요.',
+                isError: false,
+              );
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
             child: const Text('네, 도로명으로 변경', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
