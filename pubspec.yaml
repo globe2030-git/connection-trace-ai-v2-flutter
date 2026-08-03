@@ -46,6 +46,8 @@ dependencies:
   geocoding: ^5.0.0
   google_mlkit_text_recognition: ^0.15.0
   image_picker: ^1.1.2
+  # 내 프로필 사진을 앱 저장소에 영구 보관하기 위한 문서 디렉터리 접근.
+  path_provider: ^2.1.5
   # 통화/문자 자동 연동 — 안드로이드 전용(OS 정책상 iOS는 통화기록/문자 접근
   # 자체가 불가능해서 call_log/flutter_sms_inbox 둘 다 iOS 구현체가 없음).
   permission_handler: ^11.3.1

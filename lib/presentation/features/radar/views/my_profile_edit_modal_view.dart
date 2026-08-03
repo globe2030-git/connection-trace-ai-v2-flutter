@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -33,6 +37,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   // 에서 실기기로 확인된 문제) — 폼 안에 직접 그리는 배너로 우회한다.
   String? _inlineNoticeText;
 
+  String? _avatarPath;
+  bool _avatarCleared = false;
+  bool _isPickingAvatar = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +52,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _emailController = TextEditingController(text: profile.email);
     _addressController = TextEditingController(text: profile.address);
     _addressDetailController = TextEditingController(text: profile.addressDetail ?? '');
+    _avatarPath = profile.avatarPath;
   }
 
   @override
@@ -101,6 +110,38 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     });
   }
 
+  /// 갤러리에서 고른 사진을 앱 문서 디렉터리에 고정된 파일명으로 복사해 둔다.
+  /// image_picker가 주는 경로는 임시 캐시라 앱 재시작 시 사라질 수 있어서,
+  /// 영구 보관하려면 직접 복사해야 한다. 매번 같은 파일명으로 덮어써서
+  /// 이전 사진 파일이 버려지지 않게 한다.
+  Future<void> _pickAvatarPhoto() async {
+    setState(() => _isPickingAvatar = true);
+    try {
+      final picked = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null || !mounted) return;
+      final docsDir = await getApplicationDocumentsDirectory();
+      final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
+      await File(picked.path).copy(savedPath);
+      if (!mounted) return;
+      setState(() {
+        _avatarPath = savedPath;
+        _avatarCleared = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _inlineNoticeText = '⚠️ 사진을 불러오지 못했습니다: $e');
+    } finally {
+      if (mounted) setState(() => _isPickingAvatar = false);
+    }
+  }
+
+  void _removeAvatarPhoto() {
+    setState(() {
+      _avatarPath = null;
+      _avatarCleared = true;
+    });
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -112,6 +153,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       email: _emailController.text.trim(),
       address: _addressController.text.trim(),
       addressDetail: _addressDetailController.text.trim().isEmpty ? null : _addressDetailController.text.trim(),
+      avatarPath: _avatarCleared ? null : _avatarPath,
     );
 
     context.read<MyProfileRepository>().updateProfile(updated);
@@ -162,6 +204,9 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  Center(child: _buildAvatarPicker()),
                   const SizedBox(height: 16),
 
                   if (OcrScannerService.isSupportedOnThisPlatform) ...[
@@ -292,6 +337,56 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAvatarPicker() {
+    return Column(
+      children: [
+        Stack(
+          children: [
+            GestureDetector(
+              onTap: _isPickingAvatar ? null : _pickAvatarPhoto,
+              child: CircleAvatar(
+                radius: 40,
+                backgroundColor: AppColors.accent.withValues(alpha: 0.2),
+                backgroundImage: _avatarPath != null ? FileImage(File(_avatarPath!)) : null,
+                child: _isPickingAvatar
+                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentText))
+                    : (_avatarPath == null
+                        ? Text(
+                            _nameController.text.trim().isNotEmpty ? _nameController.text.trim().substring(0, 1) : '?',
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.accentText),
+                          )
+                        : null),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                onTap: _isPickingAvatar ? null : _pickAvatarPhoto,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: AppColors.accent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (_avatarPath != null) ...[
+          const SizedBox(height: 6),
+          TextButton(
+            onPressed: _removeAvatarPhoto,
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            child: const Text('사진 삭제', style: TextStyle(fontSize: 12, color: AppColors.destructive, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ],
     );
   }
 

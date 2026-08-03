@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -72,10 +74,13 @@ class MyProfileModalView extends StatelessWidget {
                       CircleAvatar(
                         radius: 28,
                         backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                        child: Text(
-                          profile.name.isNotEmpty ? profile.name.substring(0, 1) : '?',
-                          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
-                        ),
+                        backgroundImage: profile.avatarPath != null ? FileImage(File(profile.avatarPath!)) : null,
+                        child: profile.avatarPath == null
+                            ? Text(
+                                profile.name.isNotEmpty ? profile.name.substring(0, 1) : '?',
+                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
+                              )
+                            : null,
                       ),
                       const SizedBox(width: 14),
                       Expanded(
