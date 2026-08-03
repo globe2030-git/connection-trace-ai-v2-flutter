@@ -63,6 +63,43 @@ class MyProfileModalView extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
+            if (!profile.isSetUp)
+              GlassCard(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    const Icon(Icons.person_off_outlined, size: 40, color: AppColors.textMuted),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '아직 내 프로필을 설정하지 않았습니다',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      '이름·연락처 등 내 정보를 입력하면 디지털 명함으로 공유할 수 있어요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 14),
+                    ElevatedButton(
+                      onPressed: () {
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const MyProfileEditModalView(),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('내 프로필 설정하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
+                  ],
+                ),
+              )
+            else
             // Profile Card
             GlassCard(
               padding: const EdgeInsets.all(20),

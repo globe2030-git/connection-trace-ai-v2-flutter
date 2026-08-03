@@ -7,6 +7,7 @@ import '../../../../core/utils/vcard_util.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/glass_card.dart';
+import 'my_profile_edit_modal_view.dart';
 
 /// 내 명함을 vCard QR로 보여주거나, 상대방 명함 QR을 실제 카메라로 스캔해
 /// [ContactModel]로 만든다. 스캔에 성공하면 이 화면은 [Navigator.pop]으로
@@ -154,37 +155,78 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
 
             if (!_isScannerMode) ...[
               // QR Code Display View — 실제 vCard 데이터를 담은 스캔 가능한 QR.
-              GlassCard(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
+              // 프로필을 아직 한 번도 설정 안 했으면(빈 이름) QR 자체를 만들지
+              // 않는다 — 빈/가짜 정보가 실제 명함처럼 상대방에게 공유되는 걸
+              // 막기 위함.
+              if (!myProfile.isSetUp)
+                GlassCard(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.person_off_outlined, size: 40, color: AppColors.textMuted),
+                      const SizedBox(height: 12),
+                      const Text(
+                        '아직 내 프로필을 설정하지 않았습니다',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
-                      child: QrImageView(
-                        data: VCardUtil.encodeProfile(myProfile),
-                        version: QrVersions.auto,
-                        size: 200,
-                        backgroundColor: Colors.white,
+                      const SizedBox(height: 6),
+                      const Text(
+                        '내 정보를 먼저 입력해야 QR 코드로 공유할 수 있어요.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '${myProfile.name}${myProfile.title.isNotEmpty ? ' ${myProfile.title}' : ''} / ${myProfile.company}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      '상대방이 스캔하면 디지털 명함이 자동으로 채워집니다.',
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                  ],
+                      const SizedBox(height: 14),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => const MyProfileEditModalView(),
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Text('내 프로필 설정하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                GlassCard(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: QrImageView(
+                          data: VCardUtil.encodeProfile(myProfile),
+                          version: QrVersions.auto,
+                          size: 200,
+                          backgroundColor: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${myProfile.name}${myProfile.title.isNotEmpty ? ' ${myProfile.title}' : ''} / ${myProfile.company}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '상대방이 스캔하면 디지털 명함이 자동으로 채워집니다.',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ] else ...[
               // Real Camera QR Scanner
               GlassCard(

@@ -24,17 +24,24 @@ class MyProfileModel {
     this.avatarPath,
   });
 
-  // 최초 실행 시 보여줄 기본값 — 사용자가 "직접 추가"로 실제 정보를 입력하기
-  // 전까지 화면이 비어 보이지 않게 하는 안내용 예시.
+  // 최초 실행 시 기본값 — 예전엔 "홍길동 대표" 같은 가짜 인물 정보를 채워
+  // 뒀는데, 사용자가 프로필을 아직 안 고쳤을 때 QR/vCard로 그 가짜 정보가
+  // 실제 명함처럼 공유될 수 있는 문제가 있었다(실사용자가 받으면 가짜
+  // 연락처가 그대로 등록됨). 빈 값으로 시작해 "아직 설정 안 함" 상태를
+  // 명확히 구분한다.
   static const MyProfileModel defaultProfile = MyProfileModel(
-    name: '홍길동 대표',
-    title: 'C-Level',
-    company: '커넥션 트레이스 AI',
-    phone: '010-1234-5678',
-    email: 'gildong.hong@connectiontrace.ai',
-    address: '서울특별시 강남구 테헤란로 123',
-    addressDetail: '5층 501호',
+    name: '',
+    title: '',
+    company: '',
+    phone: '',
+    email: '',
+    address: '',
   );
+
+  /// 사용자가 아직 프로필을 한 번도 저장하지 않은 상태인지 — 이름이 비어
+  /// 있으면 QR 공유·AI 브리핑 등에서 가짜/빈 정보를 실제 정보처럼 쓰지
+  /// 않도록 화면단에서 이 값으로 분기한다.
+  bool get isSetUp => name.trim().isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'name': name,

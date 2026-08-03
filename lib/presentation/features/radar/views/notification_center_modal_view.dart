@@ -8,26 +8,9 @@ class NotificationCenterModalView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final notifications = [
-      {
-        'title': '📍 근접 알림: 김민준 이사 (140m)',
-        'body': '테크노바 김민준 이사님이 근처에 계십니다. 30초 AI 브리핑을 확인해보세요.',
-        'time': '방금 전',
-        'isNew': true,
-      },
-      {
-        'title': '💡 추천 대화 포인트 생성 완료',
-        'body': '한소율 팀장님과의 만남 전 유용한 바이오 R&D 주제 대화 포인트 3개가 준비되었습니다.',
-        'time': '12분 전',
-        'isNew': true,
-      },
-      {
-        'title': '🎴 신규 명함 자동 등록 완료',
-        'body': '오현우 본부장님의 디지털 명함 정보가 성공적으로 저장되었습니다.',
-        'time': '2시간 전',
-        'isNew': false,
-      },
-    ];
+    // 근접 감지/신규 명함 등록 같은 실제 이벤트를 실시간 알림으로 쌓는
+    // 파이프라인이 아직 없어서, 가짜 샘플 알림 대신 빈 상태로 둔다.
+    final notifications = <Map<String, Object>>[];
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -92,6 +75,14 @@ class NotificationCenterModalView extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
+
+            if (notifications.isEmpty)
+              const GlassCard(
+                child: Text(
+                  '아직 알림이 없습니다. 주변 인맥이 감지되거나 새 명함이 등록되면 여기에 표시됩니다.',
+                  style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                ),
+              ),
 
             ...notifications.map((n) {
               return GlassCard(
