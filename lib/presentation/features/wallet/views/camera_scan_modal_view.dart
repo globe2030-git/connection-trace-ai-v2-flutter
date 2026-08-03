@@ -24,11 +24,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 임계값을 넉넉히 잡아 자연스러운 손떨림 정도는 "불안정"으로 치지 않게
   // 하고(정렬 여유), 실제 촬영은 프레임 개수가 아니라 안정 상태가 시작된
   // 시점부터 경과 시간으로 판단한다(기기 프레임레이트와 무관하게 일정
-  // 시간 유지되면 촬영). 0.3초/14.0으로 처음 조정했더니 너무 쉽게(빨리)
-  // 촬영돼 버린다는 피드백을 받아 유지 시간을 늘리고 임계값을 살짝 다시
-  // 조여 "여유는 있되 너무 성급하지는 않게" 재조정.
+  // 시간 유지되면 촬영). 0.3초→0.5초로 늘려도 여전히 너무 빨리 촬영된다는
+  // 피드백을 받아 사용자가 직접 지정한 1초로 재조정.
   static const _stabilityDiffThreshold = 10.0;
-  static const _requiredStableDuration = Duration(milliseconds: 500);
+  static const _requiredStableDuration = Duration(seconds: 1);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
 
