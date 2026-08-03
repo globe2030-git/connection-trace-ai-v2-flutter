@@ -18,20 +18,19 @@ void main() {
   final canvas = img.Image(width: canvasSize, height: canvasSize, numChannels: 3);
   img.fill(canvas, color: img.ColorRgb8(0x00, 0x4E, 0xA2));
 
-  const scale = 0.82;
+  // 실제 홈 화면 아이콘 크기(약 60~180px)로 축소해서 보니, 넓은 비네트가
+  // 전체적으로 흐릿하게 뭉개져 보인다는 피드백을 받았다 — 오브젝트를 훨씬
+  // 크게 채우고(0.82→0.94) 경계를 다듬는 범위도 바깥 12%로 좁혀서, 작은
+  // 크기에서도 또렷하게 읽히도록 다시 조정.
+  const scale = 0.94;
   final insetSize = (canvasSize * scale).round();
   final resized = img.copyResize(src, width: insetSize, height: insetSize, interpolation: img.Interpolation.cubic);
 
-  // 원본이 정사각형 배경을 그대로 갖고 있어서 그냥 합성하면 각진 사각형
-  // 테두리가 보인다. 처음엔 원형으로 딱 잘라냈지만("사각을 둥근형태로") 그것도
-  // 가운데 흰 원반과 파란 배경이 각지게(둥글어도 경계선이 뚜렷하게) 분리돼
-  // 보인다는 피드백을 받아, 경계 몇 px만 다듬는 대신 안쪽 절반부터 바깥까지
-  // 넓은 구간에 걸쳐 서서히 배경색으로 녹아드는 비네트(vignette)로 바꿨다.
   final offsetX = (canvasSize - insetSize) ~/ 2;
   final offsetY = (canvasSize - insetSize) ~/ 2;
   final radius = insetSize / 2;
-  final innerR = radius * 0.48; // 여기까지는 원본 그대로(완전 불투명)
-  final outerR = radius; // 여기서부터는 배경색 100%
+  final innerR = radius * 0.88; // 대부분은 원본 그대로(완전 불투명) — 작은 크기에서도 또렷하게
+  final outerR = radius; // 가장자리 12%만 배경색으로 부드럽게 녹아듦
   final bgColor = img.ColorRgb8(0x00, 0x4E, 0xA2);
 
   for (var y = 0; y < insetSize; y++) {
