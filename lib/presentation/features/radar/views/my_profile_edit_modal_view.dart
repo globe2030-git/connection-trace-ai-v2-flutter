@@ -36,6 +36,9 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다(add_card_modal_view.dart
   // 에서 실기기로 확인된 문제) — 폼 안에 직접 그리는 배너로 우회한다.
   String? _inlineNoticeText;
+  bool _inlineNoticeIsError = false;
+  String? _inlineNoticeActionLabel;
+  VoidCallback? _inlineNoticeAction;
 
   String? _avatarPath;
   bool _avatarCleared = false;
@@ -112,7 +115,48 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       if (result.phone.trim().isNotEmpty) _phoneController.text = result.phone.trim();
       if (result.email.trim().isNotEmpty) _emailController.text = result.email.trim();
       if (result.address.trim().isNotEmpty) _addressController.text = result.address.trim();
-      _inlineNoticeText = '📸 스캔한 명함 정보로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 내용을 확인하고 저장해 주세요.';
+    });
+
+    // 명함 앞/뒷면에 정보가 나뉜 경우가 흔해서(add_card_modal_view.dart와 동일한
+    // 패턴) 필수 필드가 비어 있으면 "뒷면도 스캔해 보라"는 안내와 재촬영
+    // 버튼을 보여준다 — 이 화면엔 이 기능이 빠져 있어서 스캔 후 빈 칸이 있어도
+    // 다시 찍을 방법이 안내되지 않던 문제가 있었다.
+    final missingFields = <String>[
+      if (_nameController.text.trim().isEmpty) '이름',
+      if (_companyController.text.trim().isEmpty) '회사명',
+      if (_addressController.text.trim().isEmpty) '주소',
+      if (_phoneController.text.trim().isEmpty) '휴대폰 번호',
+      if (_emailController.text.trim().isEmpty) '이메일',
+    ];
+
+    if (!mounted) return;
+
+    if (missingFields.isEmpty) {
+      _showInlineNotice(
+        '📸 스캔한 명함 정보로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 내용을 확인하고 저장해 주세요.',
+        isError: false,
+      );
+    } else {
+      _showInlineNotice(
+        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
+        isError: true,
+        actionLabel: '뒷면 스캔',
+        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
+      );
+    }
+  }
+
+  void _showInlineNotice(
+    String text, {
+    required bool isError,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    setState(() {
+      _inlineNoticeText = text;
+      _inlineNoticeIsError = isError;
+      _inlineNoticeActionLabel = actionLabel;
+      _inlineNoticeAction = onAction;
     });
   }
 
@@ -319,27 +363,46 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     );
   }
 
+  void _dismissInlineNotice() {
+    setState(() {
+      _inlineNoticeText = null;
+      _inlineNoticeIsError = false;
+      _inlineNoticeActionLabel = null;
+      _inlineNoticeAction = null;
+    });
+  }
+
   Widget _buildInlineNotice() {
+    final color = _inlineNoticeIsError ? AppColors.destructive : AppColors.accent;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Text(
               _inlineNoticeText!,
-              style: const TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600, height: 1.3),
             ),
           ),
+          if (_inlineNoticeActionLabel != null && _inlineNoticeAction != null)
+            TextButton(
+              onPressed: () {
+                _dismissInlineNotice();
+                _inlineNoticeAction?.call();
+              },
+              child: Text(_inlineNoticeActionLabel!, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+            ),
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            icon: const Icon(Icons.close, size: 16, color: AppColors.accentText),
-            onPressed: () => setState(() => _inlineNoticeText = null),
+            icon: Icon(Icons.close, size: 16, color: color),
+            onPressed: _dismissInlineNotice,
           ),
         ],
       ),
