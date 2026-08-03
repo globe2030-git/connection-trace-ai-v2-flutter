@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/motion_strategy.dart';
+import '../../../../data/repositories/ai_credentials_repository.dart';
 import '../../../common/glass_card.dart';
 import '../../radar/view_models/radar_view_model.dart';
+import 'ai_connection_modal_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -12,6 +14,7 @@ class SettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final radarViewModel = context.watch<RadarViewModel>();
     final settings = radarViewModel.settings;
+    final aiCredentials = context.watch<AiCredentialsRepository>();
 
     return Scaffold(
       backgroundColor: AppColors.bgDarkSlate,
@@ -114,6 +117,53 @@ class SettingsView extends StatelessWidget {
                         onChanged: (val) => radarViewModel.updateBatteryMode(val!),
                       );
                     }).toList(),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // AI Connection
+                const Text(
+                  '🤖 AI 연동',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                GlassCard(
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const AiConnectionModalView(),
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      const Icon(Icons.smart_toy_outlined, color: AppColors.accentText, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '30초 AI 대화 브리핑 연동',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              aiCredentials.activeProvider != null
+                                  ? '${aiCredentials.activeProvider!.displayName} 연동됨'
+                                  : '아직 연동되지 않음 — 연동해야 AI 브리핑을 받을 수 있어요',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: aiCredentials.activeProvider != null ? AppColors.accentText : AppColors.textMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20),
+                    ],
                   ),
                 ),
 

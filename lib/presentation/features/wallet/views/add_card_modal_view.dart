@@ -504,10 +504,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
       geo: resolvedGeo ?? (_isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276)),
-      talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : [
-        '최근 프로젝트 진행 상황 공유하기',
-        '다음 비즈니스 미팅 일정 제안하기',
-      ],
+      // AI 대화 브리핑을 열 때 실제 연동된 AI가 생성 — 여기서는 하드코딩된
+      // 문구 대신 빈 값으로 시작한다.
+      talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : const [],
       commLogs: _isEditing ? widget.contactToEdit!.commLogs : [],
       isPriority: _isEditing ? widget.contactToEdit!.isPriority : false,
       memo: _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
