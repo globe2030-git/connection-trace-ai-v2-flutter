@@ -80,6 +80,11 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # 앱 아이콘(커넥션센스) 생성 — tool/generate_app_icon.dart로 만든
+  # assets/icon/icon_full.png(iOS·Android 레거시)와
+  # icon_foreground.png(Android adaptive icon)를 실제 아이콘 사이즈셋으로 변환한다.
+  flutter_launcher_icons: ^0.14.4
+
 # path_provider_foundation 2.6.0부터 objective_c(Dart 네이티브 에셋/FFI 브리징) 의존이
 # 추가됐는데, 이 Flutter SDK(3.44.8)의 native-assets 처리기가 objective_c의
 # 아키텍처별 프레임워크 이름 불일치(objective_c.framework vs objective_c1.framework)를
@@ -104,6 +109,18 @@ flutter_native_splash:
     color_dark: "#0B0E14"
     image_dark: assets/CI.png
   web: true
+
+# 앱 아이콘(커넥션센스) 설정 — `dart run flutter_launcher_icons`를 실행하면
+# assets/icon/icon_full.png(iOS·Android 레거시)와 icon_foreground.png
+# (Android adaptive icon 전경)를 읽어 iOS/Android 전체 사이즈셋을 생성한다.
+# 두 이미지 모두 tool/generate_app_icon.dart로 코드에서 직접 그려서 만들었다.
+flutter_launcher_icons:
+  image_path: "assets/icon/icon_full.png"
+  ios: true
+  remove_alpha_ios: true
+  android: true
+  adaptive_icon_background: "#0B0E14"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

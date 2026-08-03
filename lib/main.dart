@@ -38,7 +38,7 @@ class ConnectionTraceApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Connection Trace AI',
+        title: '커넥션센스',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
         home: const SplashGate(child: MainTabScreen()),
