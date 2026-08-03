@@ -23,14 +23,15 @@ void main() {
   final resized = img.copyResize(src, width: insetSize, height: insetSize, interpolation: img.Interpolation.cubic);
 
   // 원본이 정사각형 배경을 그대로 갖고 있어서 그냥 합성하면 각진 사각형
-  // 테두리가 보인다("사각을 둥근형태로") — compositeImage의 mask 옵션은
-  // 채널 수가 다른 이미지끼리 섞을 때 색이 탁해지는 문제가 있어서, 픽셀
-  // 단위로 원 안쪽만 직접 복사하는 방식으로 확실하게 원형으로 잘라낸다.
-  // 가장자리 2px 정도는 배경색과 섞어서(안티앨리어싱) 계단 현상을 줄인다.
+  // 테두리가 보인다. 처음엔 원형으로 딱 잘라냈지만("사각을 둥근형태로") 그것도
+  // 가운데 흰 원반과 파란 배경이 각지게(둥글어도 경계선이 뚜렷하게) 분리돼
+  // 보인다는 피드백을 받아, 경계 몇 px만 다듬는 대신 안쪽 절반부터 바깥까지
+  // 넓은 구간에 걸쳐 서서히 배경색으로 녹아드는 비네트(vignette)로 바꿨다.
   final offsetX = (canvasSize - insetSize) ~/ 2;
   final offsetY = (canvasSize - insetSize) ~/ 2;
   final radius = insetSize / 2;
-  const featherPx = 2.0;
+  final innerR = radius * 0.48; // 여기까지는 원본 그대로(완전 불투명)
+  final outerR = radius; // 여기서부터는 배경색 100%
   final bgColor = img.ColorRgb8(0x00, 0x4E, 0xA2);
 
   for (var y = 0; y < insetSize; y++) {
@@ -38,10 +39,16 @@ void main() {
       final dx = x - radius + 0.5;
       final dy = y - radius + 0.5;
       final dist = sqrt(dx * dx + dy * dy);
-      if (dist > radius + featherPx) continue;
+      if (dist >= outerR) continue;
 
       final srcPixel = resized.getPixel(x, y);
-      final t = ((radius - dist) / featherPx).clamp(0.0, 1.0);
+      double t;
+      if (dist <= innerR) {
+        t = 1.0;
+      } else {
+        final linear = ((outerR - dist) / (outerR - innerR)).clamp(0.0, 1.0);
+        t = linear * linear * (3 - 2 * linear); // smoothstep — 부드러운 감쇠 곡선
+      }
       final r = srcPixel.r * t + bgColor.r * (1 - t);
       final g = srcPixel.g * t + bgColor.g * (1 - t);
       final b = srcPixel.b * t + bgColor.b * (1 - t);

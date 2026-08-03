@@ -68,6 +68,10 @@ dependencies:
   # 도로명주소 검색 — 다음(카카오) 우편번호 서비스를 웹뷰로 띄운다. API 키가
   # 필요 없는 무료 공개 서비스라 별도 개발자 계정 설정 없이 바로 쓸 수 있다.
   webview_flutter: ^4.10.0
+  # AI 연동(Claude/OpenAI/Gemini) API 키를 기기 키체인/키스토어에 안전하게
+  # 저장하기 위한 패키지 — shared_preferences는 평문 저장이라 API 키 같은
+  # 민감정보에는 부적합.
+  flutter_secure_storage: ^9.2.4
 
 dev_dependencies:
   flutter_test:
