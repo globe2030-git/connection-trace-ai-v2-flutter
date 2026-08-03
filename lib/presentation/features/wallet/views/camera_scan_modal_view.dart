@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -16,9 +15,10 @@ class CameraScanModalView extends StatefulWidget {
 
 class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1). 화면 방향(세로/가로)에
-  // 따라 실제 픽셀 크기는 [_guideFrameSizeFor]가 화면 크기 기준으로 다시
-  // 계산한다 — 고정값이 아님.
+  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1) — 명함 자체가 가로로
+  // 길고 세로가 짧은 형태라 가이드도 그 비율을 따른다(화면·기기는 세로
+  // 그대로 유지, 가이드 박스만 이 비율). 실제 픽셀 크기는 화면 크기별로
+  // [_guideFrameSizeFor]가 다시 계산한다 — 고정값이 아님.
   static const _cardAspectRatio = 330 / 184;
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
@@ -58,13 +58,6 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
-    // 명함이 가로로 긴 형태라 폰을 가로로 눕혀 두 손으로 잡으면 흔들림이
-    // 줄어든다는 피드백에 따라, 이 화면에 있는 동안만 가로 방향으로 고정한다
-    // (앱의 나머지 화면은 세로 전용이라 나갈 때 dispose에서 다시 되돌림).
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
     _initCamera();
   }
 
@@ -93,12 +86,6 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         await controller.dispose();
         return;
       }
-      // 화면을 가로로 고정했으니 촬영 결과물도 그 방향으로 고정 — 안 그러면
-      // 기기가 가로/세로 어느 쪽으로 눕혀졌는지에 따라 결과 이미지가 매번
-      // 다르게 회전되어 나올 수 있다.
-      try {
-        await controller.lockCaptureOrientation();
-      } catch (_) {}
       setState(() {
         _controller = controller;
         _isInitializing = false;
@@ -151,8 +138,6 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     WidgetsBinding.instance.removeObserver(this);
     _laserController.dispose();
     _controller?.dispose();
-    // 앱의 나머지 화면은 세로 전용이라 이 화면을 나갈 때 다시 세로로 되돌린다.
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
