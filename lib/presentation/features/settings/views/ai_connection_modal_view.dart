@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/ai_provider.dart';
 import '../../../../data/repositories/ai_credentials_repository.dart';
@@ -50,6 +51,15 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
     _keyControllers[provider]!.clear();
     if (!mounted) return;
     _showNotice('✅ ${provider.displayName} 연동 완료. 이제 대화 브리핑에서 실제 AI 응답을 받을 수 있어요.');
+  }
+
+  Future<void> _openConsole(AiProvider provider) async {
+    final uri = Uri.parse(provider.consoleUrl);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (mounted) {
+      _showNotice('⚠️ 발급 페이지를 열지 못했습니다. 브라우저에서 ${provider.consoleUrl}로 직접 접속해 주세요.');
+    }
   }
 
   Future<void> _disconnect(AiProvider provider) async {
@@ -220,6 +230,43 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 ],
               ),
             ] else ...[
+              OutlinedButton.icon(
+                onPressed: () => _openConsole(provider),
+                icon: const Icon(Icons.open_in_new, size: 16, color: AppColors.accentText),
+                label: const Text('발급 페이지 열기', style: TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.accentText),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  minimumSize: const Size(double.infinity, 0),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ...provider.setupSteps.asMap().entries.map((entry) {
+                final stepNum = entry.key + 1;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 16,
+                        margin: const EdgeInsets.only(top: 1),
+                        decoration: const BoxDecoration(color: AppColors.accentText, shape: BoxShape.circle),
+                        child: Center(
+                          child: Text('$stepNum', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(entry.value, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 10),
               TextField(
                 controller: _keyControllers[provider],
                 obscureText: _obscure[provider]!,
