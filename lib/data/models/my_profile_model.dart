@@ -44,26 +44,26 @@ class MyProfileModel {
   bool get isSetUp => name.trim().isNotEmpty;
 
   Map<String, dynamic> toJson() => {
-        'name': name,
-        'title': title,
-        'company': company,
-        'phone': phone,
-        'email': email,
-        'address': address,
-        'addressDetail': addressDetail,
-        'avatarPath': avatarPath,
-      };
+    'name': name,
+    'title': title,
+    'company': company,
+    'phone': phone,
+    'email': email,
+    'address': address,
+    'addressDetail': addressDetail,
+    'avatarPath': avatarPath,
+  };
 
   factory MyProfileModel.fromJson(Map<String, dynamic> json) => MyProfileModel(
-        name: json['name'] as String? ?? defaultProfile.name,
-        title: json['title'] as String? ?? defaultProfile.title,
-        company: json['company'] as String? ?? defaultProfile.company,
-        phone: json['phone'] as String? ?? defaultProfile.phone,
-        email: json['email'] as String? ?? defaultProfile.email,
-        address: json['address'] as String? ?? defaultProfile.address,
-        addressDetail: json['addressDetail'] as String?,
-        avatarPath: json['avatarPath'] as String?,
-      );
+    name: json['name'] as String? ?? defaultProfile.name,
+    title: json['title'] as String? ?? defaultProfile.title,
+    company: json['company'] as String? ?? defaultProfile.company,
+    phone: json['phone'] as String? ?? defaultProfile.phone,
+    email: json['email'] as String? ?? defaultProfile.email,
+    address: json['address'] as String? ?? defaultProfile.address,
+    addressDetail: json['addressDetail'] as String?,
+    avatarPath: json['avatarPath'] as String?,
+  );
 
   MyProfileModel copyWith({
     String? name,

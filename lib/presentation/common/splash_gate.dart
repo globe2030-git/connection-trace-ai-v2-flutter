@@ -16,7 +16,8 @@ class SplashGate extends StatefulWidget {
   State<SplashGate> createState() => _SplashGateState();
 }
 
-class _SplashGateState extends State<SplashGate> with SingleTickerProviderStateMixin {
+class _SplashGateState extends State<SplashGate>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _fadeOut;
 

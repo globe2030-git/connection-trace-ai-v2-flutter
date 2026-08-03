@@ -1,30 +1,35 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:connection_trace_ai_flutter/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connection_trace_ai_flutter/core/services/location_consent_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const ConnectionTraceApp());
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('위치 동의는 초기에 알 수 없음이며 동의 시간을 기기에 기록한다', () async {
+    final service = LocationConsentService();
+    final initial = await service.loadRecord();
+    expect(initial.decision, LocationConsentDecision.unknown);
+    expect(initial.recordedAt, isNull);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    final accepted = await service.accept();
+    final persisted = await service.loadRecord();
+    expect(accepted.decision, LocationConsentDecision.accepted);
+    expect(accepted.recordedAt, isNotNull);
+    expect(persisted.decision, LocationConsentDecision.accepted);
+    expect(
+      persisted.policyVersion,
+      LocationConsentService.currentPolicyVersion,
+    );
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('위치 이용 거부도 현재 정책 버전과 함께 기록한다', () async {
+    final service = LocationConsentService();
+    await service.decline();
+
+    final persisted = await service.loadRecord();
+    expect(persisted.decision, LocationConsentDecision.declined);
+    expect(persisted.recordedAt, isNotNull);
   });
 }

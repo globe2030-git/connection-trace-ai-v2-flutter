@@ -1,34 +1,45 @@
 import '../../core/utils/geo_utils.dart';
 
 class CommunicationLogModel {
+  final String id;
   final String type; // 'call', 'sms', 'email', 'kakao'
   final String summary;
   final DateTime timestamp;
-  // 기기의 실제 통화기록/문자 API로 자동 연동된 항목인지 여부. false면 데모
-  // 데이터이거나(초기 목업 인맥) 수동으로 입력한 항목이라는 뜻 — 브리핑
-  // 화면에서 "자동 연동" 배지를 붙여 사용자가 실제 연동인지 구분할 수 있게 함.
+  // 이전 버전에서 자동 연동 여부를 저장하던 호환 필드. 스토어 출시 빌드에서는
+  // 통화기록·문자 제한 권한을 사용하지 않으므로 신규 기록은 수동 입력(false)이다.
   final bool isAutoSynced;
+  // 'manual' 또는 'gmail'. 제한 권한으로 읽은 통화/문자 기록은 출시 빌드에서
+  // 새로 생성하지 않는다. 기존 저장 데이터와의 호환을 위해 문자열로 보관한다.
+  final String source;
 
-  const CommunicationLogModel({
+  CommunicationLogModel({
+    String? id,
     required this.type,
     required this.summary,
     required this.timestamp,
     this.isAutoSynced = false,
-  });
+    this.source = 'manual',
+  }) : id = id ?? '${timestamp.microsecondsSinceEpoch}_$type';
 
   Map<String, dynamic> toJson() => {
-        'type': type,
-        'summary': summary,
-        'timestamp': timestamp.toIso8601String(),
-        'isAutoSynced': isAutoSynced,
-      };
+    'id': id,
+    'type': type,
+    'summary': summary,
+    'timestamp': timestamp.toIso8601String(),
+    'isAutoSynced': isAutoSynced,
+    'source': source,
+  };
 
   factory CommunicationLogModel.fromJson(Map<String, dynamic> json) =>
       CommunicationLogModel(
+        id: json['id'] as String?,
         type: json['type'] as String? ?? 'call',
         summary: json['summary'] as String? ?? '',
         timestamp: DateTime.parse(json['timestamp'] as String),
         isAutoSynced: json['isAutoSynced'] as bool? ?? false,
+        source:
+            json['source'] as String? ??
+            ((json['isAutoSynced'] as bool? ?? false) ? 'legacy' : 'manual'),
       );
 }
 
@@ -117,8 +128,12 @@ class ContactModel {
           : null,
       tags: List<String>.from(json['tags'] ?? []),
       talkingPoints: List<String>.from(json['talkingPoints'] ?? []),
-      commLogs: (json['commLogs'] as List<dynamic>?)
-              ?.map((l) => CommunicationLogModel.fromJson(l as Map<String, dynamic>))
+      commLogs:
+          (json['commLogs'] as List<dynamic>?)
+              ?.map(
+                (l) =>
+                    CommunicationLogModel.fromJson(l as Map<String, dynamic>),
+              )
               .toList() ??
           [],
       memo: json['memo'] as String?,

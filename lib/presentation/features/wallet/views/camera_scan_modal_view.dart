@@ -37,6 +37,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   static const _requiredStableDuration = Duration(seconds: 1);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
+  // 카메라는 초당 30~60프레임을 보내지만 흔들림 판단에는 8fps면
+  // 충분하다. 나머지 프레임은 즉시 버려 CPU·배터리 사용을 줄인다.
+  static const _frameAnalysisInterval = Duration(milliseconds: 125);
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -49,6 +52,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   DateTime? _stableSince;
   List<int>? _previousLumaSample;
   DateTime? _streamStartedAt;
+  DateTime? _lastAnalyzedAt;
 
   @override
   void initState() {
@@ -104,7 +108,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
-    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
       // 긴급재난문자 등으로 잠깐 inactive가 됐다가 바로 resumed로 돌아오는
       // 경우, 컨트롤러를 dispose하기 전에 먼저 화면(CameraPreview)에서
       // 떼어내야 한다 — setState 없이 필드만 바꾸면 아직 화면에 남아 있는
@@ -165,6 +170,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     _streamStartedAt = DateTime.now();
     _stableSince = null;
     _previousLumaSample = null;
+    _lastAnalyzedAt = null;
     try {
       await controller.startImageStream(_onCameraFrame);
       _isStreamingForAutoCapture = true;
@@ -184,10 +190,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
 
   void _onCameraFrame(CameraImage image) {
     if (_isCapturing || !mounted) return;
+    final now = DateTime.now();
+    final lastAnalyzedAt = _lastAnalyzedAt;
+    if (lastAnalyzedAt != null &&
+        now.difference(lastAnalyzedAt) < _frameAnalysisInterval) {
+      return;
+    }
+    _lastAnalyzedAt = now;
     // 카메라가 막 열렸을 때 자동 노출/초점이 안정되기 전까지는 안정 여부
     // 판단을 건너뛴다 — 오탐(초점 잡는 중인데 "안정됨"으로 오인) 방지.
     final startedAt = _streamStartedAt;
-    if (startedAt != null && DateTime.now().difference(startedAt) < _autoCaptureWarmup) {
+    if (startedAt != null && now.difference(startedAt) < _autoCaptureWarmup) {
       return;
     }
 
@@ -203,7 +216,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final avgDiff = diffSum / sample.length;
 
     if (avgDiff < _stabilityDiffThreshold) {
-      _stableSince ??= DateTime.now();
+      _stableSince ??= now;
     } else {
       _stableSince = null;
     }
@@ -214,7 +227,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       setState(() => _isFrameStable = nowStable);
     }
 
-    if (stableSince != null && DateTime.now().difference(stableSince) >= _requiredStableDuration) {
+    if (stableSince != null &&
+        now.difference(stableSince) >= _requiredStableDuration) {
       _stableSince = null;
       _capturePhoto();
     }
@@ -243,7 +257,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
 
   Future<void> _capturePhoto() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _isCapturing) return;
+    if (controller == null || !controller.value.isInitialized || _isCapturing)
+      return;
 
     // takePicture()는 이미지 스트림이 활성화된 상태에서 호출하면 실패하는
     // 기기가 있어서, 촬영 직전엔 항상 스트림을 먼저 멈춘다.
@@ -267,7 +282,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       if (!mounted) return;
       setState(() => _isCapturing = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('⚠️ 명함 인식에 실패했습니다: $e'), backgroundColor: AppColors.destructive),
+        SnackBar(
+          content: Text('⚠️ 명함 인식에 실패했습니다: $e'),
+          backgroundColor: AppColors.destructive,
+        ),
       );
       // 실패해서 다시 화면이 보이는 상태로 남으면, 재시도할 수 있게 안정성
       // 감지를 다시 시작한다.
@@ -390,16 +408,25 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                   children: [
                     if (isReady) _buildCameraPreview(),
                     if (!isReady && !_isInitializing && _initError == null)
-                      Icon(Icons.camera, size: 180, color: Colors.white.withValues(alpha: 0.04)),
+                      Icon(
+                        Icons.camera,
+                        size: 180,
+                        color: Colors.white.withValues(alpha: 0.04),
+                      ),
                     if (_isInitializing)
-                      const CircularProgressIndicator(color: AppColors.accentText),
+                      const CircularProgressIndicator(
+                        color: AppColors.accentText,
+                      ),
                     if (_initError != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32),
                         child: Text(
                           _initError!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     if (_isCapturing)
@@ -409,16 +436,22 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              CircularProgressIndicator(color: AppColors.accentText),
+                              CircularProgressIndicator(
+                                color: AppColors.accentText,
+                              ),
                               SizedBox(height: 16),
                               Text(
                                 '📸 명함 촬영 완료! AI 텍스트 추출 중...',
-                                style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                              )
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      )
+                      ),
                   ],
                 ),
               ),
@@ -435,15 +468,29 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                        icon: const Icon(
+                          Icons.close,
+                          color: Colors.white,
+                          size: 28,
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                       const Text(
                         '명함 카메라 스캔',
-                        style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       IconButton(
-                        icon: Icon(_isFlashOn ? Icons.flash_on : Icons.flash_off, color: _isFlashOn ? AppColors.accentText : Colors.white, size: 24),
+                        icon: Icon(
+                          _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                          color: _isFlashOn
+                              ? AppColors.accentText
+                              : Colors.white,
+                          size: 24,
+                        ),
                         onPressed: isReady ? _toggleFlash : null,
                       ),
                     ],
@@ -451,14 +498,21 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                   if (!OcrScannerService.isSupportedOnThisPlatform)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.destructive.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: const Text(
                         '웹 브라우저에서는 OCR 인식이 지원되지 않습니다. 모바일 앱에서 테스트해 주세요.',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -479,7 +533,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: _isFrameStable ? Colors.greenAccent : Colors.white,
+                        color: _isFrameStable
+                            ? Colors.greenAccent
+                            : Colors.white,
                         width: _isFrameStable ? 3 : 1.5,
                       ),
                     ),
@@ -490,7 +546,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           animation: _laserController,
                           builder: (context, child) {
                             return Positioned(
-                              top: _laserController.value * (guideSize.height - 10),
+                              top:
+                                  _laserController.value *
+                                  (guideSize.height - 10),
                               left: 10,
                               right: 10,
                               child: Container(
@@ -501,27 +559,50 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           },
                         ),
                         // Corner Guides
-                        const Positioned(top: 12, left: 12, child: Icon(Icons.crop_free, color: Colors.white70, size: 20)),
-                        const Positioned(bottom: 12, right: 12, child: Icon(Icons.crop_free, color: Colors.white70, size: 20)),
+                        const Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Icon(
+                            Icons.crop_free,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                        ),
+                        const Positioned(
+                          bottom: 12,
+                          right: 12,
+                          child: Icon(
+                            Icons.crop_free,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 16),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      _isFrameStable ? '고정됨 · 자동으로 촬영합니다' : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                      _isFrameStable
+                          ? '고정됨 · 자동으로 촬영합니다'
+                          : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
                       style: TextStyle(
-                        color: _isFrameStable ? Colors.greenAccent : AppColors.textSecondary,
+                        color: _isFrameStable
+                            ? Colors.greenAccent
+                            : AppColors.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                  )
+                  ),
                 ],
               ),
             ),
@@ -547,7 +628,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         color: isReady ? AppColors.accent : AppColors.textMuted,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.camera_alt, color: Colors.white, size: 36),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 36,
+                      ),
                     ),
                   ),
                 ),

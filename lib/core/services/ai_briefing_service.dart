@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../data/models/ai_provider.dart';
@@ -25,8 +26,13 @@ class AiBriefingService {
     required String model,
     required ContactModel contact,
     required MyProfileModel myProfile,
+    required List<CommunicationLogModel> communicationLogs,
   }) async {
-    final prompt = _buildPrompt(contact: contact, myProfile: myProfile);
+    final prompt = buildPrompt(
+      contact: contact,
+      myProfile: myProfile,
+      communicationLogs: communicationLogs,
+    );
     switch (provider) {
       case AiProvider.anthropic:
         return _callAnthropic(apiKey: apiKey, model: model, prompt: prompt);
@@ -37,10 +43,15 @@ class AiBriefingService {
     }
   }
 
-  static String _buildPrompt({required ContactModel contact, required MyProfileModel myProfile}) {
-    final commLogSummary = contact.commLogs.isEmpty
+  @visibleForTesting
+  static String buildPrompt({
+    required ContactModel contact,
+    required MyProfileModel myProfile,
+    required List<CommunicationLogModel> communicationLogs,
+  }) {
+    final commLogSummary = communicationLogs.isEmpty
         ? '최근 소통 기록 없음'
-        : contact.commLogs.take(5).map((l) => '- [${l.type}] ${l.summary}').join('\n');
+        : communicationLogs.map((l) => '- [${l.type}] ${l.summary}').join('\n');
 
     return '''
 당신은 비즈니스 네트워킹 어시스턴트입니다. 아래 정보를 참고해 사용자가 상대방을 다시 만났을 때 자연스럽게 꺼낼 수 있는 대화 포인트를 만들어 주세요.
@@ -75,7 +86,11 @@ $commLogSummary
         .toList();
   }
 
-  static Future<List<String>> _callAnthropic({required String apiKey, required String model, required String prompt}) async {
+  static Future<List<String>> _callAnthropic({
+    required String apiKey,
+    required String model,
+    required String prompt,
+  }) async {
     final response = await http
         .post(
           Uri.parse('https://api.anthropic.com/v1/messages'),
@@ -94,17 +109,26 @@ $commLogSummary
         )
         .timeout(_timeout);
 
-    if (response.statusCode != 200) throw AiBriefingException(_extractErrorMessage(response));
+    if (response.statusCode != 200) {
+      throw AiBriefingException(_extractErrorMessage(response));
+    }
 
-    final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final blocks = json['content'] as List<dynamic>? ?? [];
-    final text = blocks.map((b) => (b as Map<String, dynamic>)['text']?.toString() ?? '').join('\n');
+    final text = blocks
+        .map((b) => (b as Map<String, dynamic>)['text']?.toString() ?? '')
+        .join('\n');
     final points = _parseLines(text);
     if (points.isEmpty) throw AiBriefingException('AI가 빈 응답을 반환했습니다.');
     return points;
   }
 
-  static Future<List<String>> _callOpenAi({required String apiKey, required String model, required String prompt}) async {
+  static Future<List<String>> _callOpenAi({
+    required String apiKey,
+    required String model,
+    required String prompt,
+  }) async {
     final response = await http
         .post(
           Uri.parse('https://api.openai.com/v1/chat/completions'),
@@ -121,20 +145,34 @@ $commLogSummary
         )
         .timeout(_timeout);
 
-    if (response.statusCode != 200) throw AiBriefingException(_extractErrorMessage(response));
+    if (response.statusCode != 200) {
+      throw AiBriefingException(_extractErrorMessage(response));
+    }
 
-    final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final choices = json['choices'] as List<dynamic>? ?? [];
-    final text = choices.isEmpty ? '' : ((choices.first as Map<String, dynamic>)['message'] as Map<String, dynamic>?)?['content']?.toString() ?? '';
+    final text = choices.isEmpty
+        ? ''
+        : ((choices.first as Map<String, dynamic>)['message']
+                      as Map<String, dynamic>?)?['content']
+                  ?.toString() ??
+              '';
     final points = _parseLines(text);
     if (points.isEmpty) throw AiBriefingException('AI가 빈 응답을 반환했습니다.');
     return points;
   }
 
-  static Future<List<String>> _callGemini({required String apiKey, required String model, required String prompt}) async {
+  static Future<List<String>> _callGemini({
+    required String apiKey,
+    required String model,
+    required String prompt,
+  }) async {
     final response = await http
         .post(
-          Uri.parse('https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey'),
+          Uri.parse(
+            'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey',
+          ),
           headers: {'content-type': 'application/json'},
           body: jsonEncode({
             'contents': [
@@ -148,15 +186,22 @@ $commLogSummary
         )
         .timeout(_timeout);
 
-    if (response.statusCode != 200) throw AiBriefingException(_extractErrorMessage(response));
+    if (response.statusCode != 200) {
+      throw AiBriefingException(_extractErrorMessage(response));
+    }
 
-    final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    final json =
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     final candidates = json['candidates'] as List<dynamic>? ?? [];
     String text = '';
     if (candidates.isNotEmpty) {
-      final content = (candidates.first as Map<String, dynamic>)['content'] as Map<String, dynamic>?;
+      final content =
+          (candidates.first as Map<String, dynamic>)['content']
+              as Map<String, dynamic>?;
       final parts = content?['parts'] as List<dynamic>? ?? [];
-      text = parts.map((p) => (p as Map<String, dynamic>)['text']?.toString() ?? '').join('\n');
+      text = parts
+          .map((p) => (p as Map<String, dynamic>)['text']?.toString() ?? '')
+          .join('\n');
     }
     final points = _parseLines(text);
     if (points.isEmpty) throw AiBriefingException('AI가 빈 응답을 반환했습니다.');
@@ -165,9 +210,12 @@ $commLogSummary
 
   static String _extractErrorMessage(http.Response response) {
     try {
-      final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final json =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
       final err = json['error'];
-      if (err is Map && err['message'] != null) return err['message'].toString();
+      if (err is Map && err['message'] != null) {
+        return err['message'].toString();
+      }
       if (err is String) return err;
     } catch (_) {}
     return 'AI 응답을 받지 못했습니다 (HTTP ${response.statusCode}). API 키/모델명을 확인해 주세요.';

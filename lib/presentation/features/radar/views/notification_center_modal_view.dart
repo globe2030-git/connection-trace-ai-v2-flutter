@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/glass_card.dart';
-import 'communication_trace_test_modal_view.dart';
 
 class NotificationCenterModalView extends StatelessWidget {
   const NotificationCenterModalView({super.key});
@@ -35,41 +34,16 @@ class NotificationCenterModalView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            const Row(
               children: [
-                const Text(
-                  '🔔 알림 센터',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                ),
-                InkWell(
-                  onTap: () {
-                    Navigator.pop(context);
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const CommunicationTraceTestModalView(),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.accentText.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.accentText.withValues(alpha: 0.5)),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.sync, size: 14, color: AppColors.accentText),
-                        SizedBox(width: 4),
-                        Text(
-                          '소통 연동 테스트',
-                          style: TextStyle(fontSize: 11.5, color: AppColors.accentText, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
+                Icon(Icons.notifications_none, color: AppColors.accentText),
+                SizedBox(width: 8),
+                Text(
+                  '알림 센터',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ],
@@ -99,7 +73,9 @@ class NotificationCenterModalView extends StatelessWidget {
                       child: Icon(
                         Icons.notifications_active_outlined,
                         size: 18,
-                        color: (n['isNew'] as bool) ? AppColors.accentText : AppColors.textMuted,
+                        color: (n['isNew'] as bool)
+                            ? AppColors.accentText
+                            : AppColors.textMuted,
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -112,22 +88,32 @@ class NotificationCenterModalView extends StatelessWidget {
                             children: [
                               Text(
                                 n['title'] as String,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
                               ),
                               Text(
                                 n['time'] as String,
-                                style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 4),
                           Text(
                             n['body'] as String,
-                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
                           ),
                         ],
                       ),
-                    )
+                    ),
                   ],
                 ),
               );

@@ -19,7 +19,9 @@ class MyProfileRepository extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString(_storageKey);
       if (jsonString != null && jsonString.isNotEmpty) {
-        _profile = MyProfileModel.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
+        _profile = MyProfileModel.fromJson(
+          jsonDecode(jsonString) as Map<String, dynamic>,
+        );
         notifyListeners();
       }
     } catch (e) {

@@ -50,7 +50,9 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
     await context.read<AiCredentialsRepository>().setApiKey(provider, key);
     _keyControllers[provider]!.clear();
     if (!mounted) return;
-    _showNotice('✅ ${provider.displayName} 연동 완료. 이제 대화 브리핑에서 실제 AI 응답을 받을 수 있어요.');
+    _showNotice(
+      '✅ ${provider.displayName} 연동 완료. 이제 대화 브리핑에서 실제 AI 응답을 받을 수 있어요.',
+    );
   }
 
   Future<void> _openConsole(AiProvider provider) async {
@@ -58,7 +60,9 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (mounted) {
-      _showNotice('⚠️ 발급 페이지를 열지 못했습니다. 브라우저에서 ${provider.consoleUrl}로 직접 접속해 주세요.');
+      _showNotice(
+        '⚠️ 발급 페이지를 열지 못했습니다. 브라우저에서 ${provider.consoleUrl}로 직접 접속해 주세요.',
+      );
     }
   }
 
@@ -73,7 +77,9 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
     final repo = context.watch<AiCredentialsRepository>();
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
@@ -90,7 +96,10 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                   child: Container(
                     width: 40,
                     height: 4,
-                    decoration: BoxDecoration(color: AppColors.borderDark, borderRadius: BorderRadius.circular(2)),
+                    decoration: BoxDecoration(
+                      color: AppColors.borderDark,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -100,10 +109,17 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                   children: [
                     const Text(
                       '🤖 AI 연동',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textSecondary,
+                      ),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
@@ -111,7 +127,10 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 const SizedBox(height: 6),
                 const Text(
                   '이미 갖고 계신 AI 서비스의 API 키를 연동하면, "30초 AI 대화 브리핑"이 실제 AI가 생성한 맞춤 대화 포인트를 보여줍니다. API 키는 이 기기에만 안전하게 저장되고 서버로 전송되지 않습니다.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -120,7 +139,9 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                   const SizedBox(height: 12),
                 ],
 
-                ...AiProvider.values.map((provider) => _buildProviderCard(context, repo, provider)),
+                ...AiProvider.values.map(
+                  (provider) => _buildProviderCard(context, repo, provider),
+                ),
               ],
             ),
           ),
@@ -142,13 +163,21 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
           Expanded(
             child: Text(
               _inlineNoticeText!,
-              style: const TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 12.5,
+                color: AppColors.accentText,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
-            icon: const Icon(Icons.close, size: 16, color: AppColors.accentText),
+            icon: const Icon(
+              Icons.close,
+              size: 16,
+              color: AppColors.accentText,
+            ),
             onPressed: () => setState(() => _inlineNoticeText = null),
           ),
         ],
@@ -156,7 +185,11 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
     );
   }
 
-  Widget _buildProviderCard(BuildContext context, AiCredentialsRepository repo, AiProvider provider) {
+  Widget _buildProviderCard(
+    BuildContext context,
+    AiCredentialsRepository repo,
+    AiProvider provider,
+  ) {
     final isConnected = repo.hasKey(provider);
     final isActive = repo.activeProvider == provider;
 
@@ -172,31 +205,59 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 Expanded(
                   child: Text(
                     provider.displayName,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                 ),
                 if (isActive)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.accentText.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Text('사용 중', style: TextStyle(fontSize: 11, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      '사용 중',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.accentText,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(provider.consoleHint, style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted)),
+            Text(
+              provider.consoleHint,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: AppColors.textMuted,
+              ),
+            ),
             const SizedBox(height: 10),
             if (isConnected) ...[
               Row(
                 children: [
-                  const Icon(Icons.vpn_key, size: 14, color: AppColors.accentText),
+                  const Icon(
+                    Icons.vpn_key,
+                    size: 14,
+                    color: AppColors.accentText,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     repo.maskedKeyPreview(provider) ?? '',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontFamily: 'monospace'),
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textPrimary,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ],
               ),
@@ -210,9 +271,18 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: AppColors.accentText),
                           padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
-                        child: const Text('이걸로 사용', style: TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          '이걸로 사용',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: AppColors.accentText,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                   if (!isActive) const SizedBox(width: 8),
@@ -222,9 +292,18 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: AppColors.destructive),
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                       ),
-                      child: const Text('연동 해제', style: TextStyle(fontSize: 12.5, color: AppColors.destructive, fontWeight: FontWeight.bold)),
+                      child: const Text(
+                        '연동 해제',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.destructive,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -232,13 +311,26 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
             ] else ...[
               OutlinedButton.icon(
                 onPressed: () => _openConsole(provider),
-                icon: const Icon(Icons.open_in_new, size: 16, color: AppColors.accentText),
-                label: const Text('발급 페이지 열기', style: TextStyle(fontSize: 12.5, color: AppColors.accentText, fontWeight: FontWeight.bold)),
+                icon: const Icon(
+                  Icons.open_in_new,
+                  size: 16,
+                  color: AppColors.accentText,
+                ),
+                label: const Text(
+                  '발급 페이지 열기',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.accentText,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: AppColors.accentText),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   minimumSize: const Size(double.infinity, 0),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
               const SizedBox(height: 10),
@@ -253,14 +345,30 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                         width: 16,
                         height: 16,
                         margin: const EdgeInsets.only(top: 1),
-                        decoration: const BoxDecoration(color: AppColors.accentText, shape: BoxShape.circle),
+                        decoration: const BoxDecoration(
+                          color: AppColors.accentText,
+                          shape: BoxShape.circle,
+                        ),
                         child: Center(
-                          child: Text('$stepNum', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                          child: Text(
+                            '$stepNum',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(entry.value, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        child: Text(
+                          entry.value,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -270,19 +378,52 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
               TextField(
                 controller: _keyControllers[provider],
                 obscureText: _obscure[provider]!,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                ),
                 decoration: InputDecoration(
                   hintText: 'API 키 붙여넣기',
-                  hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  hintStyle: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 13,
+                  ),
                   filled: true,
                   fillColor: AppColors.bgDarkSlate,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.borderFunctional)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.borderFunctional)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.accentText, width: 1.5)),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: AppColors.borderFunctional,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: AppColors.borderFunctional,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                      color: AppColors.accentText,
+                      width: 1.5,
+                    ),
+                  ),
                   suffixIcon: IconButton(
-                    icon: Icon(_obscure[provider]! ? Icons.visibility_off : Icons.visibility, size: 18, color: AppColors.textMuted),
-                    onPressed: () => setState(() => _obscure[provider] = !_obscure[provider]!),
+                    icon: Icon(
+                      _obscure[provider]!
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      size: 18,
+                      color: AppColors.textMuted,
+                    ),
+                    onPressed: () => setState(
+                      () => _obscure[provider] = !_obscure[provider]!,
+                    ),
                   ),
                 ),
               ),
@@ -294,9 +435,18 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.accent,
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  child: const Text('연동', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+                  child: const Text(
+                    '연동',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
             ],

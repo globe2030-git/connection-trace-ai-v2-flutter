@@ -4,41 +4,57 @@ import '../../core/theme/app_colors.dart';
 class ActionCircleButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final bool isActive;
 
   const ActionCircleButton({
     super.key,
     required this.icon,
     required this.label,
-    required this.onTap,
+    this.onTap,
     this.isActive = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return Semantics(
+      button: true,
+      enabled: onTap != null,
+      label: label,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isActive
-                  ? AppColors.accentText.withValues(alpha: 0.2)
-                  : AppColors.cardDark,
-              border: Border.all(
-                color: isActive ? AppColors.accentText : AppColors.borderDark,
-                width: 1,
+          Material(
+            color: onTap == null
+                ? AppColors.bgDarkSlate
+                : isActive
+                ? AppColors.accentSoft
+                : AppColors.cardDark,
+            shape: CircleBorder(
+              side: BorderSide(
+                color: onTap == null
+                    ? AppColors.borderDark
+                    : isActive
+                    ? AppColors.accent
+                    : AppColors.borderDark,
               ),
             ),
-            child: Icon(
-              icon,
-              color: isActive ? AppColors.accentText : AppColors.textPrimary,
-              size: 26,
+            child: InkWell(
+              onTap: onTap,
+              customBorder: const CircleBorder(),
+              child: SizedBox(
+                width: 56,
+                height: 56,
+                child: Icon(
+                  icon,
+                  color: onTap == null
+                      ? AppColors.textMuted
+                      : isActive
+                      ? AppColors.accentText
+                      : AppColors.textPrimary,
+                  size: 26,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -47,9 +63,13 @@ class ActionCircleButton extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
+              color: onTap == null
+                  ? AppColors.textMuted
+                  : isActive
+                  ? AppColors.accentText
+                  : AppColors.textSecondary,
             ),
-          )
+          ),
         ],
       ),
     );

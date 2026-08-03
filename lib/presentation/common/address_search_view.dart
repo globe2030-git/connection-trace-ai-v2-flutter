@@ -47,7 +47,8 @@ class _AddressSearchViewState extends State<AddressSearchView> {
             final roadAddress = data['roadAddress'] as String?;
             final jibunAddress = data['jibunAddress'] as String?;
             final buildingName = data['buildingName'] as String?;
-            final address = (roadAddress != null && roadAddress.trim().isNotEmpty)
+            final address =
+                (roadAddress != null && roadAddress.trim().isNotEmpty)
                 ? roadAddress
                 : jibunAddress;
             if (address == null || address.trim().isEmpty) {
@@ -58,7 +59,10 @@ class _AddressSearchViewState extends State<AddressSearchView> {
               context,
               AddressSearchResult(
                 address: address,
-                buildingName: (buildingName != null && buildingName.trim().isNotEmpty) ? buildingName.trim() : null,
+                buildingName:
+                    (buildingName != null && buildingName.trim().isNotEmpty)
+                    ? buildingName.trim()
+                    : null,
               ),
             );
           } catch (_) {
@@ -93,7 +97,9 @@ class _AddressSearchViewState extends State<AddressSearchView> {
         children: [
           WebViewWidget(controller: _controller),
           if (_isLoading)
-            const Center(child: CircularProgressIndicator(color: AppColors.accentText)),
+            const Center(
+              child: CircularProgressIndicator(color: AppColors.accentText),
+            ),
         ],
       ),
     );

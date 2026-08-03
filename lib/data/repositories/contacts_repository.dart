@@ -25,7 +25,9 @@ class ContactsRepository extends ChangeNotifier {
       final String? jsonString = prefs.getString(_storageKey);
       if (jsonString != null && jsonString.isNotEmpty) {
         final List<dynamic> jsonList = jsonDecode(jsonString);
-        _contacts = jsonList.map((j) => ContactModel.fromJson(j as Map<String, dynamic>)).toList();
+        _contacts = jsonList
+            .map((j) => ContactModel.fromJson(j as Map<String, dynamic>))
+            .toList();
         notifyListeners();
       }
     } catch (e) {

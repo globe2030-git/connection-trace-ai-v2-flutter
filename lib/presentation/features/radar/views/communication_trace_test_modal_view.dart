@@ -11,10 +11,12 @@ class CommunicationTraceTestModalView extends StatefulWidget {
   const CommunicationTraceTestModalView({super.key});
 
   @override
-  State<CommunicationTraceTestModalView> createState() => _CommunicationTraceTestModalViewState();
+  State<CommunicationTraceTestModalView> createState() =>
+      _CommunicationTraceTestModalViewState();
 }
 
-class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTestModalView> {
+class _CommunicationTraceTestModalViewState
+    extends State<CommunicationTraceTestModalView> {
   // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
   // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 안 보이고,
   // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다(실기기로 확인됨)
@@ -74,14 +76,21 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                       SizedBox(width: 8),
                       Text(
                         '소통 이력 연동',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                     ],
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.textSecondary,
+                    ),
                     onPressed: () => Navigator.pop(context),
-                  )
+                  ),
                 ],
               ),
 
@@ -115,7 +124,9 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                         ? AppColors.textSecondary
                         : AppColors.destructive,
                     height: 1.4,
-                    fontWeight: CommLogSyncService.isSupportedOnThisPlatform ? FontWeight.normal : FontWeight.w600,
+                    fontWeight: CommLogSyncService.isSupportedOnThisPlatform
+                        ? FontWeight.normal
+                        : FontWeight.w600,
                   ),
                 ),
               ),
@@ -125,7 +136,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
               // Select Contact Dropdown
               const Text(
                 '👤 테스트할 인맥 선택',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 8),
 
@@ -134,7 +149,9 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                 decoration: BoxDecoration(
                   color: AppColors.bgDarkSlate,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.accentText.withValues(alpha: 0.4)),
+                  border: Border.all(
+                    color: AppColors.accentText.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
@@ -146,7 +163,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                         value: c.id,
                         child: Text(
                           '${c.name} ${c.title} (${c.company})',
-                          style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       );
                     }).toList(),
@@ -165,7 +186,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
 
               const Text(
                 '🔄 자동 연동 (실제 기기/계정 데이터 — 통화·문자는 Android만, 이메일은 전 플랫폼)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
               ),
               const SizedBox(height: 10),
 
@@ -215,7 +240,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                         icon: Icons.email_outlined,
                         color: AppColors.channelEmail,
                         title: '✉️ 이메일 기록 연동',
-                        subtitle: '${selectedContact.name} 님과 주고받은 이메일을 실제로 불러옵니다',
+                        subtitle:
+                            '${selectedContact.name} 님과 주고받은 이메일을 실제로 불러옵니다',
                         isLoading: _isSyncingEmail,
                         onTap: () => _syncEmails(selectedContact),
                       ),
@@ -229,7 +255,10 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                     onPressed: _signOutEmail,
                     child: Text(
                       '${EmailSyncService.signedInEmail} 로그아웃',
-                      style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                 ),
@@ -239,7 +268,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
 
               const Text(
                 '📝 수동 입력 (카카오톡은 이 방식만 가능)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 10),
 
@@ -283,7 +316,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
           Expanded(
             child: Text(
               _noticeText!,
-              style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           IconButton(
@@ -329,22 +366,49 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
                   ? SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: effectiveColor),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: effectiveColor,
+                      ),
                     )
-                  : Icon(enabled ? icon : Icons.lock_outline, color: effectiveColor, size: 20),
+                  : Icon(
+                      enabled ? icon : Icons.lock_outline,
+                      color: effectiveColor,
+                      size: 20,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: effectiveColor)),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: effectiveColor,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(subtitle, style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
               ),
             ),
-            if (enabled) const Icon(Icons.arrow_forward_ios, size: 14, color: AppColors.textMuted),
+            if (enabled)
+              const Icon(
+                Icons.arrow_forward_ios,
+                size: 14,
+                color: AppColors.textMuted,
+              ),
           ],
         ),
       ),
@@ -434,8 +498,11 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
   }) {
     // 같은 타임스탬프를 가진 항목은 이미 연동된 것으로 보고 중복 추가하지 않음.
     final existingTimestamps = contact.commLogs.map((l) => l.timestamp).toSet();
-    final toAdd = newLogs.where((l) => !existingTimestamps.contains(l.timestamp)).toList();
-    final updatedLogs = [...toAdd, ...contact.commLogs]..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    final toAdd = newLogs
+        .where((l) => !existingTimestamps.contains(l.timestamp))
+        .toList();
+    final updatedLogs = [...toAdd, ...contact.commLogs]
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
     final updatedContact = contact.copyWith(commLogs: updatedLogs);
 
     final viewModel = context.read<RadarViewModel>();
@@ -449,7 +516,9 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
     // 찾아가야 스낵바가 뜬다.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('🎉 ${contact.name} 님의 실제 $channelLabel 기록 ${toAdd.length}건을 연동했습니다!'),
+        content: Text(
+          '🎉 ${contact.name} 님의 실제 $channelLabel 기록 ${toAdd.length}건을 연동했습니다!',
+        ),
         backgroundColor: AppColors.accent,
       ),
     );
@@ -461,7 +530,8 @@ class _CommunicationTraceTestModalViewState extends State<CommunicationTraceTest
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => ManualCommLogModalView(contact: contact, initialType: initialType),
+      builder: (_) =>
+          ManualCommLogModalView(contact: contact, initialType: initialType),
     );
   }
 }

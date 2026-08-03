@@ -92,13 +92,17 @@ class OcrScannerService {
 
     allLines.sort((a, b) => a.boundingBox.top.compareTo(b.boundingBox.top));
 
-    final avgHeight = allLines.map((l) => l.boundingBox.height).reduce((a, b) => a + b) / allLines.length;
+    final avgHeight =
+        allLines.map((l) => l.boundingBox.height).reduce((a, b) => a + b) /
+        allLines.length;
     final rowTolerance = avgHeight * 0.6;
 
     final rows = <List<TextLine>>[];
     for (final line in allLines) {
       if (rows.isNotEmpty) {
-        final rowTop = rows.last.map((l) => l.boundingBox.top).reduce((a, b) => a < b ? a : b);
+        final rowTop = rows.last
+            .map((l) => l.boundingBox.top)
+            .reduce((a, b) => a < b ? a : b);
         if ((line.boundingBox.top - rowTop).abs() <= rowTolerance) {
           rows.last.add(line);
           continue;
@@ -107,32 +111,80 @@ class OcrScannerService {
       rows.add([line]);
     }
 
-    return rows.map((row) {
-      row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
-      return row.map((l) => l.text.trim()).where((t) => t.isNotEmpty).join(' ');
-    }).where((l) => l.isNotEmpty).toList();
+    return rows
+        .map((row) {
+          row.sort((a, b) => a.boundingBox.left.compareTo(b.boundingBox.left));
+          return row
+              .map((l) => l.text.trim())
+              .where((t) => t.isNotEmpty)
+              .join(' ');
+        })
+        .where((l) => l.isNotEmpty)
+        .toList();
   }
 
   static const _titleKeywords = [
-    '대표이사', '대표', '이사', '상무', '전무', '부사장', '부장', '차장', '과장',
-    '대리', '사원', '팀장', '실장', '본부장', '지점장', '원장', '소장', '매니저',
-    '연구원', '교수', 'CEO', 'CTO', 'CFO', 'COO', 'President', 'Director',
-    'Manager', 'Founder', 'VP', 'Lead',
+    '대표이사',
+    '대표',
+    '이사',
+    '상무',
+    '전무',
+    '부사장',
+    '부장',
+    '차장',
+    '과장',
+    '대리',
+    '사원',
+    '팀장',
+    '실장',
+    '본부장',
+    '지점장',
+    '원장',
+    '소장',
+    '매니저',
+    '연구원',
+    '교수',
+    'CEO',
+    'CTO',
+    'CFO',
+    'COO',
+    'President',
+    'Director',
+    'Manager',
+    'Founder',
+    'VP',
+    'Lead',
   ];
 
   static const _companyKeywords = [
-    '주식회사', '(주)', '㈜', 'Corp', 'Corporation', 'Inc.', 'Inc', 'Co.,',
-    'Co.', 'Ltd', '그룹', 'Group', '컴퍼니', 'Company',
+    '주식회사',
+    '(주)',
+    '㈜',
+    'Corp',
+    'Corporation',
+    'Inc.',
+    'Inc',
+    'Co.,',
+    'Co.',
+    'Ltd',
+    '그룹',
+    'Group',
+    '컴퍼니',
+    'Company',
   ];
 
   static final _koreanNameRegExp = RegExp(r'^[가-힣]{2,4}$');
 
   static OcrScanResult _parse(List<String> lines, String imagePath) {
-    final emailRegExp = RegExp(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}');
+    final emailRegExp = RegExp(
+      r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+    );
     final mobileRegExp = RegExp(r'01[0-9][-.\s]?\d{3,4}[-.\s]?\d{4}');
     // 02(서울)/031~069(지역 국번) 외에 070(인터넷전화)도 요즘 명함에 흔히
     // 쓰이는데 빠져 있었음 — 회사 전화번호가 있어도 인식이 안 되는 원인이었음.
-    final officeRegExp = RegExp(r'0(2|[3-6][0-9]|70)[-.\s]?\d{3,4}[-.\s]?\d{4}');
+    final officeRegExp = RegExp(
+      r'0(2|[3-6][0-9]|70)[-.\s]?\d{3,4}[-.\s]?\d{4}',
+    );
     final addressRegExp = RegExp(
       r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)[^\n]*(로|길|동|구)[^\n]*',
     );
@@ -141,7 +193,9 @@ class OcrScannerService {
     // (addressRegExp는 로/길/동/구로 끝나는 줄만 보므로 "5층 501호"만 있는
     // 줄은 안 걸림 — 그대로 두면 leftover로 밀려 이름/회사명으로 잘못
     // 채워지는 문제가 있었다).
-    final addressDetailRegExp = RegExp(r'(지하\s*\d*\s*층|\d+\s*층|B\d+F?|\d+F\b|\d+동\s*\d+\s*호|\d+\s*호)');
+    final addressDetailRegExp = RegExp(
+      r'(지하\s*\d*\s*층|\d+\s*층|B\d+F?|\d+F\b|\d+동\s*\d+\s*호|\d+\s*호)',
+    );
 
     String? mobile;
     String? office;
@@ -197,7 +251,8 @@ class OcrScannerService {
         titleLine = line;
         continue;
       }
-      if (companyLine == null && _companyKeywords.any((k) => line.contains(k))) {
+      if (companyLine == null &&
+          _companyKeywords.any((k) => line.contains(k))) {
         companyLine = line;
         continue;
       }
@@ -209,8 +264,10 @@ class OcrScannerService {
     }
 
     final name = nameLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
-    final company = companyLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
-    final title = titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
+    final company =
+        companyLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
+    final title =
+        titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : '');
 
     final rawText = lines.join('\n');
 

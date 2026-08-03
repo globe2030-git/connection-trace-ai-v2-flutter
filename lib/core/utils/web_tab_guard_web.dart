@@ -49,7 +49,10 @@ class WebTabGuard {
         void onCompositionEnd(html.Event _) => resolve(shiftKey);
         _compositionEndListener = onCompositionEnd;
         html.document.addEventListener('compositionend', onCompositionEnd);
-        _fallbackTimer = Timer(const Duration(milliseconds: 200), () => resolve(shiftKey));
+        _fallbackTimer = Timer(
+          const Duration(milliseconds: 200),
+          () => resolve(shiftKey),
+        );
       } else {
         Timer(Duration.zero, () => resolve(shiftKey));
       }
@@ -64,7 +67,10 @@ class WebTabGuard {
     _fallbackTimer = null;
     final compositionEndListener = _compositionEndListener;
     if (compositionEndListener != null) {
-      html.document.removeEventListener('compositionend', compositionEndListener);
+      html.document.removeEventListener(
+        'compositionend',
+        compositionEndListener,
+      );
       _compositionEndListener = null;
     }
   }

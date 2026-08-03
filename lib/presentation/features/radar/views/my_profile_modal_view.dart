@@ -13,7 +13,9 @@ class MyProfileModalView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = context.watch<MyProfileRepository>().profile;
-    final fullAddress = (profile.addressDetail != null && profile.addressDetail!.trim().isNotEmpty)
+    final fullAddress =
+        (profile.addressDetail != null &&
+            profile.addressDetail!.trim().isNotEmpty)
         ? '${profile.address} ${profile.addressDetail}'
         : profile.address;
 
@@ -45,10 +47,18 @@ class MyProfileModalView extends StatelessWidget {
               children: [
                 const Text(
                   '👤 내 디지털 명함',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.edit_note, color: AppColors.accentText, size: 24),
+                  icon: const Icon(
+                    Icons.edit_note,
+                    color: AppColors.accentText,
+                    size: 24,
+                  ),
                   tooltip: '정보 수정',
                   onPressed: () {
                     showModalBottomSheet(
@@ -58,7 +68,7 @@ class MyProfileModalView extends StatelessWidget {
                       builder: (_) => const MyProfileEditModalView(),
                     );
                   },
-                )
+                ),
               ],
             ),
             const SizedBox(height: 14),
@@ -68,17 +78,28 @@ class MyProfileModalView extends StatelessWidget {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    const Icon(Icons.person_off_outlined, size: 40, color: AppColors.textMuted),
+                    const Icon(
+                      Icons.person_off_outlined,
+                      size: 40,
+                      color: AppColors.textMuted,
+                    ),
                     const SizedBox(height: 12),
                     const Text(
                       '아직 내 프로필을 설정하지 않았습니다',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     const Text(
                       '이름·연락처 등 내 정보를 입력하면 디지털 명함으로 공유할 수 있어요.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     ElevatedButton(
@@ -92,74 +113,137 @@ class MyProfileModalView extends StatelessWidget {
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                       ),
-                      child: const Text('내 프로필 설정하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                      child: const Text(
+                        '내 프로필 설정하기',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               )
             else
-            // Profile Card
-            GlassCard(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                        backgroundImage: profile.avatarPath != null ? FileImage(File(profile.avatarPath!)) : null,
-                        child: profile.avatarPath == null
-                            ? Text(
-                                profile.name.isNotEmpty ? profile.name.substring(0, 1) : '?',
-                                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.accentText),
-                              )
-                            : null,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(profile.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                            Text('${profile.company} / ${profile.title}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-                          ],
+              // Profile Card
+              GlassCard(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 28,
+                          backgroundColor: AppColors.accent.withValues(
+                            alpha: 0.2,
+                          ),
+                          backgroundImage: profile.avatarPath != null
+                              ? FileImage(File(profile.avatarPath!))
+                              : null,
+                          child: profile.avatarPath == null
+                              ? Text(
+                                  profile.name.isNotEmpty
+                                      ? profile.name.substring(0, 1)
+                                      : '?',
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.accentText,
+                                  ),
+                                )
+                              : null,
                         ),
-                      )
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(color: AppColors.borderDark),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.phone_iphone, size: 16, color: AppColors.textMuted),
-                      const SizedBox(width: 8),
-                      Text(profile.phone, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.email_outlined, size: 16, color: AppColors.textMuted),
-                      const SizedBox(width: 8),
-                      Text(profile.email, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textMuted),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(fullAddress, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary))),
-                    ],
-                  ),
-                ],
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile.name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                '${profile.company} / ${profile.title}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Divider(color: AppColors.borderDark),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.phone_iphone,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          profile.phone,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.email_outlined,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          profile.email,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 16,
+                          color: AppColors.textMuted,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            fullAddress,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
 
             const SizedBox(height: 16),
 
@@ -170,10 +254,18 @@ class MyProfileModalView extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.share, color: Colors.white, size: 18),
-                label: const Text('디지털 명함 공유하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                label: const Text(
+                  '디지털 명함 공유하기',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),

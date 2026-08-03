@@ -86,11 +86,19 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.folder_open, color: AppColors.accentText, size: 22),
+                    Icon(
+                      Icons.folder_open,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     SizedBox(width: 8),
                     Text(
                       '갤러리에서 명함 이미지 선택',
-                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                   ],
                 ),
@@ -106,26 +114,43 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.destructive.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.destructive.withValues(alpha: 0.4)),
+                  border: Border.all(
+                    color: AppColors.destructive.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.error_outline, color: AppColors.destructive, size: 18),
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.destructive,
+                      size: 18,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _errorNotice!,
-                        style: const TextStyle(color: AppColors.destructive, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          color: AppColors.destructive,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.close, size: 16, color: AppColors.destructive),
+                      icon: const Icon(
+                        Icons.close,
+                        size: 16,
+                        color: AppColors.destructive,
+                      ),
                       onPressed: () => setState(() => _errorNotice = null),
                     ),
                   ],
@@ -136,20 +161,33 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.destructive.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.destructive.withValues(alpha: 0.4)),
+                  border: Border.all(
+                    color: AppColors.destructive.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.info_outline, color: AppColors.destructive, size: 18),
+                    Icon(
+                      Icons.info_outline,
+                      color: AppColors.destructive,
+                      size: 18,
+                    ),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '웹 브라우저에서는 OCR 인식이 지원되지 않습니다. 이미지 선택은 미리 볼 수 있지만, 실제 텍스트 인식은 모바일(Android/iOS) 앱에서만 가능합니다.',
-                        style: TextStyle(color: AppColors.destructive, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          color: AppColors.destructive,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],
@@ -168,7 +206,11 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                 child: _pickedImageBytes != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.memory(_pickedImageBytes!, fit: BoxFit.contain, width: double.infinity),
+                        child: Image.memory(
+                          _pickedImageBytes!,
+                          fit: BoxFit.contain,
+                          width: double.infinity,
+                        ),
                       )
                     : InkWell(
                         borderRadius: BorderRadius.circular(16),
@@ -178,13 +220,22 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (_isPicking)
-                                const CircularProgressIndicator(color: AppColors.accentText)
+                                const CircularProgressIndicator(
+                                  color: AppColors.accentText,
+                                )
                               else ...[
-                                const Icon(Icons.add_photo_alternate, size: 48, color: AppColors.accentText),
+                                const Icon(
+                                  Icons.add_photo_alternate,
+                                  size: 48,
+                                  color: AppColors.accentText,
+                                ),
                                 const SizedBox(height: 8),
                                 const Text(
                                   '탭하여 갤러리에서 명함 사진 선택',
-                                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ],
                             ],
@@ -199,8 +250,15 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   onPressed: _isPicking ? null : _pickFromGallery,
-                  icon: const Icon(Icons.refresh, size: 16, color: AppColors.accentText),
-                  label: const Text('다른 이미지 선택', style: TextStyle(color: AppColors.accentText)),
+                  icon: const Icon(
+                    Icons.refresh,
+                    size: 16,
+                    color: AppColors.accentText,
+                  ),
+                  label: const Text(
+                    '다른 이미지 선택',
+                    style: TextStyle(color: AppColors.accentText),
+                  ),
                 ),
               ),
 
@@ -210,19 +268,35 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton.icon(
-                onPressed: (_pickedImage == null || _isProcessing || !OcrScannerService.isSupportedOnThisPlatform)
+                onPressed:
+                    (_pickedImage == null ||
+                        _isProcessing ||
+                        !OcrScannerService.isSupportedOnThisPlatform)
                     ? null
                     : _processSelectedImage,
                 icon: _isProcessing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
                     : const Icon(Icons.document_scanner, color: Colors.white),
                 label: Text(
                   _isProcessing ? '선택한 이미지 OCR 스캔 중...' : '선택한 파일 명함 OCR 스캔 실행',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
               ),
             ),

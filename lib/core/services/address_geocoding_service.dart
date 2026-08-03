@@ -28,7 +28,9 @@ class AddressGeocodingService {
   /// 웹처럼 geocoding 플랫폼 구현체가 없거나, 주소를 못 찾거나, 기기에 네트워크가
   /// 없는 등 실패 상황에서는 예외를 그대로 던지지 않고 실패 결과를 반환해서 호출
   /// 쪽이 "위치를 찾을 수 없는 주소" 안내를 보여줄 수 있게 한다.
-  static Future<AddressValidationResult> validateAndConvert(String address) async {
+  static Future<AddressValidationResult> validateAndConvert(
+    String address,
+  ) async {
     final trimmed = address.trim();
     if (trimmed.isEmpty) {
       return const AddressValidationResult(
@@ -43,7 +45,9 @@ class AddressGeocodingService {
       // 던지지도 않고 Future가 영원히 안 끝나는 경우가 있다("주소 확인 중..."
       // 상태로 멈추는 문제로 실기기에서 확인됨) — 타임아웃을 걸어서 일정
       // 시간 안에 안 끝나면 실패로 처리한다.
-      final locations = await _geocoder.locationFromAddress(trimmed).timeout(const Duration(seconds: 10));
+      final locations = await _geocoder
+          .locationFromAddress(trimmed)
+          .timeout(const Duration(seconds: 10));
       if (locations.isEmpty) {
         return AddressValidationResult(
           isValid: false,
@@ -53,7 +57,10 @@ class AddressGeocodingService {
       }
 
       final location = locations.first;
-      final geoPosition = GeoPosition(lat: location.latitude, lng: location.longitude);
+      final geoPosition = GeoPosition(
+        lat: location.latitude,
+        lng: location.longitude,
+      );
       final roadNameAddress = await _reverseGeocodeToRoadName(location);
 
       return AddressValidationResult(

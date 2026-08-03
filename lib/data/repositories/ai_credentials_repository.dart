@@ -20,7 +20,7 @@ class AiCredentialsRepository extends ChangeNotifier {
   bool _isLoaded = false;
 
   AiCredentialsRepository({FlutterSecureStorage? secureStorage})
-      : _secureStorage = secureStorage ?? const FlutterSecureStorage() {
+    : _secureStorage = secureStorage ?? const FlutterSecureStorage() {
     _load();
   }
 
@@ -35,7 +35,8 @@ class AiCredentialsRepository extends ChangeNotifier {
 
   String? apiKeyFor(AiProvider provider) => _apiKeys[provider];
 
-  String modelFor(AiProvider provider) => _models[provider] ?? provider.defaultModel;
+  String modelFor(AiProvider provider) =>
+      _models[provider] ?? provider.defaultModel;
 
   /// 마스킹된 키 미리보기 — 설정 화면에서 이미 저장된 키를 다시 평문으로
   /// 보여주지 않기 위함(예: "sk-ant-...a1b2").
@@ -58,7 +59,9 @@ class AiCredentialsRepository extends ChangeNotifier {
         final model = prefs.getString('$_modelPrefix${provider.name}');
         if (model != null && model.trim().isNotEmpty) _models[provider] = model;
 
-        final key = await _secureStorage.read(key: '$_secureKeyPrefix${provider.name}');
+        final key = await _secureStorage.read(
+          key: '$_secureKeyPrefix${provider.name}',
+        );
         if (key != null && key.trim().isNotEmpty) _apiKeys[provider] = key;
       }
     } catch (e) {
@@ -81,7 +84,10 @@ class AiCredentialsRepository extends ChangeNotifier {
     _activeProvider ??= provider;
     notifyListeners();
     try {
-      await _secureStorage.write(key: '$_secureKeyPrefix${provider.name}', value: trimmed);
+      await _secureStorage.write(
+        key: '$_secureKeyPrefix${provider.name}',
+        value: trimmed,
+      );
       if (_activeProvider == provider) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString(_activeProviderKey, provider.name);

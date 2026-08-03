@@ -27,17 +27,20 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
   String? _scanError;
 
   void _setScannerMode(bool value) {
+    final controllerToDispose = value ? null : _scannerController;
     setState(() {
       _isScannerMode = value;
       _scanError = null;
       _isProcessingScan = false;
       if (value) {
-        _scannerController ??= MobileScannerController(formats: const [BarcodeFormat.qrCode]);
+        _scannerController ??= MobileScannerController(
+          formats: const [BarcodeFormat.qrCode],
+        );
       } else {
-        _scannerController?.dispose();
         _scannerController = null;
       }
     });
+    controllerToDispose?.dispose();
   }
 
   @override
@@ -48,12 +51,16 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_isProcessingScan) return;
-    final raw = capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
+    final raw = capture.barcodes.isEmpty
+        ? null
+        : capture.barcodes.first.rawValue;
     if (raw == null) return;
 
     final parsed = VCardUtil.decode(raw);
     if (parsed == null || (parsed['name'] ?? '').isEmpty) {
-      setState(() => _scanError = '명함 QR 코드가 아닙니다. 상대방의 "내 명함 QR 코드" 화면을 스캔해 주세요.');
+      setState(
+        () => _scanError = '명함 QR 코드가 아닙니다. 상대방의 "내 명함 QR 코드" 화면을 스캔해 주세요.',
+      );
       return;
     }
 
@@ -112,7 +119,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: !_isScannerMode ? AppColors.accentText : Colors.transparent,
+                        color: !_isScannerMode
+                            ? AppColors.accentText
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -121,7 +130,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: !_isScannerMode ? Colors.white : AppColors.textSecondary,
+                          color: !_isScannerMode
+                              ? Colors.white
+                              : AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -133,7 +144,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       decoration: BoxDecoration(
-                        color: _isScannerMode ? AppColors.accentText : Colors.transparent,
+                        color: _isScannerMode
+                            ? AppColors.accentText
+                            : Colors.transparent,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       alignment: Alignment.center,
@@ -142,7 +155,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: _isScannerMode ? Colors.white : AppColors.textSecondary,
+                          color: _isScannerMode
+                              ? Colors.white
+                              : AppColors.textSecondary,
                         ),
                       ),
                     ),
@@ -163,17 +178,28 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      const Icon(Icons.person_off_outlined, size: 40, color: AppColors.textMuted),
+                      const Icon(
+                        Icons.person_off_outlined,
+                        size: 40,
+                        color: AppColors.textMuted,
+                      ),
                       const SizedBox(height: 12),
                       const Text(
                         '아직 내 프로필을 설정하지 않았습니다',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       const Text(
                         '내 정보를 먼저 입력해야 QR 코드로 공유할 수 있어요.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                       const SizedBox(height: 14),
                       ElevatedButton(
@@ -188,9 +214,17 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.accent,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        child: const Text('내 프로필 설정하기', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                        child: const Text(
+                          '내 프로필 설정하기',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -217,12 +251,19 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                       Text(
                         '${myProfile.name}${myProfile.title.isNotEmpty ? ' ${myProfile.title}' : ''} / ${myProfile.company}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       const Text(
                         '상대방이 스캔하면 디지털 명함이 자동으로 채워집니다.',
-                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -252,7 +293,10 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                                 width: 180,
                                 height: 180,
                                 decoration: BoxDecoration(
-                                  border: Border.all(color: AppColors.accentText, width: 2),
+                                  border: Border.all(
+                                    color: AppColors.accentText,
+                                    width: 2,
+                                  ),
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                               ),
@@ -261,7 +305,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                               Container(
                                 color: Colors.black.withValues(alpha: 0.55),
                                 child: const Center(
-                                  child: CircularProgressIndicator(color: AppColors.accentText),
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.accentText,
+                                  ),
                                 ),
                               ),
                           ],
@@ -275,7 +321,9 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: _scanError != null ? AppColors.destructive : AppColors.textPrimary,
+                        color: _scanError != null
+                            ? AppColors.destructive
+                            : AppColors.textPrimary,
                       ),
                     ),
                   ],

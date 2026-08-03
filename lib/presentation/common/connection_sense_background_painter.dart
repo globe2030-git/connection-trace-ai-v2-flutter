@@ -23,12 +23,32 @@ class ConnectionSenseBackgroundPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
 
-    canvas.drawCircle(center, outerRadius, ringPaint..color = AppColors.accentText.withValues(alpha: 0.05));
-    _drawDashedRing(canvas, center, midRadius, strokeWidth, AppColors.accentText.withValues(alpha: 0.07));
-    canvas.drawCircle(center, innerRadius, ringPaint..color = AppColors.accentText.withValues(alpha: 0.09));
+    canvas.drawCircle(
+      center,
+      outerRadius,
+      ringPaint..color = AppColors.accentText.withValues(alpha: 0.05),
+    );
+    _drawDashedRing(
+      canvas,
+      center,
+      midRadius,
+      strokeWidth,
+      AppColors.accentText.withValues(alpha: 0.07),
+    );
+    canvas.drawCircle(
+      center,
+      innerRadius,
+      ringPaint..color = AppColors.accentText.withValues(alpha: 0.09),
+    );
   }
 
-  void _drawDashedRing(Canvas canvas, Offset center, double radius, double strokeWidth, Color color) {
+  void _drawDashedRing(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    double strokeWidth,
+    Color color,
+  ) {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
@@ -45,5 +65,6 @@ class ConnectionSenseBackgroundPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant ConnectionSenseBackgroundPainter oldDelegate) => false;
+  bool shouldRepaint(covariant ConnectionSenseBackgroundPainter oldDelegate) =>
+      false;
 }

@@ -6,15 +6,23 @@ class WalletViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
   String _searchTerm = '';
   List<String> _selectedTags = [];
+  bool _isDisposed = false;
 
   WalletViewModel({required ContactsRepository contactsRepository})
-      : _contactsRepository = contactsRepository {
-    _contactsRepository.addListener(notifyListeners);
+    : _contactsRepository = contactsRepository {
+    _contactsRepository.addListener(_onContactsChanged);
+  }
+
+  void _onContactsChanged() => _safeNotify();
+
+  void _safeNotify() {
+    if (!_isDisposed) notifyListeners();
   }
 
   @override
   void dispose() {
-    _contactsRepository.removeListener(notifyListeners);
+    _isDisposed = true;
+    _contactsRepository.removeListener(_onContactsChanged);
     super.dispose();
   }
 
@@ -34,12 +42,14 @@ class WalletViewModel extends ChangeNotifier {
 
   List<ContactModel> get filteredContacts {
     return _contactsRepository.contacts.where((c) {
-      final matchesSearch = _searchTerm.isEmpty ||
+      final matchesSearch =
+          _searchTerm.isEmpty ||
           c.name.contains(_searchTerm) ||
           c.company.contains(_searchTerm) ||
           c.title.contains(_searchTerm);
 
-      final matchesTags = _selectedTags.isEmpty ||
+      final matchesTags =
+          _selectedTags.isEmpty ||
           _selectedTags.any((tag) => c.tags.contains(tag));
 
       return matchesSearch && matchesTags;
@@ -48,7 +58,7 @@ class WalletViewModel extends ChangeNotifier {
 
   void setSearchTerm(String term) {
     _searchTerm = term;
-    notifyListeners();
+    _safeNotify();
   }
 
   void toggleTag(String tag) {
@@ -57,7 +67,7 @@ class WalletViewModel extends ChangeNotifier {
     } else {
       _selectedTags.add(tag);
     }
-    notifyListeners();
+    _safeNotify();
   }
 
   void addContact(ContactModel contact) {

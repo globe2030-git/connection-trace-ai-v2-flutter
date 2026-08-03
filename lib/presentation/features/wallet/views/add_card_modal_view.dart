@@ -100,11 +100,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
     _addressController = TextEditingController(text: c?.address ?? '');
-    _addressDetailController = TextEditingController(text: c?.addressDetail ?? '');
+    _addressDetailController = TextEditingController(
+      text: c?.addressDetail ?? '',
+    );
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
-    _tagsController = TextEditingController(text: c != null ? c.tags.join(', ') : 'AI, IT');
+    _tagsController = TextEditingController(
+      text: c != null ? c.tags.join(', ') : 'AI, IT',
+    );
     _memoController = TextEditingController(text: c?.memo ?? '');
     _fieldFocusOrder = [
       _nameFocusNode,
@@ -275,7 +279,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _addressController.text = result.address.trim();
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
-      if (result.buildingName != null && _addressDetailController.text.trim().isEmpty) {
+      if (result.buildingName != null &&
+          _addressDetailController.text.trim().isEmpty) {
         _addressDetailController.text = result.buildingName!;
       }
     });
@@ -310,7 +315,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _focusAndShowError(_phoneFocusNode, '⚠️ 휴대폰 번호를 입력해 주세요.');
       return;
     } else if (!phoneRegExp.hasMatch(phoneVal)) {
-      _focusAndShowError(_phoneFocusNode, '⚠️ 올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.');
+      _focusAndShowError(
+        _phoneFocusNode,
+        '⚠️ 올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.',
+      );
       return;
     }
 
@@ -329,7 +337,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     // 2. Address Geocoding & Road Name Address Conversion Dialog
     setState(() => _isSavingCard = true);
-    final addressResult = await AddressGeocodingService.validateAndConvert(rawAddress);
+    final addressResult = await AddressGeocodingService.validateAndConvert(
+      rawAddress,
+    );
     if (!mounted) return;
     setState(() => _isSavingCard = false);
 
@@ -345,7 +355,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         !rawAddress.contains('(도로명')) {
       _showRoadNameConversionDialog(addressResult);
     } else {
-      _executeFinalSave(addressResult.roadNameAddress ?? rawAddress, addressResult.geoPosition);
+      _executeFinalSave(
+        addressResult.roadNameAddress ?? rawAddress,
+        addressResult.geoPosition,
+      );
     }
   }
 
@@ -355,20 +368,33 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('📍 주소 위치 확인 필요', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          '주소 위치 확인 필요',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               '입력하신 주소 ("$rawAddress")의 GPS 위치를 정밀하게 찾을 수 없습니다.',
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 12),
             if (_scannedRawText != null) ...[
               const Text(
                 '💡 명함 RAW 스캔 텍스트:',
-                style: TextStyle(color: AppColors.accentText, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: AppColors.accentText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 4),
               Container(
@@ -379,7 +405,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 ),
                 child: Text(
                   _scannedRawText!,
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -396,8 +425,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               Navigator.pop(ctx);
               _addressFocusNode.requestFocus();
             },
-            child: const Text('주소 수정하기', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
-          )
+            child: const Text(
+              '주소 수정하기',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -413,16 +448,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _extractAddressRemainder(String original, String roadName) {
     final trimmedOriginal = original.trim();
     final trimmedRoadName = roadName.trim();
-    if (trimmedRoadName.isEmpty || trimmedOriginal == trimmedRoadName) return null;
+    if (trimmedRoadName.isEmpty || trimmedOriginal == trimmedRoadName)
+      return null;
 
     // 1. 도로명 주소 전체가 원본의 접두어로 그대로 들어있는 가장 흔한 경우.
     if (trimmedOriginal.startsWith(trimmedRoadName)) {
-      final remainder = trimmedOriginal.substring(trimmedRoadName.length).trim();
+      final remainder = trimmedOriginal
+          .substring(trimmedRoadName.length)
+          .trim();
       return remainder.isEmpty ? null : remainder;
     }
 
     // 2. 마지막 토큰(건물번호)을 원본에서 찾아 그 뒤를 상세정보로 취급.
-    final roadTokens = trimmedRoadName.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final roadTokens = trimmedRoadName
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
     if (roadTokens.isNotEmpty) {
       final lastToken = roadTokens.last;
       final idx = trimmedOriginal.lastIndexOf(lastToken);
@@ -446,7 +487,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('🛣️ 도로명 주소 자동 변환', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          '도로명 주소 자동 변환',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,12 +515,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 children: [
                   Text(
                     '• 기존 입력 주소: ${result.originalAddress}',
-                    style: const TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12.5,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     '• 변경 도로명 주소: ${result.roadNameAddress}',
-                    style: const TextStyle(color: AppColors.accentText, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: AppColors.accentText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -483,7 +537,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('기존 입력 유지', style: TextStyle(color: AppColors.textMuted)),
+            child: const Text(
+              '기존 입력 유지',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
@@ -495,10 +552,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               // 그리고 곧바로 저장하지 않고 폼으로 돌아가서 사용자가 상세주소가
               // 제대로 채워졌는지 직접 확인한 뒤 "명함 저장하기"를 눌러 저장하게
               // 한다(자동 저장 시 확인 없이 등록돼 버리는 문제가 있었음).
-              final remainder = _extractAddressRemainder(result.originalAddress, result.roadNameAddress!);
+              final remainder = _extractAddressRemainder(
+                result.originalAddress,
+                result.roadNameAddress!,
+              );
               setState(() {
                 _addressController.text = result.roadNameAddress!;
-                if (remainder != null && _addressDetailController.text.trim().isEmpty) {
+                if (remainder != null &&
+                    _addressDetailController.text.trim().isEmpty) {
                   _addressDetailController.text = remainder;
                 }
               });
@@ -508,14 +569,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               );
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-            child: const Text('네, 도로명으로 변경', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '네, 도로명으로 변경',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _executeFinalSave(String finalAddress, GeoPosition? resolvedGeo) async {
+  Future<void> _executeFinalSave(
+    String finalAddress,
+    GeoPosition? resolvedGeo,
+  ) async {
     final tags = _tagsController.text
         .split(',')
         .map((t) => t.trim())
@@ -537,30 +607,50 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (!mounted) return;
         if (deleteOldRecord == null) return; // 대화상자 닫힘 — 저장 보류
 
-        _applyUpdateToExisting(duplicate, finalAddress, resolvedGeo, tags, deleteOldRecord: deleteOldRecord);
+        _applyUpdateToExisting(
+          duplicate,
+          finalAddress,
+          resolvedGeo,
+          tags,
+          deleteOldRecord: deleteOldRecord,
+        );
         return;
       }
     }
 
     final contact = ContactModel(
-      id: _isEditing ? widget.contactToEdit!.id : DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _isEditing
+          ? widget.contactToEdit!.id
+          : DateTime.now().millisecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
-      title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
+      title: _titleController.text.trim().isEmpty
+          ? '담당자'
+          : _titleController.text.trim(),
       address: finalAddress,
-      addressDetail: _addressDetailController.text.trim().isEmpty ? null : _addressDetailController.text.trim(),
+      addressDetail: _addressDetailController.text.trim().isEmpty
+          ? null
+          : _addressDetailController.text.trim(),
       phone: _phoneController.text.trim(),
-      officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
+      officePhone: _officePhoneController.text.trim().isEmpty
+          ? null
+          : _officePhoneController.text.trim(),
       email: _emailController.text.trim(),
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
-      geo: resolvedGeo ?? (_isEditing ? widget.contactToEdit!.geo : const GeoPosition(lat: 37.4979, lng: 127.0276)),
+      // 주소를 실제 좌표로 확인하지 못했다면 가짜 좌표를 넣지 않는다.
+      // geo가 null인 명함은 주변 거리 계산 대상에서 자동으로 제외된다.
+      geo: resolvedGeo ?? (_isEditing ? widget.contactToEdit!.geo : null),
       // AI 대화 브리핑을 열 때 실제 연동된 AI가 생성 — 여기서는 하드코딩된
       // 문구 대신 빈 값으로 시작한다.
-      talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : const [],
+      talkingPoints: _isEditing
+          ? widget.contactToEdit!.talkingPoints
+          : const [],
       commLogs: _isEditing ? widget.contactToEdit!.commLogs : [],
       isPriority: _isEditing ? widget.contactToEdit!.isPriority : true,
-      memo: _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
+      memo: _memoController.text.trim().isEmpty
+          ? null
+          : _memoController.text.trim(),
     );
 
     if (_isEditing) {
@@ -568,14 +658,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     } else {
       context.read<WalletViewModel>().addContact(contact);
     }
-    
+
     Navigator.pop(context);
 
     // 여기서는 이미 모달을 닫았으므로(위 pop) 폼 내부 배너가 아니라 바깥
     // (명함 지갑 화면)의 ScaffoldMessenger를 찾아가야 스낵바가 뜬다.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_isEditing ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!' : '🎉 ${contact.name} 님의 명함이 등록되었습니다!'),
+        content: Text(
+          _isEditing
+              ? '🎉 ${contact.name} 님의 명함 정보가 수정되었습니다!'
+              : '🎉 ${contact.name} 님의 명함이 등록되었습니다!',
+        ),
         backgroundColor: AppColors.accent,
       ),
     );
@@ -604,7 +698,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('📇 이미 등록된 인맥입니다', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          '이미 등록된 인맥입니다',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,22 +716,47 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             const SizedBox(height: 14),
             Container(
               padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: AppColors.bgDarkSlate, borderRadius: BorderRadius.circular(12)),
+              decoration: BoxDecoration(
+                color: AppColors.bgDarkSlate,
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('기존 정보', style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
+                  const Text(
+                    '기존 정보',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     '${existing.name} · ${existing.title} · ${existing.company}',
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 10),
-                  const Text('새로 입력한 정보', style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
+                  const Text(
+                    '새로 입력한 정보',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     '${_nameController.text.trim()} · ${_titleController.text.trim()} · ${_companyController.text.trim()}',
-                    style: const TextStyle(color: AppColors.accentText, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: AppColors.accentText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
@@ -641,11 +766,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('기존 정보 유지', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '기존 정보 유지',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('최신 정보로 업데이트', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '최신 정보로 업데이트',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -659,19 +796,41 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('🗂️ 기존 정보 처리', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          '기존 정보 처리',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         content: const Text(
           '업데이트하면 기존 명함 정보(회사·직함·연락처 등)는 어떻게 할까요?\n"기록으로 남기기"를 선택하면 메모에 이전 정보가 남습니다.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.4),
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('기록으로 남기기', style: TextStyle(color: AppColors.accentText, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '기록으로 남기기',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('삭제', style: TextStyle(color: AppColors.destructive, fontWeight: FontWeight.bold)),
+            child: const Text(
+              '삭제',
+              style: TextStyle(
+                color: AppColors.destructive,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -695,9 +854,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         existing.company,
         existing.title,
         existing.phone,
-        if (existing.officePhone != null && existing.officePhone!.isNotEmpty) existing.officePhone,
+        if (existing.officePhone != null && existing.officePhone!.isNotEmpty)
+          existing.officePhone,
         if (existing.email.isNotEmpty) existing.email,
-        if (existing.address != null && existing.address!.isNotEmpty) existing.address,
+        if (existing.address != null && existing.address!.isNotEmpty)
+          existing.address,
       ].join(' / ');
       final oldSnapshot = '[이전 정보 · $dateLabel] $oldFields';
       mergedMemo = [oldSnapshot, if (newMemo.isNotEmpty) newMemo].join('\n');
@@ -709,11 +870,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     final updated = existing.copyWith(
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
-      title: _titleController.text.trim().isEmpty ? '담당자' : _titleController.text.trim(),
+      title: _titleController.text.trim().isEmpty
+          ? '담당자'
+          : _titleController.text.trim(),
       address: finalAddress,
-      addressDetail: _addressDetailController.text.trim().isEmpty ? null : _addressDetailController.text.trim(),
+      addressDetail: _addressDetailController.text.trim().isEmpty
+          ? null
+          : _addressDetailController.text.trim(),
       phone: _phoneController.text.trim(),
-      officePhone: _officePhoneController.text.trim().isEmpty ? null : _officePhoneController.text.trim(),
+      officePhone: _officePhoneController.text.trim().isEmpty
+          ? null
+          : _officePhoneController.text.trim(),
       email: _emailController.text.trim(),
       avatarUrl: _selectedAvatarUrl ?? existing.avatarUrl,
       tags: tags.isEmpty ? existing.tags : tags,
@@ -752,378 +919,492 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       child: SafeArea(
         child: SingleChildScrollView(
           child: Form(
-              key: _formKey,
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.borderDark,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                        tooltip: '입력 취소',
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '* 필수 입력 항목',
-                      style: TextStyle(fontSize: 12, color: AppColors.destructive, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  _buildInlineNotice(),
-
-                  // 📸 OCR Camera & Gallery Scan Action Buttons
-                  Container(
-                    padding: const EdgeInsets.all(12),
+            key: _formKey,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.bgDarkSlate,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.borderDark),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '📷 명함 자동 스캔 (OCR)',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.accentText),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _isScanningOcr ? null : () => _performOcrScan(isFromCamera: true),
-                                icon: _isScanningOcr
-                                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                    : const Icon(Icons.camera_alt, size: 16, color: Colors.white),
-                                label: const Text('명함 촬영 스캔', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.white)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accent,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: _isScanningOcr ? null : () => _performOcrScan(isFromCamera: false),
-                                icon: const Icon(Icons.photo_library, size: 16, color: AppColors.accentText),
-                                label: const Text('이미지 업로드', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: AppColors.accentText)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(color: AppColors.accentText),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                      color: AppColors.borderDark,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
 
-                  const SizedBox(height: 16),
-
-                  // 📸 Profile Photo Selector Widget
-                  Center(
-                    child: Column(
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            final nextIdx = _selectedAvatarUrl == null
-                                ? 0
-                                : (_avatarPresets.indexOf(_selectedAvatarUrl!) + 1) % (_avatarPresets.length + 1);
-                            setState(() {
-                              _selectedAvatarUrl = nextIdx < _avatarPresets.length ? _avatarPresets[nextIdx] : null;
-                            });
-                          },
-                          child: Stack(
-                            alignment: Alignment.bottomRight,
-                            children: [
-                              CircleAvatar(
-                                radius: 36,
-                                backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                                backgroundImage: _selectedAvatarUrl != null ? NetworkImage(_selectedAvatarUrl!) : null,
-                                child: _selectedAvatarUrl == null
-                                    ? const Icon(Icons.person, size: 36, color: AppColors.accentText)
-                                    : null,
-                              ),
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: const BoxDecoration(
-                                  color: AppColors.accentText,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
-                              )
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          '프로필 사진 선택 (터치하여 변경)',
-                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Collapsible RAW Scanned Text Card
-                  if (_scannedRawText != null) ...[
-                    GestureDetector(
-                      onTap: () => setState(() => _showRawTextCard = !_showRawTextCard),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentText.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.accentText.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentText),
-                            ),
-                            Icon(_showRawTextCard ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: AppColors.accentText, size: 18),
-                          ],
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                     ),
-                    if (_showRawTextCard) ...[
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.bgDarkSlate,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.borderDark),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.close,
+                        color: AppColors.textSecondary,
+                      ),
+                      tooltip: '입력 취소',
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const Align(
+                  alignment: Alignment.centerRight,
+                  child: Text(
+                    '* 필수 입력 항목',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.destructive,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _buildInlineNotice(),
+
+                // 📸 OCR Camera & Gallery Scan Action Buttons
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgDarkSlate,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.borderDark),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '📷 명함 자동 스캔 (OCR)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentText,
                         ),
-                        child: Text(
-                          _scannedRawText!,
-                          style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary, fontFamily: 'monospace'),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: _isScanningOcr
+                                  ? null
+                                  : () => _performOcrScan(isFromCamera: true),
+                              icon: _isScanningOcr
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.camera_alt,
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                              label: const Text(
+                                '명함 촬영 스캔',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.accent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isScanningOcr
+                                  ? null
+                                  : () => _performOcrScan(isFromCamera: false),
+                              icon: const Icon(
+                                Icons.photo_library,
+                                size: 16,
+                                color: AppColors.accentText,
+                              ),
+                              label: const Text(
+                                '이미지 업로드',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.accentText,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(
+                                  color: AppColors.accentText,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 📸 Profile Photo Selector Widget
+                Center(
+                  child: Column(
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          final nextIdx = _selectedAvatarUrl == null
+                              ? 0
+                              : (_avatarPresets.indexOf(_selectedAvatarUrl!) +
+                                        1) %
+                                    (_avatarPresets.length + 1);
+                          setState(() {
+                            _selectedAvatarUrl = nextIdx < _avatarPresets.length
+                                ? _avatarPresets[nextIdx]
+                                : null;
+                          });
+                        },
+                        child: Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            CircleAvatar(
+                              radius: 36,
+                              backgroundColor: AppColors.accent.withValues(
+                                alpha: 0.2,
+                              ),
+                              backgroundImage: _selectedAvatarUrl != null
+                                  ? NetworkImage(_selectedAvatarUrl!)
+                                  : null,
+                              child: _selectedAvatarUrl == null
+                                  ? const Icon(
+                                      Icons.person,
+                                      size: 36,
+                                      color: AppColors.accentText,
+                                    )
+                                  : null,
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: AppColors.accentText,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        '프로필 사진 선택 (터치하여 변경)',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
-                    const SizedBox(height: 16),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Collapsible RAW Scanned Text Card
+                if (_scannedRawText != null) ...[
+                  GestureDetector(
+                    onTap: () =>
+                        setState(() => _showRawTextCard = !_showRawTextCard),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentText.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.accentText.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.accentText,
+                            ),
+                          ),
+                          Icon(
+                            _showRawTextCard
+                                ? Icons.keyboard_arrow_up
+                                : Icons.keyboard_arrow_down,
+                            color: AppColors.accentText,
+                            size: 18,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_showRawTextCard) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.bgDarkSlate,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.borderDark),
+                      ),
+                      child: Text(
+                        _scannedRawText!,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textSecondary,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
                   ],
-
-                  // 1. 이름 (필수)
-                  _buildFormField(
-                    controller: _nameController,
-                    focusNode: _nameFocusNode,
-                    order: 1,
-                    nextFocusNode: _companyFocusNode,
-                    autofocus: true,
-                    label: '이름 *',
-                    hint: '예: 홍길동',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '이름을 입력해 주세요.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 2. 회사명 (필수)
-                  _buildFormField(
-                    controller: _companyController,
-                    focusNode: _companyFocusNode,
-                    order: 2,
-                    nextFocusNode: _titleFocusNode,
-                    label: '회사명 *',
-                    hint: '예: 카카오 / 삼성전자',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '회사명을 입력해 주세요.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 3. 직함 / 부서 (선택)
-                  _buildFormField(
-                    controller: _titleController,
-                    focusNode: _titleFocusNode,
-                    order: 3,
-                    nextFocusNode: _addressFocusNode,
-                    label: '직함 / 부서',
-                    hint: '예: 팀장 / R&D 센터',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 4. 회사 주소 — 도로명까지(위치 정보/지오코딩의 기준이 되는 부분)
-                  _buildFormField(
-                    controller: _addressController,
-                    focusNode: _addressFocusNode,
-                    order: 4,
-                    nextFocusNode: _addressDetailFocusNode,
-                    label: '회사 주소 (도로명) *',
-                    hint: '예: 서울특별시 강남구 테헤란로 123',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '회사 주소를 입력해 주세요.';
-                      }
-                      return null;
-                    },
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.search, color: AppColors.accentText),
-                      tooltip: '도로명주소 검색',
-                      onPressed: _openAddressSearch,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 4-1. 상세주소(선택) — 건물명/층/호수 등. 위치 정보에는 안 쓰이고
-                  // 표시용으로만 별도 보관.
-                  _buildFormField(
-                    controller: _addressDetailController,
-                    focusNode: _addressDetailFocusNode,
-                    order: 4.5,
-                    nextFocusNode: _phoneFocusNode,
-                    label: '상세주소 (선택)',
-                    hint: '예: 5층 501호',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
-                  _buildFormField(
-                    controller: _phoneController,
-                    focusNode: _phoneFocusNode,
-                    order: 5,
-                    nextFocusNode: _officePhoneFocusNode,
-                    label: '휴대폰 번호 *',
-                    hint: '예: 010-1234-5678',
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [KoreanPhoneNumberFormatter()],
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '휴대폰 번호를 입력해 주세요.';
-                      }
-                      final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
-                      if (!phoneRegExp.hasMatch(val.trim())) {
-                        return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 6. 사무실 전화번호 (선택)
-                  _buildFormField(
-                    controller: _officePhoneController,
-                    focusNode: _officePhoneFocusNode,
-                    order: 6,
-                    nextFocusNode: _emailFocusNode,
-                    label: '사무실 전화번호 (선택)',
-                    hint: '예: 02-123-4567',
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [KoreanPhoneNumberFormatter()],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 7. 이메일 (필수!)
-                  _buildFormField(
-                    controller: _emailController,
-                    focusNode: _emailFocusNode,
-                    order: 7,
-                    nextFocusNode: _tagsFocusNode,
-                    label: '이메일 *',
-                    hint: '예: example@company.com',
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '이메일을 입력해 주세요.';
-                      }
-                      if (!val.contains('@') || !val.contains('.')) {
-                        return '올바른 이메일 형식을 입력해 주세요.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 8. 태그 키워드
-                  _buildFormField(
-                    controller: _tagsController,
-                    focusNode: _tagsFocusNode,
-                    order: 8,
-                    nextFocusNode: _memoFocusNode,
-                    label: '태그 키워드 (쉼표 구분)',
-                    hint: '예: AI, 바이오, C-Level',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 9. Memo Summary (메모 및 특징 요약)
-                  _buildFormField(
-                    controller: _memoController,
-                    focusNode: _memoFocusNode,
-                    order: 9,
-                    isLast: true,
-                    maxLines: 3,
-                    label: 'Memo Summary (메모 및 특징 요약)',
-                    hint: '인맥에 대한 주요 특징, 비즈니스 연관성, 미팅 메모 등을 자유롭게 입력하세요.',
-                  ),
-                  const SizedBox(height: 22),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton.icon(
-                      onPressed: _isSavingCard ? null : _saveCard,
-                      icon: _isSavingCard
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Icon(_isEditing ? Icons.edit : Icons.check, color: Colors.white),
-                      label: Text(
-                        _isSavingCard ? '주소 확인 중...' : (_isEditing ? '명함 수정 완료' : '명함 저장하기'),
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
-                  )
+                  const SizedBox(height: 16),
                 ],
-              ),
+
+                // 1. 이름 (필수)
+                _buildFormField(
+                  controller: _nameController,
+                  focusNode: _nameFocusNode,
+                  order: 1,
+                  nextFocusNode: _companyFocusNode,
+                  autofocus: true,
+                  label: '이름 *',
+                  hint: '예: 홍길동',
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '이름을 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // 2. 회사명 (필수)
+                _buildFormField(
+                  controller: _companyController,
+                  focusNode: _companyFocusNode,
+                  order: 2,
+                  nextFocusNode: _titleFocusNode,
+                  label: '회사명 *',
+                  hint: '예: 카카오 / 삼성전자',
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '회사명을 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // 3. 직함 / 부서 (선택)
+                _buildFormField(
+                  controller: _titleController,
+                  focusNode: _titleFocusNode,
+                  order: 3,
+                  nextFocusNode: _addressFocusNode,
+                  label: '직함 / 부서',
+                  hint: '예: 팀장 / R&D 센터',
+                ),
+                const SizedBox(height: 12),
+
+                // 4. 회사 주소 — 도로명까지(위치 정보/지오코딩의 기준이 되는 부분)
+                _buildFormField(
+                  controller: _addressController,
+                  focusNode: _addressFocusNode,
+                  order: 4,
+                  nextFocusNode: _addressDetailFocusNode,
+                  label: '회사 주소 (도로명) *',
+                  hint: '예: 서울특별시 강남구 테헤란로 123',
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '회사 주소를 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.search, color: AppColors.accentText),
+                    tooltip: '도로명주소 검색',
+                    onPressed: _openAddressSearch,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 4-1. 상세주소(선택) — 건물명/층/호수 등. 위치 정보에는 안 쓰이고
+                // 표시용으로만 별도 보관.
+                _buildFormField(
+                  controller: _addressDetailController,
+                  focusNode: _addressDetailFocusNode,
+                  order: 4.5,
+                  nextFocusNode: _phoneFocusNode,
+                  label: '상세주소 (선택)',
+                  hint: '예: 5층 501호',
+                ),
+                const SizedBox(height: 12),
+
+                // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
+                _buildFormField(
+                  controller: _phoneController,
+                  focusNode: _phoneFocusNode,
+                  order: 5,
+                  nextFocusNode: _officePhoneFocusNode,
+                  label: '휴대폰 번호 *',
+                  hint: '예: 010-1234-5678',
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [KoreanPhoneNumberFormatter()],
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '휴대폰 번호를 입력해 주세요.';
+                    }
+                    final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
+                    if (!phoneRegExp.hasMatch(val.trim())) {
+                      return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // 6. 사무실 전화번호 (선택)
+                _buildFormField(
+                  controller: _officePhoneController,
+                  focusNode: _officePhoneFocusNode,
+                  order: 6,
+                  nextFocusNode: _emailFocusNode,
+                  label: '사무실 전화번호 (선택)',
+                  hint: '예: 02-123-4567',
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [KoreanPhoneNumberFormatter()],
+                ),
+                const SizedBox(height: 12),
+
+                // 7. 이메일 (필수!)
+                _buildFormField(
+                  controller: _emailController,
+                  focusNode: _emailFocusNode,
+                  order: 7,
+                  nextFocusNode: _tagsFocusNode,
+                  label: '이메일 *',
+                  hint: '예: example@company.com',
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '이메일을 입력해 주세요.';
+                    }
+                    if (!val.contains('@') || !val.contains('.')) {
+                      return '올바른 이메일 형식을 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+
+                // 8. 태그 키워드
+                _buildFormField(
+                  controller: _tagsController,
+                  focusNode: _tagsFocusNode,
+                  order: 8,
+                  nextFocusNode: _memoFocusNode,
+                  label: '태그 키워드 (쉼표 구분)',
+                  hint: '예: AI, 바이오, C-Level',
+                ),
+                const SizedBox(height: 12),
+
+                // 9. Memo Summary (메모 및 특징 요약)
+                _buildFormField(
+                  controller: _memoController,
+                  focusNode: _memoFocusNode,
+                  order: 9,
+                  isLast: true,
+                  maxLines: 3,
+                  label: 'Memo Summary (메모 및 특징 요약)',
+                  hint: '인맥에 대한 주요 특징, 비즈니스 연관성, 미팅 메모 등을 자유롭게 입력하세요.',
+                ),
+                const SizedBox(height: 22),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSavingCard ? null : _saveCard,
+                    icon: _isSavingCard
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Icon(
+                            _isEditing ? Icons.edit : Icons.check,
+                            color: Colors.white,
+                          ),
+                    label: Text(
+                      _isSavingCard
+                          ? '주소 확인 중...'
+                          : (_isEditing ? '명함 수정 완료' : '명함 저장하기'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
+      ),
     );
   }
 
   Widget _buildInlineNotice() {
     if (_inlineNoticeText == null) return const SizedBox.shrink();
-    final color = _inlineNoticeIsError ? AppColors.destructive : AppColors.accent;
+    final color = _inlineNoticeIsError
+        ? AppColors.destructive
+        : AppColors.accent;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1138,7 +1419,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           Expanded(
             child: Text(
               _inlineNoticeText!,
-              style: TextStyle(fontSize: 12.5, color: color, fontWeight: FontWeight.w600, height: 1.3),
+              style: TextStyle(
+                fontSize: 12.5,
+                color: color,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
             ),
           ),
           if (_inlineNoticeActionLabel != null && _inlineNoticeAction != null)
@@ -1147,7 +1433,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 _dismissInlineNotice();
                 _inlineNoticeAction?.call();
               },
-              child: Text(_inlineNoticeActionLabel!, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+              child: Text(
+                _inlineNoticeActionLabel!,
+                style: TextStyle(color: color, fontWeight: FontWeight.bold),
+              ),
             ),
           IconButton(
             padding: EdgeInsets.zero,
@@ -1183,7 +1472,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
-            color: label.contains('*') ? AppColors.accentText : AppColors.textSecondary,
+            color: label.contains('*')
+                ? AppColors.accentText
+                : AppColors.textSecondary,
           ),
         ),
         const SizedBox(height: 4),
@@ -1213,11 +1504,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+            hintStyle: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 13,
+            ),
             filled: true,
             fillColor: AppColors.bgDarkSlate,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            errorStyle: const TextStyle(color: AppColors.destructive, fontSize: 11.5, fontWeight: FontWeight.bold),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            errorStyle: const TextStyle(
+              color: AppColors.destructive,
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+            ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.borderFunctional),
@@ -1228,11 +1529,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.accentText, width: 1.5),
+              borderSide: const BorderSide(
+                color: AppColors.accentText,
+                width: 1.5,
+              ),
             ),
             errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
+              borderSide: const BorderSide(
+                color: AppColors.destructive,
+                width: 1.5,
+              ),
             ),
             suffixIcon: suffixIcon,
           ),

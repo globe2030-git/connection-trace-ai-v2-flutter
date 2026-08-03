@@ -48,12 +48,7 @@ dependencies:
   image_picker: ^1.1.2
   # 내 프로필 사진을 앱 저장소에 영구 보관하기 위한 문서 디렉터리 접근.
   path_provider: ^2.1.5
-  # 통화/문자 자동 연동 — 안드로이드 전용(OS 정책상 iOS는 통화기록/문자 접근
-  # 자체가 불가능해서 call_log/flutter_sms_inbox 둘 다 iOS 구현체가 없음).
-  permission_handler: ^11.3.1
-  call_log: ^6.0.1
-  flutter_sms_inbox: ^1.0.5
-  # 이메일 자동 연동 — Gmail API + OAuth(google_sign_in). 모든 플랫폼에서
+  # 사용자가 선택한 이메일 가져오기 — Gmail API + OAuth(google_sign_in). 모든 플랫폼에서
   # 동작하지만, Google Cloud Console에서 OAuth 클라이언트 ID를 먼저 발급받아야
   # 실제로 로그인이 된다(코드만으론 안 되는 부분 — README/오류노트 참고).
   google_sign_in: ^7.2.0
@@ -100,17 +95,17 @@ dependency_overrides:
 
 # 앱 최초 로딩 시(엔진 초기화가 끝나기도 전에) 보이는 네이티브 스플래시 화면 설정.
 # `dart run flutter_native_splash:create`를 실행하면 이 설정을 읽어 Android/iOS/Web
-# 각 플랫폼용 스플래시 리소스를 실제로 생성한다. 배경은 앱 다크 테마 배경(#0B0E14)과
-# 맞춰 로고가 뜬 뒤 실제 앱으로 넘어갈 때 색이 갑자기 바뀌는 깜빡임이 없게 했다.
+# 각 플랫폼용 스플래시 리소스를 실제로 생성한다. 현재 라이트 테마와
+# 같은 배경을 사용해 네이티브 스플래시에서 첫 화면으로 자연스럽게 전환한다.
 flutter_native_splash:
-  color: "#0B0E14"
+  color: "#F7F8FA"
   image: assets/CI.png
-  color_dark: "#0B0E14"
+  color_dark: "#F7F8FA"
   image_dark: assets/CI.png
   android_12:
-    color: "#0B0E14"
+    color: "#F7F8FA"
     image: assets/CI.png
-    color_dark: "#0B0E14"
+    color_dark: "#F7F8FA"
     image_dark: assets/CI.png
   web: true
 

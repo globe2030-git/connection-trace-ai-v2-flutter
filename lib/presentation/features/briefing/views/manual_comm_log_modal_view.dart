@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -12,7 +13,11 @@ class ManualCommLogModalView extends StatefulWidget {
   final ContactModel contact;
   final String initialType;
 
-  const ManualCommLogModalView({super.key, required this.contact, this.initialType = 'call'});
+  const ManualCommLogModalView({
+    super.key,
+    required this.contact,
+    this.initialType = 'call',
+  });
 
   @override
   State<ManualCommLogModalView> createState() => _ManualCommLogModalViewState();
@@ -31,10 +36,30 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   }
 
   static const _channelOptions = [
-    {'type': 'call', 'label': '통화', 'icon': Icons.phone_in_talk, 'color': AppColors.channelCall},
-    {'type': 'sms', 'label': '문자', 'icon': Icons.sms_outlined, 'color': AppColors.channelSms},
-    {'type': 'email', 'label': '이메일', 'icon': Icons.email_outlined, 'color': AppColors.channelEmail},
-    {'type': 'kakao', 'label': '카카오톡', 'icon': Icons.chat_bubble_outline, 'color': AppColors.channelKakao},
+    {
+      'type': 'call',
+      'label': '통화',
+      'icon': Icons.phone_in_talk,
+      'color': AppColors.channelCall,
+    },
+    {
+      'type': 'sms',
+      'label': '문자',
+      'icon': Icons.sms_outlined,
+      'color': AppColors.channelSms,
+    },
+    {
+      'type': 'email',
+      'label': '이메일',
+      'icon': Icons.email_outlined,
+      'color': AppColors.channelEmail,
+    },
+    {
+      'type': 'kakao',
+      'label': '카카오톡',
+      'icon': Icons.chat_bubble_outline,
+      'color': AppColors.channelKakao,
+    },
   ];
 
   @override
@@ -59,7 +84,13 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     if (time == null || !mounted) return;
 
     setState(() {
-      _selectedDateTime = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+      _selectedDateTime = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
     });
   }
 
@@ -71,6 +102,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
       summary: _summaryController.text.trim(),
       timestamp: _selectedDateTime,
       isAutoSynced: false,
+      source: 'manual',
     );
 
     final updatedContact = widget.contact.copyWith(
@@ -86,16 +118,56 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('📝 ${widget.contact.name} 님의 소통 기록을 추가했습니다.'),
+        content: Text('${widget.contact.name} 님의 소통 기록을 추가했습니다.'),
         backgroundColor: AppColors.accent,
       ),
     );
   }
 
+  String get _title => switch (_selectedType) {
+    'call' => '통화 후 메모',
+    'sms' => '문자 내용 추가',
+    'email' => '이메일 내용 추가',
+    'kakao' => '카카오톡 내용 추가',
+    _ => '소통 기록 추가',
+  };
+
+  String get _description => switch (_selectedType) {
+    'call' => '통화기록을 읽지 않습니다. 통화 후 기억할 내용만 직접 적어 주세요.',
+    'sms' => '문자 앱에서 필요한 대화만 복사해 붙여넣어 주세요.',
+    'email' => '직접 기록할 이메일 내용을 입력해 주세요. Gmail은 별도 가져오기도 지원합니다.',
+    'kakao' => '카카오톡에서 필요한 대화만 복사해 붙여넣어 주세요.',
+    _ => '필요한 내용만 직접 입력해 주세요.',
+  };
+
+  String get _hint => switch (_selectedType) {
+    'call' => '예: 신규 프로젝트를 다음 주에 다시 논의하기로 함',
+    'sms' => '문자 앱에서 복사한 필요한 대화를 붙여넣으세요.',
+    'email' => '예: 견적서 검토 후 금요일까지 회신 예정',
+    'kakao' => '카카오톡에서 복사한 필요한 대화를 붙여넣으세요.',
+    _ => '기억할 내용을 입력하세요.',
+  };
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim();
+    if (!mounted || text == null || text.isEmpty) return;
+    setState(() {
+      _summaryController.text = text.length > 2000
+          ? text.substring(0, 2000)
+          : text;
+      _summaryController.selection = TextSelection.collapsed(
+        offset: _summaryController.text.length,
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
@@ -125,26 +197,41 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '📝 소통 기록 직접 추가',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      Text(
+                        _title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                        icon: const Icon(
+                          Icons.close,
+                          color: AppColors.textSecondary,
+                        ),
                         onPressed: () => Navigator.pop(context),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${widget.contact.name} 님과의 통화·문자·이메일·카카오톡 내용을 직접 기록해 두면 다음에 만날 때 참고할 수 있습니다.',
-                    style: const TextStyle(fontSize: 12.5, color: AppColors.textSecondary, height: 1.4),
+                    '${widget.contact.name} 님 · $_description',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: AppColors.textSecondary,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 18),
 
                   const Text(
                     '채널',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
@@ -157,7 +244,11 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                       return ChoiceChip(
                         selected: isSelected,
                         onSelected: (_) => setState(() => _selectedType = type),
-                        avatar: Icon(opt['icon'] as IconData, size: 16, color: isSelected ? Colors.white : color),
+                        avatar: Icon(
+                          opt['icon'] as IconData,
+                          size: 16,
+                          color: isSelected ? Colors.white : color,
+                        ),
                         label: Text(opt['label'] as String),
                         labelStyle: TextStyle(
                           color: isSelected ? Colors.white : color,
@@ -174,7 +265,11 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
 
                   const Text(
                     '날짜 / 시간',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   InkWell(
@@ -182,7 +277,10 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.bgDarkSlate,
                         borderRadius: BorderRadius.circular(12),
@@ -190,51 +288,100 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.event, size: 18, color: AppColors.accentText),
+                          const Icon(
+                            Icons.event,
+                            size: 18,
+                            color: AppColors.accentText,
+                          ),
                           const SizedBox(width: 10),
                           Text(
                             '${_selectedDateTime.year}.${_selectedDateTime.month.toString().padLeft(2, '0')}.${_selectedDateTime.day.toString().padLeft(2, '0')} '
                             '${_selectedDateTime.hour.toString().padLeft(2, '0')}:${_selectedDateTime.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                           const Spacer(),
-                          const Icon(Icons.edit_calendar_outlined, size: 16, color: AppColors.textMuted),
+                          const Icon(
+                            Icons.edit_calendar_outlined,
+                            size: 16,
+                            color: AppColors.textMuted,
+                          ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
 
-                  const Text(
-                    '내용 *',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentText),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '내용 *',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accentText,
+                          ),
+                        ),
+                      ),
+                      if (_selectedType == 'sms' || _selectedType == 'kakao')
+                        TextButton.icon(
+                          onPressed: _pasteFromClipboard,
+                          icon: const Icon(Icons.content_paste, size: 16),
+                          label: const Text('붙여넣기'),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: _summaryController,
-                    maxLines: 3,
-                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                    minLines: 4,
+                    maxLines: 7,
+                    maxLength: 2000,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
                     decoration: InputDecoration(
-                      hintText: '예: 신규 프로젝트 관련 통화, 다음 미팅 일정 조율 등',
-                      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 13),
+                      hintText: _hint,
+                      hintStyle: const TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 13,
+                      ),
                       filled: true,
                       fillColor: AppColors.bgDarkSlate,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.borderFunctional),
+                        borderSide: const BorderSide(
+                          color: AppColors.borderFunctional,
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.borderFunctional),
+                        borderSide: const BorderSide(
+                          color: AppColors.borderFunctional,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.accentText, width: 1.5),
+                        borderSide: const BorderSide(
+                          color: AppColors.accentText,
+                          width: 1.5,
+                        ),
                       ),
                       errorBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.destructive, width: 1.5),
+                        borderSide: const BorderSide(
+                          color: AppColors.destructive,
+                          width: 1.5,
+                        ),
                       ),
                     ),
                     validator: (val) {
@@ -252,10 +399,19 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     child: ElevatedButton.icon(
                       onPressed: _save,
                       icon: const Icon(Icons.check, color: Colors.white),
-                      label: const Text('기록 저장하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                      label: const Text(
+                        '기록 저장하기',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
                     ),
                   ),

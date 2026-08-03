@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import '../../data/models/contact_model.dart';
@@ -11,7 +12,8 @@ import '../../data/models/contact_model.dart';
 /// ID를 먼저 발급받아 안드로이드(SHA-1 지문)/iOS(번들 ID)에 등록해야 로그인
 /// 자체가 가능하다. 이 설정 전에는 [signIn]이 예외를 던진다.
 class EmailSyncService {
-  static const _gmailReadonlyScope = 'https://www.googleapis.com/auth/gmail.readonly';
+  static const _gmailReadonlyScope =
+      'https://www.googleapis.com/auth/gmail.readonly';
   static bool _initialized = false;
   static GoogleSignInAccount? _currentAccount;
 
@@ -42,11 +44,11 @@ class EmailSyncService {
   }
 
   /// 로그인된 Gmail 계정에서 [contactEmail]과 주고받은(보낸/받은) 최근 메일을
-  /// 조회한다. 본문은 가져오지 않고 제목/날짜만 가져와서(메타데이터만 요청)
-  /// 개인정보 노출을 최소화한다.
+  /// 조회한다. 본문 전체는 가져오지 않고 제목/날짜/짧은 Gmail 미리보기만
+  /// 가져온다. 호출자가 선택 화면을 보여 준 뒤 선택한 항목만 저장해야 한다.
   static Future<List<CommunicationLogModel>> syncEmails(
     String contactEmail, {
-    int limit = 20,
+    int limit = 10,
   }) async {
     final account = _currentAccount;
     if (account == null) {
@@ -56,18 +58,18 @@ class EmailSyncService {
       return [];
     }
 
-    final headers = await account.authorizationClient.authorizationHeaders(
-      [_gmailReadonlyScope],
-      promptIfNecessary: true,
-    );
+    final headers = await account.authorizationClient.authorizationHeaders([
+      _gmailReadonlyScope,
+    ], promptIfNecessary: true);
     if (headers == null) {
       throw StateError('이메일 접근 권한을 받지 못했습니다.');
     }
 
-    final listUri = Uri.https('gmail.googleapis.com', '/gmail/v1/users/me/messages', {
-      'q': 'from:$contactEmail OR to:$contactEmail',
-      'maxResults': '$limit',
-    });
+    final listUri = Uri.https(
+      'gmail.googleapis.com',
+      '/gmail/v1/users/me/messages',
+      {'q': 'from:$contactEmail OR to:$contactEmail', 'maxResults': '$limit'},
+    );
     final listResp = await http.get(listUri, headers: headers);
     if (listResp.statusCode != 200) {
       throw StateError('Gmail 조회에 실패했습니다 (${listResp.statusCode}).');
@@ -75,50 +77,64 @@ class EmailSyncService {
     final listData = jsonDecode(listResp.body) as Map<String, dynamic>;
     final messages = (listData['messages'] as List<dynamic>?) ?? const [];
 
-    final logs = <CommunicationLogModel>[];
-    for (final m in messages) {
-      final id = (m as Map<String, dynamic>)['id'] as String;
-      final detailUri = Uri.https(
-        'gmail.googleapis.com',
-        '/gmail/v1/users/me/messages/$id',
-        {
-          'format': 'metadata',
-          'metadataHeaders': ['Subject', 'Date'],
-        },
-      );
-      final detailResp = await http.get(detailUri, headers: headers);
-      if (detailResp.statusCode != 200) continue;
+    final logs = await Future.wait(
+      messages.map((message) async {
+        final id = (message as Map<String, dynamic>)['id'] as String;
+        final detailUri = Uri.https(
+          'gmail.googleapis.com',
+          '/gmail/v1/users/me/messages/$id',
+          {
+            'format': 'metadata',
+            'metadataHeaders': ['Subject', 'Date'],
+          },
+        );
+        final detailResp = await http.get(detailUri, headers: headers);
+        if (detailResp.statusCode != 200) return null;
 
-      final detail = jsonDecode(detailResp.body) as Map<String, dynamic>;
-      final headerList = (detail['payload'] as Map<String, dynamic>?)?['headers'] as List<dynamic>? ?? const [];
+        final detail = jsonDecode(detailResp.body) as Map<String, dynamic>;
+        final headerList =
+            (detail['payload'] as Map<String, dynamic>?)?['headers']
+                as List<dynamic>? ??
+            const [];
 
-      String? subject;
-      String? dateStr;
-      for (final h in headerList) {
-        final entry = h as Map<String, dynamic>;
-        if (entry['name'] == 'Subject') subject = entry['value'] as String?;
-        if (entry['name'] == 'Date') dateStr = entry['value'] as String?;
-      }
+        String? subject;
+        for (final h in headerList) {
+          final entry = h as Map<String, dynamic>;
+          if (entry['name'] == 'Subject') subject = entry['value'] as String?;
+        }
 
-      logs.add(CommunicationLogModel(
-        type: 'email',
-        summary: (subject != null && subject.trim().isNotEmpty) ? subject : '(제목 없음)',
-        timestamp: _parseEmailDate(dateStr),
-        isAutoSynced: true,
-      ));
-    }
-    return logs;
+        final cleanSubject = (subject ?? '').trim();
+        final snippet = (detail['snippet'] as String? ?? '').trim();
+        final summary = [
+          cleanSubject.isEmpty ? '(제목 없음)' : cleanSubject,
+          if (snippet.isNotEmpty) snippet,
+        ].join(' — ');
+
+        return CommunicationLogModel(
+          id: 'gmail_$id',
+          type: 'email',
+          summary: truncateSummary(summary),
+          timestamp: parseInternalDate(detail['internalDate']?.toString()),
+          source: 'gmail',
+        );
+      }),
+    );
+
+    final validLogs = logs.whereType<CommunicationLogModel>().toList()
+      ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return validLogs;
   }
 
-  // 이메일 Date 헤더는 RFC 2822 형식(예: "Mon, 2 Aug 2026 13:12:00 +0900")이라
-  // dart:core의 표준 파서로는 못 읽는 경우가 있음 — 실패하면 그냥 지금 시각으로
-  // 대체한다(치명적이지 않은 실패라 전체 동기화를 막을 이유가 없음).
-  static DateTime _parseEmailDate(String? raw) {
-    if (raw == null) return DateTime.now();
-    try {
-      return DateTime.parse(raw);
-    } catch (_) {
-      return DateTime.now();
-    }
+  @visibleForTesting
+  static DateTime parseInternalDate(String? raw) {
+    final milliseconds = int.tryParse(raw ?? '');
+    if (milliseconds == null) return DateTime.now();
+    return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+  }
+
+  @visibleForTesting
+  static String truncateSummary(String value, {int maxLength = 500}) {
+    if (value.length <= maxLength) return value;
+    return '${value.substring(0, maxLength - 1)}…';
   }
 }

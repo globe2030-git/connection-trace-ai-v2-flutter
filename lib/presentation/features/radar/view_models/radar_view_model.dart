@@ -1,72 +1,194 @@
 import 'package:flutter/foundation.dart';
-import '../../../../data/models/contact_model.dart';
-import '../../../../data/models/notification_settings.dart';
-import '../../../../data/repositories/contacts_repository.dart';
-import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/services/location_consent_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/utils/geo_utils.dart';
+import '../../../../data/models/contact_model.dart';
+import '../../../../data/models/proximity_settings.dart';
+import '../../../../data/repositories/contacts_repository.dart';
+
+enum LocationAccessState {
+  loading,
+  consentRequired,
+  consentDeclined,
+  locating,
+  serviceDisabled,
+  permissionDenied,
+  permissionDeniedForever,
+  ready,
+  unavailable,
+}
 
 class RadarViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
-  NotificationSettings _settings = const NotificationSettings();
-  GeoPosition _currentPosition = GeoUtils.fallbackLocation;
+  final LocationGateway _locationService;
+  final LocationConsentStore _locationConsentService;
+
+  ProximitySettings _settings = const ProximitySettings();
+  GeoPosition? _currentPosition;
+  LocationConsentRecord _locationConsent = LocationConsentRecord.unknown;
+  LocationAccessState _locationAccessState = LocationAccessState.loading;
   bool _isRefreshingLocation = false;
-  bool _usingRealGps = false;
+  bool _isDisposed = false;
   ContactModel? _selectedContactForBriefing;
   ContactModel? _previewContact;
   String _searchTerm = '';
 
-  RadarViewModel({required ContactsRepository contactsRepository})
-      : _contactsRepository = contactsRepository {
-    _contactsRepository.addListener(notifyListeners);
-    // 화면이 뜨자마자 실제 GPS 위치를 한 번 시도한다. 권한이 없거나 위치
-    // 서비스가 꺼져 있으면 LocationService가 null을 반환하므로 이 경우
-    // 기존 fallback(강남역 기준) 좌표를 그대로 유지한 채 조용히 넘어간다.
-    refreshLocation();
+  late final Future<void> initialization;
+
+  RadarViewModel({
+    required ContactsRepository contactsRepository,
+    LocationGateway? locationService,
+    LocationConsentStore? locationConsentService,
+  }) : _contactsRepository = contactsRepository,
+       _locationService = locationService ?? LocationService(),
+       _locationConsentService =
+           locationConsentService ?? LocationConsentService() {
+    _contactsRepository.addListener(_onContactsChanged);
+    // 앱 실행 직후에는 OS 권한을 요청하지 않는다. 저장된 앱 자체 동의를 먼저
+    // 확인하고, 동의가 있는 경우에만 현재 OS 권한 상태로 위치를 읽는다.
+    initialization = _initializeLocation();
   }
 
   @override
   void dispose() {
-    _contactsRepository.removeListener(notifyListeners);
+    _isDisposed = true;
+    _contactsRepository.removeListener(_onContactsChanged);
     super.dispose();
   }
 
-  NotificationSettings get settings => _settings;
-  GeoPosition get currentPosition => _currentPosition;
+  void _onContactsChanged() => _safeNotify();
+
+  void _safeNotify() {
+    if (!_isDisposed) notifyListeners();
+  }
+
+  ProximitySettings get settings => _settings;
+  GeoPosition? get currentPosition => _currentPosition;
   bool get isRefreshingLocation => _isRefreshingLocation;
-  // 실제 GPS 좌표를 못 가져와 fallback(강남역 기준) 좌표를 쓰고 있는지 여부 —
-  // 설정 화면 등에서 "위치 권한 필요" 안내를 보여줄 때 참고용.
-  bool get usingRealGps => _usingRealGps;
+  bool get usingRealGps => _currentPosition != null;
+  bool get isLocationInitialized =>
+      _locationAccessState != LocationAccessState.loading;
+  bool get hasLocationConsent =>
+      _locationConsent.decision == LocationConsentDecision.accepted;
+  bool get shouldShowLocationConsent =>
+      _locationAccessState == LocationAccessState.consentRequired;
+  LocationConsentRecord get locationConsent => _locationConsent;
+  LocationAccessState get locationAccessState => _locationAccessState;
   ContactModel? get selectedContactForBriefing => _selectedContactForBriefing;
   ContactModel? get previewContact => _previewContact;
   String get searchTerm => _searchTerm;
 
-  void setSearchTerm(String term) {
-    _searchTerm = term;
-    notifyListeners();
+  Future<void> _initializeLocation() async {
+    try {
+      _locationConsent = await _locationConsentService.loadRecord();
+      switch (_locationConsent.decision) {
+        case LocationConsentDecision.unknown:
+          _locationAccessState = LocationAccessState.consentRequired;
+          _safeNotify();
+        case LocationConsentDecision.declined:
+          _locationAccessState = LocationAccessState.consentDeclined;
+          _safeNotify();
+        case LocationConsentDecision.accepted:
+          await refreshLocation();
+      }
+    } catch (_) {
+      _currentPosition = null;
+      _locationAccessState = LocationAccessState.unavailable;
+      _safeNotify();
+    }
+  }
+
+  Future<void> acceptLocationConsent() async {
+    _locationConsent = await _locationConsentService.accept();
+    await _resolveLocationAccess(requestPermission: true);
+  }
+
+  Future<void> declineLocationConsent() async {
+    _locationConsent = await _locationConsentService.decline();
+    _currentPosition = null;
+    _locationAccessState = LocationAccessState.consentDeclined;
+    _safeNotify();
+  }
+
+  Future<void> withdrawLocationConsent() => declineLocationConsent();
+
+  Future<void> requestLocationPermission() async {
+    if (!hasLocationConsent) return;
+    await _resolveLocationAccess(requestPermission: true);
   }
 
   Future<void> refreshLocation() async {
-    _isRefreshingLocation = true;
-    notifyListeners();
+    if (!hasLocationConsent) {
+      _currentPosition = null;
+      _locationAccessState =
+          _locationConsent.decision == LocationConsentDecision.declined
+          ? LocationAccessState.consentDeclined
+          : LocationAccessState.consentRequired;
+      _safeNotify();
+      return;
+    }
+    await _resolveLocationAccess(requestPermission: false);
+  }
 
-    final realPosition = await LocationService.getCurrentPosition();
-    if (realPosition != null) {
-      _currentPosition = realPosition;
-      _usingRealGps = true;
-    } else {
-      _usingRealGps = false;
+  Future<void> refreshLocationAccess() => refreshLocation();
+
+  Future<bool> openRelevantLocationSettings() {
+    if (_locationAccessState == LocationAccessState.serviceDisabled) {
+      return _locationService.openDeviceLocationSettings();
+    }
+    return _locationService.openAppPermissionSettings();
+  }
+
+  Future<void> _resolveLocationAccess({required bool requestPermission}) async {
+    // 앱 복귀와 사용자의 수동 갱신이 동시에 들어와도 GPS 요청은 하나만 유지한다.
+    if (_isRefreshingLocation) return;
+    _isRefreshingLocation = true;
+    _locationAccessState = LocationAccessState.locating;
+    _safeNotify();
+
+    final access = requestPermission
+        ? await _locationService.requestPermission()
+        : await _locationService.checkAccess();
+
+    switch (access) {
+      case DeviceLocationAccess.granted:
+        final position = await _locationService.getCurrentPosition();
+        _currentPosition = position;
+        _locationAccessState = position == null
+            ? LocationAccessState.unavailable
+            : LocationAccessState.ready;
+      case DeviceLocationAccess.serviceDisabled:
+        _currentPosition = null;
+        _locationAccessState = LocationAccessState.serviceDisabled;
+      case DeviceLocationAccess.denied:
+        _currentPosition = null;
+        _locationAccessState = LocationAccessState.permissionDenied;
+      case DeviceLocationAccess.deniedForever:
+        _currentPosition = null;
+        _locationAccessState = LocationAccessState.permissionDeniedForever;
+      case DeviceLocationAccess.error:
+        _currentPosition = null;
+        _locationAccessState = LocationAccessState.unavailable;
     }
 
     _isRefreshingLocation = false;
-    notifyListeners();
+    _safeNotify();
+  }
+
+  void setSearchTerm(String term) {
+    _searchTerm = term;
+    _safeNotify();
   }
 
   List<ContactModel> get filteredContacts {
+    final currentPosition = _currentPosition;
+    if (currentPosition == null) return const [];
+
     final contacts = _contactsRepository.contacts;
     final query = _searchTerm.trim().toLowerCase();
     final list = contacts.where((c) {
       if (c.geo == null) return false;
-      final distance = GeoUtils.getDistanceMeters(_currentPosition, c.geo);
+      final distance = GeoUtils.getDistanceMeters(currentPosition, c.geo);
       if (distance > _settings.radiusMeters) return false;
       if (query.isEmpty) return true;
       return c.name.toLowerCase().contains(query) ||
@@ -74,15 +196,11 @@ class RadarViewModel extends ChangeNotifier {
           c.title.toLowerCase().contains(query);
     }).toList();
 
-    // Primary: distance ascending (closest first), Secondary: Korean alphabetical (가나다순)
     list.sort((a, b) {
-      final distA = GeoUtils.getDistanceMeters(_currentPosition, a.geo);
-      final distB = GeoUtils.getDistanceMeters(_currentPosition, b.geo);
-
+      final distA = GeoUtils.getDistanceMeters(currentPosition, a.geo);
+      final distB = GeoUtils.getDistanceMeters(currentPosition, b.geo);
       final compDist = distA.compareTo(distB);
-      if (compDist != 0) {
-        return compDist;
-      }
+      if (compDist != 0) return compDist;
       return a.name.compareTo(b.name);
     });
 
@@ -90,50 +208,38 @@ class RadarViewModel extends ChangeNotifier {
   }
 
   ContactModel? get nearbyAlertContact {
-    if (!_settings.enabled) return null;
+    if (_currentPosition == null) return null;
     final inRange = filteredContacts;
     if (inRange.isEmpty) return null;
 
     final priorities = inRange.where((c) => c.isPriority).toList();
     final candidatePool = priorities.isNotEmpty ? priorities : inRange;
-
     candidatePool.sort((a, b) {
       final dA = GeoUtils.getDistanceMeters(_currentPosition, a.geo);
       final dB = GeoUtils.getDistanceMeters(_currentPosition, b.geo);
       return dA.compareTo(dB);
     });
-
     return candidatePool.first;
   }
 
   void updateRadius(double newRadiusMeters) {
     _settings = _settings.copyWith(radiusMeters: newRadiusMeters);
-    notifyListeners();
-  }
-
-  void updateBatteryMode(dynamic mode) {
-    _settings = _settings.copyWith(batteryMode: mode);
-    notifyListeners();
+    _safeNotify();
   }
 
   void setPreviewContact(ContactModel? contact) {
     _previewContact = contact;
-    notifyListeners();
+    _safeNotify();
   }
 
   void openBriefing(ContactModel contact) {
     _selectedContactForBriefing = contact;
-    notifyListeners();
+    _safeNotify();
   }
 
   void closeBriefing() {
     _selectedContactForBriefing = null;
-    notifyListeners();
-  }
-
-  void toggleDetection() {
-    _settings = _settings.copyWith(enabled: !_settings.enabled);
-    notifyListeners();
+    _safeNotify();
   }
 
   void updateContact(ContactModel contact) {

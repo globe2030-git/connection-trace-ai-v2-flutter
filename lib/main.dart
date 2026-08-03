@@ -30,19 +30,21 @@ class ConnectionTraceApp extends StatelessWidget {
           create: (ctx) => RadarViewModel(
             contactsRepository: ctx.read<ContactsRepository>(),
           ),
-          update: (ctx, repo, prev) => prev ?? RadarViewModel(contactsRepository: repo),
+          update: (ctx, repo, prev) =>
+              prev ?? RadarViewModel(contactsRepository: repo),
         ),
         ChangeNotifierProxyProvider<ContactsRepository, WalletViewModel>(
           create: (ctx) => WalletViewModel(
             contactsRepository: ctx.read<ContactsRepository>(),
           ),
-          update: (ctx, repo, prev) => prev ?? WalletViewModel(contactsRepository: repo),
+          update: (ctx, repo, prev) =>
+              prev ?? WalletViewModel(contactsRepository: repo),
         ),
       ],
       child: MaterialApp(
         title: '커넥션센스',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
+        theme: AppTheme.lightTheme,
         home: const SplashGate(child: MainTabScreen()),
       ),
     );

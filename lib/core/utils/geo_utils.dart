@@ -8,8 +8,6 @@ class GeoPosition {
 }
 
 class GeoUtils {
-  static const GeoPosition fallbackLocation = GeoPosition(lat: 37.5006, lng: 127.0364); // Gangnam station area
-
   static double getDistanceMeters(GeoPosition? a, GeoPosition? b) {
     if (a == null || b == null) return double.infinity;
 

@@ -12,12 +12,15 @@ class VCardUtil {
       ..writeln('FN:${profile.name}');
     if (profile.company.isNotEmpty) buffer.writeln('ORG:${profile.company}');
     if (profile.title.isNotEmpty) buffer.writeln('TITLE:${profile.title}');
-    if (profile.phone.isNotEmpty) buffer.writeln('TEL;TYPE=CELL:${profile.phone}');
+    if (profile.phone.isNotEmpty)
+      buffer.writeln('TEL;TYPE=CELL:${profile.phone}');
     if (profile.email.isNotEmpty) buffer.writeln('EMAIL:${profile.email}');
-    final addressLine = [profile.address, profile.addressDetail]
-        .where((s) => s != null && s.trim().isNotEmpty)
-        .join(' ');
-    if (addressLine.isNotEmpty) buffer.writeln('ADR;TYPE=WORK:;;$addressLine;;;;');
+    final addressLine = [
+      profile.address,
+      profile.addressDetail,
+    ].where((s) => s != null && s.trim().isNotEmpty).join(' ');
+    if (addressLine.isNotEmpty)
+      buffer.writeln('ADR;TYPE=WORK:;;$addressLine;;;;');
     buffer.writeln('END:VCARD');
     return buffer.toString();
   }
@@ -51,7 +54,10 @@ class VCardUtil {
           result.putIfAbsent('email', () => value);
           break;
         case 'ADR':
-          final addr = value.split(';').where((p) => p.trim().isNotEmpty).join(' ');
+          final addr = value
+              .split(';')
+              .where((p) => p.trim().isNotEmpty)
+              .join(' ');
           if (addr.isNotEmpty) result['address'] = addr;
           break;
       }

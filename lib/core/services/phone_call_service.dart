@@ -14,8 +14,12 @@ class PhoneCallService {
     return false;
   }
 
-  static Future<void> showCallPicker(BuildContext context, ContactModel contact) async {
-    final hasOfficePhone = contact.officePhone != null && contact.officePhone!.trim().isNotEmpty;
+  static Future<void> showCallPicker(
+    BuildContext context,
+    ContactModel contact,
+  ) async {
+    final hasOfficePhone =
+        contact.officePhone != null && contact.officePhone!.trim().isNotEmpty;
 
     if (!hasOfficePhone) {
       // Direct call if only mobile phone is available
@@ -52,7 +56,11 @@ class PhoneCallService {
 
                 Text(
                   '📞 ${contact.name} ${contact.title}님께 전화 걸기',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -67,19 +75,39 @@ class PhoneCallService {
                       const CircleAvatar(
                         radius: 20,
                         backgroundColor: AppColors.accent,
-                        child: Icon(Icons.smartphone, color: Colors.white, size: 20),
+                        child: Icon(
+                          Icons.smartphone,
+                          color: Colors.white,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('휴대폰 전화', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                            Text(contact.phone, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                            const Text(
+                              '휴대폰 전화',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              contact.phone,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: AppColors.textMuted),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.textMuted,
+                      ),
                     ],
                   ),
                 ),
@@ -96,20 +124,42 @@ class PhoneCallService {
                     children: [
                       CircleAvatar(
                         radius: 20,
-                        backgroundColor: AppColors.accent.withValues(alpha: 0.2),
-                        child: const Icon(Icons.phone_in_talk, color: AppColors.accentText, size: 20),
+                        backgroundColor: AppColors.accent.withValues(
+                          alpha: 0.2,
+                        ),
+                        child: const Icon(
+                          Icons.phone_in_talk,
+                          color: AppColors.accentText,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('사무실 전화', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                            Text(contact.officePhone!, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                            const Text(
+                              '사무실 전화',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              contact.officePhone!,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: AppColors.textMuted),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: AppColors.textMuted,
+                      ),
                     ],
                   ),
                 ),
