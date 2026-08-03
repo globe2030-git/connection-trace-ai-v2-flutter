@@ -15,7 +15,11 @@ class CameraScanModalView extends StatefulWidget {
 
 class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  static const _guideFrameSize = Size(320, 200);
+  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1)에 맞춘 크기. 기존
+  // 320x200(1.6:1)은 실제 명함보다 정사각형에 가까워서, 위아래를 가이드에
+  // 맞추면 좌우가 넓은 명함일수록 옆으로 삐져나가 버리는 문제가 있었다
+  // ("가이드 선이 위아래엔 들어왔는데 좌우 넓은 명함이라 벗어난다"는 피드백).
+  static const _guideFrameSize = Size(330, 184);
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
   // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
@@ -275,9 +279,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 환산해 크롭한다. 프리뷰는 [_buildCameraPreview]에서 cover 방식(화면을
   /// 꽉 채우고 넘치는 부분은 잘림)으로 그리므로, 화면 중심 기준 비율을 그대로
   /// 이미지에 적용하면 동일한 영역이 나온다. 명함 주변 배경 글자/노이즈를
-  /// 제거해 OCR 인식률을 높이는 게 목적이며, 계산이 살짝 어긋나도 카드가
-  /// 잘리지 않도록 가이드 프레임보다 15% 여유를 두고 크롭 범위를 화면 안으로
-  /// clamp한다.
+  /// 제거해 OCR 인식률을 높이는 게 목적이며, 실제 명함 규격이 제각각이라
+  /// (표준 90x50mm 외에도 크고 작은 변형이 흔함) 계산이 살짝 어긋나거나
+  /// 카드가 가이드보다 커도 잘리지 않도록 가이드 프레임보다 30% 여유를 두고
+  /// 크롭 범위를 화면 안으로 clamp한다.
   Future<XFile> _cropToGuideFrame(XFile rawFile, Size screenSize) async {
     try {
       final bytes = await rawFile.readAsBytes();
@@ -301,7 +306,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final offsetX = (imgW - visibleImgW) / 2;
       final offsetY = (imgH - visibleImgH) / 2;
 
-      const margin = 1.15;
+      const margin = 1.3;
       final guideW = _guideFrameSize.width * margin;
       final guideH = _guideFrameSize.height * margin;
       final scaleX = visibleImgW / screenSize.width;
@@ -468,7 +473,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           animation: _laserController,
                           builder: (context, child) {
                             return Positioned(
-                              top: _laserController.value * 190,
+                              top: _laserController.value * (_guideFrameSize.height - 10),
                               left: 10,
                               right: 10,
                               child: Container(
