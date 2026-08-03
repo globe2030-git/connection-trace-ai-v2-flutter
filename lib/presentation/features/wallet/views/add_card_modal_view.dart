@@ -263,13 +263,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   }
 
   Future<void> _openAddressSearch() async {
-    final result = await Navigator.push<String>(
+    final result = await Navigator.push<AddressSearchResult>(
       context,
       MaterialPageRoute(builder: (_) => const AddressSearchView()),
     );
-    if (result != null && result.trim().isNotEmpty && mounted) {
-      setState(() => _addressController.text = result.trim());
-    }
+    if (result == null || !mounted) return;
+    setState(() {
+      _addressController.text = result.address.trim();
+      // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
+      // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
+      if (result.buildingName != null && _addressDetailController.text.trim().isEmpty) {
+        _addressDetailController.text = result.buildingName!;
+      }
+    });
   }
 
   void _fillIfEmpty(TextEditingController controller, String value) {
