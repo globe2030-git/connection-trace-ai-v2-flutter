@@ -24,9 +24,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 임계값을 넉넉히 잡아 자연스러운 손떨림 정도는 "불안정"으로 치지 않게
   // 하고(정렬 여유), 실제 촬영은 프레임 개수가 아니라 안정 상태가 시작된
   // 시점부터 경과 시간으로 판단한다(기기 프레임레이트와 무관하게 일정
-  // 시간 유지되면 촬영). 0.3초→0.5초로 늘려도 여전히 너무 빨리 촬영된다는
-  // 피드백을 받아 사용자가 직접 지정한 1초로 재조정.
-  static const _stabilityDiffThreshold = 10.0;
+  // 시간 유지되면 촬영). 유지 시간은 1초로 확정(사용자 피드백). 임계값은
+  // "가이드 안에 훨씬 정확히 들어와야(≈95%) 촬영되면 좋겠다"는 요청에 맞춰
+  // 다시 좁혔다 — 실제로 카드-가이드 겹침 비율을 픽셀 단위로 재는 건 아니고
+  // (별도의 문서 경계 검출이 필요한 더 큰 작업), 전체 화면 흔들림 허용치를
+  // 좁혀서 더 정확히 멈춰야만 "안정"으로 인정되게 하는 근사치.
+  static const _stabilityDiffThreshold = 7.0;
   static const _requiredStableDuration = Duration(seconds: 1);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
