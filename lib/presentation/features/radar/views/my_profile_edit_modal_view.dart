@@ -112,7 +112,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       if (result.phone.trim().isNotEmpty) _phoneController.text = result.phone.trim();
       if (result.email.trim().isNotEmpty) _emailController.text = result.email.trim();
       if (result.address.trim().isNotEmpty) _addressController.text = result.address.trim();
-      _inlineNoticeText = '📸 스캔한 명함 정보로 채웠습니다. 내용을 확인하고 저장해 주세요.';
+      _inlineNoticeText = '📸 스캔한 명함 정보로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 내용을 확인하고 저장해 주세요.';
     });
   }
 

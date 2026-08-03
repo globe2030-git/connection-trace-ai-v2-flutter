@@ -226,7 +226,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     if (missingFields.isEmpty) {
       _showInlineNotice(
-        isFromCamera ? '📸 명함 촬영 스캔이 완료되었습니다!' : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다!',
+        isFromCamera
+            ? '📸 명함 촬영 스캔이 완료되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.'
+            : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.',
         isError: false,
       );
     } else {
