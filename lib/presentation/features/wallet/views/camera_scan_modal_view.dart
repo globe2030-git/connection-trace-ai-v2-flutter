@@ -101,11 +101,31 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized) return;
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
-      _isStreamingForAutoCapture = false;
-      controller.dispose();
-      _controller = null;
+      // 긴급재난문자 등으로 잠깐 inactive가 됐다가 바로 resumed로 돌아오는
+      // 경우, 컨트롤러를 dispose하기 전에 먼저 화면(CameraPreview)에서
+      // 떼어내야 한다 — setState 없이 필드만 바꾸면 아직 화면에 남아 있는
+      // CameraPreview가 이미 dispose된 컨트롤러를 계속 참조하게 되어
+      // 화면이 검정으로 멈춰버리는 문제가 있었다.
+      final wasStreaming = _isStreamingForAutoCapture;
+      setState(() {
+        _controller = null;
+        _isStreamingForAutoCapture = false;
+        _isFrameStable = false;
+        _stableSince = null;
+        _isInitializing = true;
+      });
+      () async {
+        if (wasStreaming) {
+          try {
+            await controller.stopImageStream();
+          } catch (_) {}
+        }
+        await controller.dispose();
+      }();
     } else if (state == AppLifecycleState.resumed) {
-      _initCamera();
+      if (_controller == null) {
+        _initCamera();
+      }
     }
   }
 
