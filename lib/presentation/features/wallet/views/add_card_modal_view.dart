@@ -402,6 +402,31 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
+  /// 원래 입력 주소에서 새 도로명 주소 부분을 뺀 나머지(건물명/층/호수 등
+  /// 상세 정보)를 뽑아낸다. 도로명 주소가 원본의 접두어로 들어있는 흔한
+  /// 경우(끝에 상세 정보가 붙어 있던 경우)뿐 아니라, 원본 안 어딘가에
+  /// 부분 문자열로 들어있는 경우까지 처리한다. 못 찾으면 null.
+  String? _extractAddressRemainder(String original, String roadName) {
+    final trimmedOriginal = original.trim();
+    final trimmedRoadName = roadName.trim();
+    if (trimmedRoadName.isEmpty || trimmedOriginal == trimmedRoadName) return null;
+
+    if (trimmedOriginal.startsWith(trimmedRoadName)) {
+      final remainder = trimmedOriginal.substring(trimmedRoadName.length).trim();
+      return remainder.isEmpty ? null : remainder;
+    }
+
+    final idx = trimmedOriginal.indexOf(trimmedRoadName);
+    if (idx >= 0) {
+      final before = trimmedOriginal.substring(0, idx).trim();
+      final after = trimmedOriginal.substring(idx + trimmedRoadName.length).trim();
+      final remainder = [before, after].where((s) => s.isNotEmpty).join(' ');
+      return remainder.isEmpty ? null : remainder;
+    }
+
+    return null;
+  }
+
   void _showRoadNameConversionDialog(AddressValidationResult result) {
     showDialog(
       context: context,
@@ -453,6 +478,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
+              // 도로명으로 바꾸면 기존에 입력했던 "5층 501호" 같은 상세 정보가
+              // 도로명 주소엔 안 들어가서 그냥 사라져 버리는 문제가 있었다 —
+              // 원래 입력 주소에서 새 도로명 주소를 뺀 나머지를 상세주소로
+              // 옮겨 담아 보존한다(상세주소를 이미 직접 입력해 뒀으면 덮어쓰지 않음).
+              final remainder = _extractAddressRemainder(result.originalAddress, result.roadNameAddress!);
+              if (remainder != null && _addressDetailController.text.trim().isEmpty) {
+                _addressDetailController.text = remainder;
+              }
               _addressController.text = result.roadNameAddress!;
               _executeFinalSave(result.roadNameAddress!, result.geoPosition);
             },
