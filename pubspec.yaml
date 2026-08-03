@@ -110,17 +110,18 @@ flutter_native_splash:
     image_dark: assets/CI.png
   web: true
 
-# 앱 아이콘(커넥션센스) 설정 — `dart run flutter_launcher_icons`를 실행하면
-# assets/icon/icon_full.png(iOS·Android 레거시)와 icon_foreground.png
-# (Android adaptive icon 전경)를 읽어 iOS/Android 전체 사이즈셋을 생성한다.
-# 두 이미지 모두 tool/generate_app_icon.dart로 코드에서 직접 그려서 만들었다.
+# 앱 아이콘(커넥션센스) 설정 — 코드로 그린 평면 벡터 아이콘(assets/icon/,
+# tool/generate_app_icon.dart) 대신, 이미 프로젝트에 있던 3D 렌더링 아이콘
+# 에셋(assets/icons3d/radar.png — 앱의 핵심 기능인 "레이더"를 표현하는
+# 글로시한 3D 아이콘, 브랜드 블루/화이트 톤과 이미 일치)을 아이콘 원본으로
+# 사용해 달라는 요청으로 교체. 컴퍼스 문자(W/S/E)가 가장자리 가까이 있어
+# Android adaptive icon 안전영역에 맞춰 자르면 잘릴 수 있어서, adaptive
+# icon(전경+배경 분리) 대신 일반 정적 런처 아이콘으로 적용한다.
 flutter_launcher_icons:
-  image_path: "assets/icon/icon_full.png"
+  image_path: "assets/icons3d/radar_on_brand_bg.png"
   ios: true
   remove_alpha_ios: true
   android: true
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
