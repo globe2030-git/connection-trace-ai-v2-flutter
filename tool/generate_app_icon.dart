@@ -128,12 +128,13 @@ void main() {
   final outDir = Directory('assets/icon');
   if (!outDir.existsSync()) outDir.createSync(recursive: true);
 
-  // iOS/Android 레거시 아이콘 — 동심원 크기를 10% 줄여달라는 피드백으로 460→414.
-  final full = _buildIcon(transparentBg: false, outerRadius: 414);
+  // iOS/Android 레거시 아이콘 — 동심원 크기를 10%씩 두 차례 줄여달라는 피드백으로
+  // 460→414→373.
+  final full = _buildIcon(transparentBg: false, outerRadius: 373);
   File('${outDir.path}/icon_full.png').writeAsBytesSync(img.encodePng(full));
 
-  // Android adaptive icon foreground — 안전 영역 비율은 유지한 채 동일하게 10% 축소(300→270).
-  final foreground = _buildIcon(transparentBg: true, outerRadius: 270);
+  // Android adaptive icon foreground — 안전 영역 비율은 유지한 채 동일하게 축소(300→270→243).
+  final foreground = _buildIcon(transparentBg: true, outerRadius: 243);
   File('${outDir.path}/icon_foreground.png').writeAsBytesSync(img.encodePng(foreground));
 
   stdout.writeln('Generated ${outDir.path}/icon_full.png and icon_foreground.png (1024x1024)');
