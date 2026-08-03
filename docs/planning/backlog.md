@@ -2,6 +2,48 @@
 
 ## 작업 로그
 
+### 2026-08-03 (추가 37) — 가짜/샘플 데이터 전면 제거
+
+"지금부터 가짜 데이터를 보여주지 말고 실제 연동되는 자료 기반으로
+진행해"라는 요청. 앱에 남아있던 하드코딩 샘플 데이터를 전수 점검해 제거:
+
+- `ContactsRepository`의 가짜 인맥 3명(김민준/한소율/오현우) 완전 삭제 —
+  이제 실제로 명함을 스캔·QR 교환하기 전까지 빈 목록으로 시작.
+- `NotificationCenterModalView`의 하드코딩 샘플 알림 3건 제거, 빈 상태
+  안내로 교체.
+- `MyProfileModel.defaultProfile`의 "홍길동 대표" 가짜 인물 정보를 빈
+  값으로 변경 — 발견된 실질적 문제: 프로필을 한 번도 안 고쳐도 QR/vCard
+  공유 시 이 가짜 정보가 실제 명함처럼 상대방에게 전달될 수 있었음.
+  `isSetUp` getter 추가하고, `MyProfileModalView`/`QrCodeModalView`에서
+  미설정 상태면 "프로필을 아직 설정하지 않았습니다" 안내로 분기(QR도
+  아예 생성 안 함).
+
+`flutter analyze` 클린 확인.
+
+---
+
+### 2026-08-03 (추가 36) — Android 실기기 테스트 시작 및 빌드 오류 2건 수정
+
+사용자가 아이폰 대신 안드로이드 실기기(삼성 갤럭시 Z 폴드, SM-F966N)로
+테스트를 시작 — 이 세션 최초의 Android 실기기 빌드. USB 디버깅 인증
+과정을 안내(빌드 번호 7번 탭 → 개발자 옵션 → USB 디버깅 → 컴퓨터 허용)한
+뒤 `adb devices`로 연결 확인, `flutter build apk --release`로 첫 빌드
+시도했고 2건의 빌드 실패를 순차적으로 발견·수정:
+
+1. `camera_android_camerax` 컴파일 실패(`androidx.concurrent.futures.
+   CallbackToFutureAdapter` 클래스 누락) — 루트 `build.gradle.kts`에서
+   모든 Android 서브프로젝트에 `androidx.concurrent:concurrent-futures`를
+   실제로 주입하도록 해서 해결(단순히 :app 모듈에 추가하거나
+   resolutionStrategy.force로는 안 됨을 확인 후 재시도).
+2. R8 축소 단계 실패(ML Kit 비한국어 스크립트 인식기 클래스 누락을 R8이
+   에러로 취급) — `android/app/proguard-rules.pro`에 `-dontwarn` 규칙
+   추가로 해결.
+
+`flutter build apk --release` 성공(111.6MB), `adb install`로 실기기 설치·
+실행 확인 완료.
+
+---
+
 ### 2026-08-03 (추가 35) — AI 연동 화면에 API 키 발급 단계별 안내 추가
 
 AI 연동 기능을 실기기에서 확인한 사용자가 "API 키를 어디서 어떻게
