@@ -21,8 +21,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
   // 눌러서 생기는 순간적인 흔들림(모션 블러)이 OCR 인식률을 떨어뜨리는
   // 주된 원인이라, 사용자가 직접 누르지 않아도 되게 하는 게 목적.
-  static const _requiredStableFrames = 8;
-  static const _stabilityDiffThreshold = 6.0;
+  // 임계값을 넉넉히 잡아 자연스러운 손떨림 정도는 "불안정"으로 치지 않게
+  // 하고(정렬 여유), 실제 촬영은 프레임 개수가 아니라 안정 상태가 시작된
+  // 시점부터 경과 시간으로 판단한다(기기 프레임레이트와 무관하게 정확히
+  // 0.3초 유지되면 촬영).
+  static const _stabilityDiffThreshold = 14.0;
+  static const _requiredStableDuration = Duration(milliseconds: 300);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
 
@@ -34,7 +38,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isCapturing = false;
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
-  int _stableFrameCount = 0;
+  DateTime? _stableSince;
   List<int>? _previousLumaSample;
   DateTime? _streamStartedAt;
 
@@ -131,7 +135,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final controller = _controller;
     if (controller == null || _isStreamingForAutoCapture) return;
     _streamStartedAt = DateTime.now();
-    _stableFrameCount = 0;
+    _stableSince = null;
     _previousLumaSample = null;
     try {
       await controller.startImageStream(_onCameraFrame);
@@ -171,18 +175,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final avgDiff = diffSum / sample.length;
 
     if (avgDiff < _stabilityDiffThreshold) {
-      _stableFrameCount++;
+      _stableSince ??= DateTime.now();
     } else {
-      _stableFrameCount = 0;
+      _stableSince = null;
     }
 
-    final nowStable = _stableFrameCount >= 3;
+    final stableSince = _stableSince;
+    final nowStable = stableSince != null;
     if (nowStable != _isFrameStable) {
       setState(() => _isFrameStable = nowStable);
     }
 
-    if (_stableFrameCount >= _requiredStableFrames) {
-      _stableFrameCount = 0;
+    if (stableSince != null && DateTime.now().difference(stableSince) >= _requiredStableDuration) {
+      _stableSince = null;
       _capturePhoto();
     }
   }
@@ -219,6 +224,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     setState(() {
       _isCapturing = true;
       _isFrameStable = false;
+      _stableSince = null;
     });
 
     try {
