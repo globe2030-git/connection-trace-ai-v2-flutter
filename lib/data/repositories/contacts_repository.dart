@@ -66,15 +66,4 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
   }
-
-  void togglePriority(String id) {
-    _contacts = _contacts.map((c) {
-      if (c.id == id) {
-        return c.copyWith(isPriority: !c.isPriority);
-      }
-      return c;
-    }).toList();
-    notifyListeners();
-    _saveToDisk();
-  }
 }

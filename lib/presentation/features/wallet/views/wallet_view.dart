@@ -228,13 +228,6 @@ class WalletView extends StatelessWidget {
                                icon: const Icon(Icons.phone_outlined, color: AppColors.accentText),
                                onPressed: () => PhoneCallService.showCallPicker(context, contact),
                              ),
-                             IconButton(
-                               icon: Icon(
-                                 contact.isPriority ? Icons.star : Icons.star_border,
-                                 color: contact.isPriority ? AppColors.accentText : AppColors.textMuted,
-                               ),
-                               onPressed: () => viewModel.togglePriority(contact.id),
-                             )
                           ],
                         ),
                         ),

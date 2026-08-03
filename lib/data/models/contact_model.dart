@@ -50,6 +50,10 @@ class ContactModel {
   final List<String> talkingPoints;
   final List<CommunicationLogModel> commLogs;
   final String? memo;
+  // 명함을 등록했다는 것 자체가 이미 중요한 인맥이라는 뜻이라, 사용자가
+  // 따로 "VIP"를 골라야 하는 별도 선택 단계는 의미가 없다는 판단으로
+  // 기본값을 true로 바꿨다(이전엔 false였고 명함지갑에서 별표를 눌러야
+  // VIP가 됐음 — 그 선택 UI 자체를 제거).
   final bool isPriority;
 
   const ContactModel({
@@ -68,7 +72,7 @@ class ContactModel {
     required this.talkingPoints,
     this.commLogs = const [],
     this.memo,
-    this.isPriority = false,
+    this.isPriority = true,
   });
 
   Map<String, dynamic> toJson() {
@@ -118,7 +122,7 @@ class ContactModel {
               .toList() ??
           [],
       memo: json['memo'] as String?,
-      isPriority: json['isPriority'] as bool? ?? false,
+      isPriority: json['isPriority'] as bool? ?? true,
     );
   }
 

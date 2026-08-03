@@ -10,7 +10,6 @@ import '../view_models/radar_view_model.dart';
 import 'qr_code_modal_view.dart';
 import 'notification_center_modal_view.dart';
 import 'my_profile_modal_view.dart';
-import 'priority_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
 import '../../../common/connection_sense_background_painter.dart';
@@ -209,19 +208,6 @@ class RadarView extends StatelessWidget {
                               isScrollControlled: true,
                               backgroundColor: Colors.transparent,
                               builder: (_) => const AddCardModalView(),
-                            );
-                          },
-                        ),
-                        ActionCircleButton(
-                          icon: Icons.star,
-                          label: '우선 알림',
-                          isActive: true,
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => const PriorityModalView(),
                             );
                           },
                         ),

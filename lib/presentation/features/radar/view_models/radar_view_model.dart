@@ -131,10 +131,6 @@ class RadarViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void togglePriority(String id) {
-    _contactsRepository.togglePriority(id);
-  }
-
   void toggleDetection() {
     _settings = _settings.copyWith(enabled: !_settings.enabled);
     notifyListeners();
