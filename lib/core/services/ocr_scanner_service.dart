@@ -11,6 +11,10 @@ class OcrScanResult {
   final String officePhone;
   final String email;
   final String address;
+  // 층/호수/동 같은 상세주소 — 명함에서 기본 주소와 다른 줄에 따로 인식되는
+  // 경우가 많아서(addressRegExp가 한 줄 단위로만 매칭됨) 별도 필드로 분리해
+  // 잡아낸다. 안 잡히면 빈 문자열.
+  final String addressDetail;
   final List<String> tags;
   final String? avatarUrl;
   final String? imagePath;
@@ -24,6 +28,7 @@ class OcrScanResult {
     required this.officePhone,
     required this.email,
     required this.address,
+    this.addressDetail = '',
     required this.tags,
     this.avatarUrl,
     this.imagePath,
@@ -131,11 +136,18 @@ class OcrScannerService {
     final addressRegExp = RegExp(
       r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)[^\n]*(로|길|동|구)[^\n]*',
     );
+    // 층/호/동호수 등 상세주소 패턴 — 명함에서 기본 주소와 같은 줄에 붙어 있기도
+    //하고(예: "...테헤란로 123 5층 501호"), 별도 줄로 떨어져 있기도 하다
+    // (addressRegExp는 로/길/동/구로 끝나는 줄만 보므로 "5층 501호"만 있는
+    // 줄은 안 걸림 — 그대로 두면 leftover로 밀려 이름/회사명으로 잘못
+    // 채워지는 문제가 있었다).
+    final addressDetailRegExp = RegExp(r'(지하\s*\d*\s*층|\d+\s*층|B\d+F?|\d+F\b|\d+동\s*\d+\s*호|\d+\s*호)');
 
     String? mobile;
     String? office;
     String? email;
     String? address;
+    String? addressDetail;
     final remaining = <String>[];
 
     for (final line in lines) {
@@ -156,7 +168,18 @@ class OcrScannerService {
       }
       final addressMatch = addressRegExp.firstMatch(line);
       if (address == null && addressMatch != null) {
-        address = addressMatch.group(0)?.trim();
+        var matched = addressMatch.group(0)!.trim();
+        // 기본 주소 줄 끝에 상세주소가 그대로 붙어 있으면 분리해 낸다.
+        final detailInline = addressDetailRegExp.firstMatch(matched);
+        if (detailInline != null) {
+          addressDetail = matched.substring(detailInline.start).trim();
+          matched = matched.substring(0, detailInline.start).trim();
+        }
+        address = matched;
+        continue;
+      }
+      if (addressDetail == null && addressDetailRegExp.hasMatch(line)) {
+        addressDetail = line.trim();
         continue;
       }
       remaining.add(line);
@@ -199,6 +222,7 @@ class OcrScannerService {
       phone: mobile ?? '',
       officePhone: office ?? '',
       email: email ?? '',
+      addressDetail: addressDetail ?? '',
       address: address ?? '',
       tags: const [],
       avatarUrl: null,

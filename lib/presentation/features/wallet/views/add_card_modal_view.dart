@@ -200,6 +200,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _fillIfEmpty(_companyController, result.company);
       _fillIfEmpty(_titleController, result.title);
       _fillIfEmpty(_addressController, result.address);
+      _fillIfEmpty(_addressDetailController, result.addressDetail);
       _fillIfEmpty(_phoneController, result.phone);
       _fillIfEmpty(_officePhoneController, result.officePhone);
       _fillIfEmpty(_emailController, result.email);
@@ -558,7 +559,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 문구 대신 빈 값으로 시작한다.
       talkingPoints: _isEditing ? widget.contactToEdit!.talkingPoints : const [],
       commLogs: _isEditing ? widget.contactToEdit!.commLogs : [],
-      isPriority: _isEditing ? widget.contactToEdit!.isPriority : false,
+      isPriority: _isEditing ? widget.contactToEdit!.isPriority : true,
       memo: _memoController.text.trim().isEmpty ? null : _memoController.text.trim(),
     );
 

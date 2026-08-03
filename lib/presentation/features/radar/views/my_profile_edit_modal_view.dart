@@ -115,6 +115,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       if (result.phone.trim().isNotEmpty) _phoneController.text = result.phone.trim();
       if (result.email.trim().isNotEmpty) _emailController.text = result.email.trim();
       if (result.address.trim().isNotEmpty) _addressController.text = result.address.trim();
+      if (result.addressDetail.trim().isNotEmpty) _addressDetailController.text = result.addressDetail.trim();
     });
 
     // 명함 앞/뒷면에 정보가 나뉜 경우가 흔해서(add_card_modal_view.dart와 동일한
