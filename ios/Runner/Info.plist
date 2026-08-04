@@ -77,7 +77,7 @@
 		<!-- 이메일(Gmail) 연동을 위한 Google 로그인 설정 — Google Cloud Console에서
 		     발급받은 iOS OAuth 클라이언트 ID. -->
 		<key>GIDClientID</key>
-		<string>1000564658393-btkjfad5a348071e9lk0psl6v4vi1hs0.apps.googleusercontent.com</string>
+		<string>79345379389-io34er4vnhnc1dln8791ov4624mf6tv6.apps.googleusercontent.com</string>
 		<key>CFBundleURLTypes</key>
 		<array>
 			<dict>
@@ -85,7 +85,7 @@
 				<array>
 					<!-- 클라이언트 ID를 거꾸로 뒤집은 형태(Google 로그인 콜백을 앱으로
 					     되돌려받기 위한 URL 스킴) -->
-					<string>com.googleusercontent.apps.1000564658393-btkjfad5a348071e9lk0psl6v4vi1hs0</string>
+					<string>com.googleusercontent.apps.79345379389-io34er4vnhnc1dln8791ov4624mf6tv6</string>
 				</array>
 			</dict>
 		</array>

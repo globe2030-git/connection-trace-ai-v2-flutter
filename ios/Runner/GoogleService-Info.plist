@@ -3,9 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>79345379389-3bhtgaqes5mqgiimj7guv34oqp7r5lfr.apps.googleusercontent.com</string>
+	<string>79345379389-io34er4vnhnc1dln8791ov4624mf6tv6.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.79345379389-3bhtgaqes5mqgiimj7guv34oqp7r5lfr</string>
+	<string>com.googleusercontent.apps.79345379389-io34er4vnhnc1dln8791ov4624mf6tv6</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>79345379389-26vs86phs79vvpiekf43j5urj5400fkj.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
 	<string>AIzaSyAFKj6VXx92dFw9saZIBxiEJU8psaNKGy8</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +15,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.connectiontrace.connectionTraceAiFlutter</string>
+	<string>com.creamhouse.connectionsense</string>
 	<key>PROJECT_ID</key>
 	<string>connection-sense</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:79345379389:ios:711add75920b0390182254</string>
+	<string>1:79345379389:ios:534c871d9bfd7d78182254</string>
 </dict>
 </plist>

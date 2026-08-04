@@ -129,6 +129,16 @@ flutter_launcher_icons:
 # The following section is specific to Flutter packages.
 flutter:
 
+  # FlutterGeneratedPluginSwiftPackage가 iOS 최소 버전을 Flutter SDK에
+  # 하드코딩된 13.0으로 생성해서 Firebase 패키지(최소 15.0 요구)와 항상
+  # 충돌한다(Flutter 3.44.8, flutter_tools/lib/src/darwin/darwin.dart
+  # deploymentTarget()). 프로젝트 설정(Podfile 등)으로는 못 고치는 SDK
+  # 자체 동작이라 iOS/macOS는 SPM을 끄고 기존 CocoaPods(Podfile) 경로만
+  # 쓰도록 강제한다 — Podfile은 이미 platform :ios, '15.5'로 정확히 설정돼
+  # 있어 Firebase 설치엔 문제없다.
+  config:
+    enable-swift-package-manager: false
+
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

@@ -59,11 +59,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAFKj6VXx92dFw9saZIBxiEJU8psaNKGy8',
-    appId: '1:79345379389:ios:711add75920b0390182254',
+    appId: '1:79345379389:ios:534c871d9bfd7d78182254',
     messagingSenderId: '79345379389',
     projectId: 'connection-sense',
     storageBucket: 'connection-sense.firebasestorage.app',
-    iosClientId: '79345379389-3bhtgaqes5mqgiimj7guv34oqp7r5lfr.apps.googleusercontent.com',
-    iosBundleId: 'com.connectiontrace.connectionTraceAiFlutter',
+    iosClientId: '79345379389-io34er4vnhnc1dln8791ov4624mf6tv6.apps.googleusercontent.com',
+    iosBundleId: 'com.creamhouse.connectionsense',
   );
 }
