@@ -84,6 +84,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
         contact: widget.contact,
         myProfile: myProfile,
         communicationLogs: selection.communicationLogs,
+        weatherSummary: selection.weatherSummary,
       );
       if (!mounted) return;
       setState(() {

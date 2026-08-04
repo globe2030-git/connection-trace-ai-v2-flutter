@@ -16,6 +16,7 @@ void main() {
     phone: '01012345678',
     email: 'contact@example.com',
     tags: const ['파트너'],
+    interests: const ['골프'],
     talkingPoints: const [],
     memo: '다음 달 행사 논의',
     commLogs: [
@@ -52,6 +53,26 @@ void main() {
 
     expect(prompt, contains('선택한 문자 내용'));
     expect(prompt, isNot(contains('제외할 카카오톡 내용')));
+  });
+
+  test('AI 프롬프트에 관심사와(있으면) 날씨 정보가 포함된다', () {
+    final promptWithWeather = AiBriefingService.buildPrompt(
+      contact: contact,
+      myProfile: profile,
+      communicationLogs: const [],
+      weatherSummary: '맑음, 24°C',
+    );
+
+    expect(promptWithWeather, contains('골프'));
+    expect(promptWithWeather, contains('맑음, 24°C'));
+
+    final promptWithoutWeather = AiBriefingService.buildPrompt(
+      contact: contact,
+      myProfile: profile,
+      communicationLogs: const [],
+    );
+
+    expect(promptWithoutWeather, isNot(contains('오늘 상대방 지역 날씨')));
   });
 
   test('과거 저장 데이터도 ID와 출처가 보완되어 복원된다', () {

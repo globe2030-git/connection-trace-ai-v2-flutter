@@ -60,6 +60,12 @@ class ContactModel {
   final String? avatarUrl;
   final GeoPosition? geo;
   final List<String> tags;
+  // 관심사 — AI 대화 브리핑이 상대방과 자연스럽게 안부를 나눌 때 참고하는
+  // 항목(취미/관심 분야 등). tags와 별개 필드로 둔 이유: tags는 "이 사람을
+  // 어떤 카테고리로 분류할지"(예: AI, C-Level)이고 interests는 "이 사람과
+  // 무슨 이야기를 나눌지"에 가까워 의미가 달라 섞으면 태그 목록이 지저분해짐.
+  // 입력 UI는 tags와 동일하게 쉼표 구분 텍스트 입력을 따른다.
+  final List<String> interests;
   final List<String> talkingPoints;
   final List<CommunicationLogModel> commLogs;
   final String? memo;
@@ -83,6 +89,7 @@ class ContactModel {
     this.avatarUrl,
     this.geo,
     required this.tags,
+    this.interests = const [],
     required this.talkingPoints,
     this.commLogs = const [],
     this.memo,
@@ -105,6 +112,7 @@ class ContactModel {
       'lat': geo?.lat,
       'lng': geo?.lng,
       'tags': tags,
+      'interests': interests,
       'talkingPoints': talkingPoints,
       'commLogs': commLogs.map((l) => l.toJson()).toList(),
       'memo': memo,
@@ -132,6 +140,7 @@ class ContactModel {
             )
           : null,
       tags: List<String>.from(json['tags'] ?? []),
+      interests: List<String>.from(json['interests'] ?? []),
       talkingPoints: List<String>.from(json['talkingPoints'] ?? []),
       commLogs:
           (json['commLogs'] as List<dynamic>?)
@@ -160,6 +169,7 @@ class ContactModel {
     String? avatarUrl,
     GeoPosition? geo,
     List<String>? tags,
+    List<String>? interests,
     List<String>? talkingPoints,
     List<CommunicationLogModel>? commLogs,
     String? memo,
@@ -179,6 +189,7 @@ class ContactModel {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,
+      interests: interests ?? this.interests,
       talkingPoints: talkingPoints ?? this.talkingPoints,
       commLogs: commLogs ?? this.commLogs,
       memo: memo ?? this.memo,

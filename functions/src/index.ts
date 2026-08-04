@@ -1,0 +1,239 @@
+/**
+ * 커넥션센스 AI 브리핑 서버 프록시.
+ *
+ * BYOK(사용자가 직접 AI API 키 발급)가 비개발자에게 진입장벽이 너무 높다는
+ * 피드백에 따라, 서버(이 함수)가 앱 운영사 소유의 Gemini 키로 대신 호출하는
+ * 구조로 전환한다. 설계 근거·비용 추정·리스크는
+ * docs/planning/server-setup-plan.md 14번 섹션, 실제 적용 결정은
+ * docs/planning/backlog.md 추가 68 참고.
+ *
+ * 배포 전제조건: Firebase 프로젝트가 Blaze(종량제) 요금제여야 한다(Cloud
+ * Functions는 Spark 요금제에서 아예 실행되지 않음). 카드 등록 전까지는 이
+ * 코드는 작성만 되어 있고 배포되지 않은 상태로 둔다.
+ *
+ * 반드시 지킬 것(카드 등록 후 실제 배포 전 재확인):
+ * - GEMINI_API_KEY는 반드시 결제가 연결된 유료 등급 계정에서 발급할 것.
+ *   무료 등급은 입력을 사람이 검수·모델 개선에 활용하는 정책이 있어,
+ *   타인(사용자의 지인)의 개인정보를 그 등급으로 보내는 건 위험하다(14.2절).
+ * - 원문 프롬프트/응답을 로그(console.log)에 남기지 않는다 — Cloud Logging은
+ *   기본 30일 보관되므로 그대로 찍으면 의도치 않은 개인정보 장기 보관이 된다.
+ * - 대화 내용 자체는 Firestore 등에 영구 저장하지 않는다. 호출량 카운터만
+ *   남긴다(아래 incrementAndCheckUsage).
+ */
+
+import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {defineSecret} from "firebase-functions/params";
+import * as logger from "firebase-functions/logger";
+import {initializeApp} from "firebase-admin/app";
+import {FieldValue, getFirestore} from "firebase-admin/firestore";
+
+initializeApp();
+
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+// 정상 사용 범위와 명백한 어뷰징 사이의 안전한 상한선(14.4절 근거).
+// 실사용 데이터가 쌓이면 재조정 가능 — 사용자 확인 후 조정.
+const DAILY_LIMIT = 10;
+const MONTHLY_LIMIT = 100;
+
+// 출력 토큰 상한 — 대화 포인트 3개, 한 문장씩이라 짧게 유지한다(비용 통제).
+const MAX_OUTPUT_TOKENS = 400;
+
+const GEMINI_MODEL = "gemini-3.6-flash";
+
+interface GenerateBriefingRequest {
+  contactSummary: string;
+  myProfileSummary: string;
+  communicationLogs: string[];
+  // 클라이언트(AiDataReviewSheet)가 Open-Meteo로 미리 조회해 동의 화면에
+  // 보여준 뒤 함께 넘기는 오늘 상대방 지역 날씨 요약(예: "맑음, 24°C").
+  // 상대방 위치 정보가 없거나 조회에 실패했으면 넘어오지 않는다(optional) —
+  // 그 경우 프롬프트에서 조용히 생략한다. 클라이언트 측 동일 로직은
+  // lib/core/services/weather_service.dart, lib/core/services/ai_briefing_service.dart 참고.
+  weatherSummary?: string;
+  // 상대방 명함에 등록된 관심사(쉼표 구분 등은 클라이언트가 이미 문자열로
+  // 합쳐서 넘김). 클라이언트 측 필드는 ContactModel.interests 참고.
+  interests?: string;
+}
+
+interface GenerateBriefingResponse {
+  talkingPoints: string[];
+}
+
+function buildPrompt(data: GenerateBriefingRequest): string {
+  const commLogSummary =
+    data.communicationLogs.length === 0
+      ? "최근 소통 기록 없음"
+      : data.communicationLogs.map((l) => `- ${l}`).join("\n");
+
+  const contextLines = [
+    data.contactSummary,
+    `관심사: ${data.interests && data.interests.trim() ? data.interests : "없음"}`,
+    ...(data.weatherSummary ? [`오늘 상대방 지역 날씨: ${data.weatherSummary}`] : []),
+  ];
+
+  return `당신은 비즈니스 네트워킹 어시스턴트입니다. 사용자는 낯을 가리는 편이라 먼저
+연락하는 것을 어색해합니다. 아래 정보를 참고해 사용자가 상대방에게 부담 없이
+자연스럽게 안부를 전하며 인연을 이어갈 수 있는 대화 포인트를 만들어 주세요.
+
+[나(사용자) 정보]
+${data.myProfileSummary}
+
+[상대방 정보]
+${contextLines.join("\n")}
+
+[최근 소통 기록]
+${commLogSummary}
+
+각 대화 포인트는 한 문장, 한국어로, 실제로 그대로 말할 수 있는 구체적인 문장으로
+작성하세요. 날씨 정보가 있다면 그중 한 문장 정도에 자연스럽게 녹여도 좋습니다.
+상대방의 관심사나 직함/업종과 관련된 일반적인 화제(업계 동향, 최근 이슈 등 당신이
+알고 있는 상식 수준의 내용)를 자연스럽게 언급하는 문장을 하나 포함해도 좋습니다 —
+단, 확인되지 않은 구체적 사실·사건을 지어내지 마세요. 번호/불릿/설명 없이 대화
+포인트 문장만 줄바꿈으로 구분해서 정확히 3개 작성하세요.`;
+}
+
+function parseTalkingPoints(raw: string): string[] {
+  return raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0)
+    .map((l) => l.replace(/^[\d.\-*•]+\s*/, ""))
+    .map((l) => l.replace(/^"|"$/g, ""))
+    .slice(0, 3);
+}
+
+async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {"content-type": "application/json"},
+    body: JSON.stringify({
+      contents: [{parts: [{text: prompt}]}],
+      generationConfig: {maxOutputTokens: MAX_OUTPUT_TOKENS},
+    }),
+  });
+
+  if (!response.ok) {
+    // 실제 에러 본문(사용자 프롬프트가 포함되지 않은 API 에러 메시지만)은
+    // 로그에 남겨도 되지만, 여기서는 상태 코드만 남겨 최소한으로 유지한다.
+    logger.error("Gemini API error", {status: response.status});
+    throw new HttpsError(
+      "unavailable",
+      "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
+  }
+
+  const json = (await response.json()) as {
+    candidates?: {content?: {parts?: {text?: string}[]}}[];
+  };
+  const parts = json.candidates?.[0]?.content?.parts ?? [];
+  return parts.map((p) => p.text ?? "").join("\n");
+}
+
+/**
+ * uid별 일/월 호출량을 Firestore 트랜잭션으로 원자적으로 확인·증가시킨다.
+ * 상한 초과 시 HttpsError를 던진다(트랜잭션 안에서 던지면 카운터 증가도
+ * 함께 롤백되어 정확하다).
+ */
+async function incrementAndCheckUsage(uid: string): Promise<void> {
+  const db = getFirestore();
+  const userRef = db.collection("users").doc(uid);
+  const now = new Date();
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(userRef);
+    const usage = snap.data()?.aiUsage as
+      | {
+          dailyCount?: number;
+          dailyResetAt?: FirebaseFirestore.Timestamp;
+          monthlyCount?: number;
+          monthlyResetAt?: FirebaseFirestore.Timestamp;
+        }
+      | undefined;
+
+    const dailyResetAt = usage?.dailyResetAt?.toDate();
+    const monthlyResetAt = usage?.monthlyResetAt?.toDate();
+
+    const dailyExpired = !dailyResetAt || dailyResetAt.getTime() <= now.getTime();
+    const monthlyExpired =
+      !monthlyResetAt || monthlyResetAt.getTime() <= now.getTime();
+
+    const dailyCount = dailyExpired ? 0 : (usage?.dailyCount ?? 0);
+    const monthlyCount = monthlyExpired ? 0 : (usage?.monthlyCount ?? 0);
+
+    if (dailyCount >= DAILY_LIMIT) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "오늘 사용 가능한 AI 브리핑 횟수를 모두 사용했어요. 내일 다시 시도해 주세요."
+      );
+    }
+    if (monthlyCount >= MONTHLY_LIMIT) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "이번 달 AI 브리핑 사용 한도에 도달했어요. 다음 달 1일에 초기화됩니다."
+      );
+    }
+
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    tx.set(
+      userRef,
+      {
+        aiUsage: {
+          dailyCount: dailyCount + 1,
+          dailyResetAt: dailyExpired ? nextMidnight : (usage?.dailyResetAt ?? nextMidnight),
+          monthlyCount: monthlyCount + 1,
+          monthlyResetAt: monthlyExpired ? nextMonth : (usage?.monthlyResetAt ?? nextMonth),
+        },
+      },
+      {merge: true}
+    );
+  });
+}
+
+export const generateBriefing = onCall<GenerateBriefingRequest>(
+  {secrets: [geminiApiKey], region: "asia-northeast3"},
+  async (request): Promise<GenerateBriefingResponse> => {
+    if (!request.auth) {
+      throw new HttpsError(
+        "unauthenticated",
+        "로그인 후 이용할 수 있어요."
+      );
+    }
+
+    const {
+      contactSummary,
+      myProfileSummary,
+      communicationLogs,
+      weatherSummary,
+      interests,
+    } = request.data;
+    if (!contactSummary || !myProfileSummary) {
+      throw new HttpsError(
+        "invalid-argument",
+        "필수 정보가 누락됐어요."
+      );
+    }
+
+    await incrementAndCheckUsage(request.auth.uid);
+
+    const prompt = buildPrompt({
+      contactSummary,
+      myProfileSummary,
+      communicationLogs: communicationLogs ?? [],
+      weatherSummary,
+      interests,
+    });
+    const rawText = await callGemini(prompt, geminiApiKey.value());
+    const talkingPoints = parseTalkingPoints(rawText);
+
+    if (talkingPoints.length === 0) {
+      throw new HttpsError("internal", "AI가 빈 응답을 반환했습니다.");
+    }
+
+    return {talkingPoints};
+  }
+);

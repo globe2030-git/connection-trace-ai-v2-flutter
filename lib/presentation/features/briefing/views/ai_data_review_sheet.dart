@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/ai_provider.dart';
 import '../../../../data/models/contact_model.dart';
@@ -7,8 +8,15 @@ import '../../../../data/models/my_profile_model.dart';
 
 class AiBriefingSelection {
   final List<CommunicationLogModel> communicationLogs;
+  // 동의 화면에서 미리 조회해 보여준 오늘 날씨 요약. 상대방 위치 정보가
+  // 없거나 조회에 실패했으면 null — AiBriefingService.buildPrompt에서
+  // 조용히 생략된다.
+  final String? weatherSummary;
 
-  const AiBriefingSelection({required this.communicationLogs});
+  const AiBriefingSelection({
+    required this.communicationLogs,
+    this.weatherSummary,
+  });
 }
 
 /// AI 요청 직전에 실제 전송 항목을 보여 주고 요청마다 동의를 받는 화면.
@@ -34,6 +42,12 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
   final Set<String> _selectedIds = {};
   bool _consented = false;
 
+  // 상대방 위치(geo)가 있으면 동의 화면을 여는 시점에 미리 조회해서 "AI에
+  // 실제로 전송될 정보"에 날씨도 포함해서 보여준다 — 나중에 조용히 끼워
+  // 넣지 않고 동의 화면에서부터 확인할 수 있게.
+  String? _weatherSummary;
+  bool _isLoadingWeather = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +58,19 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
       _availableLogs.length,
     );
     _selectedIds.addAll(_availableLogs.take(5).map((log) => log.id));
+
+    if (widget.contact.geo != null) {
+      _isLoadingWeather = true;
+      WeatherService.getTodayWeatherSummary(widget.contact.geo).then((
+        summary,
+      ) {
+        if (!mounted) return;
+        setState(() {
+          _weatherSummary = summary;
+          _isLoadingWeather = false;
+        });
+      });
+    }
   }
 
   String _channelLabel(String type) => switch (type) {
@@ -62,6 +89,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
         communicationLogs: _availableLogs
             .where((log) => _selectedIds.contains(log.id))
             .toList(),
+        weatherSummary: _weatherSummary,
       ),
     );
   }
@@ -143,8 +171,13 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                           '상대방: ${widget.contact.name}, ${widget.contact.title}, ${widget.contact.company}',
                           if (widget.contact.tags.isNotEmpty)
                             '태그: ${widget.contact.tags.join(', ')}',
+                          if (widget.contact.interests.isNotEmpty)
+                            '관심사: ${widget.contact.interests.join(', ')}',
                           if ((widget.contact.memo ?? '').trim().isNotEmpty)
                             '메모: ${widget.contact.memo}',
+                          if (_isLoadingWeather) '오늘 날씨: 조회 중…',
+                          if (_weatherSummary != null)
+                            '오늘 상대방 지역 날씨: $_weatherSummary',
                         ],
                       ),
                       const SizedBox(height: 18),

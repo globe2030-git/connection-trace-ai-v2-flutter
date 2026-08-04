@@ -55,6 +55,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _officePhoneController;
   late TextEditingController _emailController;
   late TextEditingController _tagsController;
+  late TextEditingController _interestsController;
   late TextEditingController _memoController;
 
   // Strict Contiguous Sequential Focus Nodes to prevent Tab/Enter key jumping
@@ -68,6 +69,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _officePhoneFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
   final _tagsFocusNode = FocusNode();
+  final _interestsFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
 
   // [버그 수정] Tab 키가 필드를 건너뛰던 문제 — FocusTraversalOrder, 필드별
@@ -119,6 +121,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _tagsController = TextEditingController(
       text: c != null ? c.tags.join(', ') : 'AI, IT',
     );
+    _interestsController = TextEditingController(
+      text: c != null ? c.interests.join(', ') : '',
+    );
     _memoController = TextEditingController(text: c?.memo ?? '');
     _fieldFocusOrder = [
       _nameFocusNode,
@@ -131,6 +136,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _officePhoneFocusNode,
       _emailFocusNode,
       _tagsFocusNode,
+      _interestsFocusNode,
       _memoFocusNode,
     ];
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
@@ -149,6 +155,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _officePhoneController.dispose();
     _emailController.dispose();
     _tagsController.dispose();
+    _interestsController.dispose();
     _memoController.dispose();
 
     _nameFocusNode.dispose();
@@ -160,6 +167,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _officePhoneFocusNode.dispose();
     _emailFocusNode.dispose();
     _tagsFocusNode.dispose();
+    _interestsFocusNode.dispose();
     _memoFocusNode.dispose();
     super.dispose();
   }
@@ -691,6 +699,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         .map((t) => t.trim())
         .where((t) => t.isNotEmpty)
         .toList();
+    final interests = _interestsController.text
+        .split(',')
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
 
     // 신규 등록일 때만 중복 검사 — 수정(_isEditing)은 이미 어떤 명함을 고치는지
     // 확정된 상태라 검사할 필요가 없다. 휴대폰 번호가 "같은 사람"을 가장
@@ -712,6 +725,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           finalAddress,
           resolvedGeo,
           tags,
+          interests,
           deleteOldRecord: deleteOldRecord,
         );
         return;
@@ -741,6 +755,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       email: _emailController.text.trim(),
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
+      interests: interests,
       // 주소를 실제 좌표로 확인하지 못했다면 가짜 좌표를 넣지 않는다.
       // geo가 null인 명함은 주변 거리 계산 대상에서 자동으로 제외된다.
       geo: resolvedGeo ?? (_isEditing ? widget.contactToEdit!.geo : null),
@@ -944,7 +959,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ContactModel existing,
     String finalAddress,
     GeoPosition? resolvedGeo,
-    List<String> tags, {
+    List<String> tags,
+    List<String> interests, {
     required bool deleteOldRecord,
   }) {
     final newMemo = _memoController.text.trim();
@@ -990,6 +1006,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       email: _emailController.text.trim(),
       avatarUrl: _selectedAvatarUrl ?? existing.avatarUrl,
       tags: tags.isEmpty ? existing.tags : tags,
+      interests: interests.isEmpty ? existing.interests : interests,
       geo: resolvedGeo ?? existing.geo,
       memo: mergedMemo,
     );
@@ -1461,9 +1478,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   controller: _tagsController,
                   focusNode: _tagsFocusNode,
                   order: 8,
-                  nextFocusNode: _memoFocusNode,
+                  nextFocusNode: _interestsFocusNode,
                   label: '태그 키워드 (쉼표 구분)',
                   hint: '예: AI, 바이오, C-Level',
+                ),
+                const SizedBox(height: 12),
+
+                // 8-1. 관심사 — AI 대화 브리핑이 안부 인사 소재로 참고한다.
+                // tags(카테고리 분류용)와는 목적이 달라 별도 입력칸으로 분리.
+                _buildFormField(
+                  controller: _interestsController,
+                  focusNode: _interestsFocusNode,
+                  order: 8.5,
+                  nextFocusNode: _memoFocusNode,
+                  label: '관심사 (쉼표 구분, 선택)',
+                  hint: '예: 골프, 와인, 자녀 교육',
                 ),
                 const SizedBox(height: 12),
 
