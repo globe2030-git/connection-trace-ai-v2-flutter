@@ -11,6 +11,9 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
+      // `encryptionKeyB64`(backlog 추가 72 — 암호화 대칭키 백업 필드)도
+      // 이 문서 전체 규칙에 포함되므로 본인 uid만 읽고 쓸 수 있다. 별도
+      // 필드 단위 규칙을 추가할 필요 없음(2026-08-04 확인).
       allow read, write: if isOwner(uid);
 
       match /contacts/{contactId} {

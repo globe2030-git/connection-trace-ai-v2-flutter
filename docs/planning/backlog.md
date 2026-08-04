@@ -2,6 +2,79 @@
 
 ## 작업 로그
 
+### 2026-08-04 (추가 72) — 명함/프로필 기기·서버 저장 암호화(AES-256-GCM)
+
+`adb shell run-as <pkg> cat shared_prefs/FlutterSharedPreferences.xml`로
+명함·프로필 데이터가 기기에 평문으로 그대로 저장되는 것을 실기기에서 직접
+확인 — 이 앱은 본인이 아닌 제3자(명함 속 인물)의 개인정보를 다루기 때문에
+문제가 크다고 판단해 사용자가 "폰과 서버 모두 암호화해서 저장하는 것을
+기본으로" 요청. Firestore도 필드가 평문 그대로였음(Google 인프라 차원의
+저장시 암호화는 되지만 앱 차원 암호화는 없었음).
+
+**설계**: 계정(uid)당 1개의 AES-256 대칭키를 최초 로그인 시 클라이언트에서
+생성 → `flutter_secure_storage`(Keystore/Keychain)에 로컬 캐시 **+**
+Firestore `users/{uid}.encryptionKeyB64`에도 저장(새 기기 로그인 시 복원용).
+이 키로 명함/프로필 JSON을 AES-256-GCM으로 암호화해 로컬·서버 양쪽 다
+암호문으로 저장.
+
+- `pubspec.yaml`에 `cryptography: ^2.9.0`(pure Dart, AesGcm.with256bits)
+  추가 — 플랫폼별 네이티브 바인딩 문제 없음.
+- `lib/core/services/data_crypto_service.dart` 신규: `encryptJson`/
+  `decryptJson` — nonce+ciphertext+MAC을 이어붙여 base64 문자열 하나로
+  저장. 위변조/키 불일치 시 `DataDecryptionException`을 명시적으로 던짐
+  (조용히 무시하지 않음).
+- `lib/core/services/encryption_key_service.dart` 신규: uid별 키 발급/보관
+  (로컬 캐시 → Firestore → 없으면 신규 생성해 양쪽 저장). Firebase 미초기화
+  환경(단위 테스트)에서도 생성자가 크래시하지 않도록 Firestore 접근을
+  지연 평가 + try/catch로 감쌈.
+- `contacts_repository.dart`/`my_profile_repository.dart`: 로컬 저장을
+  암호화로 전환. **레거시 마이그레이션**: 저장된 문자열이 유효한 JSON이면
+  구버전 평문으로 간주해 그대로 읽고, 로그인 상태면 즉시 암호화해서
+  재저장(1회성 투명 마이그레이션). 로그인 전(uid == null, 게스트)에는
+  키를 만들 수 없어 평문으로 저장(로그인 전엔 서버 백업도 안 되는 상태라
+  상대적으로 노출 범위가 좁고, 로그인 시점에 자동 마이그레이션됨).
+  복호화 실패(위변조/키 불일치)는 크래시 없이 빈 상태로 시작.
+  두 리포지토리 모두 앱 시작 시(uid를 아직 모르는 시점)에는 로드를
+  보류했다가 `setCurrentUid()`가 실제 uid를 받는 시점에 재시도하도록
+  구조 변경(`setCurrentUid`가 `void`에서 `Future<void>`로 바뀜).
+- `data_backup_service.dart`: `backupContact`/`backupProfile`이 암호화한
+  뒤 `{'encrypted': '<암호문>', 'schemaVersion': 2}` 단일 필드로 저장(기존
+  구조화된 필드 저장 방식 폐기). `restoreContacts`/`restoreProfile`은
+  `encrypted` 필드가 있으면 복호화, 없으면(기존 평문 문서, 예: 이미 등록된
+  "문정순" 명함) 레거시로 그대로 파싱 — 다음 저장 시 자동으로 암호화된
+  형태로 재백업됨. `deleteAllUserData`는 `users/{uid}` 문서를 통째로
+  지우므로 `encryptionKeyB64`도 함께 삭제됨(별도 처리 불필요, 확인 완료).
+- `firestore.rules`: `encryptionKeyB64` 필드도 기존 `users/{uid}` 문서
+  전체 규칙(본인만 read/write)에 포함됨을 주석으로 명시(규칙 자체 변경
+  불필요, 확인 완료).
+- 테스트(`test/data_encryption_test.dart` 신규, 6건): 암호화→복호화 왕복이
+  원본과 동일한지, 잘못된 키/위변조 시 예외가 나는지, 레거시 평문이
+  로그인 후 자동 암호화 재저장되는지, 손상된 데이터가 크래시 없이 빈
+  상태로 처리되는지 검증.
+- **실기기 검증(핵심 성공 기준)**: 기존에 평문으로 저장돼 있던 실제 명함
+  ("문정순"/더자안)과 내 프로필("CREAMHOUSE")이 있는 실기기에 새 빌드를
+  설치하고 재실행 — `adb shell run-as ... cat
+  shared_prefs/FlutterSharedPreferences.xml`로 `flutter.saved_contacts_v2`/
+  `flutter.my_profile_v1` 값이 알아볼 수 없는 base64 암호문으로 바뀐 것을
+  확인. 이후 앱 화면(명함 지갑)에서 "문정순 · 이사 · 더자안" 명함이 깨지지
+  않고 정상적으로 복호화되어 표시되는 것도 스크린샷으로 확인 — 마이그레이션이
+  데이터 손실 없이 실제로 동작함.
+- **정직하게 명시하는 한계**: 키가 암호문과 같은 Firestore 프로젝트 안에
+  함께 저장되므로 완전한 제로-지식/이중격리 암호화는 아니다 — Firestore
+  프로젝트 관리자 권한이 있으면 이론적으로 키와 암호문 둘 다 접근 가능.
+  이 설계가 실제로 방어하는 시나리오는 "기기 분실/로컬 유출", "백업 파일
+  유출", "서버 DB 일부 유출"이다. 완전한 키 분리(Cloud Functions/KMS)는
+  Blaze 요금제 인프라가 갖춰진 뒤 별도로 강화 예정 — 아래 "향후 후보"에
+  항목 추가.
+- 개인정보처리방침(`docs/legal/privacy-policy.html`) "11. 안전성 확보
+  조치"에 "명함·프로필 데이터는 기기 저장 시와 서버 저장 시 모두 AES-256
+  방식으로 암호화됩니다" 문장 추가. "완전한 제로-지식 암호화"류 과장 표현은
+  쓰지 않고 "권한 없는 제3자의 접근으로부터 보호"하는 수준으로 서술.
+- 범위 제외: 명함 원본 사진(캐시 폴더 JPG) 암호화는 이번 범위에 포함하지
+  않음 — 아래 "향후 후보"에 별도 항목만 추가.
+- 검증: `flutter analyze` 클린(기존 info 18건 그대로, 신규 이슈 0건),
+  `flutter test` 전체 통과(기존 테스트 + 신규 6건 모두 성공).
+
 ### 2026-08-04 (추가 71) — 계정 삭제 기능 + 다중 계정 전환 데이터 안전장치
 
 오늘 iOS TestFlight 배포가 App Store Connect 권한 문제(빌드 업로드 403)로
@@ -2015,6 +2088,16 @@ ID 발급). iOS 클라이언트 ID(`1000564658393-btkjfad5a348071e9lk0psl6v4vi1h
 
 ## 향후 후보 (미착수)
 
+- **(2026-08-04, 추가 72 후속)** 명함 원본 사진(캐시 폴더의 JPG) 암호화.
+  이번 암호화 작업은 명함/프로필 JSON 텍스트 필드만 대상으로 했고, 이미지
+  바이트 자체는 범위 밖으로 남겨둠 — 별도 작업 필요(이미지 파일 암호화는
+  더 큰 작업으로 판단).
+- **(2026-08-04, 추가 72 후속)** 암호화 키의 완전한 분리(Cloud
+  Functions/KMS) — 현재는 키가 Firestore `users/{uid}.encryptionKeyB64`에
+  암호문과 같은 프로젝트 안에 저장돼 있어 완전한 제로-지식 암호화는 아님.
+  Blaze 요금제 인프라가 갖춰지면 클라이언트가 키 원문을 절대 보지 못하는
+  구조(서버 측에서만 키를 다루고 클라이언트는 암복호화 요청만 보내는 방식)로
+  강화 가능.
 - ~~**(2026-08-02 결정)** 도로명주소 검색/자동완성으로 교체~~ →
   **2026-08-02 완료** (위 작업 로그 "추가 12" 참고 — 예상과 달리 API 키
   없이 바로 구현 가능했음).

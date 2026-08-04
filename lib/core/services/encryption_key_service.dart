@@ -1,0 +1,134 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// 계정(uid)당 명함/프로필 데이터 암호화에 쓰는 AES-256 대칭키를 발급·보관한다.
+///
+/// 키 보관 위치는 두 곳이다:
+/// 1. 이 기기의 보안 저장소(Keystore/Keychain, `flutter_secure_storage`) —
+///    평소에는 여기서만 읽어 빠르고 오프라인에서도 동작한다.
+/// 2. Firestore `users/{uid}` 문서의 `encryptionKeyB64` 필드 — 사용자가
+///    새 기기에서 로그인했을 때 이 키를 내려받아 기존에 암호화해 둔 명함을
+///    복호화할 수 있게 하기 위함. 로컬에만 있으면 기기를 바꾸는 순간 기존
+///    암호문을 영영 못 여는 상태가 된다.
+///
+/// **한계(정직하게 명시)**: 키가 암호문과 같은 Firestore 프로젝트 안에
+/// 함께 있으므로 완전한 제로-지식/이중격리 암호화는 아니다 — Firestore
+/// 프로젝트 관리자 권한을 가진 사람은 이론적으로 키와 암호문 둘 다에
+/// 접근할 수 있다. 이 설계가 실제로 방어하는 시나리오는 "기기 분실/로컬
+/// 유출", "백업 파일 유출", "서버 DB(문서)만 일부 유출"이다. 완전한 키
+/// 분리(Cloud Functions/KMS에서만 키를 다루고 클라이언트는 절대 키 원문을
+/// 못 보는 구조)는 Blaze 요금제 인프라가 갖춰진 뒤 별도 backlog로 강화할
+/// 예정.
+class EncryptionKeyService {
+  EncryptionKeyService({
+    FlutterSecureStorage? secureStorage,
+    FirebaseFirestore? firestore,
+  }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+       _explicitFirestore = firestore;
+
+  final FlutterSecureStorage _secureStorage;
+  // 명시적으로 주입된 경우에만 여기 저장한다. 주입되지 않았으면
+  // [_userDoc]에서 그때그때 `FirebaseFirestore.instance`를 시도한다 —
+  // 생성자에서 곧바로 접근하면 Firebase가 아직 초기화되지 않은 환경(단위
+  // 테스트 등)에서 예외가 나 리포지토리 생성 자체가 실패하기 때문에,
+  // 실제로 필요한 시점까지 지연시키고 실패해도 try/catch로 흡수한다.
+  final FirebaseFirestore? _explicitFirestore;
+
+  static final AesGcm _algorithm = AesGcm.with256bits();
+
+  // 같은 세션(리포지토리 인스턴스 생존 기간) 안에서 반복 조회 시 Firestore
+  // 왕복을 피하기 위한 메모리 캐시.
+  final Map<String, SecretKey> _memoryCache = {};
+
+  static String _secureStorageKeyFor(String uid) => 'enc_key_v1_$uid';
+
+  static const String _firestoreFieldName = 'encryptionKeyB64';
+
+  DocumentReference<Map<String, dynamic>>? _userDoc(String uid) {
+    var db = _explicitFirestore;
+    if (db == null) {
+      try {
+        db = FirebaseFirestore.instance;
+      } catch (e) {
+        // Firebase가 초기화되지 않은 환경(단위 테스트 등) — 로컬 보안
+        // 저장소만으로 동작한다(이 기기에서는 정상 동작하되, 다른 기기로
+        // 계정 복원은 불가능해짐).
+        debugPrint('Firestore 사용 불가, 로컬 전용으로 동작($uid): $e');
+        return null;
+      }
+    }
+    return db.collection('users').doc(uid);
+  }
+
+  /// [uid] 계정의 암호화 키를 반환한다. 순서: 메모리 캐시 → 로컬 보안
+  /// 저장소 → Firestore(있으면 로컬에 캐시 후 반환) → 없으면 새로 생성해
+  /// 양쪽(로컬+Firestore)에 저장.
+  Future<SecretKey> getOrCreateUserKey(String uid) async {
+    final cached = _memoryCache[uid];
+    if (cached != null) return cached;
+
+    final storageKey = _secureStorageKeyFor(uid);
+
+    try {
+      final localB64 = await _secureStorage.read(key: storageKey);
+      if (localB64 != null && localB64.isNotEmpty) {
+        final key = SecretKey(base64Decode(localB64));
+        _memoryCache[uid] = key;
+        return key;
+      }
+    } catch (e) {
+      debugPrint('로컬 암호화 키 조회 실패($uid): $e');
+    }
+
+    final userDoc = _userDoc(uid);
+    if (userDoc != null) {
+      try {
+        final doc = await userDoc.get();
+        final remoteB64 = doc.data()?[_firestoreFieldName] as String?;
+        if (remoteB64 != null && remoteB64.isNotEmpty) {
+          final key = SecretKey(base64Decode(remoteB64));
+          _memoryCache[uid] = key;
+          try {
+            await _secureStorage.write(key: storageKey, value: remoteB64);
+          } catch (e) {
+            debugPrint('서버에서 받은 암호화 키 로컬 캐시 실패($uid): $e');
+          }
+          return key;
+        }
+      } catch (e) {
+        debugPrint('Firestore 암호화 키 조회 실패($uid): $e');
+      }
+    }
+
+    // 로컬에도 서버에도 없음 — 이 계정의 최초 암호화 키를 새로 발급한다.
+    final newSecretKey = await _algorithm.newSecretKey();
+    final keyBytes = await newSecretKey.extractBytes();
+    final keyB64 = base64Encode(keyBytes);
+
+    try {
+      await _secureStorage.write(key: storageKey, value: keyB64);
+    } catch (e) {
+      debugPrint('신규 암호화 키 로컬 저장 실패($uid): $e');
+    }
+    if (userDoc != null) {
+      try {
+        await userDoc.set({
+          _firestoreFieldName: keyB64,
+        }, SetOptions(merge: true));
+      } catch (e) {
+        // 서버 저장에 실패해도 로컬에는 이미 저장됐으니 이 기기에서는 계속
+        // 정상 동작한다 — 다만 다른 기기에서 복원이 안 될 수 있다. 다음
+        // 저장 시점에 다시 시도되지는 않으므로(메모리 캐시로 반환값이
+        // 고정됨) 조용히 로그만 남긴다.
+        debugPrint('신규 암호화 키 서버 저장 실패($uid): $e');
+      }
+    }
+
+    _memoryCache[uid] = newSecretKey;
+    return newSecretKey;
+  }
+}
