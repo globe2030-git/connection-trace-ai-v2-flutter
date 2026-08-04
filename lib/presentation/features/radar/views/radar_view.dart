@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/my_profile_repository.dart';
+import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
-import '../../../common/action_circle_button.dart';
 import '../view_models/radar_view_model.dart';
 import 'qr_code_modal_view.dart';
 import 'my_profile_modal_view.dart';
@@ -28,6 +30,7 @@ class _RadarViewState extends State<RadarView> {
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<RadarViewModel>();
+    final myProfile = context.watch<MyProfileRepository>().profile;
     if (viewModel.shouldShowLocationConsent &&
         !_initialConsentPromptScheduled &&
         !_consentSheetVisible) {
@@ -41,6 +44,12 @@ class _RadarViewState extends State<RadarView> {
     final nearbyDistance = nearby != null
         ? GeoUtils.getDistanceMeters(viewModel.currentPosition, nearby.geo)
         : null;
+    final nearbyCount = viewModel.usingRealGps
+        ? viewModel.filteredContacts.length
+        : null;
+    final restOfList = viewModel.filteredContacts
+        .where((c) => c.id != nearby?.id)
+        .toList();
 
     return Stack(
       children: [
@@ -66,7 +75,7 @@ class _RadarViewState extends State<RadarView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Top App Title & Sub Actions
+                        // Header: title + greeting, QR / 명함등록 / 내 프로필
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -99,6 +108,7 @@ class _RadarViewState extends State<RadarView> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 IconButton(
+                                  tooltip: 'QR 스캔',
                                   icon: const Icon(
                                     Icons.qr_code_scanner,
                                     color: AppColors.textPrimary,
@@ -127,8 +137,9 @@ class _RadarViewState extends State<RadarView> {
                                   },
                                 ),
                                 IconButton(
+                                  tooltip: '명함 등록',
                                   icon: const Icon(
-                                    Icons.person_outline,
+                                    Icons.add_card_outlined,
                                     color: AppColors.textPrimary,
                                     size: 22,
                                   ),
@@ -137,10 +148,31 @@ class _RadarViewState extends State<RadarView> {
                                       context: context,
                                       isScrollControlled: true,
                                       backgroundColor: Colors.transparent,
+                                      builder: (_) => const AddCardModalView(),
+                                    );
+                                  },
+                                ),
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(20),
+                                  onTap: () {
+                                    showModalBottomSheet(
+                                      context: context,
+                                      isScrollControlled: true,
+                                      backgroundColor: Colors.transparent,
                                       builder: (_) =>
                                           const MyProfileModalView(),
                                     );
                                   },
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4),
+                                    child: ContactAvatar(
+                                      photoPath: myProfile.avatarPath,
+                                      name: myProfile.name.isEmpty
+                                          ? '?'
+                                          : myProfile.name,
+                                      radius: 16,
+                                    ),
+                                  ),
                                 ),
                               ],
                             ),
@@ -159,120 +191,55 @@ class _RadarViewState extends State<RadarView> {
                           const SizedBox(height: 16),
                         ],
 
-                        // Big Hero Proximity Metric
-                        Center(
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  Text(
-                                    nearbyDistance != null
-                                        ? (nearbyDistance < 1000
-                                              ? '${nearbyDistance.round()}'
-                                              : (nearbyDistance / 1000)
-                                                    .toStringAsFixed(1))
-                                        : '--',
-                                    style: const TextStyle(
-                                      fontSize: 48,
-                                      fontWeight: FontWeight.w900,
-                                      color: AppColors.textPrimary,
-                                      letterSpacing: -1.0,
-                                    ),
+                        // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
+                        _NearbyCountCard(
+                          count: nearbyCount,
+                          isRefreshing: viewModel.isRefreshingLocation,
+                          onTap: viewModel.isRefreshingLocation
+                              ? null
+                              : () =>
+                                    handleLocationAccessAction(context, viewModel),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // 가장 가까운 인맥을 대표 카드로 크게 보여준다.
+                        if (nearby != null)
+                          _FeaturedContactCard(
+                            contact: nearby,
+                            distanceMeters: nearbyDistance,
+                            onCall: nearby.phone.trim().isEmpty
+                                ? null
+                                : () => PhoneCallService.showCallPicker(
+                                    context,
+                                    nearby,
                                   ),
-                                  if (nearbyDistance != null) ...[
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      nearbyDistance < 1000 ? 'm' : 'km',
-                                      style: const TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Container(
-                                width: 120,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: AppColors.accentText,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                nearby != null
-                                    ? '${nearby.name} ${nearby.title} (${nearby.company})'
-                                    : viewModel.usingRealGps
+                            // "가까운 인맥" 리스트 항목을 눌렀을 때와 똑같이 AI
+                            // 브리핑 화면(연락처 정보 + AI 연동 + 전화)으로 간다.
+                            // 예전엔 명함 수정 폼(카메라 스캔 버튼까지 있는)이
+                            // 열려서 그냥 보려는 건데 수정 화면처럼 보이는
+                            // 문제가 있었다.
+                            onDetail: () => viewModel.openBriefing(nearby),
+                          )
+                        else
+                          GlassCard(
+                            padding: const EdgeInsets.all(20),
+                            child: Center(
+                              child: Text(
+                                viewModel.usingRealGps
                                     ? '주변에 감지된 인맥이 없습니다'
                                     : '위치 권한이 없어 거리를 표시할 수 없습니다',
+                                textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.textSecondary,
                                 ),
                               ),
-                            ],
+                            ),
                           ),
-                        ),
 
-                        const SizedBox(height: 20),
-
-                        // Hero Animated Radar Pulse Beacon Container (ME Center + Surrounding Contact Blips)
-                        Center(
-                          child: RadarPulseHeroWidget(
-                            nearbyContact: nearby,
-                            nearbyDistanceMeters: nearbyDistance,
-                            isLocationAvailable: viewModel.usingRealGps,
-                          ),
-                        ),
-
-                        const SizedBox(height: 20),
-
-                        // Quick Action Control Buttons
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            ActionCircleButton(
-                              icon: viewModel.usingRealGps
-                                  ? Icons.my_location
-                                  : Icons.location_off_outlined,
-                              label: viewModel.usingRealGps ? '위치 갱신' : '위치 설정',
-                              isActive: viewModel.usingRealGps,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
-                              ),
-                            ),
-                            ActionCircleButton(
-                              icon: Icons.description_outlined,
-                              label: 'AI 브리핑',
-                              isActive: nearby != null,
-                              onTap: nearby == null
-                                  ? null
-                                  : () => viewModel.openBriefing(nearby),
-                            ),
-                            ActionCircleButton(
-                              icon: Icons.add_card,
-                              label: '명함 등록',
-                              onTap: () {
-                                showModalBottomSheet(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (_) => const AddCardModalView(),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
 
                         // Rounded Capsule Search Bar — 근접 인맥 리스트를 이름/회사/직함으로 필터링
                         Container(
@@ -400,11 +367,11 @@ class _RadarViewState extends State<RadarView> {
                           ),
                         ),
 
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
 
-                        // Proximity List Pill Widgets (Sorted by Distance first, Name alphabetical second)
+                        // 가까운 인맥 리스트 (대표 카드에 나온 사람은 제외)
                         Text(
-                          '근접 인맥 리스트 (${viewModel.filteredContacts.length}명)',
+                          '가까운 인맥 (${restOfList.length}명)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -413,7 +380,7 @@ class _RadarViewState extends State<RadarView> {
                         ),
                         const SizedBox(height: 8),
 
-                        ...viewModel.filteredContacts.map((contact) {
+                        ...restOfList.map((contact) {
                           final distance = GeoUtils.getDistanceMeters(
                             viewModel.currentPosition,
                             contact.geo,
@@ -424,23 +391,10 @@ class _RadarViewState extends State<RadarView> {
                             onTap: () => viewModel.openBriefing(contact),
                             child: Row(
                               children: [
-                                CircleAvatar(
+                                ContactAvatar(
+                                  photoPath: contact.avatarUrl,
+                                  name: contact.name,
                                   radius: 20,
-                                  backgroundColor: AppColors.accent.withValues(
-                                    alpha: 0.2,
-                                  ),
-                                  backgroundImage: contact.avatarUrl != null
-                                      ? NetworkImage(contact.avatarUrl!)
-                                      : null,
-                                  child: contact.avatarUrl == null
-                                      ? Text(
-                                          contact.name.substring(0, 1),
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                            color: AppColors.accentText,
-                                          ),
-                                        )
-                                      : null,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -457,7 +411,14 @@ class _RadarViewState extends State<RadarView> {
                                         ),
                                       ),
                                       Text(
-                                        contact.company,
+                                        [
+                                          contact.company,
+                                          contact.phone,
+                                        ].where((s) => s.trim().isNotEmpty).join(
+                                          ' · ',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: AppColors.textSecondary,
@@ -521,6 +482,250 @@ class _RadarViewState extends State<RadarView> {
       await viewModel.declineLocationConsent();
     }
   }
+}
+
+/// "지금 가까운 사람 N명" 요약 카드.
+class _NearbyCountCard extends StatelessWidget {
+  final int? count;
+  final bool isRefreshing;
+  final VoidCallback? onTap;
+
+  const _NearbyCountCard({
+    required this.count,
+    required this.isRefreshing,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.accentSoft,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: isRefreshing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.accent,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.podcasts_outlined,
+                      color: AppColors.accent,
+                      size: 22,
+                    ),
+            ),
+            const SizedBox(width: 14),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '지금 가까운 사람',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  count != null ? '$count명' : '--',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.accentText,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 가장 가까운 인맥을 크게 보여주는 대표 카드.
+class _FeaturedContactCard extends StatelessWidget {
+  final ContactModel contact;
+  final double? distanceMeters;
+  final VoidCallback? onCall;
+  final VoidCallback onDetail;
+
+  const _FeaturedContactCard({
+    required this.contact,
+    required this.distanceMeters,
+    required this.onCall,
+    required this.onDetail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = [
+      contact.company,
+      contact.title,
+    ].where((s) => s.trim().isNotEmpty).join(' · ');
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ContactAvatar(
+                photoPath: contact.avatarUrl,
+                name: contact.name,
+                radius: 30,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      contact.name,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.accentSoft,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                size: 12,
+                                color: AppColors.accentText,
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                GeoUtils.formatDistanceLabel(distanceMeters),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.accentText,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          _lastContactLabel(contact),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onCall,
+                  icon: const Icon(Icons.call, size: 16, color: Colors.white),
+                  label: const Text(
+                    '연락하기',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.accent,
+                    minimumSize: const Size.fromHeight(44),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              TextButton.icon(
+                onPressed: onDetail,
+                icon: const Text(
+                  '상세보기',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.accentText,
+                  ),
+                ),
+                label: const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.accentText,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 최근 소통 기록 중 가장 최신 항목을 기준으로 "N일 전" 형태로 보여준다.
+/// 소통 기록이 없으면 가짜로 채우지 않고 "소통 기록 없음"으로 표시한다.
+String _lastContactLabel(ContactModel contact) {
+  if (contact.commLogs.isEmpty) return '소통 기록 없음';
+  final latest = contact.commLogs
+      .map((l) => l.timestamp)
+      .reduce((a, b) => a.isAfter(b) ? a : b);
+  final days = DateTime.now().difference(latest).inDays;
+  if (days <= 0) return '오늘 연락';
+  if (days == 1) return '최근 연락 어제';
+  return '최근 연락 $days일 전';
 }
 
 class _LocationStatusCard extends StatelessWidget {
@@ -657,141 +862,4 @@ String _greetingForNow() {
   if (hour < 12) return '좋은 오전이에요!';
   if (hour < 18) return '좋은 오후예요!';
   return '편안한 저녁이에요!';
-}
-
-/// 배터리를 지속적으로 사용하는 반복 애니메이션 없이 현재 위치와 가장 가까운
-/// 실제 인맥만 정적으로 보여주는 레이더 요약 카드.
-class RadarPulseHeroWidget extends StatelessWidget {
-  final dynamic nearbyContact;
-  final double? nearbyDistanceMeters;
-  final bool isLocationAvailable;
-
-  const RadarPulseHeroWidget({
-    super.key,
-    this.nearbyContact,
-    this.nearbyDistanceMeters,
-    this.isLocationAvailable = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 280,
-      height: 160,
-      decoration: BoxDecoration(
-        color: AppColors.cardDark.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.borderDark),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (isLocationAvailable) ...[
-            Container(
-              width: 150,
-              height: 150,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.12),
-                ),
-              ),
-            ),
-            Container(
-              width: 94,
-              height: 94,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.accentSoft.withValues(alpha: 0.65),
-                border: Border.all(
-                  color: AppColors.accent.withValues(alpha: 0.22),
-                ),
-              ),
-            ),
-          ],
-
-          // ME Central Pulsing Beacon (Compact size with bright indicator)
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.bgDarkSlate,
-                  border: Border.all(color: AppColors.accentText, width: 1.5),
-                ),
-                child: const CircleAvatar(
-                  radius: 16,
-                  backgroundColor: AppColors.accent,
-                  child: Icon(
-                    Icons.wifi_tethering,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.accent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  isLocationAvailable ? '내 위치' : '위치 확인 필요',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          // Nearby Contact Blip Positioned on Radar Ring (Distinctly distinguished!)
-          if (isLocationAvailable && nearbyContact != null)
-            Positioned(
-              top: 18,
-              right: 28,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.accentText),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircleAvatar(
-                      radius: 10,
-                      backgroundColor: AppColors.accent,
-                      child: Text(
-                        nearbyContact.name.substring(0, 1),
-                        style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${nearbyContact.name} ${GeoUtils.formatDistanceLabel(nearbyDistanceMeters).replaceAll(' 근접', '')}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }

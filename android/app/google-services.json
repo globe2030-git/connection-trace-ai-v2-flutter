@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "79345379389",
+    "project_id": "connection-sense",
+    "storage_bucket": "connection-sense.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:79345379389:android:24e13cbaadaf82ac182254",
+        "android_client_info": {
+          "package_name": "com.connectiontrace.connection_trace_ai_flutter"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "79345379389-26vs86phs79vvpiekf43j5urj5400fkj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.connectiontrace.connection_trace_ai_flutter",
+            "certificate_hash": "5482f3fad5631bbc02f9ce6781ed2fc05e1fe3b9"
+          }
+        },
+        {
+          "client_id": "79345379389-7bub5mulhdsth04uoca3pn9r7uina7kk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtFHkc59OhyTDrwpwyAlvwqbqYB4GBJBE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "79345379389-7bub5mulhdsth04uoca3pn9r7uina7kk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "79345379389-3bhtgaqes5mqgiimj7guv34oqp7r5lfr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.connectiontrace.connectionTraceAiFlutter"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

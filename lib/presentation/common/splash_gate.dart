@@ -26,9 +26,16 @@ class _SplashGateState extends State<SplashGate>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(seconds: 2),
     );
-    _fadeOut = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    // 애니메이션 시작과 동시에 서서히 옅어지면 2초를 다 채우기 전에 뒤에
+    // 있는 첫 화면이 비쳐 보인다. 대부분(85%)은 완전 불투명을 유지하다가
+    // 마지막 15%(0.3초) 구간에서만 빠르게 페이드아웃해서, "2초간 로딩 화면이
+    // 온전히 떠 있다가 첫 화면으로 전환"되는 것처럼 보이게 한다.
+    _fadeOut = CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.85, 1.0, curve: Curves.easeOut),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       FlutterNativeSplash.remove();
@@ -58,7 +65,10 @@ class _SplashGateState extends State<SplashGate>
                 child: Container(
                   color: AppColors.bgDarkSlate,
                   alignment: Alignment.center,
-                  child: Image.asset('assets/CI.png', width: 260),
+                  child: Image.asset(
+                    'assets/icons3d/radar_lavender_splash.png',
+                    width: 220,
+                  ),
                 ),
               ),
             );

@@ -58,6 +58,6 @@ enum AiProvider {
   String get defaultModel => switch (this) {
     AiProvider.anthropic => 'claude-opus-5',
     AiProvider.openai => 'gpt-4o-mini',
-    AiProvider.gemini => 'gemini-2.0-flash',
+    AiProvider.gemini => 'gemini-3.6-flash',
   };
 }

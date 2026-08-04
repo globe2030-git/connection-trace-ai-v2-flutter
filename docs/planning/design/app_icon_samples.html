@@ -1,0 +1,153 @@
+<meta charset="utf-8">
+<title>커넥션센스 앱 아이콘 샘플 5종 (밝은 계통)</title>
+<style>
+:root{
+  --bg:#FAF9FC; --surface:#FFFFFF; --border:#E7E3F3; --ink:#221C38; --ink-dim:#6F6789; --ink-faint:#9A93B5;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC; --shadow:0 1px 2px rgba(34,28,56,.05),0 14px 32px -18px rgba(34,28,56,.28);
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#151223; --surface:#1E1A33; --border:#332B54; --ink:#F1EEFB; --ink-dim:#B6ADD1; --ink-faint:#867CA3; --brand-soft:#2A2350; --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 32px -18px rgba(0,0,0,.6); }
+}
+:root[data-theme="dark"]{ --bg:#151223; --surface:#1E1A33; --border:#332B54; --ink:#F1EEFB; --ink-dim:#B6ADD1; --ink-faint:#867CA3; --brand-soft:#2A2350; --shadow:0 1px 2px rgba(0,0,0,.4),0 14px 32px -18px rgba(0,0,0,.6); }
+:root[data-theme="light"]{ --bg:#FAF9FC; --surface:#FFFFFF; --border:#E7E3F3; --ink:#221C38; --ink-dim:#6F6789; --ink-faint:#9A93B5; --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC; --shadow:0 1px 2px rgba(34,28,56,.05),0 14px 32px -18px rgba(34,28,56,.28); }
+
+*{box-sizing:border-box;}
+body{margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Pretendard Variable',Pretendard,'Malgun Gothic',sans-serif; padding:40px 28px 64px;}
+.wrap{max-width:1180px; margin:0 auto;}
+header{margin-bottom:30px;}
+header .eyebrow{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--brand-deep);}
+header h1{font-size:26px; margin:6px 0 8px; font-weight:800; letter-spacing:-.01em;}
+header p{color:var(--ink-dim); font-size:14px; max-width:640px; line-height:1.6; margin:0;}
+
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px;}
+.card{background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:22px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:16px;}
+.card-top{display:flex; gap:18px; align-items:center;}
+.big-icon{flex:none; border-radius:22.5%; box-shadow:0 6px 18px -6px rgba(34,28,56,.35);}
+.card-name{display:flex; flex-direction:column; gap:4px;}
+.card-name .tag{font-size:10.5px; font-weight:800; color:var(--brand-deep); background:var(--brand-soft); width:fit-content; padding:2px 8px; border-radius:999px; letter-spacing:.03em;}
+.card-name h2{font-size:16px; margin:0; font-weight:800;}
+.card-name p{font-size:12.5px; color:var(--ink-dim); margin:0; line-height:1.5;}
+
+.ladder{display:flex; align-items:flex-end; gap:14px; padding-top:6px; border-top:1px dashed var(--border);}
+.ladder-item{display:flex; flex-direction:column; align-items:center; gap:6px;}
+.ladder-item span{font-size:10px; color:var(--ink-faint); font-family:ui-monospace,'SFMono-Regular',Consolas,monospace;}
+.ladder-item svg{display:block; border-radius:22.5%;}
+
+.tokens{display:flex; gap:8px; flex-wrap:wrap;}
+.token{display:flex; align-items:center; gap:5px; font-size:10.5px; color:var(--ink-dim); font-family:ui-monospace,Consolas,monospace; background:var(--bg); border:1px solid var(--border); padding:3px 8px; border-radius:7px;}
+.token i{width:10px; height:10px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,.08);}
+
+.wallpaper-strip{margin-top:36px; background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:22px; box-shadow:var(--shadow);}
+.wallpaper-strip h3{font-size:14px; margin:0 0 4px; font-weight:800;}
+.wallpaper-strip p{font-size:12.5px; color:var(--ink-dim); margin:0 0 16px;}
+.homescreen{display:flex; gap:18px; flex-wrap:wrap;}
+.hs-tile{width:180px; border-radius:22px; padding:16px 0 10px; display:flex; flex-direction:column; align-items:center; gap:6px;}
+.hs-tile svg{border-radius:22.5%; box-shadow:0 6px 16px -4px rgba(0,0,0,.35);}
+.hs-tile span{font-size:10px; color:rgba(255,255,255,.85); font-weight:600;}
+.hs-dark{background:linear-gradient(160deg,#171426,#0C0A16);}
+.hs-light{background:linear-gradient(160deg,#EDEAFB,#F9F8FC);}
+.hs-light span{color:#4B4468;}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">App Icon Draft · 5 Variants</div>
+    <h1>커넥션센스 앱 아이콘 샘플 (밝은 계통)</h1>
+    <p>기존 아이콘의 "레이더 + 위치 핀" 모티프는 유지하고, 어두운 남색 배경 대신 밝은 배경 5가지로 재구성했습니다. 각 카드 아래 크기 사다리(128→24px)로 축소 시인성을 함께 확인할 수 있습니다.</p>
+  </header>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="wallpaper-strip">
+    <h3>홈 화면 배치 시뮬레이션</h3>
+    <p>밝은/어두운 배경 배경화면 위에서 각각 어떻게 보이는지 — B(퓨어 화이트)·E(솔리드 배지)가 두 배경 모두에서 대비가 가장 뚜렷합니다.</p>
+    <div class="homescreen" id="homescreen"></div>
+  </div>
+</div>
+
+<script>
+const RADAR = (opts) => {
+  const {ring1, ring2, dot, line, pinFill, starFill, showStar=true} = opts;
+  return `
+    <circle cx="50" cy="50" r="34" fill="none" stroke="${ring1}" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="10 8"/>
+    <circle cx="50" cy="50" r="23" fill="none" stroke="${ring2}" stroke-width="3.2"/>
+    <line x1="50" y1="50" x2="76" y2="26" stroke="${line}" stroke-width="2" stroke-dasharray="2.2 2.6" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="8.5" fill="${dot}"/>
+    <circle cx="76" cy="26" r="4.6" fill="${pinFill}"/>
+    ${showStar ? `<path d="M83 14 L85.1 19.4 L90.5 21.5 L85.1 23.6 L83 29 L80.9 23.6 L75.5 21.5 L80.9 19.4 Z" fill="${starFill}"/>` : ''}
+  `;
+};
+
+const VARIANTS = [
+  {
+    id:'A', tag:'옵션 A', name:'라벤더 글라스', size:24,
+    desc:'앱의 퍼플 톤앤매너를 그대로 아이콘에 반영. 부드러운 라벤더 그라디언트 위에 유리질감 레이더.',
+    bgFrom:'#EFEBFC', bgTo:'#FBFAFF',
+    glyph:{ring1:'#B7A9F2', ring2:'#6C5CE7', dot:'#5541C6', line:'#8B7EEA', pinFill:'#5541C6', starFill:'#F7A94A'},
+    tokens:['#EFEBFC','#6C5CE7','#5541C6']
+  },
+  {
+    id:'B', tag:'옵션 B · 추천(소형 시인성 최고)', name:'퓨어 화이트 미니멀', size:24,
+    desc:'순백 배경 + 굵은 단색 레이더 라인만. 48px 이하로 축소돼도 형태가 뭉개지지 않음.',
+    bgFrom:'#FFFFFF', bgTo:'#FFFFFF',
+    glyph:{ring1:'#6C5CE7', ring2:'#6C5CE7', dot:'#5541C6', line:'#6C5CE7', pinFill:'#5541C6', starFill:'#5541C6', showStar:false},
+    tokens:['#FFFFFF','#6C5CE7']
+  },
+  {
+    id:'C', tag:'옵션 C', name:'선셋 코랄 액센트', size:24,
+    desc:'따뜻한 크림 배경에 퍼플 레이더 + 코랄 별 포인트로 "새 인맥 발견"의 반가움을 강조.',
+    bgFrom:'#FFF3E8', bgTo:'#FFFBF6',
+    glyph:{ring1:'#D8B98A', ring2:'#6C5CE7', dot:'#5541C6', line:'#E08A3C', pinFill:'#E08A3C', starFill:'#E8623A'},
+    tokens:['#FFF3E8','#6C5CE7','#E8623A']
+  },
+  {
+    id:'D', tag:'옵션 D', name:'민트-퍼플 듀오톤', size:24,
+    desc:'브랜드 퍼플과 보색에 가까운 민트를 배경에 써서 앱스토어 목록에서 눈에 띄는 대비.',
+    bgFrom:'#E3F7EF', bgTo:'#F7FDFB',
+    glyph:{ring1:'#9FD9C0', ring2:'#5541C6', dot:'#6C5CE7', line:'#3FAE84', pinFill:'#5541C6', starFill:'#3FAE84'},
+    tokens:['#E3F7EF','#6C5CE7','#3FAE84']
+  },
+  {
+    id:'E', tag:'옵션 E · 추천(최고 대비)', name:'솔리드 배지', size:24,
+    desc:'그라디언트 없이 브랜드 퍼플을 배경 전체에 채우고 흰색 레이더만 반전 배치. 야외·강한 빛 아래에서도 식별성 최고.',
+    bgFrom:'#6C5CE7', bgTo:'#5541C6',
+    glyph:{ring1:'#FFFFFF', ring2:'#FFFFFF', dot:'#FFFFFF', line:'#E7E2FC', pinFill:'#FFFFFF', starFill:'#FFD37A'},
+    tokens:['#6C5CE7','#5541C6','#FFFFFF']
+  },
+];
+
+function iconSVG(v, px){
+  return `
+  <svg width="${px}" height="${px}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <defs><linearGradient id="bg-${v.id}-${px}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${v.bgFrom}"/><stop offset="1" stop-color="${v.bgTo}"/>
+    </linearGradient></defs>
+    <rect x="0" y="0" width="100" height="100" rx="22" fill="url(#bg-${v.id}-${px})"/>
+    ${RADAR(v.glyph)}
+  </svg>`;
+}
+
+const grid = document.getElementById('grid');
+grid.innerHTML = VARIANTS.map(v => `
+  <div class="card">
+    <div class="card-top">
+      ${iconSVG(v,84)}
+      <div class="card-name">
+        <span class="tag">${v.tag}</span>
+        <h2>${v.name}</h2>
+        <p>${v.desc}</p>
+      </div>
+    </div>
+    <div class="ladder">
+      ${[128,72,48,29].map(px => `<div class="ladder-item">${iconSVG(v, Math.min(px,64))}<span>${px}px</span></div>`).join('')}
+    </div>
+    <div class="tokens">${v.tokens.map(t => `<span class="token"><i style="background:${t};"></i>${t}</span>`).join('')}</div>
+  </div>
+`).join('');
+
+const hs = document.getElementById('homescreen');
+const bgClasses = [['hs-dark','어두운 배경화면'], ['hs-light','밝은 배경화면']];
+hs.innerHTML = bgClasses.map(([cls,label]) => VARIANTS.map(v => `
+  <div class="hs-tile ${cls}">${iconSVG(v,64)}<span>${v.name}</span></div>
+`).join('')).join('');
+</script>

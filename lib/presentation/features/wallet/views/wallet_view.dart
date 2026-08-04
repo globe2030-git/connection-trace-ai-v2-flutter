@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/wallet_view_model.dart';
 import 'add_card_modal_view.dart';
@@ -17,18 +18,6 @@ class WalletView extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.bgDarkSlate,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openCardEditor(context),
-        backgroundColor: AppColors.accent,
-        foregroundColor: Colors.white,
-        elevation: 3,
-        icon: const Icon(Icons.document_scanner_outlined),
-        label: const Text(
-          '명함 스캔',
-          style: TextStyle(fontWeight: FontWeight.w700),
-        ),
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -61,10 +50,32 @@ class WalletView extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton.filledTonal(
-                    tooltip: '새 명함 등록',
+                  // "+"와 하단 "명함 스캔" 버튼이 같은 기능이라 하나로
+                  // 합쳤다 — 새 명함 등록 진입점은 이거 하나만 남긴다.
+                  ElevatedButton.icon(
                     onPressed: () => _openCardEditor(context),
-                    icon: const Icon(Icons.add),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.document_scanner_outlined,
+                      size: 18,
+                    ),
+                    label: const Text(
+                      '명함 스캔',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -122,7 +133,7 @@ class WalletView extends StatelessWidget {
                         onAdd: () => _openCardEditor(context),
                       )
                     : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 100),
+                        padding: const EdgeInsets.only(bottom: 24),
                         itemCount: contacts.length,
                         itemBuilder: (context, index) => _ContactCard(
                           contact: contacts[index],
@@ -196,22 +207,10 @@ class _ContactCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
             child: Row(
               children: [
-                CircleAvatar(
+                ContactAvatar(
+                  photoPath: contact.avatarUrl,
+                  name: contact.name,
                   radius: 28,
-                  backgroundColor: AppColors.accentSoft,
-                  backgroundImage: contact.avatarUrl != null
-                      ? NetworkImage(contact.avatarUrl!)
-                      : null,
-                  child: contact.avatarUrl == null
-                      ? Text(
-                          contact.name.isEmpty ? '?' : contact.name[0],
-                          style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.accentText,
-                          ),
-                        )
-                      : null,
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -289,6 +288,18 @@ class _ContactCard extends StatelessWidget {
                       color: AppColors.accentText,
                     ),
                   ),
+                // 왼쪽으로 밀어서 삭제(Dismissible)만 있으면 알아채기 어려워서,
+                // 눈에 보이는 삭제 버튼도 같이 둔다.
+                IconButton(
+                  tooltip: '${contact.name} 명함 삭제',
+                  onPressed: () async {
+                    if (await _confirmDelete(context)) onDelete();
+                  },
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.destructive,
+                  ),
+                ),
                 const Icon(Icons.chevron_right, color: AppColors.textMuted),
               ],
             ),

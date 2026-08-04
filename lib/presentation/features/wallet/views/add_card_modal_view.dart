@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
@@ -9,6 +13,7 @@ import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../common/address_search_view.dart';
+import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
@@ -45,6 +50,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _titleController;
   late TextEditingController _addressController;
   late TextEditingController _addressDetailController;
+  late TextEditingController _postalCodeController;
   late TextEditingController _phoneController;
   late TextEditingController _officePhoneController;
   late TextEditingController _emailController;
@@ -57,6 +63,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _titleFocusNode = FocusNode();
   final _addressFocusNode = FocusNode();
   final _addressDetailFocusNode = FocusNode();
+  final _postalCodeFocusNode = FocusNode();
   final _phoneFocusNode = FocusNode();
   final _officePhoneFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
@@ -75,19 +82,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 담당한다(initState에서 WebTabGuard.install로 연결).
   late final List<FocusNode> _fieldFocusOrder;
 
-  // Profile Picture Avatar URL State & OCR Raw Text State
+  // 프로필 사진 — 실제 로컬 파일 경로(원격 URL 아님). image_picker로 고른
+  // 사진을 앱 문서 디렉터리에 복사해 영구 보관한다.
   String? _selectedAvatarUrl;
+  bool _isPickingAvatar = false;
   String? _scannedRawText;
   bool _isScanningOcr = false;
   bool _showRawTextCard = false;
   bool _isSavingCard = false;
-
-  final List<String> _avatarPresets = const [
-    'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150',
-    'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-  ];
+  // 사용자가 "네, 도로명으로 변경"을 눌러 확정한 주소를 기억해 둔다. 매번
+  // 저장할 때마다 새로 역지오코딩을 하는데, 같은 좌표라도 OS
+  // Geocoder(특히 Android)가 호출할 때마다 구성요소 순서/공백이 미묘하게
+  // 달라진 문자열을 줄 때가 있어서, 이미 사용자가 확정한 텍스트와 주소
+  // 입력칸이 그대로면(직접 다시 고치지 않았다면) 도로명 변환창을 또
+  // 띄우지 않는다 — 저장할 때마다 변환창이 계속 다시 뜨던 문제.
+  String? _confirmedRoadNameAddress;
 
   bool get _isEditing => widget.contactToEdit != null;
 
@@ -103,6 +112,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _addressDetailController = TextEditingController(
       text: c?.addressDetail ?? '',
     );
+    _postalCodeController = TextEditingController(text: c?.postalCode ?? '');
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
@@ -116,6 +126,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _titleFocusNode,
       _addressFocusNode,
       _addressDetailFocusNode,
+      _postalCodeFocusNode,
       _phoneFocusNode,
       _officePhoneFocusNode,
       _emailFocusNode,
@@ -133,6 +144,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _titleController.dispose();
     _addressController.dispose();
     _addressDetailController.dispose();
+    _postalCodeController.dispose();
     _phoneController.dispose();
     _officePhoneController.dispose();
     _emailController.dispose();
@@ -205,6 +217,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _fillIfEmpty(_titleController, result.title);
       _fillIfEmpty(_addressController, result.address);
       _fillIfEmpty(_addressDetailController, result.addressDetail);
+      _fillIfEmpty(_postalCodeController, result.postalCode);
       _fillIfEmpty(_phoneController, result.phone);
       _fillIfEmpty(_officePhoneController, result.officePhone);
       _fillIfEmpty(_emailController, result.email);
@@ -213,9 +226,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       }
       if (_memoController.text.trim().isEmpty) {
         _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
-      }
-      if (result.avatarUrl != null) {
-        _selectedAvatarUrl = result.avatarUrl;
       }
     });
 
@@ -276,20 +286,70 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
     if (result == null || !mounted) return;
     setState(() {
-      _addressController.text = result.address.trim();
+      _setTextFromStart(_addressController, result.address.trim());
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
       if (result.buildingName != null &&
           _addressDetailController.text.trim().isEmpty) {
         _addressDetailController.text = result.buildingName!;
       }
+      if (result.postalCode != null) {
+        _postalCodeController.text = result.postalCode!;
+      }
     });
+  }
+
+  /// "테헤란로 123", "언주로30길 45"처럼 도로명(로/길) 뒤에 건물번호 숫자가
+  /// 바로 오는 형태면 이미 정상적인 도로명 주소로 본다. "역삼동 123-45"
+  /// 같은 지번 주소는 로/길이 없어서 걸리지 않는다(그런 주소만 변환 제안).
+  bool _looksLikeRoadNameAddress(String address) {
+    return RegExp(r'(로|길)\s*\d').hasMatch(address);
   }
 
   void _fillIfEmpty(TextEditingController controller, String value) {
     if (controller.text.trim().isEmpty && value.trim().isNotEmpty) {
-      controller.text = value;
+      _setTextFromStart(controller, value);
     }
+  }
+
+  /// `controller.text = value`만 쓰면 커서가 자동으로 맨 끝에 가서, 한 줄
+  /// 입력칸(주소처럼 긴 텍스트)에서 값이 시작 부분부터가 아니라 끝부분만
+  /// 보이는 채로 스크롤돼 있어 "글자가 잘려서 들어간 것"처럼 보이는 문제가
+  /// 있었다. 커서를 맨 앞(0)으로 둬서 항상 텍스트 시작부터 보이게 한다.
+  void _setTextFromStart(TextEditingController controller, String value) {
+    controller.value = TextEditingValue(
+      text: value,
+      selection: const TextSelection.collapsed(offset: 0),
+    );
+  }
+
+  /// 갤러리에서 고른 사진을 앱 문서 디렉터리에 복사해 영구 보관한다
+  /// (image_picker가 주는 경로는 임시 캐시라 앱 재시작 시 사라질 수 있음).
+  /// 명함마다 별도 파일이라 매번 고유한 파일명을 쓴다.
+  Future<void> _pickContactAvatar() async {
+    setState(() => _isPickingAvatar = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+      if (picked == null || !mounted) return;
+      final docsDir = await getApplicationDocumentsDirectory();
+      final savedPath =
+          '${docsDir.path}/contact_avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
+      await File(picked.path).copy(savedPath);
+      if (!mounted) return;
+      setState(() => _selectedAvatarUrl = savedPath);
+    } catch (e) {
+      if (!mounted) return;
+      _showInlineNotice('사진을 불러오지 못했습니다: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isPickingAvatar = false);
+    }
+  }
+
+  void _removeContactAvatar() {
+    setState(() => _selectedAvatarUrl = null);
   }
 
   Future<void> _saveCard() async {
@@ -349,17 +409,41 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
+    // 입력 주소가 이미 정상적인 도로명 주소면(예: "...테헤란로 123") 역지오코딩
+    // 재구성 결과로 덮어쓰지 않고 원본 그대로 저장한다. OS Geocoder가 좌표를
+    // 다시 역지오코딩할 때 구성요소가 빠지거나(짤림) 아예 지번 표기로 바뀐
+    // 문자열을 돌려주는 경우가 있어서, 이미 맞는 도로명 주소를 "개선"하려다
+    // 오히려 망가뜨리는 문제가 있었다 — 도로명이 아닌 주소(지번 등)에만
+    // 변환을 제안한다.
+    if (_looksLikeRoadNameAddress(rawAddress)) {
+      _executeFinalSave(rawAddress, addressResult.geoPosition);
+      return;
+    }
+
     // Check if Road Name Address conversion prompt is needed
     if (addressResult.roadNameAddress != null &&
         addressResult.roadNameAddress != rawAddress &&
-        !rawAddress.contains('(도로명')) {
+        rawAddress != _confirmedRoadNameAddress) {
       _showRoadNameConversionDialog(addressResult);
-    } else {
-      _executeFinalSave(
-        addressResult.roadNameAddress ?? rawAddress,
-        addressResult.geoPosition,
-      );
+      return;
     }
+
+    // 좌표는 찾았지만(주소 자체는 유효) 역지오코딩으로 도로명 주소를 못 얻은
+    // 경우 — 바꿀 도로명이 없으니 조용히 원본 주소로 저장하지 않고, 왜
+    // 변환창이 안 뜨는지 짧게 안내한 뒤 저장한다.
+    if (addressResult.roadNameAddress == null) {
+      _showInlineNotice(
+        'ℹ️ 도로명 주소를 찾지 못해 입력하신 주소로 저장합니다.',
+        isError: false,
+      );
+      await Future.delayed(const Duration(milliseconds: 900));
+      if (!mounted) return;
+    }
+
+    _executeFinalSave(
+      addressResult.roadNameAddress ?? rawAddress,
+      addressResult.geoPosition,
+    );
   }
 
   void _showUnresolvableAddressDialog(String rawAddress) {
@@ -427,6 +511,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             },
             child: const Text(
               '주소 수정하기',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          // 다음(카카오) 우편번호 검색처럼 이미 실제로 존재하는 주소로
+          // 확인됐는데도, 기기 내장 Geocoder(특히 Android)가 특정 도로명을
+          // 못 찾아서 저장 자체가 막히는 경우가 있었다 — 위치 없이라도
+          // 저장은 할 수 있게 탈출구를 준다. geo가 없으면 주변 거리 계산
+          // 대상에서만 자동으로 빠지고, 나머지 정보는 정상 저장된다.
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _executeFinalSave(rawAddress, null);
+            },
+            child: const Text(
+              '주소 없이 저장',
               style: TextStyle(
                 color: AppColors.accentText,
                 fontWeight: FontWeight.bold,
@@ -557,7 +656,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 result.roadNameAddress!,
               );
               setState(() {
-                _addressController.text = result.roadNameAddress!;
+                _setTextFromStart(_addressController, result.roadNameAddress!);
+                _confirmedRoadNameAddress = result.roadNameAddress;
                 if (remainder != null &&
                     _addressDetailController.text.trim().isEmpty) {
                   _addressDetailController.text = remainder;
@@ -631,6 +731,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
           : _addressDetailController.text.trim(),
+      postalCode: _postalCodeController.text.trim().isEmpty
+          ? null
+          : _postalCodeController.text.trim(),
       phone: _phoneController.text.trim(),
       officePhone: _officePhoneController.text.trim().isEmpty
           ? null
@@ -877,6 +980,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
           : _addressDetailController.text.trim(),
+      postalCode: _postalCodeController.text.trim().isEmpty
+          ? null
+          : _postalCodeController.text.trim(),
       phone: _phoneController.text.trim(),
       officePhone: _officePhoneController.text.trim().isEmpty
           ? null
@@ -1069,66 +1175,71 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                 const SizedBox(height: 16),
 
-                // 📸 Profile Photo Selector Widget
+                // 📸 Profile Photo Selector Widget — 갤러리에서 실제 사진을
+                // 골라 앱 문서 디렉터리에 저장한다(가짜 스톡 사진 프리셋 아님).
                 Center(
                   child: Column(
                     children: [
                       GestureDetector(
-                        onTap: () {
-                          final nextIdx = _selectedAvatarUrl == null
-                              ? 0
-                              : (_avatarPresets.indexOf(_selectedAvatarUrl!) +
-                                        1) %
-                                    (_avatarPresets.length + 1);
-                          setState(() {
-                            _selectedAvatarUrl = nextIdx < _avatarPresets.length
-                                ? _avatarPresets[nextIdx]
-                                : null;
-                          });
-                        },
+                        onTap: _isPickingAvatar ? null : _pickContactAvatar,
                         child: Stack(
                           alignment: Alignment.bottomRight,
                           children: [
-                            CircleAvatar(
+                            ContactAvatar(
+                              photoPath: _selectedAvatarUrl,
+                              name: _nameController.text,
                               radius: 36,
-                              backgroundColor: AppColors.accent.withValues(
-                                alpha: 0.2,
-                              ),
-                              backgroundImage: _selectedAvatarUrl != null
-                                  ? NetworkImage(_selectedAvatarUrl!)
-                                  : null,
-                              child: _selectedAvatarUrl == null
-                                  ? const Icon(
-                                      Icons.person,
-                                      size: 36,
-                                      color: AppColors.accentText,
-                                    )
-                                  : null,
                             ),
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: const BoxDecoration(
-                                color: AppColors.accentText,
-                                shape: BoxShape.circle,
+                            if (_isPickingAvatar)
+                              const SizedBox(
+                                width: 72,
+                                height: 72,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.accentText,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
                               ),
-                              child: const Icon(
-                                Icons.camera_alt,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                            ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 6),
-                      const Text(
-                        '프로필 사진 선택 (터치하여 변경)',
-                        style: TextStyle(
+                      Text(
+                        _selectedAvatarUrl == null
+                            ? '프로필 사진 선택 (터치하여 갤러리에서 선택)'
+                            : '사진 변경 (터치)',
+                        style: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textSecondary,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (_selectedAvatarUrl != null)
+                        TextButton(
+                          onPressed: _removeContactAvatar,
+                          style: TextButton.styleFrom(
+                            minimumSize: const Size(48, 32),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: const Text(
+                            '사진 삭제',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.destructive,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -1202,7 +1313,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   focusNode: _nameFocusNode,
                   order: 1,
                   nextFocusNode: _companyFocusNode,
-                  autofocus: true,
                   label: '이름 *',
                   hint: '예: 홍길동',
                   validator: (val) {
@@ -1270,9 +1380,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   controller: _addressDetailController,
                   focusNode: _addressDetailFocusNode,
                   order: 4.5,
-                  nextFocusNode: _phoneFocusNode,
+                  nextFocusNode: _postalCodeFocusNode,
                   label: '상세주소 (선택)',
                   hint: '예: 5층 501호',
+                ),
+                const SizedBox(height: 12),
+
+                // 4-2. 우편번호(선택) — 지오코딩에는 안 쓰이고 표시/등록용으로만
+                // 보관. OCR 스캔 또는 도로명주소 검색에서 자동으로 채워진다.
+                _buildFormField(
+                  controller: _postalCodeController,
+                  focusNode: _postalCodeFocusNode,
+                  order: 4.7,
+                  nextFocusNode: _phoneFocusNode,
+                  label: '우편번호 (선택)',
+                  hint: '예: 06193',
+                  keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
 

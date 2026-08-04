@@ -15,6 +15,9 @@ class OcrScanResult {
   // 경우가 많아서(addressRegExp가 한 줄 단위로만 매칭됨) 별도 필드로 분리해
   // 잡아낸다. 안 잡히면 빈 문자열.
   final String addressDetail;
+  // 우편번호(5자리) — 주소 줄 앞에 "06193 서울특별시..."처럼 붙어 있는
+  // 경우가 흔해서 별도로 뽑아낸다. 안 잡히면 빈 문자열.
+  final String postalCode;
   final List<String> tags;
   final String? avatarUrl;
   final String? imagePath;
@@ -29,6 +32,7 @@ class OcrScanResult {
     required this.email,
     required this.address,
     this.addressDetail = '',
+    this.postalCode = '',
     required this.tags,
     this.avatarUrl,
     this.imagePath,
@@ -202,9 +206,15 @@ class OcrScannerService {
     String? email;
     String? address;
     String? addressDetail;
+    String? postalCode;
+    // 주소를 찾은 줄의 인덱스 — 콤마도 없고 같은 줄에 층/호 패턴도 없으면
+    // 바로 다음 줄을 상세주소로 본다(명함에서 도로명 주소와 건물명/층수가
+    // 서로 다른 줄로 나뉘는 흔한 레이아웃).
+    int? addressLineIndex;
     final remaining = <String>[];
 
-    for (final line in lines) {
+    for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      final line = lines[lineIndex];
       final emailMatch = emailRegExp.firstMatch(line);
       if (email == null && emailMatch != null) {
         email = emailMatch.group(0);
@@ -222,17 +232,61 @@ class OcrScannerService {
       }
       final addressMatch = addressRegExp.firstMatch(line);
       if (address == null && addressMatch != null) {
+        // 주소 앞에 "06193 서울특별시..."처럼 우편번호(5자리)가 붙어 있으면
+        // 뽑아낸다 — addressRegExp는 "서울" 등부터 매칭돼서 앞의 숫자는
+        // 매칭 대상에 안 들어가므로 원래 줄에서 따로 확인해야 한다.
+        final beforeAddress = line.substring(0, addressMatch.start).trim();
+        if (postalCode == null && RegExp(r'^\d{5}$').hasMatch(beforeAddress)) {
+          postalCode = beforeAddress;
+        }
         var matched = addressMatch.group(0)!.trim();
-        // 기본 주소 줄 끝에 상세주소가 그대로 붙어 있으면 분리해 낸다.
-        final detailInline = addressDetailRegExp.firstMatch(matched);
-        if (detailInline != null) {
-          addressDetail = matched.substring(detailInline.start).trim();
-          matched = matched.substring(0, detailInline.start).trim();
+        // 도로명 주소와 상세주소를 나누는 기준(우선순위 순):
+        // 1. 콤마가 있으면 콤마 이전까지가 도로명 주소.
+        // 2. 콤마가 없으면 "로/길/가 + 건물번호" 뒤에 공백과 함께 텍스트가
+        //    더 있는지 본다 — 있으면 그 공백에서 나눈다(건물번호까지가
+        //    도로명 주소, 그 뒤가 상세주소).
+        // 3. 그 "로/길/가 + 건물번호"가 줄 끝이면(뒤에 아무 것도 없으면)
+        //    이 줄 전체가 도로명 주소이고, 상세주소는 바로 다음 줄에서
+        //    찾는다(아래 lineIndex == addressLineIndex + 1 로직).
+        final commaIdx = matched.indexOf(',');
+        if (commaIdx != -1) {
+          addressDetail = matched.substring(commaIdx + 1).trim();
+          matched = matched.substring(0, commaIdx).trim();
+        } else {
+          final roadNumberMatches = RegExp(
+            r'(로|길|가)\s*\d+(?:-\d+)?',
+          ).allMatches(matched).toList();
+          if (roadNumberMatches.isNotEmpty) {
+            final lastRoadNumber = roadNumberMatches.last;
+            final afterNumber = matched.substring(lastRoadNumber.end).trim();
+            if (afterNumber.isNotEmpty) {
+              addressDetail = afterNumber;
+              matched = matched.substring(0, lastRoadNumber.end).trim();
+            }
+            // afterNumber가 비어 있으면(줄 끝) 그대로 두고 다음 줄에서 찾는다.
+          } else {
+            // "로/길/가 + 숫자" 패턴 자체가 없는 드문 경우(예: 지번 주소)엔
+            // 기존 층/호 패턴 백업으로 같은 줄 안에서 찾아본다.
+            final detailInline = addressDetailRegExp.firstMatch(matched);
+            if (detailInline != null) {
+              addressDetail = matched.substring(detailInline.start).trim();
+              matched = matched.substring(0, detailInline.start).trim();
+            }
+          }
         }
         address = matched;
+        addressLineIndex = lineIndex;
         continue;
       }
       if (addressDetail == null && addressDetailRegExp.hasMatch(line)) {
+        addressDetail = line.trim();
+        continue;
+      }
+      // 주소 줄 바로 다음 줄인데 아직 상세주소를 못 찾았다면(콤마도, 층/호
+      // 패턴도 없었다는 뜻) 이 줄을 상세주소로 본다.
+      if (addressDetail == null &&
+          addressLineIndex != null &&
+          lineIndex == addressLineIndex + 1) {
         addressDetail = line.trim();
         continue;
       }
@@ -280,6 +334,7 @@ class OcrScannerService {
       officePhone: office ?? '',
       email: email ?? '',
       addressDetail: addressDetail ?? '',
+      postalCode: postalCode ?? '',
       address: address ?? '',
       tags: const [],
       avatarUrl: null,

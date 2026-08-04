@@ -11,8 +11,13 @@ import '../../core/theme/app_colors.dart';
 class AddressSearchResult {
   final String address;
   final String? buildingName;
+  final String? postalCode;
 
-  const AddressSearchResult({required this.address, this.buildingName});
+  const AddressSearchResult({
+    required this.address,
+    this.buildingName,
+    this.postalCode,
+  });
 }
 
 /// 다음(카카오) 우편번호 서비스를 웹뷰로 띄워 실제 도로명주소를 검색·선택하게
@@ -47,6 +52,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
             final roadAddress = data['roadAddress'] as String?;
             final jibunAddress = data['jibunAddress'] as String?;
             final buildingName = data['buildingName'] as String?;
+            final zonecode = data['zonecode'] as String?;
             final address =
                 (roadAddress != null && roadAddress.trim().isNotEmpty)
                 ? roadAddress
@@ -62,6 +68,9 @@ class _AddressSearchViewState extends State<AddressSearchView> {
                 buildingName:
                     (buildingName != null && buildingName.trim().isNotEmpty)
                     ? buildingName.trim()
+                    : null,
+                postalCode: (zonecode != null && zonecode.trim().isNotEmpty)
+                    ? zonecode.trim()
                     : null,
               ),
             );

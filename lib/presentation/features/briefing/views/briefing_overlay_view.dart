@@ -6,6 +6,7 @@ import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/ai_credentials_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../../core/services/phone_call_service.dart';
+import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../../settings/views/ai_connection_modal_view.dart';
 import '../../wallet/view_models/wallet_view_model.dart';
@@ -250,24 +251,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     GlassCard(
                       child: Row(
                         children: [
-                          CircleAvatar(
+                          ContactAvatar(
+                            photoPath: contact.avatarUrl,
+                            name: contact.name,
                             radius: 30,
-                            backgroundColor: AppColors.accent.withValues(
-                              alpha: 0.2,
-                            ),
-                            backgroundImage: contact.avatarUrl != null
-                                ? NetworkImage(contact.avatarUrl!)
-                                : null,
-                            child: contact.avatarUrl == null
-                                ? Text(
-                                    contact.name.substring(0, 1),
-                                    style: const TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.accentText,
-                                    ),
-                                  )
-                                : null,
                           ),
                           const SizedBox(width: 16),
                           Expanded(

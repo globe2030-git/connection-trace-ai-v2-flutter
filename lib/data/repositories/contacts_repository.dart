@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/contact_model.dart';
+import '../services/data_backup_service.dart';
 
 class ContactsRepository extends ChangeNotifier {
   static const String _storageKey = 'saved_contacts_v2';
@@ -13,11 +14,33 @@ class ContactsRepository extends ChangeNotifier {
   // 목록으로 시작한다.
   List<ContactModel> _contacts = [];
 
+  // 로그인된 사용자의 Firebase uid — 서버 백업 대상 식별용. AuthGate가
+  // 로그인/로그아웃 시점에 설정한다. null이면 서버 백업을 시도하지 않는다
+  // (게스트 QA 로그인, 또는 Firebase Auth 연동이 실패한 경우).
+  String? _uid;
+
   ContactsRepository() {
     _loadFromDisk();
   }
 
   List<ContactModel> get contacts => List.unmodifiable(_contacts);
+
+  void setCurrentUid(String? uid) {
+    _uid = uid;
+  }
+
+  /// 새 기기(또는 재설치)에서 로그인한 뒤 로컬 명함 목록이 비어있을 때만
+  /// 서버 백업분을 통째로 내려받는다 — 이미 로컬에 데이터가 있으면 덮어쓰지
+  /// 않는다(사용자가 계속 쓰던 기기에서 실수로 서버 데이터로 갈아치우는
+  /// 사고 방지).
+  Future<void> restoreFromServerIfEmpty(String uid) async {
+    if (_contacts.isNotEmpty) return;
+    final restored = await DataBackupService.restoreContacts(uid);
+    if (restored.isEmpty) return;
+    _contacts = restored;
+    notifyListeners();
+    await _saveToDisk();
+  }
 
   Future<void> _loadFromDisk() async {
     try {
@@ -50,6 +73,7 @@ class ContactsRepository extends ChangeNotifier {
     _contacts = [newContact, ..._contacts];
     notifyListeners();
     _saveToDisk();
+    _backup(newContact);
   }
 
   void updateContact(ContactModel updatedContact) {
@@ -61,11 +85,19 @@ class ContactsRepository extends ChangeNotifier {
     }).toList();
     notifyListeners();
     _saveToDisk();
+    _backup(updatedContact);
   }
 
   void deleteContact(String id) {
     _contacts.removeWhere((c) => c.id == id);
     notifyListeners();
     _saveToDisk();
+    final uid = _uid;
+    if (uid != null) DataBackupService.deleteContactBackup(uid, id);
+  }
+
+  void _backup(ContactModel contact) {
+    final uid = _uid;
+    if (uid != null) DataBackupService.backupContact(uid, contact);
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import '../../data/models/contact_model.dart';
+import 'google_auth_gateway.dart';
 
 /// Gmail API로 특정 인맥과 주고받은 이메일을 실제로 읽어와 소통 이력으로
 /// 가져온다. 통화/문자와 달리 이메일은 모든 플랫폼(Android/iOS/웹)에서 동일한
@@ -14,24 +15,17 @@ import '../../data/models/contact_model.dart';
 class EmailSyncService {
   static const _gmailReadonlyScope =
       'https://www.googleapis.com/auth/gmail.readonly';
-  static bool _initialized = false;
   static GoogleSignInAccount? _currentAccount;
 
   static bool get isSignedIn => _currentAccount != null;
   static String? get signedInEmail => _currentAccount?.email;
 
-  static Future<void> _ensureInitialized() async {
-    if (_initialized) return;
+  /// Google 계정으로 로그인하고 Gmail 읽기 권한을 요청한다.
+  static Future<GoogleSignInAccount> signIn() async {
     // clientId를 명시적으로 넘기지 않으면 각 플랫폼의 기본 설정 파일에서
     // 읽는다(Android: strings.xml의 default_web_client_id 또는 앱 서명 SHA-1로
     // 자동 매칭, iOS: Info.plist의 GIDClientID, 웹: index.html의 meta 태그).
-    await GoogleSignIn.instance.initialize();
-    _initialized = true;
-  }
-
-  /// Google 계정으로 로그인하고 Gmail 읽기 권한을 요청한다.
-  static Future<GoogleSignInAccount> signIn() async {
-    await _ensureInitialized();
+    await GoogleAuthGateway.ensureInitialized();
     final account = await GoogleSignIn.instance.authenticate();
     await account.authorizationClient.authorizeScopes([_gmailReadonlyScope]);
     _currentAccount = account;

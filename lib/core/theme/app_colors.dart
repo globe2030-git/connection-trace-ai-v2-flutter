@@ -20,10 +20,11 @@ class AppColors {
   static const Color textSecondary = Color(0xFF5F6673);
   static const Color textMuted = Color(0xFF7B8391);
 
-  // 브랜드 액센트 — 신뢰감 있는 블루, 선택 배경은 아주 옅은 블루
-  static const Color accent = Color(0xFF2F6EDB);
-  static const Color accentText = Color(0xFF245FC2);
-  static const Color accentSoft = Color(0xFFEAF2FF);
+  // 브랜드 액센트 — 디자인 시안(퍼플 톤앤매너)에 맞춘 바이올렛,
+  // 선택 배경은 아주 옅은 라벤더
+  static const Color accent = Color(0xFF6C5CE7);
+  static const Color accentText = Color(0xFF5541C6);
+  static const Color accentSoft = Color(0xFFEFECFC);
 
   // 상태색 — 장식이 아니라 의미가 있는 최소한의 예외(에러/삭제)
   static const Color destructive = Color(0xFFEF4444);

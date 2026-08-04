@@ -1,8 +1,26 @@
-# 개발 인수인계 문서 (2026-08-03 기준)
+# 개발 인수인계 문서 (2026-08-04 기준)
 
-다음 개발자가 이 프로젝트를 빠르게 이어받을 수 있도록 정리한 문서. 시간순 상세
-기록은 [`backlog.md`](./backlog.md)(추가 1~44)에 다 있으니, 특정 결정의 배경이
-궁금하면 거기서 검색하는 게 가장 빠르다. 이 문서는 "지금 상태"의 요약본.
+다음 개발자(또는 다음 대화창)가 이 프로젝트를 빠르게 이어받을 수 있도록 정리한
+문서. 시간순 상세 기록은 [`backlog.md`](./backlog.md)(추가 1~67)에 다 있으니,
+특정 결정의 배경이 궁금하면 거기서 검색하는 게 가장 빠르다. 이 문서는 "지금
+상태"의 요약본.
+
+**새 대화창/CLI에서 이어받는 경우**: 이 문서(HANDOFF.md) → "2-0. 사용자가
+결정할 일" → "2. 하고 있는 일" → "3. 해야 할 일" 순서로 읽으면 됨.
+
+**서브에이전트로 나눠서 작업하려면(추가 65)**: 이 프로젝트 전용 서브에이전트
+4개가 `connection-trace-ai-v2-flutter/.claude/agents/`에 있다 —
+`flutter-planner`(PM/오케스트레이터), `flutter-developer`(로직/데이터),
+`flutter-qa`(실기기 검증), `flutter-ui-designer`(시각/스타일). 같은 이름의
+커스텀 슬래시 커맨드(`/flutter-planner` 등, `.claude/commands/`)도 있어서
+CLI에서 바로 쓸 수 있다 — **단, 이 저장소 디렉터리(`connection-trace-ai-v2-
+flutter`)를 작업 디렉터리로 `claude`를 실행했을 때만 인식된다**(프로젝트
+로컬 등록이라 다른 경로에서 켜면 안 보임). 작업량이 많으면 우선
+`flutter-planner`에 먼저 맡기고, 그게 필요한 곳에 나머지 세 에이전트를
+위임하는 방식을 권장.
+(예전엔 `ct-planner` 등 전역 에이전트가 있었지만, 그건 지금은 삭제된 옛
+React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프로젝트와는
+무관했고 2026-08-04에 저장소·에이전트 둘 다 정리됨.)
 
 ## 프로젝트 개요
 
@@ -11,8 +29,11 @@
 - **위치**: `/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter`
 - **스택**: Flutter (Dart), 상태관리는 `provider` 패키지, 로컬 저장은
   `shared_preferences`(일반 데이터) + `flutter_secure_storage`(AI API 키).
-  **백엔드 서버 없음** — 전부 클라이언트에서 직접 각 외부 API(지오코딩, ML Kit,
-  AI 제공사 등)를 호출하는 구조.
+  **현재 코드 기준으로는 아직 백엔드 서버 없음** — 전부 클라이언트에서 직접
+  각 외부 API(지오코딩, ML Kit, AI 제공사 등)를 호출하는 구조. 단,
+  2026-08-04에 사용자가 명함/인맥 데이터를 Firebase 서버에 저장하기로
+  확정했고(추가 66) 설계 문서(`docs/planning/server-setup-plan.md`)까지
+  완료된 상태 — 구현 착수 전까지는 이 설명이 유효함.
 - **핵심 컨셉**: 명함을 스캔해서 인맥을 등록하면, 실제로 그 인맥 근처(등록된
   주소 기준)에 갔을 때 알림을 주고, AI가 대화 포인트를 생성해 준다.
 
@@ -64,10 +85,53 @@
   연동하면(설정 화면), 상대방 정보 + 사용자가 이번 요청에 선택한 소통
   기록으로 대화 포인트 3개를 생성한다. 요청마다 전송 정보 확인과 명시적
   동의를 거친다. 미연동 시 연동 안내가 뜬다(가짜 데이터로 채우지 않음).
+  Gemini 기본 모델은 2026-06-01 종료된 `gemini-2.0-flash`에서 현재 공식
+  안정 모델인 `gemini-3.6-flash`로 교체했다(추가 46) — 단, 실제 키로
+  호출 검증은 아직 안 됐음(3.해야 할 일 6번).
 - **소통 이력**: Gmail 공식 OAuth로 조회한 메일 중 사용자가 선택한 항목,
   또는 사용자가 직접 작성/붙여넣은 통화·문자·이메일·카카오톡 내용만
   기기에 저장한다. 기록별 삭제 가능. 통화기록/문자 자동 수집 권한과
   플러그인은 제거했다.
+
+### 로그인/회원가입
+- SNS 로그인으로 앱 진입을 막는 `AuthGate`를 추가했다(`SplashGate` 다음,
+  `MainTabScreen` 앞). 카카오는 이번 범위에서 제외했고, Google/Apple 중
+  **Google을 먼저 구현**했다 — 이미 Gmail 가져오기에서 쓰던
+  `google_sign_in` 패키지·OAuth 설정을 그대로 재사용할 수 있어 추가 콘솔
+  설정 없이 가장 빨리 붙일 수 있었기 때문. Apple은 버튼은 보이지만
+  비활성화(`(준비 중)` 표시) — 유료 Apple Developer Program 가입 후 활성화
+  예정(3.해야 할 일 참고). 네이버/페이스북은 아직 미착수(카카오처럼 별도
+  개발자 콘솔 등록·검수 절차가 있어 우선순위가 낮음).
+- **주의**: 아직 회원 서버(계정 DB)가 없다. 로그인은 SNS 신원 확인 후
+  기기에 세션을 `flutter_secure_storage`로 암호화 저장하는 방식이라,
+  앱을 지우거나 다른 기기로 옮기면 다시 로그인해야 하고 서버 쪽에 남는
+  "회원" 레코드는 없다. 진짜 계정 시스템(다중 기기 동기화 등)은 서버가
+  생긴 뒤로 미뤄둔 상태.
+- `GoogleSignIn.instance.initialize()`는 앱 전체에서 정확히 한 번만
+  호출해야 하는 제약이 있어서, 로그인(`AuthRepository`)과 Gmail 가져오기
+  (`EmailSyncService`)가 공유 초기화 가드(`GoogleAuthGateway`)를 함께
+  쓴다 — 새로운 Google Sign-In 관련 코드를 추가할 때도 반드시 이 가드를
+  거쳐야 한다.
+- **Android 실기기 전체 QA 완료(추가 47)** — 로그인 화면부터 명함 지갑·명함
+  수정 모달·설정까지 실기기(갤럭시 Z 폴드)에서 확인, 전부 정상. 다만 Gmail
+  OAuth 미등록으로 Google 로그인이 항상 실패해 로그인 게이트를 못 넘기는
+  문제가 발견돼, `signInAsGuest()` 디버그 우회를 임시로 추가했다(3.해야 할
+  일 7번 — OAuth 설정 끝나면 지울 것).
+
+### 디자인 톤앤매너·화면 구조 재설계(추가 49)
+- 사용자가 제공한 디자인 시안(퍼플 톤)에 맞춰 `app_colors.dart`의 accent
+  계열을 블루→퍼플(#6C5CE7)로 교체 — `ColorScheme.primary`가 여기서
+  파생되는 구조라 다른 코드 변경 없이 앱 전체에 반영됨.
+- 레이더(주변)/명함 지갑/설정 화면을 시안 구조(요약카드, 사진 아바타
+  대표카드, "주변 인맥 감지" 토글 등)에 맞춰 재설계. 새 UI 요소는 전부
+  실제 데이터·실제 상태에 연결했다(예: 토글은 실제 위치 동의 상태와
+  연동, "최근 연락"은 실제 소통기록에서 계산).
+- 이 작업 중 명함 등록 화면의 "프로필 사진 선택"이 실제로는 Unsplash
+  스톡 사진 4장을 순환 표시하는 가짜 구현이었던 걸 발견해서, 실제
+  갤러리 사진 선택(`image_picker`)으로 교체했다. 인맥 사진 렌더링은
+  `lib/presentation/common/contact_avatar.dart` 공용 위젯으로 통일.
+- Android 실기기에서만 확인됨 — **iOS에서는 아직 재확인 안 됨**(3.해야
+  할 일 참고).
 
 ### 리브랜딩 & 아이콘
 - 앱 이름 "커넥션센스"로 변경, 앱 아이콘도 실제로 새로 제작해서 적용(추가
@@ -88,16 +152,125 @@
 - iOS 실기기 빌드/설치는 `xcrun devicectl`, Android는 `adb`로 매번 직접
   설치·실행 확인하며 진행.
 
+## 2-0. 사용자가 결정할 일 (2026-08-04, 아래 항목 결정 완료 — 보류 해제)
+
+~~1. 명함/인맥 정보를 서버에 저장할지~~ → **결정됨: Firebase(Firebase
+Auth + Cloud Firestore, 서울 리전 asia-northeast3)에 저장하기로
+확정(추가 66) → 실제로 구축·구현까지 완료됨(추가 67).**
+
+~~2. 서버 없이 앱 업데이트를 어떻게 처리할지~~ → 1번이 "서버 있음"으로
+확정되면서 이 질문 자체가 해소됨.
+
+**⚠️ 중요 — 설계 문서와 실제 구현이 다르다**: `docs/planning/
+server-setup-plan.md`(다른 세션/에이전트가 작성)는 Cloud Functions
+기반 회원탈퇴 처리, 다중 계정 오염 방지 확인 다이얼로그, AI 프록시
+전환까지 포함한 큰 설계다. **실제로 이 세션에서 구현·배포·실기기
+검증까지 마친 것은 그보다 훨씬 가벼운 MVP**: 클라이언트가 Firestore에
+직접 읽고 쓰는 백업/복원(Cloud Functions 없음, 회원탈퇴 기능 없음,
+계정 오염 방지 다이얼로그 없음). 구현 상세는 "1. 한 일"과 backlog
+추가 67 참고. `server-setup-plan.md`를 "지금 상태"로 착각하지 말 것 —
+그 문서에 있는 나머지 기능(회원탈퇴, 마이그레이션 안전장치, 사진
+저장 2단계, AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에
+남은 항목으로 정리해 둠.
+
 ## 2. 하고 있는 일 (진행 중 / 방금 막 끝난 것)
 
-- **최신 사용자 요청(아직 미착수)**: 기기에 저장되는 전체 자료의 암호화
-  실태를 코드·Android/iOS 저장소 기준으로 점검하고, 평문 저장 항목은
-  암호화 저장소/암호화 DB로 이전해야 한다. 현재 확인된 구조는 AI API 키만
-  `flutter_secure_storage`, 명함·프로필·소통기록·위치 동의 기록은
-  `shared_preferences`이므로 “전체 기기 자료 암호화 완료”로 간주하면 안 된다.
-- **최신 사용자 요청(아직 미착수)**: 사용자가 첨부한 아이콘처럼 작은 홈 화면에서도
-  형태가 즉시 구분되도록 앱 아이콘을 새로 제작하고 iOS/Android 아이콘 세트에
-  재적용해야 한다. 현재 아이콘은 기존 `radar_on_brand_bg.png` 그대로다.
+- **서버(Firebase) 구축 계획서 작성 완료, 구현은 미착수(추가 66)**:
+  사용자가 명함/인맥 정보를 Firebase(Firebase Auth + Cloud Firestore +
+  Cloud Storage, 서울 리전)에 저장하기로 확정 — 아키텍처, Firestore
+  스키마(실제 `ContactModel`/`MyProfileModel` 필드 기준), 보안 규칙,
+  인증 연동, 앱 코드 변경 범위, 마이그레이션 절차(다중 계정 데이터
+  오염 방지 확인 다이얼로그 포함), 회원탈퇴 흐름, 개인정보 처리 관점,
+  단계별 구축 절차, 비용 추정까지 전 과정을 담은 문서를
+  `docs/planning/server-setup-plan.md`로 작성. **명함 사진 원본과 좌표
+  (lat/lng)는 서버에 올리지 않는 쪽으로 설계**(OCR 텍스트 필드만
+  Firestore에 저장) — 특히 좌표는 backlog 추가 40의 "서버로 전송하면
+  위치정보사업자 신고 재검토 필요" 경고를 근거로 보류. 실제 구현은
+  다음 단계로, "3. 해야 할 일" 2번 참고.
+- **서버 구축 계획서 개정(추가 67, 2026-08-04)**: QA 진행 중 사용자가
+  전달한 지시 2건을 반영해 `server-setup-plan.md`를 개정 —
+  ① **AI 연동을 BYOK에서 서버 프록시 방식으로 전환하기로 확정하고
+  이번 서버 구축 범위 안에 포함**(14번 섹션 신설. Cloud Functions AI
+  프록시, 사용자당 호출량 제한 일 10회/월 100회 제안, Google Gemini
+  무료 등급이 데이터를 모델 개선에 활용하는 정책임을 확인해 서버는
+  반드시 유료 등급으로 키를 발급하도록 경고, 기존 BYOK UI 처리 방침
+  2안, `ai_data_review_sheet.dart` 동의 문구 개정안까지 설계). ②
+  **명함 사진 서버 저장을 1단계(텍스트만, 기존 유지)와 분리된 확정
+  2단계 계획으로 승격**(15번 섹션 신설. Cloud Storage 경로·보안 규칙·
+  압축 정책·비용 추정·개인정보처리방침 변경 항목·기존 사용자 사진
+  소급 업로드는 옵트인 권장까지 설계). `release-roadmap.md`도 함께
+  갱신(P1-7 신설, Phase 3에 AI 프록시 구현 단계 추가, 8-6절 보류 항목
+  전부 "해소됨"으로 갱신).
+- **명함/프로필 서버 백업·복원 — 실제 구현·배포·실기기 검증 완료(추가
+  67, 2026-08-04)**: 위 계획서(`server-setup-plan.md`)의 축소 MVP
+  버전을 실제로 만들고 확인까지 끝냈다.
+  - Firebase 콘솔 작업(사용자와 함께 단계별로): 프로젝트 `connection-sense`
+    생성(`creamhouseapp@gmail.com` 공식 계정), Firestore 서울 리전
+    생성, Google 로그인 활성화. **Storage(사진)는 Blaze 유료 요금제가
+    필요하다는 걸 발견해 이번 범위에서 제외**(카드 등록은 사용자가
+    나중에 하기로 함 — 15번 섹션 "사진 2단계"는 아직 시작 전).
+  - 코드: `pubspec.yaml`에 `firebase_core`/`firebase_auth`/
+    `cloud_firestore` 추가, `lib/data/services/data_backup_service.dart`
+    (신규, Firestore 백업/복원 헬퍼), `AuthRepository`가 Google 로그인과
+    동시에 Firebase Auth에도 로그인해 `firebaseUid` 확보,
+    `ContactsRepository`/`MyProfileRepository`가 저장 시 서버 백업 +
+    로그인 직후 로컬이 비어있으면 서버에서 복원, `AuthGate`가 두
+    리포지토리에 uid를 배선.
+  - **Cloud Functions·회원탈퇴·다중 계정 오염 방지 다이얼로그는 이번에
+    구현 안 함** — `server-setup-plan.md`가 설계한 범위보다 작은 MVP다
+    (아래 "3. 해야 할 일"에 남은 항목으로 정리).
+  - 실기기(Android, 갤럭시 Z 폴드) 검증: Google 로그인 → Firebase Auth
+    계정 생성 확인(Identity Toolkit API로 직접 조회) → 프로필 저장 →
+    **Firestore에 실제 데이터 반영을 REST API로 직접 확인**(이름/회사/
+    직함/이메일/주소 전부 정상). 명함(contacts) 저장도 같은 코드
+    경로라 구조적으로는 검증됐지만 실제 명함 등록으로는 아직 미확인.
+  - **발견한 이슈**: 실기기 SHA-1 인증서를 Firebase에 등록하려는데
+    "이미 다른 프로젝트에 등록됨" 충돌 발생 — 예전 `globe2030@gmail.com`
+    계정(이제 안 씀) 쪽에 남은 등록으로 추정, 접근 불가해 **디버그
+    키스토어를 새로 생성**해 우회(기존 키스토어는 백업해 둠, 위치는
+    backlog 추가 67 참고). 이 때문에 기존 설치본과 서명이 달라져
+    재설치가 필요했음 — 이후 다른 세션/기기에서 같은 문제가 재발하면
+    같은 방법(새 디버그 키스토어 생성 → SHA-1 재등록) 반복.
+  - `analysis_options.yaml`에 `build/**` 분석 제외 규칙 추가(Firebase
+    패키지 추가 후 발견 — `flutter pub get`이 복사해두는 플러그인
+    테스트 소스가 analyzer에 잘못 포함돼 가짜 에러 수백 건이 나던 문제).
+- **기기 저장자료 암호화(설계 논의만 완료, 구현 미착수)**: 현재 확인된 구조는
+  AI API 키만 `flutter_secure_storage`, 명함·프로필·소통기록·위치 동의 기록은
+  `shared_preferences`(평문)이므로 "전체 기기 자료 암호화 완료"로 간주하면
+  안 된다. 별개로 "서버에 명함 원본 사진을 올리면 암호화되나"라는 질문에
+  답한 결론(추가 62 참고)도 함께 반영: Firebase Storage는 저장 시
+  자동으로 AES-256 암호화되고 전송도 TLS라 **서버 쪽 암호화는 기본 제공**이며,
+  진짜 위험은 접근 제어(Security Rules로 본인 파일만 본인이 읽게 강제)다.
+  기기 로컬 평문 저장(`shared_preferences`) 감사·이전은 여전히 미착수.
+- **앱 아이콘 A(라벤더 글라스) 실제 적용 + Android 실기기 검증 완료(추가
+  63~64)**: 샘플 5종 중 사용자가 A를 최종 선택.
+  `assets/icons3d/radar_lavender_full_bleed.png`(풀블리드 정사각형, OS
+  마스킹용)를 `flutter_launcher_icons` 소스로 지정해 재생성 — Android
+  `mipmap-*/ic_launcher.png`, iOS `AppIcon.appiconset` 모두 새 아이콘으로
+  교체됨. **Android 실기기(갤럭시 Z 폴드)에서 스크린샷으로 직접 확인**:
+  홈 화면 앱 아이콘이 라벤더로 정상 표시되고, 앱 열기 애니메이션도 새
+  아이콘으로 나옴. iOS도 같은 코드로 재빌드·재설치 완료했으나 기기
+  연결이 끊겨 자동 실행 확인은 못함 — **사용자가 직접 열어서 최종 확인
+  권장**(코드는 Android와 100% 동일하므로 문제 없을 것으로 예상).
+- **스플래시(로딩 화면) 이미지 교체 + 타이밍 수정 완료(추가 63~64)**: 기존엔
+  앱 아이콘이 아니라 퍼블리셔 CI 로고(`assets/CI.png`, "CREAMHOUSE"
+  워드마크)가 로딩 화면에 떠 있었다는 걸 발견 — 라벤더 아이콘(둥근 모서리·
+  투명 배경 버전, `assets/icons3d/radar_lavender_splash.png`)으로 교체.
+  처음엔 `Curves.easeOut`을 애니메이션 시작부터 적용해서 2초를 다 채우기
+  전에 첫 화면이 비쳐 보이는 문제가 있었음(사용자 제보) — `Interval(0.85,
+  1.0, curve: Curves.easeOut)`로 바꿔서 2초 중 1.7초는 완전히 불투명하게
+  떠 있다가 마지막 0.3초에만 빠르게 페이드아웃하도록 수정. Android
+  실기기에서 0초/1초/2.3초 스크린샷으로 의도한 타이밍 확인 완료. `CI.png`
+  파일 자체는 삭제하지 않고 보존.
+- **관리 콘솔(데이터 관리·통계) 화면설계서 — 목업 완료, 서버/실제 화면 구현은
+  미착수(추가 61)**: "서버 구축을 전제로" 한 관리자 대시보드 6개 화면
+  (대시보드/이벤트 퍼널/사용자/명함 데이터/스토리지/컴포넌트 시트)을 HTML
+  목업으로 제작(`docs/planning/design/admin_console_mockup.html`, 아티팩트
+  https://claude.ai/code/artifact/60d32895-ade3-4f2d-892f-4c34d81a9dc8).
+  "6. 화면별 통계 지표 제안"의 3개 퍼널을 그대로 시각화했고, 컴포넌트 시트에
+  컬러 토큰·타입 스케일·버튼/배지 변형을 Figma로 옮길 수 있게 정리해 둠.
+  **서버(해야 할 일 2번)가 실제로 생기기 전까지는 화면만 있고 데이터 연동은
+  없음** — 표시된 수치는 전부 예시.
 
 - **양쪽 플랫폼 동기화**: 이 세션 동안 대부분의 검증을 Android 실기기(삼성
   갤럭시 Z 폴드)로 진행하면서 여러 버그를 발견·수정했는데, iOS는 그동안 빌드가
@@ -122,26 +295,97 @@
    명함·프로필·소통기록·위치 동의 기록을 전수 분류하고, 개인정보/민감정보는
    iOS Keychain·Android Keystore 기반 키와 암호화 저장소로 이전. 기존 평문
    데이터 마이그레이션, 로그/백업 노출, 삭제 시 잔존 여부까지 테스트.
-2. **첨부 참고 기반 고시인성 앱 아이콘 재제작** — 1024px 원본, 180px/48px
-   축소 시인성, Android 마스크 안전영역, iOS 알파 제거를 확인하고
-   `flutter_launcher_icons` 재생성 후 양쪽 실기기 홈 화면에서 검수.
-3. **종료된 Gemini 기본 모델 수정** — 현재 `gemini-2.0-flash`는 2026-06-01
-   종료 상태이므로 공식 권장 활성 모델로 교체하고 실제 키로 호출 검증.
-4. **iOS 실기기에서 최신 빌드 전체 재확인** — 특히 이번 세션 후반부에
-   Android에서만 테스트된 기능들(도로명주소 변환 흐름, OCR 상세주소 분리, AI
-   연동, VIP 제거).
-5. **AI 연동 3개 제공사 실제 키로 테스트** — 설정 → AI 연동에서 Claude/ChatGPT/
+   (참고: 서버에 올라갈 이미지 자체의 암호화는 Firebase Storage 기본 제공
+   AES-256으로 해결되므로 별도 구현 불필요 — 추가 62. 이 항목은 순수하게
+   "지금 기기 안에 평문으로 있는 데이터"에 관한 것.)
+2. **서버(백엔드) — 명함/인맥 데이터 백업·복원 MVP는 완료(추가 67),
+   나머지는 미착수** — Firebase 프로젝트(`connection-sense`) 구축부터
+   Firestore 백업/복원 코드, 실기기 검증까지 끝났다(위 "2. 하고 있는
+   일" 참고). **남은 하위 작업**:
+   - **iOS 빌드·설치·테스트** — 아직 안 함. `flutterfire configure`가
+     이미 iOS 앱도 등록해 뒀고 `GoogleService-Info.plist`도 생성돼
+     있으니, `flutter build ios --release` + `devicectl` 설치 후 같은
+     방식(로그인 → 프로필 저장 → Firestore 반영 확인)으로 검증할 것.
+     iOS도 Google 로그인 자체가 처음 테스트되는 것이라 Android와 비슷한
+     설정 문제(예: URL scheme 미등록)가 나올 수 있음을 감안.
+   - **복원(restore) 흐름 실제 검증** — `restoreFromServerIfEmpty`가
+     로그인 직후 로컬이 비어있을 때 서버 데이터를 내려받는지 아직
+     실기기로 못 봤다(지금까지는 백업 쪽만 확인). 앱 삭제 후 재설치 →
+     재로그인으로 재현 가능.
+   - **명함(contacts) 백업 실제 확인** — 프로필 저장은 Firestore 반영을
+     확인했지만, 명함 등록/수정/삭제는 같은 코드 경로라 구조적으로만
+     검증됨. 실제 명함 하나 등록해서 Firestore 콘솔에서 확인할 것.
+   - **회원탈퇴 기능** — 현재 없음(로그아웃만 있음). 개인정보가 서버에
+     쌓이는 이상 법적으로 필요. `server-setup-plan.md` 8번 섹션에 Cloud
+     Functions 기반 설계가 있음(아직 미구현 — Cloud Functions 자체를
+     이번에 하나도 안 만들었음).
+   - **다중 계정 데이터 오염 방지 확인 다이얼로그** — `server-setup-plan.md`
+     7번 섹션 설계(레거시 로컬 데이터 소유권 확인 흐름)를 이번엔
+     구현하지 않았다. 지금 코드는 "로컬이 비어있으면 무조건 복원"만
+     하므로, 한 기기를 여러 계정이 써온 경우의 안전장치가 아직 없음.
+   - **개인정보처리방침 게시** — 서버 저장이 실제로 시작됐으니
+     `server-setup-plan.md` 9번 섹션 내용을 반영한 처리방침을 실제로
+     작성·게시해야 함(지금은 없음).
+   - **(a) 화면별 통계 수집/집계** — 아래 "6. 화면별 통계 지표 제안" 참고.
+     서버 없이도 Firebase Analytics 같은 SaaS로 초기 지표 일부는 수집
+     가능. Firebase 프로젝트가 이제 있으니 Analytics 연결 자체는 쉬움.
+   - **(b) AI API 키를 앱 제공사가 보유하는 방식으로 전환 — 설계 완료,
+     구현 미착수(`server-setup-plan.md` 14번 섹션, 추가 67)**. 사용자가
+     "AI 키를 사용자가 직접 발급받긴 너무 어렵다"고 판단해, 지금의 BYOK
+     방식 대신 서버가 Claude/OpenAI/Gemini 키를 보유하고 클라이언트
+     요청을 Cloud Functions로 프록시하는 구조로 확정했으나 **Cloud
+     Functions는 Blaze(유료) 요금제가 필요**해서 이번 세션에선 손대지
+     않았다(Storage와 같은 이유로 보류). **주의**: 클라이언트 앱
+     바이너리 안에 공용 API 키를 직접 넣으면 리버스 엔지니어링으로
+     추출돼 무단 사용·과금 피해로 이어지므로 반드시 서버 프록시를 거쳐야
+     하고, 사용자별 요청 한도(제안값: 일 10회/월 100회)·남용 탐지
+     (App Check 권장)도 함께 설계해 뒀다. **추가로 확인된 위험**: Google
+     Gemini API 무료 등급(결제 미연결)은 입력 데이터를 사람이 검수하고
+     모델 개선에 활용하는 정책임을 공식 약관에서 확인 — 서버가 보유할
+     키는 반드시 유료 등급으로 발급해야 한다(14.2절). 기존 BYOK 설정
+     화면(`ai_connection_modal_view.dart`)을 완전히 없앨지 고급 옵션으로
+     남길지는 두 안을 제시해 뒀고 최종 채택은 사용자 확인 필요. Firebase
+     Auth 연동은 이미 끝났으니(추가 67) 로그인 사용자 식별 수단은
+     확보된 상태 — 이 작업의 선행 조건은 충족됨.
+   - **명함 원본·아바타·프로필 사진 서버 저장(2단계)** — `server-setup-plan.md`
+     15번 섹션 설계 완료, 구현 미착수. **Cloud Storage 활성화에 Blaze
+     요금제(카드 등록) 필요하다는 걸 콘솔에서 확인**(추가 67) — 사용자가
+     "카드 등록은 나중에"로 결정해 이번 범위에서 제외. 카드 등록하기로
+     하면: Storage 콘솔에서 "시작하기" → `storage.rules` 배포(이미
+     레포에 있음, 배포만 하면 됨) → 클라이언트에 업로드 코드 추가.
+3. **SNS 로그인 확장** — Apple 로그인은 코드(`AuthRepository.signInWithApple`,
+   `SnsAuthProvider.apple`)는 이미 있고 유료 Apple Developer Program
+   가입 후 `isAvailable`만 켜면 됨(`sign_in_with_apple` 패키지 추가
+   필요). 네이버/페이스북은 원하면 추가 검토(둘 다 별도 개발자 콘솔
+   앱 등록이 필요해 카카오만큼은 아니지만 Google보다 느림).
+4. **앱 아이콘 A(라벤더) 실기기 최종 검수** — 아이콘 자체 교체는 끝났음(추가
+   63, 2번 섹션 참고). 남은 건 실기기에서 눈으로 직접 확인: iOS는 설치까지
+   됐으니 잠금 해제 후 직접 열어 홈 화면 아이콘 확인, Android는 기기
+   재연결 후 설치·확인. 두 플랫폼 다 180px/48px 축소 시인성, Android 마스크
+   안전영역(원형/스퀴클 등 런처별로 다르게 자를 때 중요 모티프가 잘리지
+   않는지), iOS 알파 제거가 제대로 됐는지 홈 화면에서 직접 봐야 함.
+5. **iOS 실기기에서 최신 빌드 전체 재확인** — 앱이 켜지고 로그인 화면까지
+   뜨는 것은 확인됐다(추가 48). 아직 안 된 것: Android에서만 테스트된
+   기능들을 iOS에서도 눌러보며 확인(도로명주소 변환 흐름, OCR 상세주소
+   분리, AI 연동, VIP 제거, SNS 로그인 실제 동작).
+6. **AI 연동 3개 제공사 실제 키로 테스트** — 설정 → AI 연동에서 Claude/ChatGPT/
    Gemini 각각 API 키를 넣고 실제 브리핑이 생성되는지 확인. 응답 파싱 실패 시
    `lib/core/services/ai_briefing_service.dart`의 `_callAnthropic`/`_callOpenAi`/
-   `_callGemini`를 최신 API 스펙에 맞게 수정.
-6. **Gmail OAuth 출시 설정·실기기 검증** — Google Cloud 프로젝트에서
+   `_callGemini`를 최신 API 스펙에 맞게 수정. Gemini는 기본 모델을 방금
+   `gemini-3.6-flash`로 교체했으니(추가 46) 이 모델로 실제 응답이 오는지도
+   같이 확인.
+7. **Gmail OAuth 출시 설정·실기기 검증** — Google Cloud 프로젝트에서
    Android SHA-1/패키지명과 iOS 번들 ID를 등록하고 OAuth 동의화면·제한
    범위 검증을 완료한 뒤, 실제 계정으로 선택 가져오기/중복 방지를 확인.
-7. **Android 실기기 재연결 QA** — 실행 중인 Mac의 ADB 목록에 기기가
-   나타나지 않았다. USB 디버깅/이 컴퓨터 허용 후 APK 설치, 첫 실행
-   위치 동의, 거부 및 설정 복귀, 명함 카메라를 실기기에서 재확인.
+   (SNS 로그인의 Google 버튼도 같은 OAuth 클라이언트를 쓰므로 같이 검증됨.)
+   **이게 끝나서 Google 로그인이 실제로 되면**, `login_view.dart`의
+   "디버그: 로그인 건너뛰기(QA용)" 버튼과 `AuthRepository.signInAsGuest()`
+   임시 우회 코드를 지울 것(추가 47 — OAuth 미등록 상태에서 로그인 게이트가
+   QA 자체를 막아서 임시로 추가한 것, `kDebugMode` 가드라 release 빌드엔
+   없지만 코드 자체는 정리 필요).
 8. **TestFlight / Apple Developer Program 가입** — 아직 안 되어 있어서 개발자
-   본인 외 다른 아이폰 테스터가 설치할 방법이 없음.
+   본인 외 다른 아이폰 테스터가 설치할 방법이 없음. (2-b, 3의 Apple 로그인
+   활성화도 이 가입에 걸려 있음.)
 9. **알림 센터 실제 파이프라인 여부 결정** — 지금은 가짜 데이터 대신 빈 상태로
    만 바꿔뒀고, 실제 근접감지/신규등록 이벤트를 알림으로 쌓는 기능은 미구현.
    필요하면 새로 설계해야 함(중간 규모 작업).
@@ -154,6 +398,12 @@
    막 시작했고 여러 버그가 나왔음(지오코딩 무한 대기, 도로명 변환 시 상세주소
    유실, 내 프로필 재촬영 안내 누락 등 — 전부 수정됨). 계속 써보면서 추가로
    나오는 이슈에 대비.
+13. **내 프로필 사진 등록/수정 재확인 (2026-08-03 사용자 요청, 추가 60)** —
+   `my_profile_edit_modal_view.dart`의 `_pickAvatarPhoto()`/`_removeAvatarPhoto()`가
+   이미 실제 `image_picker` 기반으로 구현돼 있고(작업 #13, 완료 표시됨),
+   진입 경로도 존재(주변인맥 화면 상단 아바타 → 내 프로필 → 수정). 사용자가
+   증상을 특정하지 않은 채 "그래도 할일로 남겨줘"라고 해서 등록 — 실기기에서
+   등록/저장/재진입 반영, 삭제/저장/재진입 반영을 다시 라이브로 재현·확인할 것.
 
 ## 4. 파일 가이드 — 다음 개발자가 먼저 봐야 할 파일
 
@@ -162,6 +412,19 @@
   로그가 다 있고, 각 항목마다 사용자 피드백 원문 + 원인 분석 + 수정 내용이
   적혀 있어서 "왜 이렇게 짰는지"를 알 수 있다.
 - **이 파일(`HANDOFF.md`)** — 현재 상태 요약.
+- **`docs/planning/server-setup-plan.md`** — 명함/인맥 데이터를
+  Firebase(Firebase Auth + Cloud Firestore + Cloud Storage)에 저장하는
+  전 과정 설계 문서(추가 66, 추가 67에서 개정). 아키텍처·Firestore
+  스키마·보안 규칙·마이그레이션·회원탈퇴·개인정보 처리·단계별 구축
+  절차·비용 추정에 더해 **AI 연동 BYOK→서버 프록시 전환(14번 섹션)**과
+  **명함/아바타/프로필 사진 서버 저장 2단계 계획(15번 섹션)**까지
+  포함. **서버 구축("3. 해야 할 일" 2번)에 착수할 때 가장 먼저 읽을
+  문서.**
+- **`docs/planning/design/`** — 코드 구현 전 단계의 디자인 목업(정적 HTML,
+  서버·API 연동 없음). `admin_console_mockup.html`(관리 콘솔 데이터
+  관리·통계 화면설계서, Figma 이전용 컴포넌트 시트 포함),
+  `app_icon_samples.html`(앱 아이콘 밝은 계통 샘플 5종). 브라우저로 그냥
+  열면 됨.
 
 ### 앱 구조 진입점
 - `lib/main.dart` — Provider 등록(Repository들을 여기서 앱 전역에 주입), 앱 루트.
@@ -173,12 +436,17 @@
 - `lib/data/models/my_profile_model.dart` — 내 프로필(내 디지털 명함) 모델.
 - `lib/data/models/ai_provider.dart` — AI 제공사(Claude/OpenAI/Gemini) enum +
   콘솔 URL/발급 안내.
+- `lib/data/models/sns_auth_provider.dart` — SNS 로그인 제공사(Google/Apple)
+  enum. `isAvailable`이 `false`인 동안은 로그인 화면에서 버튼이 비활성화됨.
 
 ### 리포지토리 (영속성 계층)
 - `lib/data/repositories/contacts_repository.dart`
 - `lib/data/repositories/my_profile_repository.dart`
 - `lib/data/repositories/ai_credentials_repository.dart` — AI API 키를
   `flutter_secure_storage`에 저장(민감정보 vs 일반 설정을 분리해서 관리).
+- `lib/data/repositories/auth_repository.dart` — SNS 로그인 세션(제공사/이름/
+  이메일/사진)을 `flutter_secure_storage`에 저장. 서버 계정 시스템이 생기면
+  세션을 서버 발급 토큰으로 교체할 지점.
 
 ### 핵심 서비스 (외부 API 연동 로직)
 - `lib/core/services/ocr_scanner_service.dart` — OCR 텍스트를 이름/회사/주소
@@ -194,6 +462,10 @@
   조회. 저장은 `EmailImportSheet`에서 사용자가 선택한 뒤 수행.
 - `lib/core/services/comm_log_sync_service.dart` — 과거 API 호환용 비활성
   스텁. 출시 앱에서 통화/문자 자동 수집을 다시 활성화하지 말 것.
+- `lib/core/services/google_auth_gateway.dart` — `GoogleSignIn.instance.
+  initialize()`를 앱 전체에서 한 번만 호출하도록 감싸는 공유 게이트웨이.
+  `AuthRepository`와 `EmailSyncService`가 같이 쓴다 — Google Sign-In을
+  직접 다시 초기화하는 코드를 새로 추가하지 말 것(undefined behavior).
 
 ### 주요 화면 (복잡도 높은 순)
 - `lib/presentation/features/wallet/views/add_card_modal_view.dart` — **가장
@@ -211,7 +483,16 @@
   라우팅, Gmail 선택 가져오기, 통화/문자/카카오톡 수동 입력.
 - `lib/presentation/features/settings/views/ai_connection_modal_view.dart` — AI
   제공사별 API 키 입력/발급 안내 화면.
-- `lib/presentation/features/radar/views/radar_view.dart` — 첫 화면(레이더).
+- `lib/presentation/features/radar/views/radar_view.dart` — 첫 화면(레이더),
+  퍼플 톤 디자인 시안 구조로 재설계됨(추가 49).
+- `lib/presentation/common/contact_avatar.dart` — 인맥 사진 아바타 공용
+  위젯(사진 있으면 표시, 없으면 이니셜). 새 아바타 표시 코드는 반드시
+  이걸 재사용할 것 — 예전 Unsplash 스톡사진 프리셋 같은 가짜 사진을
+  다시 넣지 말 것.
+- `lib/presentation/features/auth/views/login_view.dart`,
+  `lib/presentation/common/auth_gate.dart` — SNS 로그인 화면과 앱 진입
+  게이트(`SplashGate` → `AuthGate` → `MainTabScreen` 순서로 `main.dart`에
+  연결돼 있음).
 
 ### 브랜딩 에셋 생성 스크립트
 - `tool/generate_app_icon_bg.dart` — 앱 아이콘(`assets/icons3d/
@@ -246,3 +527,60 @@
 - **Android 폴더블 기기 스크린샷**: `adb exec-out screencap -p`만 쓰면 멀티
   디스플레이 경고가 섞여 나온다 — `-d <display-id>`를 명시해야 함
   (`dumpsys SurfaceFlinger --display-id`로 확인).
+- **iOS 실기기에서 debug 빌드를 홈 화면에서 단독 실행하면 즉시 죽는다
+  (signal 11)**: debug 모드 앱은 Flutter 툴이 계속 붙어 있어야 엔진이 뜨는
+  구조라, `flutter build ios --debug` + `xcrun devicectl device process
+  launch`처럼 따로 설치·실행하면 크래시한다. 그렇다고 `flutter run -d
+  <device>`를 쓰면 이 환경에서는 Xcode 자동화 제어 권한(macOS 설정 →
+  개인정보 보호 및 보안 → 자동화) 이슈로 "Xcode가 디버깅 시작에 예상보다
+  오래 걸림"에서 무선·USB 상관없이 무한 대기한다(추가 48). **실기기에서
+  그냥 눌러보는 용도라면 `flutter build ios --release` (또는 `--profile`) +
+  `xcrun devicectl device install app` + `xcrun devicectl device process
+  launch`로 우회할 것** — release/profile 앱은 툴 연결 없이 홈 화면에서
+  독립 실행되므로 이 문제 자체를 피해간다. `flutter run`으로 핫리로드까지
+  쓰며 디버깅하려면 위 macOS 자동화 권한을 직접 켜야 한다(터미널에서는
+  대신 눌러줄 수 없는 시스템 팝업).
+- **iOS release 빌드가 "Module Verifier" 관련 CocoaPods 에러로 실패하면**
+  (`could not build module 'google_mlkit_commons'`/`'Test'` 등) `cd ios &&
+  pod install`을 다시 실행해 볼 것 — `ios/Podfile`의 `post_install`에 이미
+  `CLANG_ENABLE_MODULE_VERIFIER`/`ENABLE_MODULE_VERIFIER`를 끄는 우회가
+  있지만, Pods 프로젝트가 그 설정 적용 전 상태로 캐시돼 있으면 재발한다.
+
+## 6. 화면별 통계 지표 제안 (수집 로직은 아직 미구현 — 서버가 생긴 뒤 착수)
+
+사용자 요청으로 "무엇을 측정하면 유익할지"만 먼저 정리해 둔 목록. 실제
+이벤트 전송 코드나 집계 서버는 **아직 없다** — 3.해야 할 일 2번(서버 구축)에서
+구현할 때 이 목록을 이벤트 설계의 출발점으로 쓰면 된다. 서버 자체 집계
+대신 Firebase Analytics/Amplitude 같은 SaaS를 붙이면 서버 없이도 클라이언트
+SDK만으로 상당수는 먼저 수집할 수 있다는 점도 참고(사용자는 "서버 구축은
+해야 할 일로 남겨 달라"고 했으므로, 여기서는 지표 설계만 하고 SDK/서버
+연동은 하지 않았다).
+
+### 화면별 지표
+
+- **로그인/회원가입 화면**(`login_view.dart`, 신규): 로그인 시도 수, 제공사별
+  선택 비율(Google vs Apple), 로그인 성공/실패율과 실패 사유, 앱 설치 →
+  최초 로그인 완료까지 걸린 시간(온보딩 이탈 지점 파악).
+- **레이더(첫 화면)**: DAU/WAU, 화면 진입당 평균 체류시간, 근접 알림 노출
+  횟수와 알림→앱 재진입 전환율(리텐션의 핵심 지표), 위치 동의 화면 도달률·
+  동의율·거부율(퍼널).
+- **명함 지갑(목록)**: 사용자당 등록 명함 수 분포, 검색/필터 사용률, 목록→
+  상세 진입율.
+- **명함 등록/스캔**(`camera_scan_modal_view.dart`, `add_card_modal_view.dart`):
+  촬영 시도 대비 성공률, 자동 촬영 vs 수동 촬영 비율, OCR 필드별 자동 인식
+  성공률(사용자가 직접 수정한 필드가 무엇인지 — 파싱 로직 개선의 근거),
+  도로명주소 변환 제안 수락률, "뒷면 스캔" 안내 노출 후 실제 재촬영 비율,
+  등록 시작→저장 완료까지 소요 시간(퍼널 이탈 지점).
+- **내 프로필**: 프로필 항목별(이름/연락처/주소/사진) 채움 비율, QR 공유
+  횟수.
+- **AI 브리핑**(`briefing_overlay_view.dart`, 설정 → AI 연동): 제공사별
+  연동률(Claude/OpenAI/Gemini), 브리핑 요청 수와 성공/실패율, 실패 시
+  오류 유형 분포(응답 파싱 실패 등 — 7번 항목의 실사용 검증과 직결),
+  데이터 전송 동의 화면(`ai_data_review_sheet.dart`)에서의 동의율.
+- **소통기록 입력**(`communication_source_sheet.dart` 등): 채널별(통화/문자/
+  이메일/카카오톡) 입력 비중, Gmail 선택 가져오기 사용률.
+- **설정**: 위치 감지 반경 변경 분포, 위치 동의율/철회율, 위치정보 이용
+  안내 열람율, 로그아웃 빈도.
+- **공통/전체**: 크래시율, 화면별 로딩 실패율, 세션당 평균 체류시간,
+  리텐션(D1/D7/D30), 설치 후 첫 명함 등록 완료까지 걸린 시간(핵심 활성화
+  지표 — 위 "명함 등록/스캔" 퍼널과 함께 봐야 함).

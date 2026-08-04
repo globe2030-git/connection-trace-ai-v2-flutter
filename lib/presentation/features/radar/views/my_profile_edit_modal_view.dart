@@ -79,7 +79,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     );
     if (result == null || !mounted) return;
     setState(() {
-      _addressController.text = result.address.trim();
+      _setTextFromStart(_addressController, result.address.trim());
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
       if (result.buildingName != null &&
@@ -87,6 +87,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
         _addressDetailController.text = result.buildingName!;
       }
     });
+  }
+
+  /// `controller.text = value`만 쓰면 커서가 맨 끝으로 가서, 한 줄짜리 주소
+  /// 입력칸에서 시작 부분이 아니라 끝부분만 스크롤되어 보여 "글자가 잘려서
+  /// 들어간 것"처럼 보이는 문제가 있었다. 커서를 맨 앞(0)으로 둬서 항상
+  /// 텍스트 시작부터 보이게 한다.
+  void _setTextFromStart(TextEditingController controller, String value) {
+    controller.value = TextEditingValue(
+      text: value,
+      selection: const TextSelection.collapsed(offset: 0),
+    );
   }
 
   /// 내 명함도 실물 명함을 스캔해서 채울 수 있어야 한다는 요청으로 추가 —
@@ -123,7 +134,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       if (result.email.trim().isNotEmpty)
         _emailController.text = result.email.trim();
       if (result.address.trim().isNotEmpty)
-        _addressController.text = result.address.trim();
+        _setTextFromStart(_addressController, result.address.trim());
       if (result.addressDetail.trim().isNotEmpty)
         _addressDetailController.text = result.addressDetail.trim();
     });

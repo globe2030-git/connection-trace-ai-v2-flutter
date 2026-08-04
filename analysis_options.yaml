@@ -9,6 +9,15 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+analyzer:
+  # build/에는 flutter pub get이 각 플러그인의 네이티브 소스(테스트 파일
+  # 포함)를 복사해 두는 SourcePackages 캐시가 있는데, 여기 있는 mockito
+  # 기반 테스트 코드가 우리 프로젝트 analyzer 설정으로는 컴파일이 안 돼
+  # 수백 건의 가짜 에러로 잡힌다(2026-08-04, firebase_auth 추가 시 발견).
+  # 빌드 산출물 디렉터리라 애초에 분석 대상이 아니어야 한다.
+  exclude:
+    - build/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

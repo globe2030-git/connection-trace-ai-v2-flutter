@@ -55,6 +55,8 @@ class ContactModel {
   final String? address;
   // 상세주소 — 건물명/동/호수 등. 지오코딩에는 쓰이지 않고 표시용으로만 보관.
   final String? addressDetail;
+  // 우편번호(5자리). 지오코딩에는 쓰이지 않고 표시/등록용으로만 보관.
+  final String? postalCode;
   final String? avatarUrl;
   final GeoPosition? geo;
   final List<String> tags;
@@ -77,6 +79,7 @@ class ContactModel {
     required this.email,
     this.address,
     this.addressDetail,
+    this.postalCode,
     this.avatarUrl,
     this.geo,
     required this.tags,
@@ -97,6 +100,7 @@ class ContactModel {
       'email': email,
       'address': address,
       'addressDetail': addressDetail,
+      'postalCode': postalCode,
       'avatarUrl': avatarUrl,
       'lat': geo?.lat,
       'lng': geo?.lng,
@@ -119,6 +123,7 @@ class ContactModel {
       email: json['email'] as String,
       address: json['address'] as String?,
       addressDetail: json['addressDetail'] as String?,
+      postalCode: json['postalCode'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       geo: json['lat'] != null && json['lng'] != null
           ? GeoPosition(
@@ -151,6 +156,7 @@ class ContactModel {
     String? email,
     String? address,
     String? addressDetail,
+    String? postalCode,
     String? avatarUrl,
     GeoPosition? geo,
     List<String>? tags,
@@ -169,6 +175,7 @@ class ContactModel {
       email: email ?? this.email,
       address: address ?? this.address,
       addressDetail: addressDetail ?? this.addressDetail,
+      postalCode: postalCode ?? this.postalCode,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,

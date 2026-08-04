@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/repositories/ai_credentials_repository.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/glass_card.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
@@ -15,6 +16,7 @@ class SettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final radarViewModel = context.watch<RadarViewModel>();
     final aiCredentials = context.watch<AiCredentialsRepository>();
+    final auth = context.watch<AuthRepository>();
     final (statusTitle, statusMessage, statusColor) = _locationStatus(
       radarViewModel.locationAccessState,
     );
@@ -37,25 +39,46 @@ class SettingsView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
+              const _SectionTitle('계정'),
+              const SizedBox(height: 10),
+              _GroupedCard(
+                children: [
+                  _SettingsRow(
+                    icon: Icons.account_circle_outlined,
+                    title: auth.displayName ?? '로그인됨',
+                    subtitle: [
+                      if (auth.provider != null) auth.provider!.displayName,
+                      if (auth.email != null) auth.email!,
+                    ].join(' · '),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.logout,
+                    title: '로그아웃',
+                    subtitle: '이 기기에 저장된 로그인 정보를 지웁니다',
+                    titleColor: AppColors.destructive,
+                    onTap: () => _confirmSignOut(context, auth),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 26),
               GlassCard(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 48,
-                          height: 48,
+                          width: 40,
+                          height: 40,
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             color: AppColors.accentSoft,
-                            borderRadius: BorderRadius.circular(15),
+                            borderRadius: BorderRadius.circular(13),
                           ),
                           child: radarViewModel.isRefreshingLocation
                               ? const SizedBox(
-                                  width: 21,
-                                  height: 21,
+                                  width: 18,
+                                  height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     color: AppColors.accent,
@@ -64,85 +87,105 @@ class SettingsView extends StatelessWidget {
                               : const Icon(
                                   Icons.location_on,
                                   color: AppColors.accent,
-                                  size: 26,
+                                  size: 22,
                                 ),
                         ),
                         const SizedBox(width: 14),
-                        Expanded(
+                        const Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      '위치 서비스',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    statusTitle,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: statusColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 5),
                               Text(
-                                statusMessage,
-                                style: const TextStyle(
-                                  fontSize: 12.5,
-                                  height: 1.45,
+                                '위치 서비스',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Text(
+                                '주변 인맥과의 거리 계산에만 사용',
+                                style: TextStyle(
+                                  fontSize: 12,
                                   color: AppColors.textSecondary,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton(
-                        onPressed: radarViewModel.isRefreshingLocation
-                            ? null
-                            : () => handleLocationAccessAction(
-                                context,
-                                radarViewModel,
-                                openSettingsWhenReady: true,
-                              ),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                          side: const BorderSide(
-                            color: AppColors.borderFunctional,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                        Text(
+                          statusTitle,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: statusColor,
                           ),
                         ),
-                        child: Text(
-                          _locationActionLabel(
-                            radarViewModel.locationAccessState,
+                      ],
+                    ),
+                    if (radarViewModel.locationAccessState !=
+                        LocationAccessState.ready) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        statusMessage,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.45,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: radarViewModel.isRefreshingLocation
+                              ? null
+                              : () => handleLocationAccessAction(
+                                  context,
+                                  radarViewModel,
+                                  openSettingsWhenReady: true,
+                                ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(46),
+                            side: const BorderSide(
+                              color: AppColors.borderFunctional,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            _locationActionLabel(
+                              radarViewModel.locationAccessState,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(height: 26),
-              const _SectionTitle('위치'),
+              const _SectionTitle('위치 및 알림'),
               const SizedBox(height: 10),
               _GroupedCard(
                 children: [
+                  _SettingsSwitchRow(
+                    icon: Icons.podcasts_outlined,
+                    title: '주변 인맥 감지',
+                    subtitle: radarViewModel.hasLocationConsent
+                        ? '위치 사용에 동의했습니다'
+                        : '꺼져 있으면 주변 거리 기능을 쓸 수 없습니다',
+                    value: radarViewModel.hasLocationConsent,
+                    onChanged: radarViewModel.isRefreshingLocation
+                        ? null
+                        : (turnOn) => turnOn
+                              ? radarViewModel.acceptLocationConsent()
+                              : _confirmConsentWithdrawal(
+                                  context,
+                                  radarViewModel,
+                                ),
+                  ),
                   _SettingsRow(
                     icon: Icons.radar_outlined,
                     title: '감지 반경',
@@ -368,6 +411,79 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
+/// `_SettingsRow`와 같은 시각적 스타일이지만 끝에 스위치가 붙는 행. 실제
+/// 상태(예: 위치 이용 동의 여부)와 연결해서만 쓸 것 — 아무 상태도 바꾸지
+/// 않는 장식용 토글은 절대 추가하지 않는다.
+class _SettingsSwitchRow extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  const _SettingsSwitchRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 76),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.accentSoft,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: AppColors.accentText, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      height: 1.4,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              activeTrackColor: AppColors.accent,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _showRadiusPicker(
   BuildContext context,
   RadarViewModel viewModel,
@@ -439,6 +555,30 @@ Future<void> _confirmConsentWithdrawal(
     ),
   );
   if (confirmed == true) await viewModel.withdrawLocationConsent();
+}
+
+Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('로그아웃할까요?'),
+      content: const Text('다시 사용하려면 SNS 계정으로 다시 로그인해야 합니다.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '로그아웃',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await auth.signOut();
 }
 
 (String, String, Color) _locationStatus(LocationAccessState state) {

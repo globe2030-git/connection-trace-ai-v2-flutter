@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// 명함/인맥 데이터 백업·복원용 Firestore 보안 규칙.
+// 원칙: 본인(uid) 소유 데이터만 본인만 읽고 쓸 수 있다. 로그인 안 한 요청은 전부 거부.
+// 참고: docs/planning/backlog.md 추가 66, docs/planning/HANDOFF.md "2-0".
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      match /contacts/{contactId} {
+        allow read, write: if isOwner(uid);
+
+        match /commLogs/{logId} {
+          allow read, write: if isOwner(uid);
+        }
+      }
+    }
+
+    // 명시적으로 나열되지 않은 모든 경로는 기본 거부.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
