@@ -5,6 +5,254 @@
 
 ---
 
+## 2026-08-04 — iOS Bundle ID가 예전 개인 계정에 선점돼 회사 계정 서명 실패
+
+### 증상
+회사 유료 Apple Developer 계정(CreamHouse Co., Xcode에 `apps@creamhouse.net`
+로그인)으로 서명하려는데 Signing & Capabilities에 계속 에러: "Failed
+Registering Bundle Identifier — The app identifier
+'com.connectiontrace.connectionTraceAiFlutter' cannot be registered to your
+development team because it is not available."
+
+### 원인
+Bundle ID는 Apple 전체에서 전역으로 유일해야 하는데, 이 ID가 예전에
+개인 무료 Apple ID(Personal Team, 실기기 테스트용 자동 서명)로 이미
+등록돼 있었음. 이번 세션 이전 실기기 테스트(추가 48 등)를 그 개인 계정
+무료 서명으로 했었기 때문 — Firebase Android SHA-1 충돌(2026-08-02
+있었을 것으로 추정)과 같은 계열의 "예전 개인 계정 잔재" 문제.
+
+### 해결
+새 Bundle ID `com.creamhouse.connectionsense`로 변경(회사명 + Firebase
+프로젝트 ID `connection-sense`와 통일). 연쇄로 같이 바꿔야 했던 것:
+- `ios/Runner.xcodeproj/project.pbxproj`의 `PRODUCT_BUNDLE_IDENTIFIER`
+  전부(Runner + RunnerTests, `.RunnerTests` 접미사 포함 총 6곳)
+- Firebase에 새 iOS 앱 등록: `firebase apps:create IOS "커넥션센스 iOS"
+  --bundle-id com.creamhouse.connectionsense --project connection-sense`
+- `firebase apps:sdkconfig IOS <새 app id> --out
+  ios/Runner/GoogleService-Info.plist`로 새 설정 파일 교체(기존 파일
+  삭제 후 재실행 필요 — "already exists" 에러남)
+- **가장 놓치기 쉬웠던 부분**: `ios/Runner/Info.plist`의 `GIDClientID`와
+  `CFBundleURLTypes`의 URL 스킴(`com.googleusercontent.apps.<번호>`)이
+  새 `GoogleService-Info.plist`의 `CLIENT_ID`/`REVERSED_CLIENT_ID`와
+  전혀 다른 값(예전 프로젝트 번호)으로 남아있었음 — 이걸 안 고치면
+  Firebase 앱은 새로 등록해도 Google 로그인 콜백 URL 스킴이 안 맞아서
+  로그인이 조용히 실패함.
+- Android는 영향 없음(패키지명이 Apple 계정 시스템과 무관해 충돌 자체가
+  없음).
+
+### 교훈/패턴
+- Bundle ID 충돌 에러 메시지는 "권한 문제"처럼 안 보이지만 실제로는
+  "이 ID, 다른 계정이 이미 씀"이 진짜 원인인 경우가 많다. 특히 개인
+  Apple ID로 무료 서명 테스트를 하다가 나중에 회사 유료 계정으로
+  넘어가는 프로젝트에서 재발 가능성 높음.
+- Firebase iOS 앱을 재등록할 때는 `GoogleService-Info.plist`뿐 아니라
+  **`Info.plist`의 `GIDClientID`/URL 스킴도 반드시 같이 확인**할 것 —
+  둘 다 최신이 아니면 앱은 빌드되는데 로그인만 원인 불명으로 실패한다.
+
+---
+
+## 2026-08-04 — Firebase 패키지가 iOS 15.0 요구하는데 Xcode는 13.0으로 봄 (Flutter 툴체인 자체 버그)
+
+### 증상
+위 Bundle ID 문제를 고치고 나서도 Xcode Issue Navigator에 빨간 에러 3개:
+"The package product 'cloud-firestore' requires minimum platform version
+15.0 for the iOS platform, but this target supports 13.0" (firebase-auth,
+firebase-core도 동일). `ios/Podfile`과 `Runner`/`RunnerTests` 타겟의
+`IPHONEOS_DEPLOYMENT_TARGET`은 이미 15.5로 정확히 맞춰져 있는데도 에러가
+사라지지 않음.
+
+### 삽질 순서 (결과적으로 다 원인이 아니었음)
+1. `RunnerTests` 타겟 3개 빌드 설정에 `IPHONEOS_DEPLOYMENT_TARGET` 키
+   자체가 없어서(기본값 13.0으로 떨어짐) 명시적으로 15.5 추가 —
+   에러 문구의 출처가 `RunnerTests`인 줄 알았으나 재빌드해도 에러 그대로.
+2. 에러가 실제로는 `FlutterGeneratedPluginSwiftPackage`(Runner/
+   RunnerTests가 아니라 Flutter가 자동 생성하는 별도 Swift Package)에서
+   나는 걸 Xcode Issue Navigator 그룹핑으로 확인.
+3. `ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage/
+   Package.swift`(생성 파일, "Do not edit" 주석)를 열어보니
+   `platforms: [.iOS("13.0")]`로 하드코딩. `flutter clean` +
+   `flutter pub get`으로 재생성해도 값이 그대로 13.0.
+4. `ios/Flutter/AppFrameworkInfo.plist`에 `MinimumOSVersion` 키가 아예
+   없길래 이게 원인인 줄 알고 `15.5`로 추가 — 재생성해도 여전히 13.0.
+   (이 키 자체는 무해하니 남겨둠, 원인은 아니었음.)
+
+### 진짜 원인
+Flutter SDK(이 환경 버전 3.44.8) 자체 소스코드에 하드코딩돼 있음 —
+`flutter_tools/lib/src/darwin/darwin.dart`의 `FlutterDarwinPlatform.
+deploymentTarget()`이 iOS는 무조건 `Version(13, 0, null)`을 반환하고,
+이 값이 `FlutterGeneratedPluginSwiftPackage`의 플랫폼 최소버전으로 그대로
+쓰인다. **프로젝트 설정(Podfile, Info.plist, Xcode 빌드 설정) 어느 것으로도
+못 고치는 Flutter 툴체인 자체의 값**이라, 이 패키지에 Firebase처럼
+15.0+를 요구하는 의존성이 하나라도 들어가면 항상 충돌한다.
+
+### 해결
+이 프로젝트만 Swift Package Manager를 끄고 기존 CocoaPods(Podfile) 경로로
+완전히 되돌림. `pubspec.yaml`의 `flutter:` 블록에:
+```yaml
+flutter:
+  config:
+    enable-swift-package-manager: false
+```
+(예전 문법 `flutter: disable-swift-package-manager: true`는 이 Flutter
+버전에서 deprecated — 에러 메시지가 새 문법을 알려줌.) 이후 `flutter clean`
+→ `flutter pub get` → `flutter build ios --no-codesign --debug`로
+재빌드하면 Flutter가 Xcode 프로젝트의 SPM 패키지 참조를 자동으로 정리하고
+(`project.pbxproj`가 툴체인에 의해 자동 수정됨 — 사용자/린터가 고친 게
+아니라 정상 동작), Firebase를 포함한 모든 플러그인이 CocoaPods로만
+설치된다. `FlutterGeneratedPluginSwiftPackage`는 껍데기만 남고
+`dependencies: []`가 되어 더 이상 버전 충돌이 없음.
+
+### 교훈/패턴
+- Flutter의 실험적 Swift Package Manager 지원(`swift_package_manager_
+  enabled`)은 아직 Firebase 같은 실제 15.0+ 요구 패키지와 부딪히는
+  하드코딩 버그가 있다(최소 3.44.8 기준). Firebase를 쓰는 iOS 프로젝트는
+  당분간 SPM을 끄고 CocoaPods만 쓰는 게 안전.
+- "Generated file. Do not edit." 주석이 있는 파일에서 이상한 값을
+  발견하면, 그 값이 프로젝트 설정 파일이 아니라 **Flutter SDK 자체 소스
+  코드**에서 오는 건 아닌지 확인할 것(`grep`으로 flutter_tools 소스 직접
+  뒤져서 근거를 찾은 게 실제로 유효했음 — 삽질 4번까지는 전부 "프로젝트
+  설정 문제"라는 잘못된 전제였음).
+
+---
+
+## 2026-08-04 — DerivedData 오염으로 dyld 레벨 크래시/이상 로그
+
+### 증상
+위 두 문제를 고친 뒤 Xcode에서 Run 했더니 "Paused"/"Communicating on a
+dead channel" 반복, `dyld4::ExternallyViewableState::triggerNotifications`
+근처에서 멈춤, `[FirebaseCore] No app has been configured yet.`,
+`fopen failed... No such file or directory` 등 낯선 로그 다수. Xcode
+Issue Navigator에는 "Stale file ... located outside of the allowed root
+paths" 경고가 4138개나 뜸.
+
+### 원인 분석 (결론적으로 확실히 특정은 못 했지만)
+SPM→CocoaPods 전환 직후라 터미널에서 `flutter build ios`로 만든 빌드
+산출물(`build/ios/iphoneos/`)과, Xcode가 실제로 기기에 설치할 때 쓰는
+자기만의 DerivedData(`~/Library/Developer/Xcode/DerivedData/Runner-*`)가
+서로 다른 시점의 프로젝트 상태를 반영한 채 섞여 있었을 가능성이 높음.
+프로젝트가 외장 볼륨(`/Volumes/X31(VM)/Claude/...`)에 있는 것도 "stale
+file outside allowed root paths" 경고가 유독 많이 뜨는 것과 관련 있어
+보임(Xcode 빌드 시스템이 비표준 볼륨 경로를 덜 신뢰하는 경향).
+
+### 해결
+`~/Library/Developer/Xcode/DerivedData/Runner-*` 전부 삭제(안전하고
+되돌릴 수 있는 캐시 삭제) → Xcode 완전 종료 후 재시작 → Clean Build
+Folder → 재빌드. 이후 정상적으로 "Running Runner on ..." 상태로 안착,
+Firebase 로그인·Firestore 백업까지 정상 동작 확인.
+
+### 교훈/패턴
+- 이런 저수준 dyld/RunningBoard 계열 로그(`RBSServiceErrorDomain`,
+  `usermanagerd.xpc`, `Communicating on a dead channel`)가 나온다고
+  바로 "기기 연결 문제"나 "코드 크래시"로 단정하지 말 것 — 이번엔 둘 다
+  아니었고, 재현이 안 되는 일회성 노이즈였거나(무선 디버깅 연결의 경우)
+  DerivedData 오염이 진짜 원인이었다. 반대로 USB로 바꿔도 똑같이
+  나면 무선 연결 문제는 배제하고 DerivedData/클린 빌드 쪽을 의심할 것.
+- 프로젝트 설정을 크게 바꾼 직후(이번처럼 SPM↔CocoaPods 전환, Bundle ID
+  변경 등)에는 DerivedData를 선제적으로 지우고 시작하는 게 여러 단계의
+  삽질을 줄여준다.
+
+---
+
+## 2026-08-04 — App Store Connect 빌드 업로드 403 (미해결, 다음 세션에서 이어감)
+
+### 증상
+Xcode Organizer → Distribute App → App Store Connect Upload 진행 시
+"App Record Creation Error"(1차) → 앱 레코드를 App Store Connect
+웹사이트에서 수동으로 먼저 만들어서 해소 → 그 다음 실제 빌드 업로드
+단계에서 `xcdistributionlogs/ContentDelivery.log`에 다음 에러:
+```
+"code" : "FORBIDDEN_ERROR.ROLE_NOT_VALID",
+"title" : "You do not have required role or permission to perform an operation"
+```
+`list-buildUploads`, `CREATE BUILD (ASSET_UPLOAD)` 두 API 호출 모두 403.
+
+### 확인된 것
+- Xcode에 로그인된 계정: `choi woojin` / `apps@creamhouse.net`
+  (`ios/Runner.xcodeproj` Signing 화면의 서명 인증서 이름과 일치).
+- 이 계정은 **Developer Portal**(인증서/식별자/프로파일 관리, Xcode
+  환경설정 → Apple Accounts 화면)에서는 "CreamHouse Co." 팀의 **Admin**
+  역할로 확인됨.
+- 앱 레코드 생성/조회(Apps API)는 성공 — `com.creamhouse.connectionsense`
+  앱이 App Store Connect에 정상 등록돼 있고 App ID `6797835536`으로 조회됨.
+- **빌드 업로드(ContentDelivery API)만 403** — Developer Portal 권한과
+  App Store Connect 자체 권한은 Apple 내부에서 별개 시스템이라, Developer
+  Portal에서 Admin이어도 App Store Connect 쪽 역할이 다르거나(또는 아예
+  사용자로 등록 안 돼있을) 가능성이 있음.
+
+### 다음 세션에서 이어갈 것
+App Store Connect **웹사이트**(Xcode 환경설정이 아니라)의 "사용자 및
+접근" 메뉴에서 `apps@creamhouse.net`/`choi woojin`을 직접 찾아서:
+- 목록에 없으면 → App Store Connect에 사용자로 신규 초대 필요
+- 목록에 있는데 역할이 Admin이 아니면 → Admin 이상으로 변경
+- 그래도 안 되면 → 계약(Agreements, Tax, and Banking)에 서명 대기 중인
+  항목이 있는지 확인(Account Holder라도 계약 미서명 시 여러 액션이
+  막히는 경우가 흔함)
+
+### 교훈/패턴
+- Apple 생태계는 "Developer Portal 권한"과 "App Store Connect 권한"이
+  화면도 다르고 역할 체계도 별개다. 한쪽에서 Admin으로 확인됐다고 다른
+  쪽도 자동으로 그런 게 아니다 — 에러가 권한 문제로 보이면 반드시 **App
+  Store Connect 웹사이트 쪽** 사용자 목록을 따로 확인할 것.
+- `xcdistributionlogs`(Xcode Organizer가 업로드 실패 시 남기는 로그
+  묶음)의 `ContentDelivery.log`를 열면 실제 HTTP 상태코드와 에러 코드가
+  그대로 나온다 — Xcode UI의 뭉뚱그려진 에러 메시지보다 훨씬 정확한
+  진단 정보를 준다.
+
+---
+
+## 2026-08-04 — 명함/프로필 데이터가 로컬·서버 모두 평문 저장 중이었음 (보안 개선)
+
+### 발견 경위
+버그 리포트가 아니라 QA 도중 직접 확인한 것: 실기기(Android)에서
+`adb shell run-as <pkg> cat shared_prefs/FlutterSharedPreferences.xml`로
+`flutter.saved_contacts_v2` 키를 열어보니 등록된 명함(제3자 개인정보 —
+이름·전화번호·이메일·주소)이 완전 평문 JSON으로 그대로 보임. Firestore
+(서버) 쪽도 구조화된 필드 그대로 저장돼 있어 마찬가지로 평문.
+
+### 왜 문제인가
+- `shared_preferences`는 애초에 암호화 기능이 없는 평문 저장소(Android
+  SharedPreferences XML / iOS UserDefaults plist를 그대로 씀).
+  `flutter_secure_storage`(AI API 키 저장에 이미 쓰고 있던 것)만
+  Keystore/Keychain 기반 암호화가 된다 — 이번에 명함/프로필은 그 대상이
+  아니었다.
+- release 빌드는 `debuggable=false`라 `adb run-as`로 이렇게 뚫을 순
+  없지만, 그건 "OS가 다른 앱으로부터 막아주는" 수준의 보호일 뿐 파일
+  자체는 여전히 평문 — 루팅되거나 백업 파일이 유출되면 그대로 읽힌다.
+- 이 앱은 사용자 본인이 아닌 **제3자(명함 속 인물)의 개인정보**를
+  다루기 때문에 일반적인 "내 데이터 내가 관리" 앱보다 리스크가 큼.
+
+### 해결
+AES-256-GCM으로 로컬·서버 양쪽 다 암호화(상세 구현은 위 "0-1"번 섹션과
+backlog 추가 72 참고). 요약: 계정(uid)당 키 1개, `flutter_secure_storage`에
+로컬 캐시 + Firestore `users/{uid}.encryptionKeyB64`에도 보관(기기 변경
+시 복원 흐름을 유지하기 위해 — 로컬에만 두면 새 기기에서 복원 자체가
+불가능해짐). 기존 평문 데이터는 로그인 시점에 자동 감지돼 투명하게
+재암호화됨(데이터 유실 없이 확인 완료).
+
+### 알려진 한계 (의도된 것, 과장하지 말 것)
+키가 데이터와 같은 Firestore 안에 있어서 완전한 제로-지식 암호화는
+아니다 — Firestore 프로젝트 전체 접근 권한이 있는 사람은 이론상 키+
+암호문 둘 다 볼 수 있다. 기기 분실·로컬 유출·백업파일 유출·DB 일부
+유출 시나리오는 방어되지만, "회사도 절대 못 읽는다"는 수준은 아니다.
+진짜 키 분리는 Cloud Functions/KMS 인프라(Blaze 요금제 필요, 아직 대기
+중)가 갖춰져야 가능. 개인정보처리방침에도 이 수준 그대로("권한 없는
+제3자 접근으로부터 보호") 서술해뒀다.
+
+### 교훈/패턴
+- "암호화했나?"는 실기기에서 직접 raw 파일을 열어봐야 확실히 답할 수
+  있다 — 코드에 `flutter_secure_storage`가 어딘가 쓰이고 있다고 해서
+  모든 민감 데이터가 그걸 거치는 건 아니다(이번에도 API 키만 그랬고
+  명함 데이터는 별도 경로였음). 새 리포지토리/저장 로직을 추가할 때마다
+  "이거 평문 아닌가?"를 QA 체크리스트에 명시적으로 넣을 것.
+- 서버 백업 기능(Firestore)을 설계할 때 "암호화 키를 어디 둘까"는
+  단순한 구현 디테일이 아니라 실제 보안 수준을 결정하는 아키텍처
+  결정이다 — 특히 "다른 기기에서 복원돼야 한다"는 요구사항과
+  "제로-지식이어야 한다"는 요구사항은 서로 긴장 관계에 있고, 후자를
+  포기하지 않으려면 키 저장소를 데이터 저장소와 물리적으로 분리하는
+  인프라(KMS/Cloud Functions)가 필요하다.
+
+---
+
 ## 2026-08-02 — iOS 실기기 최초 연결: 모듈 검증 빌드 실패 + "로고 뜨다 죽음"
 
 ### 증상 1 — 실기기 빌드가 "double-quoted include ... expected angle-bracketed" 에러로 실패
