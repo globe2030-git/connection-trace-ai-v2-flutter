@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>커넥션센스 개인정보처리방침</title>
+<style>
+:root{
+  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
+  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
+  --good:#1B8A5A;
+  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+  --font-ui:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Pretendard Variable',Pretendard,sans-serif;
+  --font-mono:ui-monospace,'SFMono-Regular',Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
+    --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
+    --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+    --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+    --good:#3FD38C;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
+  --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
+  --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+  --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+  --good:#3FD38C;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{
+  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
+  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
+  --good:#1B8A5A;
+  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+}
+*{box-sizing:border-box;}
+body{margin:0; font-family:var(--font-ui); background:var(--bg); color:var(--ink); font-size:15.5px; line-height:1.75; -webkit-font-smoothing:antialiased;}
+
+.wrap{max-width:760px; margin:0 auto; padding:56px 24px 96px;}
+
+.masthead{margin-bottom:8px;}
+.masthead .eyebrow{font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--brand-deep);}
+.masthead h1{font-size:28px; font-weight:800; margin:10px 0 6px; text-wrap:balance; letter-spacing:-.01em;}
+.masthead .sub{font-size:13.5px; color:var(--ink-faint);}
+
+.meta-row{display:flex; gap:18px; flex-wrap:wrap; margin:20px 0 32px; padding:14px 18px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; font-size:12.5px; color:var(--ink-dim);}
+.meta-row b{color:var(--ink); font-weight:700;}
+
+.todo{display:flex; gap:12px; align-items:flex-start; background:var(--warn-soft); border:1px solid var(--warn-border); border-radius:10px; padding:16px 18px; margin-bottom:40px; font-size:13.5px; line-height:1.65;}
+.todo .mark{flex:none; font-weight:800; color:var(--warn); font-size:13px; letter-spacing:.04em; text-transform:uppercase; margin-top:1px;}
+.todo p{margin:0; color:var(--ink);}
+.todo p + p{margin-top:6px;}
+
+nav.toc{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:20px 22px; margin-bottom:48px; box-shadow:var(--shadow);}
+nav.toc .toc-label{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px;}
+nav.toc ol{margin:0; padding:0; list-style:none; columns:2; column-gap:28px;}
+nav.toc li{break-inside:avoid; margin-bottom:7px; font-size:13px;}
+nav.toc a{color:var(--ink-dim); text-decoration:none; border-bottom:1px solid transparent;}
+nav.toc a:hover{color:var(--brand-deep); border-bottom-color:var(--brand-deep);}
+
+section{margin-bottom:40px; scroll-margin-top:24px;}
+section h2{display:flex; align-items:baseline; gap:10px; font-size:17px; font-weight:800; margin:0 0 14px; letter-spacing:-.005em;}
+section h2 .n{font-family:var(--font-mono); font-size:13px; font-weight:700; color:var(--brand-deep); flex:none;}
+section h3{font-size:14.5px; font-weight:700; margin:22px 0 8px;}
+section p{margin:0 0 12px; color:var(--ink);}
+section ul, section ol.legal{margin:0 0 12px; padding-left:22px;}
+section li{margin-bottom:6px;}
+section .note{font-size:13px; color:var(--ink-faint);}
+
+.field-table{width:100%; border-collapse:collapse; margin:14px 0 18px; font-size:13.5px;}
+.field-table th{text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); padding:8px 12px; border-bottom:1px solid var(--border); background:var(--paper-2);}
+.field-table td{padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top;}
+.field-table tr:last-child td{border-bottom:none;}
+.field-table td:first-child{font-weight:600; white-space:nowrap; width:30%;}
+.table-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:var(--paper); box-shadow:var(--shadow);}
+.table-wrap .field-table{margin:0;}
+.table-wrap .field-table th:first-child, .table-wrap .field-table td:first-child{padding-left:16px;}
+
+.callout{border-radius:10px; padding:16px 18px; font-size:13.5px; line-height:1.7; border:1px solid; margin:14px 0;}
+.callout.info{background:var(--brand-soft); border-color:var(--brand); color:var(--ink);}
+.callout.good{background:color-mix(in srgb, var(--good) 12%, var(--paper)); border-color:var(--good); color:var(--ink);}
+.callout b{font-weight:800;}
+
+.pill{display:inline-block; font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; background:var(--brand-soft); color:var(--brand-deep); margin-right:6px;}
+.pill.no{background:color-mix(in srgb, var(--good) 15%, var(--paper)); color:var(--good);}
+
+.fill{background:var(--warn-soft); border:1px dashed var(--warn-border); border-radius:6px; padding:1px 8px; color:var(--warn); font-weight:600; font-size:.95em;}
+
+footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--border); font-size:11.5px; color:var(--ink-faint); line-height:1.8;}
+
+@media (max-width:600px){
+  nav.toc ol{columns:1;}
+  .field-table td:first-child{width:auto;}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="eyebrow">Privacy Policy</div>
+    <h1>커넥션센스 개인정보처리방침</h1>
+    <div class="sub">크림하우스(주)(이하 "회사")는 이용자의 개인정보를 소중히 다루며, 「개인정보 보호법」 등 관계 법령을 준수합니다.</div>
+  </div>
+
+  <div class="meta-row">
+    <span><b>시행일</b> 2026년 8월 4일</span>
+    <span><b>대상 서비스</b> 커넥션센스(ConnectionSense) iOS·Android 앱</span>
+    <span><b>버전</b> 1.0 (최초 제정)</span>
+  </div>
+
+  <div class="todo">
+    <div class="mark">발행 전 확인</div>
+    <div>
+      <p>이 문서는 앱 코드를 기준으로 수집 항목·목적을 정확히 반영해 작성했지만, 회사 등록 정보는 아직 채워지지 않았습니다. 아래 <span class="fill">노란 점선 표시</span> 부분(사업자등록번호, 대표자명, 주소, 개인정보 보호책임자 연락처)을 실제 값으로 채운 뒤 게시해 주세요.</p>
+      <p>앱스토어 심사 제출 전, 이 페이지를 실제 접근 가능한 URL(회사 도메인 또는 안정적인 호스팅)에 올리고 그 주소를 App Store Connect·Google Play Console의 "개인정보처리방침 URL" 항목에 등록해야 합니다.</p>
+    </div>
+  </div>
+
+  <nav class="toc" aria-label="목차">
+    <div class="toc-label">목차</div>
+    <ol>
+      <li><a href="#s1">1. 총칙</a></li>
+      <li><a href="#s2">2. 수집하는 개인정보 항목</a></li>
+      <li><a href="#s3">3. 수집 및 이용 목적</a></li>
+      <li><a href="#s4">4. 보유 및 이용 기간</a></li>
+      <li><a href="#s5">5. 제3자 제공</a></li>
+      <li><a href="#s6">6. 처리 위탁</a></li>
+      <li><a href="#s7">7. AI 서비스 연동에 관한 사항</a></li>
+      <li><a href="#s8">8. 타인의 정보를 입력하는 경우</a></li>
+      <li><a href="#s9">9. 이용자의 권리와 행사 방법</a></li>
+      <li><a href="#s10">10. 파기 절차 및 방법</a></li>
+      <li><a href="#s11">11. 안전성 확보 조치</a></li>
+      <li><a href="#s12">12. 아동의 개인정보</a></li>
+      <li><a href="#s13">13. 개인정보 보호책임자</a></li>
+      <li><a href="#s14">14. 고지 의무</a></li>
+    </ol>
+  </nav>
+
+  <section id="s1">
+    <h2><span class="n">1</span>총칙</h2>
+    <p>커넥션센스는 명함을 기반으로 인맥을 관리하고, 오랜만에 연락하는 상대와 자연스럽게 대화를 이어갈 수 있도록 돕는 서비스입니다. 회사는 이용자가 안심하고 서비스를 이용할 수 있도록 다음과 같은 원칙으로 개인정보를 처리합니다.</p>
+    <ul>
+      <li>서비스 제공에 필요한 최소한의 정보만 수집합니다.</li>
+      <li>이용자의 동의 없이 제3자에게 정보를 제공하지 않습니다(법령에 따른 경우 제외).</li>
+      <li>AI 기능처럼 정보를 외부로 전송하는 기능은 매번 전송 항목을 화면에 보여주고 별도 동의를 받은 뒤에만 동작합니다.</li>
+      <li>이용자는 언제든지 앱 안에서 본인 정보를 열람·수정·삭제할 수 있습니다.</li>
+    </ul>
+  </section>
+
+  <section id="s2">
+    <h2><span class="n">2</span>수집하는 개인정보 항목</h2>
+
+    <h3>2-1. 회원가입 시</h3>
+    <p>구글(Google) 계정으로 로그인하며, 이 과정에서 아래 정보를 이용자의 구글 계정으로부터 제공받습니다.</p>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>항목</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>이름</td><td>구글 계정에 등록된 표시 이름</td></tr>
+          <tr><td>이메일 주소</td><td>로그인 식별 및 계정 복구용</td></tr>
+          <tr><td>프로필 사진</td><td>구글 계정 프로필 이미지 URL</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2-2. 이용자가 직접 입력하는 정보</h3>
+    <p>서비스 이용 과정에서 이용자가 직접 입력하거나 등록합니다.</p>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>구분</th><th>항목</th></tr></thead>
+        <tbody>
+          <tr><td>내 프로필</td><td>이름, 직함, 회사명, 전화번호, 이메일, 주소, 프로필 사진</td></tr>
+          <tr><td>명함(인맥) 정보</td><td>상대방 이름·회사·직함·전화번호·이메일·주소, 명함 사진, 태그, 관심사, 메모, 소통 기록 요약</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2-3. 기기 기능 이용 과정에서 자동 수집되는 정보</h3>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>항목</th><th>수집 목적 · 처리 방식</th></tr></thead>
+        <tbody>
+          <tr><td>위치정보(GPS)</td><td>주변에 있는 인맥과의 거리 계산(근접 알림), 명함 주소의 좌표 변환. 좌표는 명함 데이터의 일부로 함께 저장됩니다.</td></tr>
+          <tr><td>카메라</td><td>명함 촬영·스캔, 프로필 사진 촬영. 명함 글자 인식(OCR)은 기기 안에서만 처리되며 사진이나 인식 결과가 외부로 전송되지 않습니다.</td></tr>
+          <tr><td>사진 라이브러리</td><td>갤러리에 저장된 명함·프로필 이미지 불러오기(선택 시에만 접근)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>2-4. 이용자가 선택적으로 연동하는 정보</h3>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>항목</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>이메일(Gmail) 연동</td><td>이용자가 별도로 권한을 부여한 경우에 한해, 소통 기록 참고용으로 이메일 제목과 미리보기(본문 일부)를 가져옵니다. 본문 전체를 가져오거나 저장하지 않습니다.</td></tr>
+          <tr><td>AI 서비스 API 키</td><td>이용자가 AI 제공사로부터 직접 발급받아 등록하는 경우, 기기 보안 저장소에만 암호화 저장되며 회사 서버로 전송되지 않습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout good">
+      <span class="pill no">수집하지 않음</span><b>전화 통화 기록, 문자메시지(SMS) 내용, 카카오톡 대화 내용은 자동으로 수집하지 않습니다.</b> 이 항목들은 앱이 기기 권한으로 직접 읽어오지 않으며, 이용자가 소통 기록으로 남기고 싶은 내용을 화면에서 직접 입력(복사·붙여넣기)한 경우에만 그 입력한 내용이 저장됩니다.
+    </div>
+  </section>
+
+  <section id="s3">
+    <h2><span class="n">3</span>수집 및 이용 목적</h2>
+    <ol class="legal">
+      <li>회원 식별, 로그인 유지 및 부정 이용 방지</li>
+      <li>명함·인맥 정보의 저장, 조회, 관리 서비스 제공</li>
+      <li>기기 변경 또는 앱 재설치 시 데이터 백업 및 복원</li>
+      <li>주변 인맥 근접 알림 기능 제공</li>
+      <li>AI 대화 브리핑 기능 제공 (이용자가 매 요청마다 동의한 경우에 한함)</li>
+      <li>오류 대응, 서비스 품질 개선</li>
+    </ol>
+  </section>
+
+  <section id="s4">
+    <h2><span class="n">4</span>보유 및 이용 기간</h2>
+    <p>원칙적으로 개인정보는 <b>회원 탈퇴 시까지</b> 보유하며, 탈퇴 즉시 지체 없이 파기합니다. 다만 다음의 경우는 예외로 합니다.</p>
+    <ul>
+      <li>관계 법령에서 일정 기간 보존을 요구하는 경우, 해당 법령에서 정한 기간 동안 보관</li>
+      <li>이용자가 앱 안에서 개별 명함을 삭제하는 경우, 해당 명함 정보는 즉시 삭제됩니다</li>
+    </ul>
+  </section>
+
+  <section id="s5">
+    <h2><span class="n">5</span>제3자 제공</h2>
+    <p>회사는 이용자의 개인정보를 원칙적으로 외부에 제공하지 않습니다. 다만 다음의 경우는 예외로 하며, <b>모두 이용자가 해당 기능을 직접 사용할 때에만</b> 발생합니다.</p>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>제공받는 자</th><th>제공 항목 · 목적</th></tr></thead>
+        <tbody>
+          <tr><td>이용자가 선택한 AI 제공사<br><span class="note">(Anthropic / OpenAI / Google 중 택 1)</span></td><td>AI 대화 브리핑 요청 시, 화면에서 확인·동의한 항목(상대방 정보, 내 프로필 요약, 선택한 소통 기록, 날씨 정보)에 한해 전송</td></tr>
+          <tr><td>기상 정보 제공업체(Open-Meteo)</td><td>날씨 정보 조회를 위해 명함 주소의 좌표값만 전송(이름 등 식별정보는 전송하지 않음)</td></tr>
+          <tr><td>수사·법령 기관</td><td>법령에 근거하거나 적법한 절차에 따른 요청이 있는 경우</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="s6">
+    <h2><span class="n">6</span>처리 위탁</h2>
+    <p>회사는 서비스 운영을 위해 아래와 같이 개인정보 처리를 위탁하고 있습니다.</p>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>수탁자</th><th>위탁 업무</th></tr></thead>
+        <tbody>
+          <tr><td>Google LLC (Firebase)</td><td>회원 인증(로그인), 명함·프로필 데이터의 서버 저장 및 백업·복원</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">회사는 위탁계약 시 개인정보 보호 관련 법령 준수, 재위탁 제한, 안전성 확보 조치 등을 명시하고 있습니다.</p>
+  </section>
+
+  <section id="s7">
+    <h2><span class="n">7</span>AI 서비스 연동에 관한 사항</h2>
+    <p>AI 대화 브리핑은 <b>선택 기능</b>이며, 사용하지 않아도 서비스의 다른 기능을 그대로 이용할 수 있습니다.</p>
+    <ul>
+      <li>AI에게 무엇을 보낼지는 <b>요청할 때마다</b> 화면에 표시되며, 이용자가 확인하고 동의해야만 전송됩니다. 백그라운드에서 자동으로 전송되는 정보는 없습니다.</li>
+      <li>전송 항목은 상대방 명함 요약, 이용자 본인 프로필 요약, 이용자가 선택한 소통 기록, 참고용 날씨 정보로 한정됩니다.</li>
+      <li>이용자가 직접 발급한 API 키를 등록하는 방식(BYOK)을 이용 중인 경우, 그 키는 기기에만 저장되고 회사 서버를 거치지 않습니다.</li>
+    </ul>
+    <div class="callout info">
+      회사는 향후 AI 기능을 <b>회사가 제공하는 서버 경유 방식</b>으로 전환할 계획입니다. 전환 시에는 "이용자 기기 → AI 제공사" 직접 전송이 "이용자 기기 → 회사 서버 → AI 제공사" 경로로 바뀌며, 이 방침도 함께 개정되어 사전 고지됩니다.
+    </div>
+  </section>
+
+  <section id="s8">
+    <h2><span class="n">8</span>타인의 정보를 입력하는 경우</h2>
+    <p>이 서비스는 성격상 이용자가 만난 사람의 명함 정보를 등록하게 되므로, <b>이용자 본인이 아닌 제3자(거래처 담당자 등)의 개인정보가 이용자에 의해 입력</b>될 수 있습니다.</p>
+    <ul>
+      <li>회사는 이용자가 입력한 명함 정보를 <b>그 이용자 본인의 인맥 관리 목적으로만</b> 저장·백업하며, 다른 이용자나 제3자와 공유하지 않습니다.</li>
+      <li>이용자는 자신이 등록하는 제3자의 정보를 수집·보관·이용함에 있어 관계 법령(개인정보 보호법 등)을 준수할 책임이 있습니다.</li>
+      <li>명함 속 인물 본인이 자신의 정보 삭제를 원하는 경우, 아래 <a href="#s13">13. 개인정보 보호책임자</a> 연락처로 문의하면 확인 후 조치합니다.</li>
+    </ul>
+  </section>
+
+  <section id="s9">
+    <h2><span class="n">9</span>이용자의 권리와 행사 방법</h2>
+    <p>이용자는 언제든지 아래 권리를 행사할 수 있습니다.</p>
+    <ul>
+      <li><b>열람·정정</b> — 앱 내 "내 프로필", "명함 상세" 화면에서 직접 확인·수정</li>
+      <li><b>삭제</b> — 명함 개별 삭제는 각 명함 화면에서, 계정 전체 삭제는 설정 → 계정 삭제 메뉴에서 즉시 처리</li>
+      <li><b>처리 정지 요구</b> — 아래 개인정보 보호책임자 연락처로 요청</li>
+    </ul>
+    <p class="note">계정을 삭제하면 서버에 백업된 프로필·명함 데이터가 함께 삭제되며, 이 처리는 되돌릴 수 없습니다.</p>
+  </section>
+
+  <section id="s10">
+    <h2><span class="n">10</span>파기 절차 및 방법</h2>
+    <p>보유 기간이 끝나거나 이용자가 삭제를 요청한 개인정보는 지체 없이 파기합니다.</p>
+    <ul>
+      <li>전자적 파일 형태로 저장된 정보는 복구할 수 없는 방법으로 영구 삭제합니다.</li>
+      <li>계정 삭제 시 서버(Firestore)에 저장된 해당 이용자의 프로필 문서와 명함 데이터 전체가 삭제됩니다.</li>
+    </ul>
+  </section>
+
+  <section id="s11">
+    <h2><span class="n">11</span>안전성 확보 조치</h2>
+    <ul>
+      <li>AI API 키 등 민감한 인증 정보는 기기의 보안 저장소(Keychain/Keystore)에 암호화하여 저장합니다.</li>
+      <li>서버에 저장된 데이터는 본인 계정으로 인증된 이용자만 접근할 수 있도록 접근 권한을 제어합니다.</li>
+      <li>AI로 전송되는 정보는 매 요청마다 별도 화면에서 항목을 고지하고 동의를 받습니다.</li>
+      <li>명함 원본 사진은 현재 서버로 전송·저장하지 않으며 기기 내에만 보관됩니다.</li>
+    </ul>
+  </section>
+
+  <section id="s12">
+    <h2><span class="n">12</span>아동의 개인정보</h2>
+    <p>본 서비스는 만 14세 미만 아동의 이용을 제한하며, 만 14세 미만 아동의 개인정보를 수집하지 않습니다.</p>
+  </section>
+
+  <section id="s13">
+    <h2><span class="n">13</span>개인정보 보호책임자</h2>
+    <div class="table-wrap">
+      <table class="field-table">
+        <tbody>
+          <tr><td>회사명</td><td>크림하우스(주)</td></tr>
+          <tr><td>사업자등록번호</td><td><span class="fill">[작성 필요]</span></td></tr>
+          <tr><td>대표자</td><td><span class="fill">[작성 필요]</span></td></tr>
+          <tr><td>주소</td><td><span class="fill">[작성 필요]</span></td></tr>
+          <tr><td>개인정보 보호책임자</td><td><span class="fill">[담당자명 작성 필요]</span></td></tr>
+          <tr><td>문의 이메일</td><td><span class="fill">[예: privacy@creamhouse.co.kr]</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">개인정보 처리에 관한 문의, 불만, 피해 구제는 위 연락처로 접수하며, 회사는 지체 없이 답변·처리합니다.</p>
+  </section>
+
+  <section id="s14">
+    <h2><span class="n">14</span>고지 의무</h2>
+    <p>이 개인정보처리방침의 내용이 추가·삭제·수정되는 경우, 시행 최소 7일 전(중대한 변경의 경우 30일 전)에 앱 내 공지 또는 이 페이지를 통해 고지합니다.</p>
+    <div class="table-wrap">
+      <table class="field-table">
+        <thead><tr><th>버전</th><th>시행일</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td>1.0</td><td>2026-08-04</td><td>최초 제정</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    본 방침은 커넥션센스 앱(iOS·Android)에 적용됩니다. 실제 코드 구현을 기준으로 작성되었으며, 기능 변경 시 이 문서도 함께 갱신되어야 합니다.
+    <br>작성: Claude (커넥션센스 프로젝트 어시스턴트) · 원본: docs/legal/privacy-policy.html
+  </footer>
+
+</div>
+
+</body>
+</html>
