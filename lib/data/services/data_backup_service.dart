@@ -78,4 +78,29 @@ class DataBackupService {
       return null;
     }
   }
+
+  /// 계정 삭제(backlog #49)용: 이 uid로 서버에 백업된 데이터를 전부 지운다
+  /// — `users/{uid}/contacts` 하위 문서 전체와 `users/{uid}` 문서 자체.
+  ///
+  /// 다른 백업 메서드들과 달리 실패를 조용히 삼키지 않고 그대로 던진다.
+  /// 계정 삭제는 "사용자가 삭제됐다고 믿는데 실제로는 서버에 데이터가
+  /// 남아있는" 상황이 절대 있어서는 안 되는 액션이라, 호출자(설정 화면)가
+  /// 반드시 실패를 알아채고 사용자에게 알려야 한다.
+  ///
+  /// Firestore SDK에는 컬렉션을 통째로 지우는 API가 없어 문서를 모두 읽어와
+  /// batch로 지운다. batch는 500건 제한이 있어 청크로 나눠 처리한다.
+  static Future<void> deleteAllUserData(String uid) async {
+    final contactsCollection = _contactsCollection(uid);
+    final snapshot = await contactsCollection.get();
+    const chunkSize = 450;
+    for (var i = 0; i < snapshot.docs.length; i += chunkSize) {
+      final chunk = snapshot.docs.skip(i).take(chunkSize);
+      final batch = _db.batch();
+      for (final doc in chunk) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+    await _userDoc(uid).delete();
+  }
 }

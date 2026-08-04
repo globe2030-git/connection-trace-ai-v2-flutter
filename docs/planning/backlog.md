@@ -2,6 +2,68 @@
 
 ## 작업 로그
 
+### 2026-08-04 (추가 71) — 계정 삭제 기능 + 다중 계정 전환 데이터 안전장치
+
+오늘 iOS TestFlight 배포가 App Store Connect 권한 문제(빌드 업로드 403)로
+막혀 내일로 미루고, 외부 계정/승인이 필요 없는 순수 코드 작업 두 건을 처리.
+
+**1) 계정 삭제 기능**
+
+- 설정 화면(`settings_view.dart`) "계정" 섹션에 로그아웃 항목 아래 "계정
+  삭제" 행 추가 — 로그아웃과 같은 빨간색(destructive) 스타일로 구분.
+  탭하면 "정말 삭제하시겠습니까? 되돌릴 수 없고 서버 백업된 명함·프로필
+  데이터도 함께 삭제됨"을 명시하는 확인 다이얼로그 표시.
+- `DataBackupService.deleteAllUserData(uid)` 신규: `users/{uid}/contacts`
+  하위 문서 전체(batch 삭제, 450건씩 청크)와 `users/{uid}` 문서 자체 삭제.
+  다른 백업 메서드들과 달리 **실패를 삼키지 않고 그대로 던짐** — 계정
+  삭제는 "삭제됐다고 믿는데 서버에 남아있는" 상황이 절대 없어야 하는
+  액션이라 호출자가 반드시 실패를 인지해야 함.
+- `AuthRepository`에 `deleteFirebaseAccountAndLocalSession()` /
+  `reauthenticateWithGoogle()` 추가. 삭제 순서: (1) Firestore 데이터 삭제
+  (인증 유지 상태에서만 보안 규칙 통과) → (2) `FirebaseAuth
+  .currentUser.delete()` → (3) 로컬 저장 데이터 초기화. (2)에서
+  `requires-recent-login` 에러가 나면 `AuthException.requiresReauth=true`로
+  구분해 설정 화면이 "다시 로그인이 필요합니다" 다이얼로그를 띄우고,
+  Google 재인증(`reauthenticateWithCredential`) 후 삭제를 재시도.
+- `ContactsRepository`/`MyProfileRepository`에 `clearLocal()` 추가(로컬
+  shared_preferences 초기화). 완료 후 로그인 화면으로 자동 전환(로그아웃과
+  동일하게 `AuthGate`가 `isSignedIn=false`를 감지해 처리 — 별도 네비게이션
+  코드 불필요).
+- 실패 시(네트워크 오류 등) 조용히 넘어가지 않고 하단 스낵바로 명확한
+  에러 메시지 표시.
+
+**2) 다중 계정 전환 시 데이터 안전장치**
+
+- 기존 `restoreFromServerIfEmpty`(로컬이 비어있을 때만 복원)만으로는
+  계정A로 쓰다가 로그아웃 후 계정B로 로그인하면 계정A의 로컬 데이터가
+  계정B 것처럼 보이거나, 계정B로 저장 시 계정A 명함이 계정B uid로
+  교차 백업될 위험이 있었음.
+- `auth_gate.dart`에 앱 재시작에도 유지되는 "마지막 로그인 uid"를
+  shared_preferences(`last_signed_in_uid_v1`, 상수
+  `kLastSignedInUidPrefsKey`)에 저장. 로그인한 uid가 저장된 값과 다르고
+  로컬에 기존 데이터(명함 또는 커스텀 프로필)가 있으면 다이얼로그로
+  명시적 선택지 제공: "다른 계정으로 로그인했습니다 / 지금 로그인한
+  계정의 서버 데이터로 교체할까요, 아니면 기존 데이터를 유지한 채 계속
+  쓸까요?" — [유지하고 계속 쓰기] / [현재 계정 데이터로 교체(빨간색)].
+- "교체" 선택 시 `ContactsRepository`/`MyProfileRepository`에 새로 추가한
+  `clearLocal()` → `forceRestoreFromServer(uid)`(로컬이 비어있지 않아도
+  강제로 서버 백업분으로 덮어씀, 서버에 없으면 빈 상태/기본 프로필로)
+  순서로 실행. "유지" 선택 시(또는 다이얼로그가 닫혀도) 아무 데이터도
+  건드리지 않되, 마지막 로그인 uid는 새 값으로 갱신해 다음부터 다시
+  묻지 않음.
+- 다이얼로그 표시는 `WidgetsBinding.addPostFrameCallback`으로 build 완료
+  후로 미뤄 Navigator 접근 안전성 확보.
+- 검증: `flutter analyze` 클린(기존 info 18건 그대로, 신규 이슈 0건 —
+  `use_build_context_synchronously`/`unnecessary_import` 등 처음엔 6건
+  발생해 전부 수정), `flutter test` 기존 10개 테스트 전부 통과(이 두 기능
+  자체를 검증하는 전용 테스트는 신규로 추가하지 않음 — Firebase
+  Auth/Firestore 목킹이 필요해 범위 밖으로 판단, 다음 실기기 QA 때 수동
+  검증 필요).
+
+**참고**: 사용자가 준 스펙 문서의 "#49"/"#50"은 이 backlog.md의 순번
+체계와는 다른(아마 별도 기능 목록의) 번호라 그대로 쓰지 않고, 이 문서의
+관례대로 최신 번호(추가 71)를 이어서 부여함.
+
 ### 2026-08-04 (추가 70) — AI 대화 브리핑에 날씨·관심사·업무 화제 추가
 
 AI 대화 브리핑(상대방과 다시 연락할 때 자연스러운 대화거리 3문장을 AI가

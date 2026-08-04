@@ -42,6 +42,32 @@ class ContactsRepository extends ChangeNotifier {
     await _saveToDisk();
   }
 
+  /// 계정 전환 안전장치(backlog #50)에서 사용자가 "현재 계정 데이터로
+  /// 교체"를 선택했을 때 쓰는 강제 복원 — [restoreFromServerIfEmpty]와
+  /// 달리 로컬에 데이터가 있어도 무시하고 서버 백업분으로 덮어쓴다(서버에
+  /// 백업분이 없으면 빈 목록이 된다). 호출 전에 [clearLocal]로 먼저 이전
+  /// 계정 데이터를 지우는 것을 전제로 한다.
+  Future<void> forceRestoreFromServer(String uid) async {
+    final restored = await DataBackupService.restoreContacts(uid);
+    _contacts = restored;
+    notifyListeners();
+    await _saveToDisk();
+  }
+
+  /// 계정 삭제(backlog #49) 또는 계정 전환 시 로컬 명함 데이터를 전부
+  /// 지운다. 서버 데이터는 건드리지 않는다 — 호출자가 필요하면 별도로
+  /// `DataBackupService`를 통해 서버 쪽도 정리한다.
+  Future<void> clearLocal() async {
+    _contacts = [];
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_storageKey);
+    } catch (e) {
+      debugPrint('Error clearing saved contacts: $e');
+    }
+  }
+
   Future<void> _loadFromDisk() async {
     try {
       final prefs = await SharedPreferences.getInstance();

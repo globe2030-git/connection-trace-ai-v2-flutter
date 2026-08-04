@@ -10,7 +10,13 @@ import '../models/sns_auth_provider.dart';
 
 class AuthException implements Exception {
   final String message;
-  AuthException(this.message);
+
+  /// true면 "최근 로그인 상태가 아니어서" 실패한 것 — Firebase Auth의
+  /// `requires-recent-login` 에러를 계정 삭제(backlog #49) 흐름에서
+  /// 구분해 재인증 절차로 안내하는 데 쓴다.
+  final bool requiresReauth;
+
+  AuthException(this.message, {this.requiresReauth = false});
   @override
   String toString() => message;
 }
@@ -155,6 +161,86 @@ class AuthRepository extends ChangeNotifier {
       await _secureStorage.delete(key: _sessionKey);
     } catch (e) {
       debugPrint('Error clearing auth session: $e');
+    }
+  }
+
+  /// 계정 삭제(backlog #49) 직전 재인증이 필요할 때(Firebase Auth의
+  /// `requires-recent-login`) Google 계정으로 다시 로그인해 최신 자격
+  /// 증명을 얻고 현재 Firebase Auth 사용자에 재인증을 건다.
+  Future<void> reauthenticateWithGoogle() async {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw AuthException('로그인 상태가 아닙니다. 다시 로그인해 주세요.');
+    }
+    await GoogleAuthGateway.ensureInitialized();
+    final GoogleSignInAccount account;
+    try {
+      account = await GoogleSignIn.instance.authenticate();
+    } catch (e) {
+      throw AuthException('Google 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+    final idToken = account.authentication.idToken;
+    if (idToken == null) {
+      throw AuthException('Google 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+    try {
+      final credential = fb_auth.GoogleAuthProvider.credential(
+        idToken: idToken,
+      );
+      await user.reauthenticateWithCredential(credential);
+    } catch (e) {
+      throw AuthException('Google 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+  }
+
+  /// 계정 삭제(backlog #49)의 마지막 단계 — Firebase Auth 계정 자체를
+  /// 지우고, 로그아웃과 동일하게 로컬 세션(Google 로그아웃 + 암호화 저장된
+  /// 세션 삭제)도 정리한다.
+  ///
+  /// 호출 순서 주의: 서버 쪽 Firestore 데이터(`DataBackupService
+  /// .deleteAllUserData`)는 이 메서드보다 **먼저** 지워야 한다 — Firebase
+  /// Auth 계정이 사라지면 더 이상 인증된 요청이 아니게 되어 Firestore 보안
+  /// 규칙(본인 uid만 read/write 허용)에 막히기 때문이다.
+  ///
+  /// 최근 로그인 상태가 아니면 Firebase가 `requires-recent-login` 에러를
+  /// 던지는데, 이 경우 [AuthException.requiresReauth]를 true로 세팅해
+  /// 던진다 — 호출자(설정 화면)가 이를 보고 [reauthenticateWithGoogle]로
+  /// 재인증한 뒤 이 메서드를 다시 호출해야 한다.
+  Future<void> deleteFirebaseAccountAndLocalSession() async {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await user.delete();
+      } on fb_auth.FirebaseAuthException catch (e) {
+        if (e.code == 'requires-recent-login') {
+          throw AuthException(
+            '보안을 위해 다시 로그인해주세요.',
+            requiresReauth: true,
+          );
+        }
+        throw AuthException('계정 삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+      } catch (e) {
+        throw AuthException('계정 삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+      }
+    }
+    if (_provider == SnsAuthProvider.google) {
+      try {
+        await GoogleAuthGateway.ensureInitialized();
+        await GoogleSignIn.instance.signOut();
+      } catch (e) {
+        debugPrint('Error signing out of Google after account deletion: $e');
+      }
+    }
+    _isSignedIn = false;
+    _provider = null;
+    _displayName = null;
+    _email = null;
+    _photoUrl = null;
+    notifyListeners();
+    try {
+      await _secureStorage.delete(key: _sessionKey);
+    } catch (e) {
+      debugPrint('Error clearing auth session after account deletion: $e');
     }
   }
 

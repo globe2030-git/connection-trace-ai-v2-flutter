@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/repositories/ai_credentials_repository.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/contacts_repository.dart';
+import '../../../../data/repositories/my_profile_repository.dart';
+import '../../../../data/services/data_backup_service.dart';
+import '../../../common/auth_gate.dart';
 import '../../../common/glass_card.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
@@ -57,6 +62,13 @@ class SettingsView extends StatelessWidget {
                     subtitle: '이 기기에 저장된 로그인 정보를 지웁니다',
                     titleColor: AppColors.destructive,
                     onTap: () => _confirmSignOut(context, auth),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.person_remove_outlined,
+                    title: '계정 삭제',
+                    subtitle: '계정과 서버에 백업된 명함·프로필 데이터를 영구 삭제합니다',
+                    titleColor: AppColors.destructive,
+                    onTap: () => _confirmDeleteAccount(context, auth),
                   ),
                 ],
               ),
@@ -579,6 +591,142 @@ Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
     ),
   );
   if (confirmed == true) await auth.signOut();
+}
+
+/// 계정 삭제(backlog #49) 확인 다이얼로그. 로그아웃과 달리 되돌릴 수 없고
+/// 서버 데이터까지 함께 지워진다는 점을 명시적으로 안내한다.
+Future<void> _confirmDeleteAccount(
+  BuildContext context,
+  AuthRepository auth,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('계정을 삭제할까요?'),
+      content: const Text(
+        '계정을 삭제하면 이 계정으로 서버에 백업된 명함·프로필 데이터가 함께 '
+        '영구적으로 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '정말 삭제하시겠습니까',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  if (!context.mounted) return;
+  await _performAccountDeletion(context, auth);
+}
+
+/// 실제 삭제 흐름 — 순서가 중요하다:
+/// 1) Firestore 서버 데이터 삭제(아직 인증된 상태일 때만 보안 규칙 통과)
+/// 2) Firebase Auth 계정 삭제(재인증 필요 시 사용자에게 안내 후 재시도)
+/// 3) 로컬 저장 데이터(명함/프로필) 초기화
+///
+/// 기존 백업 로직과 달리 실패를 조용히 삼키지 않는다 — 각 단계 실패는
+/// 사용자에게 명확한 에러 메시지로 알린다(서버에 데이터가 남았는데 사용자는
+/// 삭제됐다고 믿는 상황을 방지).
+Future<void> _performAccountDeletion(
+  BuildContext context,
+  AuthRepository auth,
+) async {
+  final contactsRepo = context.read<ContactsRepository>();
+  final profileRepo = context.read<MyProfileRepository>();
+  final uid = auth.firebaseUid;
+
+  _showLoadingDialog(context);
+
+  try {
+    if (uid != null) {
+      await DataBackupService.deleteAllUserData(uid);
+    }
+
+    try {
+      await auth.deleteFirebaseAccountAndLocalSession();
+    } on AuthException catch (e) {
+      if (!e.requiresReauth) rethrow;
+
+      if (context.mounted) _dismissLoadingDialog(context);
+      if (!context.mounted) return;
+      final wantsReauth = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('다시 로그인이 필요합니다'),
+          content: const Text(
+            '보안을 위해 계정을 삭제하려면 다시 로그인해야 합니다. 지금 Google 계정으로 '
+            '다시 로그인할까요?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('다시 로그인'),
+            ),
+          ],
+        ),
+      );
+      if (wantsReauth != true) return;
+      if (!context.mounted) return;
+
+      _showLoadingDialog(context);
+      await auth.reauthenticateWithGoogle();
+      await auth.deleteFirebaseAccountAndLocalSession();
+    }
+
+    await contactsRepo.clearLocal();
+    await profileRepo.clearLocal();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(kLastSignedInUidPrefsKey);
+    } catch (e) {
+      debugPrint('계정 삭제 후 마지막 로그인 uid 정리 실패: $e');
+    }
+
+    if (context.mounted) _dismissLoadingDialog(context);
+    // 성공 시 auth.isSignedIn이 false가 되어 AuthGate가 자동으로 로그인
+    // 화면으로 전환한다(로그아웃과 동일한 종착점).
+  } catch (e) {
+    if (context.mounted) _dismissLoadingDialog(context);
+    if (context.mounted) _showAccountDeletionError(context, e);
+  }
+}
+
+void _showLoadingDialog(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const PopScope(
+      canPop: false,
+      child: Center(child: CircularProgressIndicator()),
+    ),
+  );
+}
+
+void _dismissLoadingDialog(BuildContext context) {
+  if (context.mounted) {
+    Navigator.of(context, rootNavigator: true).pop();
+  }
+}
+
+void _showAccountDeletionError(BuildContext context, Object error) {
+  final message = error is AuthException
+      ? error.message
+      : '계정 삭제 중 오류가 발생했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.';
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(message), backgroundColor: AppColors.destructive),
+  );
 }
 
 (String, String, Color) _locationStatus(LocationAccessState state) {
