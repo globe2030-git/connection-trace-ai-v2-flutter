@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -316,8 +317,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                         const Expanded(
                           child: Row(
                             children: [
-                              Icon(
-                                Icons.tips_and_updates_outlined,
+                              AppIcon(
+                                AppIconId.talkPoints,
                                 size: 18,
                                 color: AppColors.accentText,
                               ),
@@ -612,29 +613,29 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       )
                     else
                       ...contact.commLogs.map((log) {
-                        IconData icon;
+                        AppIconId icon;
                         Color color;
                         String badge;
 
                         switch (log.type) {
                           case 'call':
-                            icon = Icons.phone_in_talk;
+                            icon = AppIconId.call;
                             color = AppColors.channelCall;
                             badge = '최근통화';
                             break;
                           case 'sms':
-                            icon = Icons.sms_outlined;
+                            icon = AppIconId.message;
                             color = AppColors.channelSms;
                             badge = '문자';
                             break;
                           case 'email':
-                            icon = Icons.email_outlined;
+                            icon = AppIconId.mailSend;
                             color = AppColors.channelEmail;
                             badge = '이메일';
                             break;
                           case 'kakao':
                           default:
-                            icon = Icons.chat_bubble_outline;
+                            icon = AppIconId.chatSend;
                             color = AppColors.channelKakao;
                             badge = '카카오톡';
                             break;
@@ -654,7 +655,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                   color: color.withValues(alpha: 0.15),
                                   shape: BoxShape.circle,
                                 ),
-                                child: Icon(icon, size: 16, color: color),
+                                child: AppIcon(icon, size: 16, color: color),
                               ),
                               const SizedBox(width: 10),
                               Expanded(
@@ -734,8 +735,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       const SizedBox(height: 14),
                       const Row(
                         children: [
-                          Icon(
-                            Icons.notes_outlined,
+                          AppIcon(
+                            AppIconId.memo,
                             size: 18,
                             color: AppColors.accentText,
                           ),
@@ -781,7 +782,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     widget.onClose();
                     await PhoneCallService.showCallPicker(context, contact);
                   },
-                  icon: const Icon(Icons.phone, color: Colors.white),
+                  icon: const AppIcon(AppIconId.callCheck, color: Colors.white),
                   label: const Text(
                     '안부 전화 걸기',
                     style: TextStyle(

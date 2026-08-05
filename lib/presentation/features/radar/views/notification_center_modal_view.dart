@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/glass_card.dart';
 
@@ -36,7 +37,7 @@ class NotificationCenterModalView extends StatelessWidget {
 
             const Row(
               children: [
-                Icon(Icons.notifications_none, color: AppColors.accentText),
+                AppIcon(AppIconId.notification, color: AppColors.accentText),
                 SizedBox(width: 8),
                 Text(
                   '알림 센터',
@@ -70,8 +71,8 @@ class NotificationCenterModalView extends StatelessWidget {
                       backgroundColor: (n['isNew'] as bool)
                           ? AppColors.accentText.withValues(alpha: 0.2)
                           : AppColors.borderDark,
-                      child: Icon(
-                        Icons.notifications_active_outlined,
+                      child: AppIcon(
+                        AppIconId.notification,
                         size: 18,
                         color: (n['isNew'] as bool)
                             ? AppColors.accentText

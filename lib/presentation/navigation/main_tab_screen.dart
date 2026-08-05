@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/icons/app_icons.dart';
 import '../features/radar/view_models/radar_view_model.dart';
 import '../features/radar/views/radar_view.dart';
 import '../features/settings/views/settings_view.dart';
@@ -50,18 +51,18 @@ class _MainTabScreenState extends State<MainTabScreen>
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.location_on_outlined),
-            selectedIcon: Icon(Icons.location_on),
+            icon: AppIcon(AppIconId.nearbyPeople),
+            selectedIcon: AppIcon(AppIconId.nearbyPeople),
             label: '주변',
           ),
           NavigationDestination(
-            icon: Icon(Icons.badge_outlined),
-            selectedIcon: Icon(Icons.badge),
+            icon: AppIcon(AppIconId.cardWallet),
+            selectedIcon: AppIcon(AppIconId.cardWallet),
             label: '명함',
           ),
           NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
+            icon: AppIcon(AppIconId.settings),
+            selectedIcon: AppIcon(AppIconId.settings),
             label: '설정',
           ),
         ],

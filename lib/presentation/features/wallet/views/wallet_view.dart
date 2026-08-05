@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -65,10 +66,7 @@ class WalletView extends StatelessWidget {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    icon: const Icon(
-                      Icons.document_scanner_outlined,
-                      size: 18,
-                    ),
+                    icon: const AppIcon(AppIconId.scanCard, size: 18),
                     label: const Text(
                       '명함 스캔',
                       style: TextStyle(
@@ -283,8 +281,8 @@ class _ContactCard extends StatelessWidget {
                   IconButton(
                     tooltip: '${contact.name}에게 전화',
                     onPressed: onCall,
-                    icon: const Icon(
-                      Icons.phone_outlined,
+                    icon: const AppIcon(
+                      AppIconId.call,
                       color: AppColors.accentText,
                     ),
                   ),
@@ -391,7 +389,7 @@ class _WalletEmptyState extends StatelessWidget {
               const SizedBox(height: 18),
               OutlinedButton.icon(
                 onPressed: onAdd,
-                icon: const Icon(Icons.add),
+                icon: const AppIcon(AppIconId.addCard),
                 label: const Text('첫 명함 등록'),
               ),
             ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
@@ -138,8 +139,8 @@ class _RadarViewState extends State<RadarView> {
                                 ),
                                 IconButton(
                                   tooltip: '명함 등록',
-                                  icon: const Icon(
-                                    Icons.add_card_outlined,
+                                  icon: const AppIcon(
+                                    AppIconId.addCard,
                                     color: AppColors.textPrimary,
                                     size: 22,
                                   ),
@@ -610,8 +611,8 @@ class _NearbyCountCard extends StatelessWidget {
                         color: AppColors.accent,
                       ),
                     )
-                  : const Icon(
-                      Icons.podcasts_outlined,
+                  : const AppIcon(
+                      AppIconId.radarDetect,
                       color: AppColors.accent,
                       size: 22,
                     ),
@@ -758,7 +759,11 @@ class _FeaturedContactCard extends StatelessWidget {
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: onCall,
-                  icon: const Icon(Icons.call, size: 16, color: Colors.white),
+                  icon: const AppIcon(
+                    AppIconId.callCheck,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                   label: const Text(
                     '연락하기',
                     style: TextStyle(

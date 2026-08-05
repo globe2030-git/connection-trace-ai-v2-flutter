@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 
@@ -57,7 +58,7 @@ class CommunicationSourceSheet extends StatelessWidget {
               ),
               const SizedBox(height: 14),
               _SourceTile(
-                icon: Icons.alternate_email,
+                icon: AppIconId.emailLink,
                 title: 'Gmail에서 가져오기',
                 subtitle: contact.email.trim().isEmpty
                     ? '먼저 명함에 이메일 주소를 등록해 주세요.'
@@ -67,21 +68,21 @@ class CommunicationSourceSheet extends StatelessWidget {
                     Navigator.pop(context, CommunicationSourceAction.gmail),
               ),
               _SourceTile(
-                icon: Icons.phone_in_talk_outlined,
+                icon: AppIconId.call,
                 title: '통화 후 메모',
                 subtitle: '통화 기록을 읽지 않고 기억할 내용을 직접 작성',
                 onTap: () =>
                     Navigator.pop(context, CommunicationSourceAction.callNote),
               ),
               _SourceTile(
-                icon: Icons.sms_outlined,
+                icon: AppIconId.message,
                 title: '문자 내용 붙여넣기',
                 subtitle: '필요한 대화만 선택해 직접 붙여넣기',
                 onTap: () =>
                     Navigator.pop(context, CommunicationSourceAction.smsPaste),
               ),
               _SourceTile(
-                icon: Icons.chat_bubble_outline,
+                icon: AppIconId.chatSend,
                 title: '카카오톡 내용 붙여넣기',
                 subtitle: '카카오톡에서 복사한 필요한 대화만 붙여넣기',
                 onTap: () => Navigator.pop(
@@ -120,7 +121,7 @@ class CommunicationSourceSheet extends StatelessWidget {
 }
 
 class _SourceTile extends StatelessWidget {
-  final IconData icon;
+  final AppIconId icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -156,7 +157,7 @@ class _SourceTile extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Icon(
+                    AppIcon(
                       icon,
                       color: enabled
                           ? AppColors.accentText

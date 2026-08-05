@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -87,7 +88,11 @@ class SettingsView extends StatelessWidget {
               _GroupedCard(
                 children: [
                   _SettingsRow(
-                    icon: Icons.account_circle_outlined,
+                    icon: const Icon(
+                      Icons.account_circle_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: auth.displayName ?? '로그인됨',
                     subtitle: [
                       if (auth.provider != null) auth.provider!.displayName,
@@ -95,14 +100,22 @@ class SettingsView extends StatelessWidget {
                     ].join(' · '),
                   ),
                   _SettingsRow(
-                    icon: Icons.logout,
+                    icon: const AppIcon(
+                      AppIconId.logout,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '로그아웃',
                     subtitle: '이 기기에 저장된 로그인 정보를 지웁니다',
                     titleColor: AppColors.destructive,
                     onTap: () => _confirmSignOut(context, auth),
                   ),
                   _SettingsRow(
-                    icon: Icons.person_remove_outlined,
+                    icon: const AppIcon(
+                      AppIconId.accountDelete,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '계정 삭제',
                     subtitle: '계정과 서버에 백업된 명함·프로필 데이터를 영구 삭제합니다',
                     titleColor: AppColors.destructive,
@@ -221,7 +234,11 @@ class SettingsView extends StatelessWidget {
               _GroupedCard(
                 children: [
                   _SettingsSwitchRow(
-                    icon: Icons.podcasts_outlined,
+                    icon: const AppIcon(
+                      AppIconId.radarDetect,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '주변 인맥 감지',
                     subtitle: radarViewModel.hasLocationConsent
                         ? '위치 사용에 동의했습니다'
@@ -237,21 +254,33 @@ class SettingsView extends StatelessWidget {
                                 ),
                   ),
                   _SettingsRow(
-                    icon: Icons.radar_outlined,
+                    icon: const AppIcon(
+                      AppIconId.detectRadius,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '감지 반경',
                     subtitle: '가까운 인맥 목록에 표시할 거리',
                     value: _radiusLabel(radarViewModel.settings.radiusMeters),
                     onTap: () => _showRadiusPicker(context, radarViewModel),
                   ),
                   _SettingsRow(
-                    icon: Icons.policy_outlined,
+                    icon: const AppIcon(
+                      AppIconId.locationInfo,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '위치정보 이용 안내',
                     subtitle: '이용 목적·저장 여부·동의 철회 확인',
                     onTap: () => showLocationUsePolicy(context),
                   ),
                   if (radarViewModel.hasLocationConsent)
                     _SettingsRow(
-                      icon: Icons.location_disabled_outlined,
+                      icon: const AppIcon(
+                        AppIconId.consentRevoke,
+                        size: 22,
+                        color: AppColors.accentText,
+                      ),
                       title: '위치 이용 동의 철회',
                       subtitle: _consentRecordedAt(radarViewModel),
                       titleColor: AppColors.destructive,
@@ -266,13 +295,21 @@ class SettingsView extends StatelessWidget {
               _GroupedCard(
                 children: [
                   const _SettingsRow(
-                    icon: Icons.badge_outlined,
+                    icon: AppIcon(
+                      AppIconId.cardData,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: '명함 데이터',
                     subtitle: '저장된 명함은 이 기기에 보관',
                     value: '로컬 저장',
                   ),
                   _SettingsRow(
-                    icon: Icons.psychology_outlined,
+                    icon: const AppIcon(
+                      AppIconId.aiChip,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: 'AI 연결',
                     subtitle: AiBriefingService.kAiServiceDeployed
                         ? '커넥션센스 AI가 대화 포인트를 만들어드려요'
@@ -288,7 +325,11 @@ class SettingsView extends StatelessWidget {
                     },
                   ),
                   const _SettingsRow(
-                    icon: Icons.info_outline,
+                    icon: AppIcon(
+                      AppIconId.aiDataInfo,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
                     title: 'AI 데이터 안내',
                     subtitle:
                         'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
@@ -305,28 +346,44 @@ class SettingsView extends StatelessWidget {
               _GroupedCard(
                 children: [
                   _SettingsRow(
-                    icon: Icons.description_outlined,
+                    icon: const Icon(
+                      Icons.description_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: LegalDocument.terms.title,
                     subtitle: '서비스 이용 조건과 회사·이용자의 권리·의무',
                     onTap: () =>
                         showLegalDocument(context, LegalDocument.terms),
                   ),
                   _SettingsRow(
-                    icon: Icons.privacy_tip_outlined,
+                    icon: const Icon(
+                      Icons.privacy_tip_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: LegalDocument.privacy.title,
                     subtitle: '수집 항목, 보유 기간, 국외 이전, 이용자의 권리',
                     onTap: () =>
                         showLegalDocument(context, LegalDocument.privacy),
                   ),
                   _SettingsRow(
-                    icon: Icons.admin_panel_settings_outlined,
+                    icon: const Icon(
+                      Icons.admin_panel_settings_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: LegalDocument.permissions.title,
                     subtitle: '위치·카메라·사진 접근 사유와 철회 방법',
                     onTap: () =>
                         showLegalDocument(context, LegalDocument.permissions),
                   ),
                   _SettingsRow(
-                    icon: Icons.code_outlined,
+                    icon: const Icon(
+                      Icons.code_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: '오픈소스 라이선스',
                     subtitle: '이 앱이 사용하는 오픈소스 목록',
                     onTap: () => Navigator.of(context).push(
@@ -340,13 +397,21 @@ class SettingsView extends StatelessWidget {
                     ),
                   ),
                   _SettingsRow(
-                    icon: Icons.business_outlined,
+                    icon: const Icon(
+                      Icons.business_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: '사업자 정보',
                     subtitle: '상호·대표자·사업자등록번호·문의처',
                     onTap: () => _showBusinessInfo(context),
                   ),
                   const _SettingsRow(
-                    icon: Icons.info_outline,
+                    icon: Icon(
+                      Icons.info_outline,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: '앱 버전',
                     subtitle: '커넥션센스',
                     value: _appVersion,
@@ -381,7 +446,11 @@ class SettingsView extends StatelessWidget {
               _GroupedCard(
                 children: [
                   _SettingsRow(
-                    icon: Icons.campaign_outlined,
+                    icon: const Icon(
+                      Icons.campaign_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: '공지사항',
                     subtitle: '업데이트·점검 안내를 확인하세요',
                     onTap: () => Navigator.of(context).push(
@@ -389,7 +458,11 @@ class SettingsView extends StatelessWidget {
                     ),
                   ),
                   _SettingsRow(
-                    icon: Icons.support_agent_outlined,
+                    icon: const Icon(
+                      Icons.support_agent_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
                     title: '1:1 문의',
                     subtitle: '궁금한 점을 남겨주시면 답변드립니다',
                     onTap: () => Navigator.of(context).push(
@@ -447,7 +520,9 @@ class _GroupedCard extends StatelessWidget {
 }
 
 class _SettingsRow extends StatelessWidget {
-  final IconData icon;
+  /// [Icon] 또는 [AppIcon] — 크기/색은 호출부에서 직접 지정한다(22px,
+  /// [AppColors.accentText]) 두 위젯 모두 동일 규칙을 따르게 하기 위해서다.
+  final Widget icon;
   final String title;
   final String subtitle;
   final String? value;
@@ -485,7 +560,7 @@ class _SettingsRow extends StatelessWidget {
                     color: AppColors.accentSoft,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: AppColors.accentText, size: 22),
+                  child: icon,
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -544,7 +619,7 @@ class _SettingsRow extends StatelessWidget {
 /// 상태(예: 위치 이용 동의 여부)와 연결해서만 쓸 것 — 아무 상태도 바꾸지
 /// 않는 장식용 토글은 절대 추가하지 않는다.
 class _SettingsSwitchRow extends StatelessWidget {
-  final IconData icon;
+  final Widget icon;
   final String title;
   final String subtitle;
   final bool value;
@@ -574,7 +649,7 @@ class _SettingsSwitchRow extends StatelessWidget {
                 color: AppColors.accentSoft,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: AppColors.accentText, size: 22),
+              child: icon,
             ),
             const SizedBox(width: 14),
             Expanded(

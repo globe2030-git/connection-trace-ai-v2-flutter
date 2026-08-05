@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/glass_card.dart';
@@ -54,8 +55,8 @@ class MyProfileModalView extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(
-                    Icons.edit_note,
+                  icon: const AppIcon(
+                    AppIconId.editCard,
                     color: AppColors.accentText,
                     size: 24,
                   ),
@@ -253,7 +254,11 @@ class MyProfileModalView extends StatelessWidget {
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.share, color: Colors.white, size: 18),
+                icon: const AppIcon(
+                  AppIconId.share,
+                  color: Colors.white,
+                  size: 18,
+                ),
                 label: const Text(
                   '디지털 명함 공유하기',
                   style: TextStyle(

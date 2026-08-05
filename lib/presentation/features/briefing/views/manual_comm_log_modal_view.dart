@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../radar/view_models/radar_view_model.dart';
@@ -39,25 +40,25 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     {
       'type': 'call',
       'label': '통화',
-      'icon': Icons.phone_in_talk,
+      'icon': AppIconId.call,
       'color': AppColors.channelCall,
     },
     {
       'type': 'sms',
       'label': '문자',
-      'icon': Icons.sms_outlined,
+      'icon': AppIconId.message,
       'color': AppColors.channelSms,
     },
     {
       'type': 'email',
       'label': '이메일',
-      'icon': Icons.email_outlined,
+      'icon': AppIconId.mailSend,
       'color': AppColors.channelEmail,
     },
     {
       'type': 'kakao',
       'label': '카카오톡',
-      'icon': Icons.chat_bubble_outline,
+      'icon': AppIconId.chatSend,
       'color': AppColors.channelKakao,
     },
   ];
@@ -244,8 +245,8 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                       return ChoiceChip(
                         selected: isSelected,
                         onSelected: (_) => setState(() => _selectedType = type),
-                        avatar: Icon(
-                          opt['icon'] as IconData,
+                        avatar: AppIcon(
+                          opt['icon'] as AppIconId,
                           size: 16,
                           color: isSelected ? Colors.white : color,
                         ),

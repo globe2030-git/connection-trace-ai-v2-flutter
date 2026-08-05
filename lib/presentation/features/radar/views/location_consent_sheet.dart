@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 
 Future<bool?> showLocationConsentSheet(BuildContext context) {
@@ -17,7 +18,7 @@ Future<void> showLocationUsePolicy(BuildContext context) {
       backgroundColor: AppColors.cardDark,
       title: const Row(
         children: [
-          Icon(Icons.policy_outlined, color: AppColors.accentText),
+          AppIcon(AppIconId.locationInfo, color: AppColors.accentText),
           SizedBox(width: 10),
           Expanded(child: Text('위치정보 이용 안내')),
         ],
@@ -95,8 +96,8 @@ class _LocationConsentSheet extends StatelessWidget {
                 child: const CircleAvatar(
                   radius: 30,
                   backgroundColor: Color(0x332B76C5),
-                  child: Icon(
-                    Icons.location_on_outlined,
+                  child: AppIcon(
+                    AppIconId.pinActive,
                     size: 32,
                     color: AppColors.accentText,
                   ),
@@ -158,7 +159,7 @@ class _LocationConsentSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                icon: const Icon(Icons.location_on_outlined),
+                icon: const AppIcon(AppIconId.locationInfo),
                 label: const Text(
                   '동의하고 위치 사용',
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),

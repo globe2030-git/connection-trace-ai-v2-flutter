@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/email_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -95,8 +96,8 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
               padding: const EdgeInsets.fromLTRB(20, 12, 8, 6),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.alternate_email,
+                  const AppIcon(
+                    AppIconId.emailLink,
                     color: AppColors.accentText,
                   ),
                   const SizedBox(width: 10),

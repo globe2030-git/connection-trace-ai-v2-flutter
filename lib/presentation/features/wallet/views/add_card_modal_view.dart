@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -1134,8 +1135,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                         color: Colors.white,
                                       ),
                                     )
-                                  : const Icon(
-                                      Icons.camera_alt,
+                                  : const AppIcon(
+                                      AppIconId.scanCard,
                                       size: 16,
                                       color: Colors.white,
                                     ),
@@ -1522,8 +1523,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                               color: Colors.white,
                             ),
                           )
-                        : Icon(
-                            _isEditing ? Icons.edit : Icons.check,
+                        : AppIcon(
+                            _isEditing
+                                ? AppIconId.editCard
+                                : AppIconId.saveDownload,
                             color: Colors.white,
                           ),
                     label: Text(
