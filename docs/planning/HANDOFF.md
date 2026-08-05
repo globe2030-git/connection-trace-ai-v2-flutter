@@ -1,4 +1,4 @@
-# 개발 인수인계 문서 (2026-08-05 기준 — 최신 상황은 "0-2" 섹션, 우선순위는 "3. 해야 할 일" 참고)
+# 개발 인수인계 문서 (2026-08-05 기준 — 최신 상황은 "0-3" 섹션, 우선순위는 "3. 해야 할 일" 참고)
 
 다음 개발자(또는 다음 대화창)가 이 프로젝트를 빠르게 이어받을 수 있도록 정리한
 문서. 시간순 상세 기록은 [`backlog.md`](./backlog.md)(추가 1~74)에 다 있으니,
@@ -137,7 +137,7 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
   "사용자 및 접근"에서 이 이메일 계정 자체의 역할을 확인해야 함(목록에
   없으면 신규 초대 필요). 아래 "해야 할 일" P0-1 참고.
 
-## 0-2. 2026-08-05 — 법적 고지 문서 체계 정비 + 플랫폼별 현황 재조사 (가장 최신)
+## 0-2. 2026-08-05 — 법적 고지 문서 체계 정비 + 플랫폼별 현황 재조사
 
 상세 경위는 [`backlog.md`](./backlog.md) 추가 75에 있음. 이번 세션은 **문서
 작업만** 했고 앱 코드는 건드리지 않았다.
@@ -283,6 +283,112 @@ Firestore 문서를 직접 열어 좌표가 남아 있지 않은지 확인할 �
 **한 줄 요약**: Android는 기능 검증이 앞서고 배포 준비(서명)가 뒤처짐.
 iOS는 배포 준비가 앞서고 기능 검증이 크게 뒤처짐 — 특히 **iOS는 Apple
 로그인 코드가 들어간 뒤 한 번도 빌드된 적이 없다.**
+
+## 0-3. 2026-08-05 — AI 연동 서버 프록시 전환 + 공지사항/1:1문의/관리자콘솔 + 동시 작업 브랜치 병합 (가장 최신)
+
+이 세션은 다른 세션("0-2" 작성자, 좌표 C안·법적 문서·Apple 로그인 담당)과
+**같은 저장소를 동시에** 작업했다. 처음엔 같은 작업 디렉토리를 공유해서
+파일이 실시간으로 섞이는 사고가 날 뻔했고, 그걸 계기로 `git worktree`로
+격리해 작업하는 방식으로 전환했다 — 아래 "동시 작업 충돌과 해결" 참고.
+
+### AI 연동 화면 — BYOK → 서버 프록시 전환 (커밋 `ed6b4b7`)
+
+P1-8 항목 실제 구현 완료. `ai_provider.dart`·`ai_credentials_repository.dart`
+삭제, `ai_briefing_service.dart`는 `cloud_functions`로 `generateBriefing`
+하나만 호출하도록 재작성. `kAiServiceDeployed = false` 플래그로 서버
+미배포 상태를 안내 문구("서비스 준비 중")로 정직하게 표시하고, Cloud
+Functions 배포 후(P1-7 선행) 이 플래그만 `true`로 바꾸면 된다.
+`ai_connection_modal_view.dart`는 API 키 입력 폼 → 기능 소개 + 사용량
+한도(하루 10회/월 100회) 안내 화면으로 전면 재작성. Android(SM F966N
+실기기) + iPhone(릴리스 빌드) 양쪽 확인 완료.
+
+**iOS 디버그 빌드 크래시 원인 발견(중요, 재사용 가능한 지식)**: Flutter
+디버그 빌드는 `flutter run`/Xcode 같은 툴링이 실제로 붙어있지 않으면
+홈 화면(또는 `devicectl device process launch`)에서 실행하는 즉시
+`signal 11`로 크래시한다("Cannot create a FlutterEngine instance in debug
+mode without Flutter tooling or Xcode"). 실기기 확인을 위해 devicectl로
+직접 install/launch할 때는 **반드시 release 빌드**(`flutter build ios
+--release`)를 써야 한다. 이번에 이 문제로 몇 차례 "화면이 이상하게
+나온다"는 오진이 있었는데, 사실은 훨씬 이전 세션에서 Xcode로 제대로
+띄워둔 옛날 프로세스가 백그라운드에 남아있던 걸 보고 있었던 것 — 앱을
+완전히 지우고 나서야 진짜 크래시가 드러났다.
+
+### 주변 인맥 화면 소소한 개선
+
+`radar_view.dart`의 대표 카드 버튼 라벨을 "상세보기" → **"AI 대화
+가이드"**로 변경(실제로는 항상 `openBriefing`으로 연결되는데 라벨이
+목적을 안 드러냈음). "가까운 인맥" 리스트 항목은 원래부터 동일하게
+연결돼 있어 추가 수정 불필요했음.
+
+### Gmail 가져오기 — 계정 전환 버그 수정 (커밋 `c15fe09`)
+
+`EmailSyncService._currentAccount`가 한 번 로그인하면 계속 유지돼서,
+사용자가 다른 Google 계정으로 다시 로그인하고 싶어도 계정 선택 화면이
+다시 뜨지 않는 버그 발견. "다른 계정으로 로그인" 버튼 추가 — `signOut()`
+후 재인증하는, `google_sign_in` 패키지 공식 문서가 권장하는 패턴 그대로.
+
+### 공지사항 · 1:1 문의 · 관리자 콘솔 신설
+
+사용자 요청("관리 페이지도 만들어서 개인정보나 각종 법적고지부분을
+수정 갱신하도록 하고, 1:1 문의와 공지사항도 만들어서 관리 될 수 있게
+해야해")에 따라 신규 구축.
+
+- **Firestore 스키마**: `notices/{id}`(공지, published 필터), `inquiries/
+  {id}`(+ `replies` 서브컬렉션), `legalDocs/{slug}`(법적 문서 본문).
+  관리자 판별은 Blaze 미전환 상태라 커스텀 클레임을 못 심어주는 대신
+  `admins/{uid}` 화이트리스트 문서(클라이언트 직접 접근 불가, Firebase
+  콘솔에서만 추가 가능)로 처리 — `notices`를 published 필터 없이
+  조회해보는 쿼리가 성공하는지로 간접 판별한다.
+- **앱**: 설정 → "지원" 섹션에 공지사항(목록/상세, `flutter_markdown_plus`
+  로 렌더링)·1:1 문의(작성 + 답변 스레드) 화면 추가.
+- **관리자 콘솔**(`docs/admin/`): 빌드 도구 없는 순수 HTML/JS +
+  Firebase JS SDK(CDN 모듈). 로그인 + 공지사항 CRUD + 문의 답변 + 법적
+  문서 편집. 브라우저에서 로그인 폼·에러 처리까지 확인했으나, **이
+  프로젝트에 Firebase 웹 앱이 등록된 적이 없어**(Android/iOS만 있었음)
+  `admin.js`의 `firebaseConfig`가 아직 `"REPLACE_ME"` placeholder다.
+  배포 전 필요한 일(관리자 계정 생성, `admins/{uid}` 수동 추가 포함)은
+  `docs/admin/README.md`에 정리해 뒀다.
+- **의도적으로 안 한 것**: 기존 법적 문서 5종의 실제 문안을 Firestore로
+  옮기는 작업(P1-15의 연장)은 보류했다. `privacy-policy.html`을 다른
+  세션이 바로 그 시점에 좌표 저장 정책 관련해서 실시간으로 고치고
+  있었기 때문 — 지금 옮기면 곧 틀리게 될 문안을 그대로 박제하게 된다.
+  그 작업(아래 "0-2" 좌표 C안)이 이미 병합됐으니, **다음 세션에서
+  진행 가능**.
+
+### 타겟 시장 문서 보강
+
+`docs/planning/business/pnl-analysis-freemium.html`의 타겟 시장 섹션에
+"관계 유지가 곧 매출"인 대표 영업직군으로 보험설계사(71.2만 명,
+2025년 말 생명보험협회 집계)·자동차 영업사원(약 3만 명, 업계 추정)을
+실제 통계와 함께 추가. 기존 577만 명(경영·회계 사무직+매장판매직)과는
+KSCO 분류상 별도 직군이라 실제 핵심 타겟은 더 크다는 점을 명시.
+
+### 동시 작업 충돌과 해결(재사용 가능한 패턴)
+
+**무슨 일이 있었나**: 세션 중반, 같은 작업 디렉토리(`connection-trace-
+ai-v2-flutter/`)를 다른 세션이 `feat/geo-privacy-hardening` 브랜치로
+체크아웃해 실시간으로 편집하고 있다는 걸 뒤늦게 발견했다. `login_view.
+dart`(+53줄), `settings_view.dart`(+95줄)에 내가 안 건드린 변경이
+섞여 있었고, 심지어 내가 "오픈소스 라이선스 화면을 한글 안내문으로
+감싸겠다"며 수정한 코드가 알고 보니 main에는 없는, **그 세션이 아직
+커밋 안 한 기능**(`legal_document_view.dart`)을 수정한 것이었다.
+
+**해결**: `git worktree add`로 별도 디렉토리(`connection-trace-ai-v2-
+flutter-work/`)에 `main` 기준 새 브랜치(`feature/admin-console`)를 파서
+격리했다. 이후 모든 작업을 그 워크트리에서만 진행해 공유 디렉토리를
+전혀 건드리지 않았다. 두 세션 다 작업을 마친 뒤, 두 브랜치가 건드린
+파일 목록을 `git diff --name-only`로 비교해 **겹치는 파일 3개**
+(`pnl-analysis-freemium.html`, `open_source_notice_view.dart`,
+`settings_view.dart`)를 찾고, 각각 내용이 동일한지(→ 자동 병합 확실)
+혹은 다른 위치에 추가된 것인지(→ 자동 병합 가능성 높음) 미리 확인한
+뒤 병합했다. 실제로 `git merge`가 셋 다 충돌 없이 자동 병합했고,
+`flutter analyze`(에러 0) + `flutter test`(39건 전부 통과)로 확인 후
+`origin/main`에 push했다.
+
+**교훈**: 같은 저장소를 여러 세션이 동시에 작업할 가능성이 있으면,
+시작하자마자 `git worktree`로 격리하는 게 안전하다 — 브랜치만 나누고
+디렉토리를 공유하면 `git checkout`이 서로의 작업 트리를 덮어써
+사고가 난다.
 
 ## 1. 한 일 (완료된 기능)
 
@@ -577,9 +683,9 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | # | 항목 | 근거 | 규모 | 담당 |
 |---|---|---|---|---|
 | P0-1 | App Store Connect 빌드 업로드 403 권한 에러 해결 | `apps@creamhouse.net` 계정의 App Store Connect "사용자 및 접근" 역할 확인/재초대 필요(0-1 섹션 참고) — 이게 안 풀리면 iOS 빌드를 물리적으로 업로드할 수 없다 | 불명(계정 이메일 왕복, 코드 작업 아님) | 사용자 |
-| P0-2 | Apple 로그인 — iOS 빌드 검증 + 콘솔 설정 | **2026-08-05 갱신: 코드 구현은 끝났으나 커밋되지 않은 작업 트리 상태**(0-2 섹션 참고). 남은 것은 ① iOS `pod install`·빌드·실기기 검증(현재 `Podfile.lock`에 `sign_in_with_apple` pod이 없어 **한 번도 빌드된 적 없음**) ② Apple 버튼 HIG 스타일링(지금은 Google과 같은 흰 버튼이라 심사 지적 소지) ③ Apple Developer 콘솔 Capability + Firebase Apple 제공사 활성화 | 중 | 개발(빌드·검증) + 사용자(콘솔 설정) |
+| P0-2 | Apple 로그인 — iOS 빌드 검증 + 콘솔 설정 | **2026-08-05 밤 갱신: 커밋 완료 + iOS 실기기 빌드 검증 완료**(0-3 섹션). `main`에 병합됐고, iPhone 16 Pro에서 release 빌드로 여러 차례 설치·실행 확인(단, Apple 로그인 버튼을 직접 눌러 전체 인증 플로우를 끝까지 실행해보진 않음 — 앱이 이 코드를 포함한 채 정상 구동되는 것만 확인). 남은 건 ① Apple 로그인 버튼 실제 탭 테스트 ② Apple 버튼 HIG 스타일링 ③ Apple Developer 콘솔 Capability + Firebase Apple 제공사 활성화 확인 | 소~중 | 개발(버튼 테스트) + 사용자(콘솔 설정) |
 | P0-3 | AI 서버 프록시(Gemini) 검증 — **전제 정정됨** | ⚠️ **원래 항목("AI 3사 실키 E2E")은 무효**: 커밋 `ed6b4b7`에서 BYOK가 삭제돼 `ai_provider.dart`·`ai_credentials_repository.dart` 파일 자체가 없고, `ai_briefing_service.dart`는 `httpsCallable('generateBriefing')` 하나로 대체됨. 검증 대상은 `functions/src/index.ts`(Gemini 단독)이며, `kAiServiceDeployed=false` + Blaze 미가입(P1-7)이라 **실키 E2E는 물리적으로 불가**. 별도로 발견된 코드 결함(thinking 토큰이 `MAX_OUTPUT_TOKENS=400`을 잠식해 빈 응답이 되는 문제 등)은 P1-8 착수 시 함께 처리 | 중 | 개발 → QA |
-| P0-4 | 브리핑 오버레이 텍스트 가독성 버그 | `briefing_overlay_view.dart`가 `Colors.black.withValues(alpha:0.85)` 배경 위에 `AppColors.textPrimary`(어두운 색)를 그대로 써서 핵심 화면 텍스트가 사실상 안 보임(코드로 재현 확인) | 소(색상 토큰 1곳) | UI디자이너 |
+| ~~P0-4~~ | ~~브리핑 오버레이 텍스트 가독성 버그~~ → ✅ **완료** | 2026-08-05 수정(커밋 `d6f35bb`). 검정 85% 스크림을 앱 전역과 동일한 배경 토큰(`AppColors.bgDarkSlate`)으로 바꾸고, 페이지 배경에 직접 놓이는 캡션/에러 텍스트도 WCAG AA(4.5:1) 기준을 만족하는 색으로 교체 | — | 완료 |
 | P0-5 | ~~개인정보처리방침 담당자·전용 문의메일 정식화~~ → **법적 고지 문서 게시** | **2026-08-05 갱신: 문서 작성은 완료**(0-2 섹션). 보호책임자·문의메일 임시값은 최우진(대표이사) + `connectionsense@creamhouse.net`으로 정식화했고, 방침 v2.0 전부개정·이용약관·접근권한 안내·계정삭제 안내까지 작성 완료. 남은 것은 ① **`connectionsense@creamhouse.net` 메일 계정 생성**(사용자) ② C안 코드 구현 후 Firebase Hosting 배포 ③ 스토어 콘솔에 URL 등록 | 소 | 사용자(메일 개설) + 개발(배포) |
 | P0-6 | 계정 삭제 안내 웹페이지 게시 | **신규(2026-08-05 발견)**. Google Play는 앱 내 삭제 기능과 **별개로** 계정 삭제 안내 웹 URL을 "앱 콘텐츠"에 요구한다 — 없으면 제출 자체가 진행되지 않는다. 문서(`docs/legal/account-deletion.html`)는 작성 완료, Hosting 배포와 콘솔 등록만 남음 | 소 | 개발(배포) + 사용자(콘솔 입력) |
 | P0-7 | Play Data safety / Apple App Privacy 양식 작성 | 양식과 개인정보처리방침이 **불일치하면 즉시 반려**된다. 방침 v2.0에서 수집 항목·국외이전·위탁·삭제 경로가 크게 바뀌었으므로 양식을 그 기준으로 새로 채워야 함 | 중 | 기획 + 사용자(콘솔 입력) |
@@ -595,7 +701,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P1-5 | AI 호출 한도를 구독 등급별로 차등 적용 | 지금 `functions/src/index.ts`의 `DAILY_LIMIT`/`MONTHLY_LIMIT`은 고정값, 구독 상태 반영 안 됨 | 중 | 개발 |
 | P1-6 | Gmail 가져오기 프로덕션 OAuth 등록·동의화면 검증(CASA) | `gmail.readonly`는 Google이 제한된 범위로 분류해 별도 보안 심사가 필요한 스코프 — 코드는 완성됐지만 여전히 미등록 상태로 보임(backlog 옛 기록 기준, 재확인 필요). 소통기록 4개 입력 경로 중 1개일 뿐이라 핵심 플로우를 막지는 않음 | 중~대(Google 심사 기간 변수) | 사용자(콘솔 설정) + 개발(검증 대응) |
 | P1-7 | Firebase Blaze 요금제 카드 등록 | AI 서버 프록시(Cloud Functions)·사진 서버 백업·완전한 키 분리 3가지의 공통 선행조건. 카드 등록 자체는 즉시 가능, P0로 안 둔 이유는 없어도 v1이 BYOK 그대로 정상 출시 가능하기 때문 | 소 | 사용자 |
-| P1-8 | AI 연동 BYOK→서버 프록시 전환 구현 | 사용자가 이미 방향을 결정했고 `functions/src/index.ts` 코드까지 작성됨, 배포만 P1-7 대기 중. 지금 BYOK 상태로도 기능은 정상 동작하므로 급하진 않지만 방치하면 "결정 vs 실제 코드"가 계속 어긋남 | 중(배포 + `ai_connection_modal_view.dart` 문구 개편) | 개발 |
+| ~~P1-8~~ | ~~AI 연동 BYOK→서버 프록시 전환 구현~~ → ✅ **완료(코드) / 배포는 P1-7 대기** | 2026-08-05 구현(커밋 `ed6b4b7`, 0-3 섹션). `ai_provider.dart`/`ai_credentials_repository.dart` 삭제, `ai_connection_modal_view.dart` 전면 재작성, `kAiServiceDeployed=false`로 "서비스 준비 중" 정직하게 표시. Android+iOS 실기기 확인 완료. Cloud Functions 배포(P1-7 선행)만 되면 플래그 하나로 실제 AI 응답 켜짐 | — | 완료(배포 대기) |
 | P1-9 | 명함 원본 사진 로컬(기기) 암호화 | JSON 텍스트 필드는 이미 AES-256-GCM 암호화(추가 72)했지만 `cache/CAP*.jpg` 원본 이미지는 평문. 텍스트 데이터 평문 노출을 이미 실기기에서 발견한 전례(추가 72)가 있어 사진도 같은 방식으로 뚫릴 수 있음 | 중 | 개발 |
 | P1-10 | 다중 계정 전환 안전장치 — 스토리지 격리 여부 QA 스트레스 테스트 | 코드 확인 결과 로컬 저장 키가 uid별로 분리되지 않고 여전히 전역 키(`saved_contacts_v2`) — "유지 vs 교체" 다이얼로그 하나로만 계정 간 데이터 혼입을 막고 있음. 다이얼로그 로직의 엣지케이스(앱 강제 종료, 빠른 재로그인 등)를 실기기에서 검증 필요 | 소~중 | QA (필요 시 개발) |
 | P1-11 | UI-2~UI-6 시각 일관성 버그 | 구 블루 잔존 색상(`location_consent_sheet.dart`), 성공색 불일치(`settings_view.dart` vs `camera_scan_modal_view.dart`), 아바타 터치영역, 태그칩 클리핑, 카드 그림자 하드코딩 — 전부 코드로 재확인함, 기능 블로커는 아니나 최근 퍼플 리브랜딩 이후 정리 안 된 잔재 | 각 소 | UI디자이너 |
@@ -606,10 +712,12 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | ~~P1-23~~ | ~~로그인하지 않은 계정의 서버 문서 정리~~ → ✅ **완료** | 2026-08-05 사용자가 남아 있던 테스트 계정 `MmNZjpID…`를 **계정 삭제로 정리**(문서 + 하위 명함 2건 통째로 삭제 — 부수적으로 계정 삭제 기능이 실제로 동작하는 것도 확인됨). **서버 전체가 명함 3건 / 평문 0건 / 좌표 0건**이 됐다. ⚠️ 다만 **구조적 한계는 그대로 남는다** — 마이그레이션은 그 계정으로 로그인해야 돌고, `rebackupAllContacts`는 로컬에 있는 명함만 덮어쓴다. 실사용자가 생긴 뒤 같은 상황이 발생하면 서버 측 일괄 마이그레이션(Cloud Functions, P1-7 선행)이 필요하다 | — | 완료 |
 | P1-24 | Google/Apple 로그인 계정 분리 문제 | Apple 로그인을 하면 **별도의 Firebase 계정(uid)이 생긴다**. 같은 사람이 두 방식을 섞어 쓰면 명함 데이터가 계정별로 분리돼 "데이터가 사라졌다"고 느낀다. 계정 연결(linkWithCredential) 또는 안내 문구 필요. (※ 추가 77에서 빈 계정 `SRsffKQf…`를 Apple 로그인 탓으로 추정했으나 추가 79에서 **갤럭시의 다른 Google 계정 로그인** 때문으로 정정됨 — 계정 분리 문제 자체는 여전히 유효) | 중 | 개발 + UI디자이너 |
 | P1-25 | 지오코딩 영구 실패 시 사용자 안내 | **신규(2026-08-05, 추가 79)**. 좌표를 서버에서 뺀 뒤로는 주소 지오코딩이 3회 모두 실패한 명함이 **영구적으로 주변 인맥 목록에서 빠지는데 사용자에게 아무 표시도 나가지 않는다**(좌표를 서버에 두던 때는 없던 실패 모드). 명함 상세에 "주소 위치를 확인할 수 없습니다 · 주소 수정" 같은 안내가 필요한지 판단 필요 | 소~중 | UI디자이너 + 개발 |
-| P1-15 | 앱 내 법적 문서 진입점 | 지금 `lib/presentation/` 전체에 방침·약관 링크가 **0개**다. 설정 화면에 "약관 및 정책" 섹션 신설(기존 `_SectionTitle`/`_GroupedCard`/`_SettingsRow` 재사용) + `LegalDocumentView`(WebView 원격 우선, asset 폴백). **`address_search_view.dart:40-89`가 정확히 같은 `WebViewController` + `loadFlutterAsset` 패턴이라 골격 복제 가능** | 중 | 개발 |
+| P1-26 | 관리자 콘솔 배포 준비 | **신규(2026-08-05, 0-3 섹션)**. 공지사항/1:1문의/법적문서 편집이 가능한 `docs/admin/` 콘솔은 코드상 완성됐지만 ① Firebase 웹 앱 등록(이 프로젝트에 웹 앱이 없어 `admin.js`의 `firebaseConfig`가 placeholder) ② 관리자 Auth 계정 생성 ③ `admins/{uid}` 문서 수동 추가 ④ Hosting 배포 경로 결정(`docs/legal`과 같은 사이트의 `/admin`인지 별도 사이트인지) 전부 미완료라 아직 실사용 불가 (`docs/admin/README.md`에 순서 정리됨) | 소 | 사용자(콘솔 설정) + 개발(배포) |
+| P1-27 | 기존 법적 문서를 `legalDocs` Firestore 컬렉션으로 이전 | **신규(2026-08-05, 0-3 섹션)**. 관리자 콘솔에서 문구를 수정하려면 `docs/legal/*.html`의 실제 문안을 `legalDocs/{slug}`로 옮겨야 하는데, 이번 세션 시점엔 `privacy-policy.html`이 다른 작업(좌표 C안)으로 실시간 수정 중이라 보류함 — 그 작업이 이미 `main`에 병합됐으니 **지금은 착수 가능** | 중 | 개발 |
+| ~~P1-15~~ | ~~앱 내 법적 문서 진입점~~ → ✅ **완료** | 2026-08-05 구현(0-3 섹션 "동시 작업" 참고 — 다른 세션 작업, `main` 병합 완료). 설정 화면에 "약관 및 정책" 섹션 신설 + `LegalDocumentView`(WebView) | — | 완료 |
 | P1-16 | 로그인 화면 약관 고지 문구 | `login_view.dart`에 약관 동의 체크박스도 고지 문구도 없음. v1은 체크박스 대신 "계속하기를 누르면 [이용약관]과 [개인정보처리방침]에 동의하는 것으로 봅니다" 형태 권장(결제·마케팅 도입 시 체크박스 게이트로 승격) | 소 | 개발 |
 | P1-17 | 약관 동의 기록(`TermsConsentService`) | 동의 사실 입증과 문서 개정 시 재동의를 위해 필요. **`location_consent_service.dart`의 `currentPolicyVersion` 불일치 시 재동의 패턴(L35·L44)을 그대로 복제**하고, 기기 변경 시 이력이 사라지지 않도록 `users/{uid}.consents`에도 기록 | 소~중 | 개발 |
-| P1-18 | 오픈소스 라이선스 화면 + 앱 버전·사업자 정보 표시 | `showLicensePage`/`LicensePage` 사용 0건 — OSS 라이선스 고지 화면이 아예 없다. 앱 버전은 `package_info_plus`로 자동 반영 권장(하드코딩은 릴리즈마다 갱신 누락 위험) | 소 | 개발 + UI디자이너(테마 확인) |
+| ~~P1-18~~ | ~~오픈소스 라이선스 화면 + 앱 버전·사업자 정보 표시~~ → ✅ **완료** | 2026-08-05 구현(`main` 병합). `showLicensePage` 진입 전 "왜 영문인지" 설명하는 한글 안내 화면(`OpenSourceNoticeView`) + 사업자 정보 다이얼로그 + 앱 버전 표시 추가. ⚠️ 앱 버전은 여전히 하드코딩(`_appVersion = '1.0.0 (1)'`) — `package_info_plus` 전환은 아직 미착수 | 소(잔여: package_info_plus) | 개발 |
 | P1-19 | Android 릴리스 서명 키 설정 | `android/app/build.gradle.kts:38-40`이 `signingConfig = signingConfigs.getByName("debug")` + `// TODO: Add your own signing config` — **debug 키로 서명된 빌드는 Play에 업로드할 수 없다.** iOS의 App Store Connect 403(P0-1)에 대응하는 Android 쪽 배포 블로커 | 소 | 사용자(키스토어 생성·보관) + 개발 |
 | P1-20 | Android `<queries>`에 전화 인텐트 추가 | `AndroidManifest.xml:57-62`에 PROCESS_TEXT만 있고 DIAL/`tel:` 인텐트가 없어, Android 11+에서 `canLaunchUrl(tel:)`이 false를 반환해 **전화 걸기가 조용히 실패**할 수 있음(`phone_call_service.dart:9-15`). 실기기 검증 기록 없음 | 소 | 개발 → QA |
 | P1-21 | iOS 수출규정 키 추가 | `ios/Runner/Info.plist`에 `ITSAppUsesNonExemptEncryption` 키가 없어 업로드마다 수출규정 질문에 수동 응답해야 함. 앱이 AES-256-GCM을 쓰므로 값 판단 후 명시 필요 | 소 | 개발 |
