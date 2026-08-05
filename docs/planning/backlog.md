@@ -2,6 +2,226 @@
 
 ## 작업 로그
 
+### 2026-08-05 (추가 75) — 법적 고지 문서 체계 정비(리멤버 벤치마크 기반) + 플랫폼별 개발 현황 정리
+
+사용자 요청 2건: ① "리멤버앱에 있는 법적 고지 내용을 항목별로 다운로드 받아
+우리가 만드는 앱에도 넣을 법적고지 내용을 정리해" ② "지금 개발이 아이폰,
+안드로이드 각각 개발완료된것과 미완료된것을 표로 만들어줘". 이번 범위는
+**문서 작성까지**로 한정(사용자 확인) — 앱 코드는 건드리지 않음.
+
+**벤치마크 조사(리멤버 / 주식회사 리멤버앤컴퍼니)**: 문서는
+`page.rememberapp.co.kr/terms/{slug}` 아래에 slug 기반 정적 페이지로 운영.
+확인된 문서 — 이용약관(27개조), 개인정보처리방침(15개 대항목),
+위치기반서비스 이용약관(15개조), 마케팅 수신 동의(정보통신망법 §50 4요소),
+가명정보 처리현황, 리멤버 Call 분리 처리방침, 채용 솔루션 약관(유료·환불),
+판매자 목록, 커뮤니티 가이드라인. **앱 접근권한 안내와 오픈소스 라이선스는
+웹 문서 없이 스토어 설명란 + 인앱으로 처리**하고 있고, **청소년보호정책은
+아예 없음**(만 14세 이상 가입 + 유해매체물 미취급이라 의무 대상 아님).
+참고할 만한 형식 3가지 — 수집 표에 `처리근거` 컬럼을 둔 점(2023 개정법 대응),
+국외이전 표를 법 §28-8 6요소 그대로 채운 점, CPO 성명을 비공개하되
+"스팸 방지를 위해 성명 미기재"라고 **사유를 문서에 밝힌** 점.
+
+**사용자 결정 4건**:
+1. **좌표 C안 확정** — 명함 주소를 변환한 좌표(`ContactModel.geo`)를 서버
+   백업에서 제외한다. (추가 40의 "좌표를 서버로 전송하면 위치정보 사업자
+   신고 재검토 필요" 경고에 대한 결론. 아래 "좌표 문제의 사실관계" 참고)
+2. **Firebase Hosting** — `connection-sense` 프로젝트에 배포. Hosting은
+   Spark(무료) 요금제로 가능해서 **Blaze 카드 등록(P1-7) 대기 없이 즉시
+   가능**하다는 점을 확인.
+3. **보호책임자 = 최우진(대표이사) 실명 + `privacy@creamhouse.net`** —
+   리멤버식 성명 비공개 방식은 채택하지 않음.
+4. **위치기반서비스 이용약관은 만들지 않는다** — C안으로 좌표를 서버에서
+   빼면 회사가 보유하는 위치정보가 없어지므로, 방침의 "개인위치정보의 처리"
+   항목으로 커버.
+
+**좌표 문제의 사실관계(추가 40의 경고를 정정)**: 이 앱에는 성격이 다른 두
+종류의 좌표가 있는데 그동안 섞여 기록돼 있었다. (a) 이용자 본인의 실시간
+GPS — `geolocator`로 얻어 기기 메모리에서 거리 계산에만 쓰고 저장·전송하지
+않음. (b) `ContactModel.geo` — **명함에 적힌 주소 문자열을 지오코딩한 값**으로,
+`contact_model.dart:112-113`의 `toJson()`에 포함돼 `data_backup_service.dart`가
+Firestore에 암호화 저장 중. 위치정보법 §2 1호는 "특정한 시간에 존재하거나
+존재하였던 장소"를 위치정보로 정의하므로 (b)는 시점 요건을 충족하지 않아
+해당하지 않을 가능성이 크다(최종 판단은 법무 검토 필요). 따라서 C안의 가치는
+"법적 의무 제거"가 아니라 **설계 결정과 코드를 일치시키고 "회사는 어떤 좌표도
+보유하지 않는다"는 한 문장을 코드로 입증 가능하게 만드는 것**이다.
+
+**작성한 문서(신규 4종 + 전부개정 1종 + 공통 CSS)**:
+- `docs/legal/privacy-policy.html` — **v1.0 → v2.0 전부개정**, 14항목 → 19항목.
+  ⛔ 삭제: "AI 서비스 API 키" 수집 행, 제3자 제공의 "Anthropic/OpenAI/Google
+  중 택 1", "이용자가 직접 발급한 API 키…회사 서버를 거치지 않습니다",
+  "향후 서버 경유 방식으로 전환할 계획" 콜아웃, "AI API 키 보안 저장소 암호화"
+  — **전부 커밋 `ed6b4b7`에서 BYOK가 제거된 뒤로 사실과 달랐던 서술**.
+  ➕ 신설: 국외 이전(§28-8 6요소), 자동 수집 장치, 제3자 행태정보,
+  개인위치정보의 처리, 가명정보, 권익침해 구제. 위탁 표를 Firebase 1행 →
+  4행(Gemini API / OS 지오코딩 / 카카오 우편번호 추가)으로 확대. 모든 수집
+  표에 `처리근거` 컬럼 추가.
+- `docs/legal/terms-of-service.html` — **신규**, 19개조. 결제가 없어도 필요한
+  이유는 **이용자가 제3자(명함 주인) 정보를 입력하는 구조**(제8조)이고,
+  그 밖에 AI 결과 부정확 면책(제11조), 백업·복원 실패 면책(제13조 — 
+  `data_backup_service`가 실패를 조용히 삼키는 구조 대응), 계정 삭제
+  비가역성(제14조)이 근거 없이는 방어 불가하기 때문. 광고성 정보는 v1에
+  없지만 **근거 조항(제19조)만 미리 넣어** 나중에 약관 개정 없이 동의 UI만
+  붙일 수 있게 함.
+- `docs/legal/app-permissions.html` — **신규**. 정보통신망법 §22-2 대응.
+  위치·카메라·사진 3종을 **전부 "선택" 권한으로** 고지. `AndroidManifest.xml`
+  L10-19에서 `tools:node="remove"`로 제거한 8개 권한(통화기록·SMS·전화상태·
+  마이크·저장소)을 "요청하지 않는 권한"으로 명시 — 신뢰도 자산으로 활용.
+- `docs/legal/account-deletion.html` — **신규. 조사 중 발견한 누락 블로커.**
+  Google Play는 앱 내 삭제 기능(이미 있음)과 **별개로 계정 삭제 안내 웹
+  URL**을 "앱 콘텐츠"에 요구하는데, 지금껏 어느 문서에도 잡혀 있지 않았다.
+  이게 없으면 Play 제출 자체가 진행되지 않는다.
+- `docs/legal/index.html` — **신규**. 4개 문서 인덱스 + 전자상거래법 §10
+  사업자 정보 푸터.
+- `docs/legal/legal.css` — **신규**. 기존 방침의 인라인 CSS를 공통 파일로
+  분리(문서 5개가 공유). 다크/라이트 테마는 `prefers-color-scheme` +
+  `data-theme` 둘 다 지원하는 기존 구조를 그대로 승계 — 앱 WebView에서
+  `data-theme` 주입으로 앱 테마와 맞출 수 있음.
+- `firebase.json` — `hosting` 섹션 추가. **`public: "docs/legal"`로 지정한
+  이유**: 저장소에 `web/`(Flutter Web)가 이미 있어 충돌하고, `public: "docs"`로
+  하면 `docs/planning/**` 내부 기획 문서가 전부 웹에 노출된다. `cleanUrls`와
+  단축 slug 리다이렉트(`/privacy` → `/privacy-policy` 등)를 함께 설정.
+
+**⚠️ 게시 순서 제약(중요)**: 방침 10번은 C안 기준으로 "좌표를 서버에
+보관하지 않는다"고 쓰여 있는데 **코드는 아직 저장 중**이다. 코드 수정 전에
+게시하면 그 자체가 허위 기재다. 각 HTML 상단에 화면에 표시되지 않는
+`<!-- -->` 주석으로 이 제약을 박아 뒀다. 같은 이유로 **"AI 모델 학습에
+사용되지 않습니다"류 문장은 넣지 않았다** — 추가 67에서 확인한 대로 Gemini
+무료 등급은 입력을 서비스 개선에 활용하고 사람 검수자가 읽을 수 있어,
+유료 등급 결제(P1-7)가 연결되기 전에는 쓸 수 없는 문장이다.
+
+**검증**: 문서의 사실 주장을 코드로 한 줄씩 대조함 — AI 한도
+(`functions/src/index.ts:36-37` 일 10/월 100 ✓), 리전(`:198`
+asia-northeast3 ✓), 모델(`:42` gemini-3.6-flash ✓), 날씨는 좌표만 전송
+(`weather_service.dart:22-23` ✓), 좌표가 아직 `toJson()`에 포함
+(`contact_model.dart:112-113` ✓ = C안 미구현 확인), 권한 목록(iOS 3종 /
+Android 4종 + 제거 8종 ✓). **방침에 쓴 앱 내 경로 3건이 실제 화면과 달라
+정정**했다 — 내 프로필은 설정이 아니라 **주변 탭 우상단 프로필 사진**에서
+열리고(`radar_view.dart:155-176`), 명함 수정은 명함 탭에서 카드를 탭해
+`AddCardModalView(contactToEdit:)`로 진입하며(`wallet_view.dart:165`),
+소통 기록 개별 삭제는 명함 상세가 아니라 **브리핑 화면의 "최근 소통 기록"**에
+있다(`briefing_overlay_view.dart:159,721`). HTML 태그 균형과 BYOK 잔재 0건도
+확인. **브라우저 육안 확인은 하지 않음.**
+
+**플랫폼별 개발 현황(요청 ②)**: 코드 조사 결과 세 가지가 드러났다.
+① **Apple 로그인은 이미 구현돼 있으나 전부 커밋되지 않은 작업 트리
+상태**다(`sns_auth_provider.dart`, `auth_repository.dart:124-208`,
+`login_view.dart`, `pubspec.yaml`의 `sign_in_with_apple: ^8.1.0`,
+`project.pbxproj`, 신규 `ios/Runner/Runner.entitlements`). 그런데 HANDOFF
+P0-2와 추가 73은 여전히 "`isAvailable`이 false"라고 기록하고 있어 문서가
+코드보다 낡았다. ② **iOS는 Apple 로그인 코드가 들어간 뒤 한 번도 빌드되지
+않았다** — `ios/Podfile.lock`에 `sign_in_with_apple` pod이 없고
+`ios/.symlinks/plugins/`에도 없다(= `pod install` 미실행). Android는 같은
+코드로 debug APK 빌드 성공(Aug 5 11:58). ③ Android는 기능 검증이 앞서 있고
+**릴리스 서명이 아직 debug 키**(`build.gradle.kts:38-40`,
+`// TODO: Add your own signing config`)라 Play 업로드가 불가능한 반면, iOS는
+정식 팀 서명(`77L7BH2M2W`)이 있으나 **App Store Connect 403**으로 막혀 있다.
+그 밖에 Android는 `<queries>`에 DIAL 인텐트가 없어 Android 11+에서 전화
+걸기가 실패할 수 있고(`phone_call_service.dart` + `AndroidManifest.xml:57-62`),
+adaptive icon이 없으며, iOS는 `Info.plist`에
+`ITSAppUsesNonExemptEncryption` 키가 없어 업로드마다 수출규정 질문에 수동
+응답해야 한다. 상세 비교표는 HANDOFF "0-2" 섹션에 정리.
+
+**후속 작업으로 넘긴 것**(HANDOFF "3. 해야 할 일"에 반영): C안 코드 구현,
+설정 화면 "약관 및 정책" 섹션, `LegalDocumentView`(WebView 원격 우선 +
+asset 폴백 — `address_search_view.dart:40-89`가 정확히 같은 패턴이라 골격
+복제 가능), 로그인 화면 약관 고지 문구, `TermsConsentService`
+(`location_consent_service.dart`의 `currentPolicyVersion` 재동의 패턴 복제),
+`showLicensePage` 오픈소스 라이선스, 앱 버전 표시, Hosting 실제 배포,
+Play Data safety / Apple App Privacy 양식.
+
+**사용자 작업**: `privacy@creamhouse.net` 메일 계정 생성(게시 전 필수),
+Gemini 유료 등급 결제 연결, `creamhouse.net` 도메인 보유 확인.
+
+**법무 검토가 필요한 지점**(이 문서는 법률 자문이 아님): ① 위치정보법
+해당성(위 "좌표 문제의 사실관계") ② 이용자가 제3자 정보를 입력할 때
+회사·이용자 각각의 법적 지위와 개인정보 보호법 §20(수집 출처 통지) 적용
+여부 ③ AI기본법상 생성형 AI 산출물 표시 의무의 적용 대상·요건 ④ Firebase
+Auth 국외 처리(추가 67에서 이미 "법무 검토 권장"으로 기록).
+
+### 2026-08-04 (추가 74) — AI 관여 화면 설계서(AS-IS) 작성 + 누락된 인수인계 보완
+
+사용자 요청("AI를 이용한 사용자 화면설계서 만들어")으로 실제 코드를
+근거로 한 AS-IS 화면설계서를 작성. 구현 위임 없이 문서 작업만 진행.
+
+**조사한 코드**: `radar_view.dart`(진입점), `briefing_overlay_view.dart`
+(브리핑 오버레이 본체, 5가지 상태 분기 확인), `ai_data_review_sheet.dart`
+(전송 동의 시트, 날씨 조회 3분기 포함), `communication_source_sheet.dart`,
+`email_import_sheet.dart`(Gmail 가져오기, 로그인/로딩/에러/빈결과/목록
+5단계), `manual_comm_log_modal_view.dart`, `ai_connection_modal_view.dart`
+(BYOK 설정, 제공사 카드 3분기), `settings_view.dart` 일부,
+`ai_briefing_service.dart`(3사 REST 호출·에러 메시지 매핑),
+`weather_service.dart`, `ai_credentials_repository.dart`,
+`ai_provider.dart`, `contact_model.dart`.
+
+**결과물**: `docs/planning/design/ai_screens_asis_spec.md` — 화면 7개
+(레이더/설정 진입점 2개 + AI 연동 설정 + 브리핑 오버레이 + 동의 시트 +
+소통기록 추가 방법 선택 + Gmail 가져오기 + 수동 입력)의 구성요소·상태
+분기·에러/빈상태/로딩 처리·화면 간 이동을 표와 다이어그램으로 정리.
+가정 4건과 "확인이 필요할 수 있는 사항" 2건(선택된 대화 포인트가
+시각적 강조 외 기능이 없음, 모델 오버라이드 UI 부재)을 별도 절로
+분리해 명시.
+
+**인수인계 공백 발견·보완**: 조사 중 `docs/planning/design/
+ai_briefing_screens_spec.html`(커밋 `070e405`, "AI 대화 브리핑
+화면설계서 작성")이 이미 존재하는데 `backlog.md`/`HANDOFF.md` 어디에도
+기록이 안 돼 있던 걸 발견 — 그 문서는 P1-8(BYOK→서버 프록시 전환) 이후의
+**미래 상태(To-Be)** 스펙이라 이번에 새로 쓴 AS-IS 문서와 서로 짝을
+이룬다는 점을 양쪽 문서 상단에 명시해 혼동을 방지. 이번 backlog/HANDOFF
+갱신으로 두 문서 모두 인수인계 문서에 반영됨.
+
+### 2026-08-04 (추가 73) — PM 우선순위 재감사(구현 위임 없이 계획만)
+
+사용자 요청으로 "남은 할 일 정리 + 우선순위 기획"을 진행. 구현 위임은
+하지 않고, `HANDOFF.md`/`backlog.md`/`server-setup-plan.md`/
+`release-roadmap.md`에 적힌 "남은 할 일"을 실제 코드와 하나씩 대조하는
+감사만 수행했다.
+
+**대조 방법**: grep/Read로 코드를 직접 열어 문서 주장과 대조. 예—
+`ai_connection_modal_view.dart`의 BYOK 안내 문구가 아직 그대로인지,
+`briefing_overlay_view.dart`의 배경색/텍스트색 실제 값, `sns_auth_provider.dart`의
+`isAvailable` 값, `contacts_repository.dart`의 로컬 저장 키가 uid별로
+분리됐는지, `email_sync_service.dart`의 Gmail 스코프, `functions/src/index.ts`
+실존 여부 등.
+
+**문서 대비 결과**:
+- **이미 끝났는데 `release-roadmap.md`에는 여전히 미해결로 남아 있던 것**:
+  P0-1(계정 전환 시 데이터 노출 — "유지 vs 교체" 다이얼로그로 완화됨),
+  P0-2(개인정보처리방침 — 게시 완료), P0-3(회원탈퇴 — 구현 완료). 셋 다
+  `HANDOFF.md` "0-1"에는 반영돼 있었지만 `release-roadmap.md` 표는 갱신
+  안 된 상태였음 — 이번에 표만 갱신(아래 참고).
+- **문서에 없던 새 발견 4건**:
+  1. `SnsAuthProvider.apple.isAvailable`가 여전히 `false`. Apple Developer
+     Program 유료 가입은 이미 끝났는데 정작 Apple 로그인 구현은 방치돼
+     있고, 이 상태로 App Store에 내면 Google 로그인만 제공한다는 이유로
+     심사 가이드라인 4.8 위반 반려 위험이 있음 — App Store Connect 403
+     문제(기존 최우선 항목)와 나란한 새 P0.
+  2. `briefing_overlay_view.dart`가 `Colors.black.withValues(alpha:0.85)`
+     배경 위에 `AppColors.textPrimary`(0xFF171A21, 어두운 색)를 그대로
+     써서 핵심 화면(AI 브리핑) 텍스트가 사실상 안 보임. `release-roadmap.md`
+     UI-1로 이미 발견은 돼 있었으나 "3.해야 할 일"에 반영이 안 돼 있었음.
+  3. `email_sync_service.dart`의 `gmail.readonly`는 Google이 "제한된 범위"로
+     분류해 별도 앱 검증(CASA)이 필요한 스코프 — `backlog.md` 옛 기록엔
+     "미등록" 상태로 남아 있는데 최신 "3.해야 할 일" 목록에는 빠져 있어
+     재발견해 추가.
+  4. `contacts_repository.dart`의 로컬 저장 키(`saved_contacts_v2`)가 여전히
+     전역 키 — `server-setup-plan.md`가 설계한 uid별 키 격리는 구현 안 됐고,
+     실제로는 "유지 vs 교체" 확인 다이얼로그만으로 계정 간 데이터 혼입을
+     막고 있음. 기능은 동작하지만 원 설계보다 가벼운 안전장치라 QA
+     스트레스 테스트 대상으로 추가.
+- **문서와 코드가 정확히 일치한 것**: BYOK 안내 문구(`ai_connection_modal_view.dart:129`),
+  `functions/src/index.ts`(작성만 되고 미배포), UI-2~UI-7(구 블루 잔존 색,
+  성공색 불일치, 아바타 터치영역, 태그칩, 그림자 하드코딩, AppColors
+  변수명), 알림 센터 빈 상태, `kDebugMode` 가드로 보호된 게스트 로그인
+  우회(release 빌드엔 노출 안 됨 — 문서의 "지울 것" 경고는 실제로는 이미
+  안전하게 처리돼 있어 급하지 않음으로 하향).
+
+**결과물**: `HANDOFF.md` "3. 해야 할 일" 섹션을 P0/P1/P2 체계로 전면
+재정리(근거·규모·담당 명시, 새 발견 4건 포함), `release-roadmap.md`의
+P0 표를 실제 상태로 갱신. 사용자 결정이 필요한 4건(v1 유료/무료 스코프,
+Gmail 가져오기 v1 포함 여부, "알림" 마케팅 문구와 패시브 레이더 실구현
+간 정합성, 명함 사진 소급 업로드 옵트인 여부)은 구현 없이 질문으로
+분리해 메인 세션에 전달.
+
 ### 2026-08-04 (추가 72) — 명함/프로필 기기·서버 저장 암호화(AES-256-GCM)
 
 `adb shell run-as <pkg> cat shared_prefs/FlutterSharedPreferences.xml`로

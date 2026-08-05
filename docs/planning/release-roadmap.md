@@ -46,15 +46,22 @@
 
 ### P0 — 출시 차단급
 
+**⚠️ 2026-08-04 PM 우선순위 재감사로 갱신**: 아래 세 항목은 이 표가
+작성된 뒤 실제로 구현이 끝났다(코드로 직접 확인). 최신 P0 목록(App
+Store Connect 403, Apple 로그인 미제공, AI 실키 검증, 브리핑 오버레이
+가독성 버그, 개인정보처리방침 담당자 정식화)은 `HANDOFF.md` "3. 해야 할
+일 — P0" 표를 최신으로 볼 것 — 이 문서(release-roadmap.md)의 표는
+아래처럼 상태만 갱신하고 원래 발견 맥락은 보존한다.
+
 | ID | 이슈 | 발견 경로 | 관련 파일 | 해법 상태 |
 |---|---|---|---|---|
-| P0-1 | 계정 전환 시 이전 계정의 명함/프로필/AI 키 노출 | flutter-planner | `lib/data/repositories/auth_repository.dart:109-128`(signOut이 세션만 지움), `contacts_repository.dart`/`my_profile_repository.dart`/`ai_credentials_repository.dart`(전역 `_storageKey` 사용) | **설계 완료** — `server-setup-plan.md` 6·7번 섹션(계정별 `::<uid>` 키 격리 + signOut 시 로컬 캐시 정리). 구현 대기 |
-| P0-2 | 종합 개인정보처리방침/이용약관 부재 | flutter-planner | `location_consent_sheet.dart`(위치만 다룸), `login_view.dart`(약관 링크 없음) | **설계 일부 완료** — `server-setup-plan.md` 9번 섹션에 개인정보 처리 관점 정리(단, Firebase Auth 국외이전 고지 여부는 "법무 검토 권장"으로 남음). **2026-08-04 갱신**: AI 제공사 위탁 처리 고지 항목도 9번 섹션에 추가됨(14번 섹션 연동). 문서 게시는 사용자 몫 |
-| P0-3 | 회원탈퇴/전체 데이터 삭제 기능 없음 | flutter-planner | 전 리포지토리에 clearAll류 메서드 0건 | **설계 완료** — `server-setup-plan.md` 8번 섹션(Cloud Functions `deleteAccountData`, 즉시삭제 기본안). 구현 대기 |
+| P0-1 | 계정 전환 시 이전 계정의 명함/프로필/AI 키 노출 | flutter-planner | `lib/data/repositories/auth_repository.dart:109-128`(signOut이 세션만 지움), `contacts_repository.dart`/`my_profile_repository.dart`/`ai_credentials_repository.dart`(전역 `_storageKey` 사용) | **완화 완료(추가 71, 2026-08-04)** — 단, 원래 설계(계정별 `::<uid>` 키 격리)가 아니라 로그인 시 "유지 vs 교체" 확인 다이얼로그로 완화하는 더 가벼운 방식. 저장소 키는 재감사 결과 여전히 전역 키로 확인됨 — QA 스트레스 테스트 필요(`HANDOFF.md` P1-10 참고) |
+| P0-2 | 종합 개인정보처리방침/이용약관 부재 | flutter-planner | `location_consent_sheet.dart`(위치만 다룸), `login_view.dart`(약관 링크 없음) | **게시 완료**(`docs/legal/privacy-policy.html`, 추가 72 이전) — 단, 담당자·전용 문의메일은 아직 임시값(`HANDOFF.md` P0-5로 재분류) |
+| P0-3 | 회원탈퇴/전체 데이터 삭제 기능 없음 | flutter-planner | 전 리포지토리에 clearAll류 메서드 0건 | **구현 완료(추가 71, 2026-08-04)** — 단, Cloud Functions 방식이 아니라 클라이언트가 Firestore 삭제 → Firebase Auth 삭제 → 로컬 초기화 순서로 직접 처리하는 방식 |
 
-세 항목 모두 **서버 도입 작업(섹션 4의 Phase 2~3) 안에서 함께 해결되는
-구조**다. 즉 P0-1/P0-2/P0-3은 사실상 하나의 작업 덩어리로 묶어서
-진행하면 된다.
+세 항목 모두 해결됐지만, 원래 설계보다 가벼운 방식으로 처리된 두 곳
+(P0-1 저장소 격리, P0-3 Cloud Functions 미사용)은 완전한 무결성을
+원한다면 후속 강화 대상이다(`HANDOFF.md` P1-10, P2-1 참고).
 
 ### P1 — 출시 전 권장
 
