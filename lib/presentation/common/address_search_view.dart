@@ -1,6 +1,9 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -20,6 +23,22 @@ class AddressSearchResult {
   });
 }
 
+/// 웹뷰가 스스로 열 수 있는 주소인지 판별한다.
+///
+/// 웹뷰는 `http`/`https`와 앱에 포함된 `file` 자산만 열 수 있다. 그 밖의
+/// 스킴(`kakaomap://`, `intent://`, `market://` 등)으로 이동을 시도하면
+/// `ERR_UNKNOWN_URL_SCHEME` 오류 페이지가 떠서 진행 중이던 화면을 덮어쓴다.
+bool isWebViewNavigable(String url) {
+  final scheme = Uri.tryParse(url)?.scheme.toLowerCase();
+  return scheme == null ||
+      scheme.isEmpty ||
+      scheme == 'http' ||
+      scheme == 'https' ||
+      scheme == 'file' ||
+      scheme == 'about' ||
+      scheme == 'data';
+}
+
 /// 다음(카카오) 우편번호 서비스를 웹뷰로 띄워 실제 도로명주소를 검색·선택하게
 /// 한다(API 키가 필요 없는 무료 공개 서비스). 주소를 고르면 [AddressSearchResult]를
 /// 반환하며 팝업을 닫는다. 검색 없이 닫으면 null을 반환한다.
@@ -31,6 +50,10 @@ class AddressSearchView extends StatefulWidget {
 }
 
 class _AddressSearchViewState extends State<AddressSearchView> {
+  /// 다음 우편번호 위젯이 부모 창으로 결과를 넘길 수 있도록 https origin을
+  /// 부여하기 위한 기준 주소. 이 주소로 요청을 보내지는 않는다.
+  static const String _baseUrl = 'https://connection-sense.web.app/';
+
   late final WebViewController _controller;
   bool _isLoading = true;
 
@@ -58,6 +81,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
                 ? roadAddress
                 : jibunAddress;
             if (address == null || address.trim().isEmpty) {
+              debugPrint('[AddressSearch] 주소가 비어 결과 없이 닫음');
               Navigator.pop(context);
               return;
             }
@@ -74,7 +98,8 @@ class _AddressSearchViewState extends State<AddressSearchView> {
                     : null,
               ),
             );
-          } catch (_) {
+          } catch (e) {
+            debugPrint('[AddressSearch] 파싱 실패, 결과 없이 닫음: $e');
             Navigator.pop(context);
           }
         },
@@ -84,9 +109,59 @@ class _AddressSearchViewState extends State<AddressSearchView> {
           onPageFinished: (_) {
             if (mounted) setState(() => _isLoading = false);
           },
+          onNavigationRequest: (request) {
+            if (isWebViewNavigable(request.url)) {
+              return NavigationDecision.navigate;
+            }
+            // 다음 우편번호 위젯에는 "카카오맵에서 찾기" 같은 앱 스킴 링크가
+            // 섞여 있다(kakaomap://search?q=...). 웹뷰는 http(s)가 아닌 스킴을
+            // 처리하지 못해 ERR_UNKNOWN_URL_SCHEME 오류 페이지로 넘어가고,
+            // 그 페이지가 웹뷰를 덮어써서 주소 선택 흐름 자체가 끊긴다
+            // (실기기에서 확인 — backlog 추가 80).
+            //
+            // 그래서 웹뷰 안에서는 막고, 해당 앱이 깔려 있으면 외부로 넘긴다.
+            // 깔려 있지 않으면 아무 일도 일어나지 않는다 — 주소 검색 화면은
+            // 그대로 유지되므로 사용자는 계속 주소를 고를 수 있다.
+            debugPrint('[AddressSearch] 앱 스킴 차단: ${request.url}');
+            _launchExternalApp(request.url);
+            return NavigationDecision.prevent;
+          },
         ),
       )
-      ..loadFlutterAsset('assets/web/address_search.html');
+      ;
+    _loadPage();
+  }
+
+  /// 페이지를 `file://`이 아니라 **https origin**을 가진 상태로 띄운다.
+  ///
+  /// 다음 우편번호 위젯은 내부 iframe에서 부모 창으로 결과를 넘기는데,
+  /// `loadFlutterAsset`으로 띄우면 origin이 `file://`(= 불투명 origin)이라
+  /// 이 전달이 막힌다. 그러면 주소를 선택해도 `oncomplete`가 호출되지 않고
+  /// 위젯이 대체 경로(카카오맵 앱 열기, `kakaomap://search?q=...`)로 빠져
+  /// **검색은 되는데 선택만 안 되는** 상태가 된다(실기기에서 확인 —
+  /// backlog 추가 80).
+  ///
+  /// HTML 자체는 앱 안에 그대로 두고 `baseUrl`만 https로 지정한다 — 문서를
+  /// 서버에서 내려받지 않으므로 네트워크 왕복이 늘지 않는다.
+  Future<void> _loadPage() async {
+    try {
+      final html = await rootBundle.loadString('assets/web/address_search.html');
+      await _controller.loadHtmlString(html, baseUrl: _baseUrl);
+    } catch (e) {
+      debugPrint('[AddressSearch] 페이지 로드 실패: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _launchExternalApp(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // 외부 앱 실행 실패는 무시한다 — 주소 검색을 계속할 수 있으면 된다.
+    }
   }
 
   @override
