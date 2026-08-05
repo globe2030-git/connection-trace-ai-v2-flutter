@@ -77,10 +77,10 @@ Android는 Apple 버튼을 렌더링하지 않으므로 다른 Google 계정으�
 `SRsffKQf…`(`encryptionKeyB64`만 있고 데이터 없음)는 아직 남아 있다.
 
 **후속 2 — 문의 이메일 주소 변경**: 사용자 지시로 문의/보호책임자 이메일을
-`privacy@creamhouse.net` → **`connectsense@creamhouse.net`** 으로 변경했다.
+`privacy@creamhouse.net` → **`connectionsense@creamhouse.net`** 으로 변경했다.
 `docs/legal/` 5개 문서와 HANDOFF에 반영 완료. (이 문서 위쪽 추가 75·76의
 `privacy@…` 표기는 당시 결정을 그대로 둔 기록이므로 고치지 않았다 —
-**현재 유효한 주소는 `connectsense@creamhouse.net`**.) 아직 메일 계정 개설
+**현재 유효한 주소는 `connectionsense@creamhouse.net`**.) 아직 메일 계정 개설
 전이므로, 게시 전에 실제 수신 가능한지 반드시 확인할 것.
 
 ### 2026-08-05 (추가 78) — iOS 재설치 시 Keychain 잔존 데이터 정리 + 기기 변경 시나리오 검증

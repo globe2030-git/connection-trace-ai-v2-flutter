@@ -181,7 +181,7 @@ Firestore 문서를 직접 열어 좌표가 남아 있지 않은지 확인할 �
 
 1. **좌표 C안 확정** — 명함 주소를 변환한 좌표를 서버 백업에서 제외한다.
 2. **Firebase Hosting**에 배포.
-3. **보호책임자 = 최우진(대표이사) + `connectsense@creamhouse.net`**.
+3. **보호책임자 = 최우진(대표이사) + `connectionsense@creamhouse.net`**.
 4. **위치기반서비스 이용약관은 만들지 않는다** — 방침의 "개인위치정보의
    처리" 항목으로 커버.
 
@@ -580,7 +580,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P0-2 | Apple 로그인 — iOS 빌드 검증 + 콘솔 설정 | **2026-08-05 갱신: 코드 구현은 끝났으나 커밋되지 않은 작업 트리 상태**(0-2 섹션 참고). 남은 것은 ① iOS `pod install`·빌드·실기기 검증(현재 `Podfile.lock`에 `sign_in_with_apple` pod이 없어 **한 번도 빌드된 적 없음**) ② Apple 버튼 HIG 스타일링(지금은 Google과 같은 흰 버튼이라 심사 지적 소지) ③ Apple Developer 콘솔 Capability + Firebase Apple 제공사 활성화 | 중 | 개발(빌드·검증) + 사용자(콘솔 설정) |
 | P0-3 | AI 서버 프록시(Gemini) 검증 — **전제 정정됨** | ⚠️ **원래 항목("AI 3사 실키 E2E")은 무효**: 커밋 `ed6b4b7`에서 BYOK가 삭제돼 `ai_provider.dart`·`ai_credentials_repository.dart` 파일 자체가 없고, `ai_briefing_service.dart`는 `httpsCallable('generateBriefing')` 하나로 대체됨. 검증 대상은 `functions/src/index.ts`(Gemini 단독)이며, `kAiServiceDeployed=false` + Blaze 미가입(P1-7)이라 **실키 E2E는 물리적으로 불가**. 별도로 발견된 코드 결함(thinking 토큰이 `MAX_OUTPUT_TOKENS=400`을 잠식해 빈 응답이 되는 문제 등)은 P1-8 착수 시 함께 처리 | 중 | 개발 → QA |
 | P0-4 | 브리핑 오버레이 텍스트 가독성 버그 | `briefing_overlay_view.dart`가 `Colors.black.withValues(alpha:0.85)` 배경 위에 `AppColors.textPrimary`(어두운 색)를 그대로 써서 핵심 화면 텍스트가 사실상 안 보임(코드로 재현 확인) | 소(색상 토큰 1곳) | UI디자이너 |
-| P0-5 | ~~개인정보처리방침 담당자·전용 문의메일 정식화~~ → **법적 고지 문서 게시** | **2026-08-05 갱신: 문서 작성은 완료**(0-2 섹션). 보호책임자·문의메일 임시값은 최우진(대표이사) + `connectsense@creamhouse.net`으로 정식화했고, 방침 v2.0 전부개정·이용약관·접근권한 안내·계정삭제 안내까지 작성 완료. 남은 것은 ① **`connectsense@creamhouse.net` 메일 계정 생성**(사용자) ② C안 코드 구현 후 Firebase Hosting 배포 ③ 스토어 콘솔에 URL 등록 | 소 | 사용자(메일 개설) + 개발(배포) |
+| P0-5 | ~~개인정보처리방침 담당자·전용 문의메일 정식화~~ → **법적 고지 문서 게시** | **2026-08-05 갱신: 문서 작성은 완료**(0-2 섹션). 보호책임자·문의메일 임시값은 최우진(대표이사) + `connectionsense@creamhouse.net`으로 정식화했고, 방침 v2.0 전부개정·이용약관·접근권한 안내·계정삭제 안내까지 작성 완료. 남은 것은 ① **`connectionsense@creamhouse.net` 메일 계정 생성**(사용자) ② C안 코드 구현 후 Firebase Hosting 배포 ③ 스토어 콘솔에 URL 등록 | 소 | 사용자(메일 개설) + 개발(배포) |
 | P0-6 | 계정 삭제 안내 웹페이지 게시 | **신규(2026-08-05 발견)**. Google Play는 앱 내 삭제 기능과 **별개로** 계정 삭제 안내 웹 URL을 "앱 콘텐츠"에 요구한다 — 없으면 제출 자체가 진행되지 않는다. 문서(`docs/legal/account-deletion.html`)는 작성 완료, Hosting 배포와 콘솔 등록만 남음 | 소 | 개발(배포) + 사용자(콘솔 입력) |
 | P0-7 | Play Data safety / Apple App Privacy 양식 작성 | 양식과 개인정보처리방침이 **불일치하면 즉시 반려**된다. 방침 v2.0에서 수집 항목·국외이전·위탁·삭제 경로가 크게 바뀌었으므로 양식을 그 기준으로 새로 채워야 함 | 중 | 기획 + 사용자(콘솔 입력) |
 
