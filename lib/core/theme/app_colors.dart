@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 /// 기존 이름(bgDark/cardDark)은 광범위한 화면 호환성을 위해 유지하지만 실제
 /// 값은 라이트 테마의 의미 토큰으로 바뀌었다.
 ///
+/// 2026-08-05: Claude Design 아이콘 시스템 핸드오프에 맞춰 액센트를
+/// 퍼플(#6C5CE7)에서 브랜드 블루(#2563EB)로 교체.
+///
 /// 향후 디자인이나 색상이 변경될 때 이 파일의 토큰만 수정하면 앱 전체에 즉시 반영됩니다.
 class AppColors {
   // 배경/서피스
@@ -20,11 +23,11 @@ class AppColors {
   static const Color textSecondary = Color(0xFF5F6673);
   static const Color textMuted = Color(0xFF7B8391);
 
-  // 브랜드 액센트 — 디자인 시안(퍼플 톤앤매너)에 맞춘 바이올렛,
-  // 선택 배경은 아주 옅은 라벤더
-  static const Color accent = Color(0xFF6C5CE7);
-  static const Color accentText = Color(0xFF5541C6);
-  static const Color accentSoft = Color(0xFFEFECFC);
+  // 브랜드 액센트 — 아이콘 시스템 핸드오프의 브랜드 블루,
+  // 선택 배경은 아주 옅은 스카이블루
+  static const Color accent = Color(0xFF2563EB);
+  static const Color accentText = Color(0xFF1D4ED8);
+  static const Color accentSoft = Color(0xFFE8F0FE);
 
   // 상태색 — 장식이 아니라 의미가 있는 최소한의 예외(에러/삭제)
   static const Color destructive = Color(0xFFEF4444);
