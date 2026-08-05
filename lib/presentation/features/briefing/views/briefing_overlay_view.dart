@@ -14,6 +14,12 @@ import 'communication_source_sheet.dart';
 import 'email_import_sheet.dart';
 import 'manual_comm_log_modal_view.dart';
 
+// 이 오버레이의 페이지 배경 위에 "직접" 놓이는(=GlassCard 안이 아닌) 에러 텍스트/아이콘
+// 전용 색상. AppColors.destructive(#EF4444)는 AppColors.bgDarkSlate 위에서
+// 대비비 3.54:1로 본문 텍스트 WCAG AA 기준(4.5:1)에 못 미쳐 여기서는 쓰지 않는다.
+// (GlassCard 흰 배경 안에서 쓰이는 AppColors.destructive는 이번 수정 범위 밖이라 그대로 둔다.)
+const Color _onPageErrorText = Color(0xFFB91C1C);
+
 class BriefingOverlayView extends StatefulWidget {
   final ContactModel contact;
   final VoidCallback onClose;
@@ -188,7 +194,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
     const serviceDeployed = AiBriefingService.kAiServiceDeployed;
 
     return Container(
-      color: Colors.black.withValues(alpha: 0.85),
+      // 기존 검정 85% 스크림은 위에 직접 놓인 textPrimary(#171A21) 등 어두운 텍스트와
+      // 대비비 ~1.2:1로 거의 보이지 않는 버그였다. 앱 전역이 이미 라이트 테마
+      // (scaffoldBackgroundColor = AppColors.bgDarkSlate)이므로 이 오버레이도 같은
+      // 배경 토큰으로 통일해 기존 textPrimary/textSecondary/accentText 위젯 트리를
+      // 그대로 두고 대비 문제를 해결한다.
+      color: AppColors.bgDarkSlate,
       child: SafeArea(
         child: Column(
           children: [
@@ -348,7 +359,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       '커넥션센스 AI가 생성',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.textMuted,
+                        // 페이지 배경에 직접 놓이는 캡션 — textMuted(대비 3.59:1)는
+                        // AA 미달이라 textSecondary(대비 5.44:1)를 사용한다.
+                        color: AppColors.textSecondary,
                         fontStyle: FontStyle.italic,
                       ),
                     ),
@@ -479,7 +492,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                               const Icon(
                                 Icons.error_outline,
                                 size: 16,
-                                color: AppColors.destructive,
+                                // 페이지 배경에 직접 놓임 — AppColors.destructive는
+                                // 여기서 AA 미달(3.54:1)이라 _onPageErrorText 사용.
+                                color: _onPageErrorText,
                               ),
                               const SizedBox(width: 6),
                               Expanded(
@@ -487,7 +502,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                   '새로 생성하지 못해 이전 결과를 보여드려요: $_errorMessage',
                                   style: const TextStyle(
                                     fontSize: 11,
-                                    color: AppColors.destructive,
+                                    color: _onPageErrorText,
                                   ),
                                 ),
                               ),
@@ -578,7 +593,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       'Gmail에서 선택해 가져오거나 직접 작성한 기록만 표시합니다.',
                       style: TextStyle(
                         fontSize: 11,
-                        color: AppColors.textMuted,
+                        // 페이지 배경에 직접 놓이는 캡션 — textMuted(대비 3.59:1)는
+                        // AA 미달이라 textSecondary(대비 5.44:1)를 사용한다.
+                        color: AppColors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 8),
