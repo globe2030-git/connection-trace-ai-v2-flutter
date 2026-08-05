@@ -3,12 +3,10 @@ import 'package:provider/provider.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
-import '../../../../data/repositories/ai_credentials_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
-import '../../settings/views/ai_connection_modal_view.dart';
 import '../../wallet/view_models/wallet_view_model.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import 'ai_data_review_sheet.dart';
@@ -52,19 +50,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   }
 
   Future<void> _generate() async {
-    final credentials = context.read<AiCredentialsRepository>();
-    final provider = credentials.activeProvider;
-    if (provider == null) return;
-    final apiKey = credentials.apiKeyFor(provider);
-    if (apiKey == null) return;
-
     final myProfile = context.read<MyProfileRepository>().profile;
     final selection = await showModalBottomSheet<AiBriefingSelection>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => AiDataReviewSheet(
-        provider: provider,
         contact: widget.contact,
         myProfile: myProfile,
       ),
@@ -78,9 +69,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
 
     try {
       final points = await AiBriefingService.generateTalkingPoints(
-        provider: provider,
-        apiKey: apiKey,
-        model: credentials.modelFor(provider),
         contact: widget.contact,
         myProfile: myProfile,
         communicationLogs: selection.communicationLogs,
@@ -197,9 +185,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   @override
   Widget build(BuildContext context) {
     final contact = widget.contact;
-    final activeProvider = context
-        .watch<AiCredentialsRepository>()
-        .activeProvider;
+    const serviceDeployed = AiBriefingService.kAiServiceDeployed;
 
     return Container(
       color: Colors.black.withValues(alpha: 0.85),
@@ -336,7 +322,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                             ],
                           ),
                         ),
-                        if (activeProvider != null)
+                        if (serviceDeployed)
                           IconButton(
                             icon: _isGenerating
                                 ? const SizedBox(
@@ -358,11 +344,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      activeProvider != null
-                          ? '${activeProvider.displayName}가 생성'
-                          : 'AI 미연동 상태',
-                      style: const TextStyle(
+                    const Text(
+                      '커넥션센스 AI가 생성',
+                      style: TextStyle(
                         fontSize: 11,
                         color: AppColors.textMuted,
                         fontStyle: FontStyle.italic,
@@ -370,69 +354,23 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     ),
                     const SizedBox(height: 10),
 
-                    if (activeProvider == null)
+                    if (!serviceDeployed)
                       GlassCard(
-                        borderColor: AppColors.accentText.withValues(
-                          alpha: 0.4,
-                        ),
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
-                              children: [
-                                Icon(
-                                  Icons.link_off,
-                                  size: 18,
-                                  color: AppColors.accentText,
-                                ),
-                                SizedBox(width: 7),
-                                Text(
-                                  'AI 연동이 필요합니다',
-                                  style: TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
+                            const Icon(
+                              Icons.hourglass_empty,
+                              size: 18,
+                              color: AppColors.textMuted,
                             ),
-                            const SizedBox(height: 6),
-                            const Text(
-                              '실제 AI가 생성한 맞춤 대화 포인트를 받으려면, 갖고 계신 AI 서비스(Claude/ChatGPT/Gemini)를 먼저 연동해야 지원받을 수 있어요.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    backgroundColor: Colors.transparent,
-                                    builder: (_) =>
-                                        const AiConnectionModalView(),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.accent,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 10,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'AI 연동하기',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '서비스 준비 중 — 곧 제공될 예정이에요.',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: AppColors.textSecondary,
                                 ),
                               ),
                             ),

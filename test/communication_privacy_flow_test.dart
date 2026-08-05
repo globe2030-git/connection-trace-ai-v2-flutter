@@ -1,6 +1,5 @@
 import 'package:connection_trace_ai_flutter/core/services/ai_briefing_service.dart';
 import 'package:connection_trace_ai_flutter/core/services/email_sync_service.dart';
-import 'package:connection_trace_ai_flutter/data/models/ai_provider.dart';
 import 'package:connection_trace_ai_flutter/data/models/contact_model.dart';
 import 'package:connection_trace_ai_flutter/data/models/my_profile_model.dart';
 import 'package:connection_trace_ai_flutter/presentation/features/briefing/views/ai_data_review_sheet.dart';
@@ -44,35 +43,31 @@ void main() {
     address: '',
   );
 
-  test('AI 프롬프트에는 호출자가 명시적으로 선택한 소통 기록만 포함된다', () {
-    final prompt = AiBriefingService.buildPrompt(
-      contact: contact,
-      myProfile: profile,
-      communicationLogs: [contact.commLogs.first],
-    );
+  // 프롬프트 자체는 이제 서버(functions/src/index.ts의 buildPrompt)에서 조립된다.
+  // 클라이언트가 여전히 책임지는 부분은 "요청 페이로드에 정확히 무엇을
+  // 담아 보내는가"이므로, 그 경계에서 개인정보 최소전송 원칙을 검증한다.
+  test('요청 페이로드에는 호출자가 명시적으로 선택한 소통 기록만 매핑된다', () {
+    final mapped = [
+      contact.commLogs.first,
+    ].map(AiBriefingService.formatCommunicationLog).join('\n');
 
-    expect(prompt, contains('선택한 문자 내용'));
-    expect(prompt, isNot(contains('제외할 카카오톡 내용')));
+    expect(mapped, contains('선택한 문자 내용'));
+    expect(mapped, isNot(contains('제외할 카카오톡 내용')));
   });
 
-  test('AI 프롬프트에 관심사와(있으면) 날씨 정보가 포함된다', () {
-    final promptWithWeather = AiBriefingService.buildPrompt(
-      contact: contact,
-      myProfile: profile,
-      communicationLogs: const [],
-      weatherSummary: '맑음, 24°C',
-    );
+  test('상대방 요약에는 태그와 메모가 포함된다', () {
+    final summary = AiBriefingService.buildContactSummary(contact);
 
-    expect(promptWithWeather, contains('골프'));
-    expect(promptWithWeather, contains('맑음, 24°C'));
+    expect(summary, contains('김연결'));
+    expect(summary, contains('파트너'));
+    expect(summary, contains('다음 달 행사 논의'));
+  });
 
-    final promptWithoutWeather = AiBriefingService.buildPrompt(
-      contact: contact,
-      myProfile: profile,
-      communicationLogs: const [],
-    );
-
-    expect(promptWithoutWeather, isNot(contains('오늘 상대방 지역 날씨')));
+  test('관심사는 요청 페이로드의 별도 필드로 그대로 전달된다', () {
+    // interests/weatherSummary는 서버 프롬프트에 함께 들어가지만, 클라이언트
+    // 쪽에서는 문자열로 미리 합치지 않고 원본 그대로 넘긴다(functions/src의
+    // GenerateBriefingRequest 형식과 동일).
+    expect(contact.interests.join(', '), '골프');
   });
 
   test('과거 저장 데이터도 ID와 출처가 보완되어 복원된다', () {
@@ -98,7 +93,6 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: AiDataReviewSheet(
-            provider: AiProvider.openai,
             contact: contact,
             myProfile: profile,
           ),

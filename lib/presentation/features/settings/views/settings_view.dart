@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../data/repositories/ai_credentials_repository.dart';
+import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
@@ -20,7 +20,6 @@ class SettingsView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final radarViewModel = context.watch<RadarViewModel>();
-    final aiCredentials = context.watch<AiCredentialsRepository>();
     final auth = context.watch<AuthRepository>();
     final (statusTitle, statusMessage, statusColor) = _locationStatus(
       radarViewModel.locationAccessState,
@@ -236,12 +235,10 @@ class SettingsView extends StatelessWidget {
                   _SettingsRow(
                     icon: Icons.psychology_outlined,
                     title: 'AI 연결',
-                    subtitle: aiCredentials.activeProvider == null
-                        ? 'AI 기능을 사용하지 않는 상태'
-                        : '${aiCredentials.activeProvider!.displayName} API 사용 중',
-                    value: aiCredentials.activeProvider == null
-                        ? '연결 안 됨'
-                        : '연결됨',
+                    subtitle: AiBriefingService.kAiServiceDeployed
+                        ? '커넥션센스 AI가 대화 포인트를 만들어드려요'
+                        : '서비스 준비 중이에요',
+                    value: AiBriefingService.kAiServiceDeployed ? '이용 가능' : '준비 중',
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
@@ -255,7 +252,7 @@ class SettingsView extends StatelessWidget {
                     icon: Icons.info_outline,
                     title: 'AI 데이터 안내',
                     subtitle:
-                        'AI 기능 실행 시 선택된 인맥 정보가 사용자가 연결한 AI 제공사로 전송될 수 있습니다.',
+                        'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
                   ),
                 ],
               ),

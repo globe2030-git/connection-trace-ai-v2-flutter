@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../data/models/ai_provider.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/my_profile_model.dart';
 
@@ -20,15 +19,14 @@ class AiBriefingSelection {
 }
 
 /// AI 요청 직전에 실제 전송 항목을 보여 주고 요청마다 동의를 받는 화면.
-/// 이 화면을 통과하지 않은 정보는 AI 서비스 경계로 전달하지 않는다.
+/// 이 화면을 통과하지 않은 정보는 회사 서버(커넥션센스 AI 프록시) 경계로
+/// 전달하지 않는다.
 class AiDataReviewSheet extends StatefulWidget {
-  final AiProvider provider;
   final ContactModel contact;
   final MyProfileModel myProfile;
 
   const AiDataReviewSheet({
     super.key,
-    required this.provider,
     required this.contact,
     required this.myProfile,
   });
@@ -147,9 +145,9 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '선택한 정보만 ${widget.provider.displayName}로 전송합니다. 앱이 백그라운드에서 자동 전송하지 않습니다.',
-                        style: const TextStyle(
+                      const Text(
+                        '선택한 정보만 회사 서버를 거쳐 AI로 전송합니다. 앱이 백그라운드에서 자동 전송하지 않습니다.',
+                        style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
                           height: 1.45,
@@ -266,9 +264,9 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                             },
                             controlAffinity: ListTileControlAffinity.leading,
                             activeColor: AppColors.accent,
-                            title: Text(
-                              '위 정보가 ${widget.provider.displayName}로 전송되는 데 동의합니다.',
-                              style: const TextStyle(
+                            title: const Text(
+                              '위 정보가 회사 서버를 거쳐 AI로 전송되는 데 동의합니다.',
+                              style: TextStyle(
                                 color: AppColors.textPrimary,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
@@ -276,7 +274,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                               ),
                             ),
                             subtitle: const Text(
-                              '전송 후 처리는 선택한 AI 제공사의 개인정보 처리방침을 따릅니다. 동의는 이번 요청에만 적용됩니다.',
+                              '동의는 이번 요청에만 적용됩니다.',
                               style: TextStyle(
                                 color: AppColors.textMuted,
                                 fontSize: 11.5,

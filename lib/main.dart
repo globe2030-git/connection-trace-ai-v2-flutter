@@ -4,7 +4,6 @@ import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
-import 'data/repositories/ai_credentials_repository.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/contacts_repository.dart';
 import 'data/repositories/my_profile_repository.dart';
@@ -32,7 +31,6 @@ class ConnectionTraceApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ContactsRepository()),
         ChangeNotifierProvider(create: (_) => MyProfileRepository()),
-        ChangeNotifierProvider(create: (_) => AiCredentialsRepository()),
         ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProxyProvider<ContactsRepository, RadarViewModel>(
           create: (ctx) => RadarViewModel(
