@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
@@ -283,7 +284,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.document_scanner, color: Colors.white),
+                    : const AppIcon(AppIconId.scanCard, color: Colors.white),
                 label: Text(
                   _isProcessing ? '선택한 이미지 OCR 스캔 중...' : '선택한 파일 명함 OCR 스캔 실행',
                   style: const TextStyle(

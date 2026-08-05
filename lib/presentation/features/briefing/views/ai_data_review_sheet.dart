@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -113,8 +114,8 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                 padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.shield_outlined,
+                    const AppIcon(
+                      AppIconId.aiDataInfo,
                       color: AppColors.accentText,
                     ),
                     const SizedBox(width: 10),

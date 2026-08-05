@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -308,8 +309,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                           child: OutlinedButton.icon(
                             onPressed: () =>
                                 _performOcrScan(isFromCamera: true),
-                            icon: const Icon(
-                              Icons.camera_alt_outlined,
+                            icon: const AppIcon(
+                              AppIconId.scanCard,
                               size: 18,
                               color: AppColors.accentText,
                             ),
@@ -443,7 +444,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     height: 50,
                     child: ElevatedButton.icon(
                       onPressed: _save,
-                      icon: const Icon(Icons.check, color: Colors.white),
+                      icon: const AppIcon(
+                        AppIconId.saveDownload,
+                        color: Colors.white,
+                      ),
                       label: const Text(
                         '저장하기',
                         style: TextStyle(
