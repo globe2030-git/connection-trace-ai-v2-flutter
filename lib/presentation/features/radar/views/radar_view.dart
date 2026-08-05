@@ -695,7 +695,7 @@ class _FeaturedContactCard extends StatelessWidget {
               TextButton.icon(
                 onPressed: onDetail,
                 icon: const Text(
-                  '상세보기',
+                  'AI 대화 가이드',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     color: AppColors.accentText,
