@@ -13,6 +13,8 @@ import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
 import 'ai_connection_modal_view.dart';
+import 'inquiry_view.dart';
+import 'notices_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -274,6 +276,29 @@ class SettingsView extends StatelessWidget {
                         fontSize: 12,
                         color: AppColors.textMuted,
                       ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 26),
+              const _SectionTitle('지원'),
+              const SizedBox(height: 10),
+              _GroupedCard(
+                children: [
+                  _SettingsRow(
+                    icon: Icons.campaign_outlined,
+                    title: '공지사항',
+                    subtitle: '업데이트·점검 안내를 확인하세요',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const NoticesView()),
+                    ),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.support_agent_outlined,
+                    title: '1:1 문의',
+                    subtitle: '궁금한 점을 남겨주시면 답변드립니다',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const InquiryView()),
                     ),
                   ),
                 ],
