@@ -56,6 +56,18 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
     return raw;
   }
 
+  Future<void> _switchAccount() async {
+    if (_loading) return;
+    await EmailSyncService.signOut();
+    if (!mounted) return;
+    setState(() {
+      _messages = null;
+      _selectedIds.clear();
+      _error = null;
+    });
+    await _connectAndLoad();
+  }
+
   void _import() {
     final selected = (_messages ?? const <CommunicationLogModel>[])
         .where((message) => _selectedIds.contains(message.id))
@@ -125,12 +137,34 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
                     ),
                     if (EmailSyncService.isSignedIn) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        '연결 계정: ${EmailSyncService.signedInEmail}',
-                        style: const TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 11.5,
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '연결 계정: ${EmailSyncService.signedInEmail}',
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _loading ? null : _switchAccount,
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(0, 0),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text(
+                              '다른 계정으로 로그인',
+                              style: TextStyle(
+                                color: AppColors.accentText,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                     const SizedBox(height: 18),
