@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>커넥션센스 관리자 콘솔</title>
+<style>
+:root{
+  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
+  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --warn:#B36B00; --warn-soft:#FBF0DA;
+  --bad:#C0392B; --bad-soft:#FBEAE8;
+  --good:#1B8A5A; --good-soft:#E4F5EC;
+  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+  --font-ui:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Pretendard Variable',Pretendard,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
+    --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
+    --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+    --bad:#F27C6B; --bad-soft:#3A211D;
+    --good:#3FD38C; --good-soft:#173226;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+  }
+}
+*{box-sizing:border-box;}
+body{margin:0; font-family:var(--font-ui); background:var(--bg); color:var(--ink); font-size:14.5px; line-height:1.6;}
+.wrap{max-width:920px; margin:0 auto; padding:32px 20px 80px;}
+h1{font-size:20px; margin:0 0 4px;}
+.sub{color:var(--ink-faint); font-size:12.5px; margin-bottom:28px;}
+
+.card{background:var(--paper); border:1px solid var(--border); border-radius:14px; padding:22px; box-shadow:var(--shadow); margin-bottom:16px;}
+label{display:block; font-size:12px; font-weight:700; color:var(--ink-dim); margin:14px 0 6px;}
+label:first-child{margin-top:0;}
+input[type=text], input[type=email], input[type=password], textarea, select{
+  width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
+  background:var(--paper-2); color:var(--ink); font-family:inherit; font-size:13.5px;
+}
+textarea{min-height:140px; resize:vertical; font-family:ui-monospace,Consolas,monospace; font-size:12.5px;}
+button{cursor:pointer; border:none; border-radius:8px; padding:10px 16px; font-weight:700; font-size:13px; font-family:inherit;}
+.btn-primary{background:var(--brand); color:#fff;}
+.btn-primary:hover{background:var(--brand-deep);}
+.btn-ghost{background:transparent; color:var(--ink-dim); border:1px solid var(--border);}
+.btn-danger{background:var(--bad-soft); color:var(--bad);}
+button:disabled{opacity:.5; cursor:not-allowed;}
+.row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+.checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13px; color:var(--ink-dim);}
+.checkbox-row input{width:auto;}
+
+.error{background:var(--bad-soft); color:var(--bad); border-radius:8px; padding:10px 12px; font-size:12.5px; margin-top:12px;}
+.hint{color:var(--ink-faint); font-size:11.5px; margin-top:6px;}
+
+.tabs{display:flex; gap:6px; margin-bottom:20px; border-bottom:1px solid var(--border);}
+.tab-btn{background:transparent; border:none; border-bottom:2px solid transparent; padding:10px 14px; color:var(--ink-faint); font-weight:700; font-size:13px; border-radius:0;}
+.tab-btn.active{color:var(--brand-deep); border-bottom-color:var(--brand);}
+
+.list-item{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:1px solid var(--border);}
+.list-item:last-child{border-bottom:none;}
+.list-item .title{font-weight:700; font-size:13.5px;}
+.list-item .meta{font-size:11.5px; color:var(--ink-faint); margin-top:3px;}
+.badge{display:inline-block; padding:2px 8px; border-radius:999px; font-size:10.5px; font-weight:700;}
+.badge.good{background:var(--good-soft); color:var(--good);}
+.badge.warn{background:var(--warn-soft); color:var(--warn);}
+.badge.bad{background:var(--bad-soft); color:var(--bad);}
+
+.thread{display:flex; flex-direction:column; gap:10px; margin:16px 0;}
+.bubble{max-width:80%; padding:10px 13px; border-radius:12px; font-size:13px; white-space:pre-wrap;}
+.bubble.user{align-self:flex-start; background:var(--paper-2); border:1px solid var(--border);}
+.bubble.admin{align-self:flex-end; background:var(--brand-soft); color:var(--brand-deep);}
+
+#loginScreen{max-width:360px; margin:80px auto 0;}
+#dashboard{display:none;}
+#dashboard.visible{display:block;}
+.topbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;}
+.topbar .who{font-size:12px; color:var(--ink-faint);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div id="loginScreen">
+    <h1>커넥션센스 관리자 콘솔</h1>
+    <p class="sub">공지사항 · 1:1 문의 · 법적 문서를 관리합니다.</p>
+    <div class="card">
+      <label for="loginEmail">이메일</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+      <label for="loginPassword">비밀번호</label>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+      <div class="row" style="margin-top:18px;">
+        <button class="btn-primary" id="loginBtn">로그인</button>
+      </div>
+      <div id="loginError"></div>
+    </div>
+  </div>
+
+  <div id="dashboard">
+    <div class="topbar">
+      <h1 style="margin:0;">관리자 콘솔</h1>
+      <div class="row">
+        <span class="who" id="whoAmI"></span>
+        <button class="btn-ghost" id="logoutBtn">로그아웃</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="notices">공지사항</button>
+      <button class="tab-btn" data-tab="inquiries">1:1 문의</button>
+      <button class="tab-btn" data-tab="legal">법적 문서</button>
+    </div>
+
+    <div id="tab-notices" class="tab-panel"></div>
+    <div id="tab-inquiries" class="tab-panel" style="display:none;"></div>
+    <div id="tab-legal" class="tab-panel" style="display:none;"></div>
+  </div>
+
+</div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>
