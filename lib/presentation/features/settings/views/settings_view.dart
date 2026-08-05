@@ -654,12 +654,16 @@ Future<void> _performAccountDeletion(
 
       if (context.mounted) _dismissLoadingDialog(context);
       if (!context.mounted) return;
+      // provider별 재인증 메서드(Google/Apple)로 갈라 부르지 않고
+      // reauthenticateCurrentProvider() 하나로 통일 — 로그인 수단이 늘어나도
+      // 이 화면은 분기를 추가할 필요가 없다.
+      final providerName = auth.provider?.displayName ?? 'SNS';
       final wantsReauth = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('다시 로그인이 필요합니다'),
-          content: const Text(
-            '보안을 위해 계정을 삭제하려면 다시 로그인해야 합니다. 지금 Google 계정으로 '
+          content: Text(
+            '보안을 위해 계정을 삭제하려면 다시 로그인해야 합니다. 지금 $providerName 계정으로 '
             '다시 로그인할까요?',
           ),
           actions: [
@@ -678,7 +682,7 @@ Future<void> _performAccountDeletion(
       if (!context.mounted) return;
 
       _showLoadingDialog(context);
-      await auth.reauthenticateWithGoogle();
+      await auth.reauthenticateCurrentProvider();
       await auth.deleteFirebaseAccountAndLocalSession();
     }
 

@@ -6,9 +6,10 @@ import '../../../../data/models/sns_auth_provider.dart';
 import '../../../../data/repositories/auth_repository.dart';
 
 /// 앱 진입을 막는 SNS 로그인 화면. Google은 기존 Gmail 연동에서 이미 쓰던
-/// google_sign_in을 그대로 재사용해 바로 동작하고, Apple은 유료 Apple
-/// Developer Program 가입 전이라 버튼만 두고 비활성화해 둔다. 카카오는 이번
-/// 범위에서 제외했다.
+/// google_sign_in을 그대로 재사용해 바로 동작하고, Apple은 iOS/macOS에서만
+/// 정상 동작하는 버튼으로 보여준다(`SnsAuthProvider.apple.isAvailable` 참고 —
+/// Android에서는 버튼 자체를 렌더링하지 않는다). 카카오는 이번 범위에서
+/// 제외했다.
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -82,13 +83,18 @@ class _LoginViewState extends State<LoginView> {
                 isDisabled: _loadingProvider != null,
                 onPressed: () => _signIn(SnsAuthProvider.google),
               ),
-              const SizedBox(height: 12),
-              _SnsButton(
-                provider: SnsAuthProvider.apple,
-                isLoading: _loadingProvider == SnsAuthProvider.apple,
-                isDisabled: _loadingProvider != null,
-                onPressed: () => _signIn(SnsAuthProvider.apple),
-              ),
+              // Apple 로그인이 지원되지 않는 플랫폼(Android 등)에서는 버튼을
+              // 아예 그리지 않는다 — 비활성 버튼으로 "준비 중"을 보여주는 건
+              // Apple 로그인을 지원하지 않는 것처럼 보여 오히려 혼란스럽다.
+              if (SnsAuthProvider.apple.isAvailable) ...[
+                const SizedBox(height: 12),
+                _SnsButton(
+                  provider: SnsAuthProvider.apple,
+                  isLoading: _loadingProvider == SnsAuthProvider.apple,
+                  isDisabled: _loadingProvider != null,
+                  onPressed: () => _signIn(SnsAuthProvider.apple),
+                ),
+              ],
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Text(

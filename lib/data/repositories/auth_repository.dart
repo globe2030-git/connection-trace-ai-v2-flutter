@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/services/google_auth_gateway.dart';
 import '../models/sns_auth_provider.dart';
@@ -120,7 +122,93 @@ class AuthRepository extends ChangeNotifier {
   }
 
   Future<void> signInWithApple() async {
-    throw AuthException(SnsAuthProvider.apple.unavailableReason!);
+    if (!SnsAuthProvider.apple.isAvailable) {
+      throw AuthException(SnsAuthProvider.apple.unavailableReason!);
+    }
+
+    // 재전송(replay) 공격 방지용 nonce. Apple에는 SHA-256 해시를 보내고,
+    // Firebase Auth 자격 증명을 만들 때는 원문(raw) nonce를 함께 제출해
+    // Firebase가 해시를 검증하게 한다.
+    final rawNonce = generateNonce();
+    final hashedNonce = _sha256(rawNonce);
+
+    final AuthorizationCredentialAppleID credential;
+    try {
+      credential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) {
+        // 사용자가 Apple 로그인 시트를 그냥 닫은 것 — 실패가 아니라 취소이므로
+        // Google 경로와 달리 에러 배너 없이 조용히 반환한다.
+        return;
+      }
+      throw AuthException('Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+    } catch (e) {
+      throw AuthException('Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+    }
+
+    final identityToken = credential.identityToken;
+    if (identityToken == null) {
+      throw AuthException('Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+    }
+
+    // Google 경로는 Firebase Auth 로그인이 실패해도 로컬 세션(로그인 자체)은
+    // 그대로 진행한다 — Google 계정 자체가 별도의 신원 소스이기 때문이다.
+    // 반면 Apple은 Firebase uid 외에 다른 신원 소스가 없으므로(이 앱에는
+    // 별도 회원 서버가 없다), Firebase 로그인이 실패하면 곧바로 로그인
+    // 실패로 처리한다.
+    final fb_auth.UserCredential userCredential;
+    try {
+      final oauthCredential = fb_auth.OAuthProvider(
+        'apple.com',
+      ).credential(idToken: identityToken, rawNonce: rawNonce);
+      userCredential = await fb_auth.FirebaseAuth.instance
+          .signInWithCredential(oauthCredential);
+    } catch (e) {
+      throw AuthException('Apple 로그인에 실패했습니다. 다시 시도해 주세요.');
+    }
+
+    final user = userCredential.user;
+
+    // Apple은 givenName/familyName/email을 "최초 인증 1회에만" 내려준다.
+    // 이번에 이름을 받았다면 Firebase 계정에도 저장해 두 번째 로그인부터는
+    // FirebaseAuth.currentUser.displayName을 fallback으로 쓸 수 있게 한다.
+    final givenName = credential.givenName;
+    final familyName = credential.familyName;
+    final nameParts = [
+      givenName,
+      familyName,
+    ].whereType<String>().where((n) => n.isNotEmpty);
+    final resolvedName = nameParts.isEmpty ? null : nameParts.join(' ');
+    if (resolvedName != null && user != null) {
+      try {
+        await user.updateDisplayName(resolvedName);
+      } catch (e) {
+        debugPrint('Apple 로그인 displayName 저장 실패: $e');
+      }
+    }
+
+    // 이름을 이번에 못 받았으면(재로그인) Firebase에 저장돼 있던 이전 값을
+    // fallback으로 쓴다. 그마저 없으면 "애플 사용자" 같은 이름을 지어내지
+    // 않고 null로 둔다 — 화면이 이름 없음을 알아서 처리해야 한다.
+    _displayName = resolvedName ?? user?.displayName;
+    // Hide My Email로 받은 @privaterelay.appleid.com 릴레이 주소도 정상적인
+    // 이메일 값이므로 그대로 저장한다.
+    _email = credential.email ?? user?.email;
+    _photoUrl = user?.photoURL;
+    _provider = SnsAuthProvider.apple;
+    _isSignedIn = true;
+    notifyListeners();
+    await _persist();
+  }
+
+  String _sha256(String input) {
+    return sha256.convert(utf8.encode(input)).toString();
   }
 
   /// Google Cloud OAuth 클라이언트 등록 전(HANDOFF.md 해야 할 일 7번)에도
@@ -193,6 +281,59 @@ class AuthRepository extends ChangeNotifier {
     }
   }
 
+  /// 계정 삭제(backlog #49) 직전 재인증이 필요할 때 Apple 계정으로 다시
+  /// 로그인해 최신 자격 증명을 얻고 현재 Firebase Auth 사용자에 재인증을
+  /// 건다. [reauthenticateWithGoogle]과 대칭되는 Apple 버전.
+  Future<void> reauthenticateWithApple() async {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw AuthException('로그인 상태가 아닙니다. 다시 로그인해 주세요.');
+    }
+    final rawNonce = generateNonce();
+    final hashedNonce = _sha256(rawNonce);
+    final AuthorizationCredentialAppleID credential;
+    try {
+      credential = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+        nonce: hashedNonce,
+      );
+    } catch (e) {
+      throw AuthException('Apple 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+    final identityToken = credential.identityToken;
+    if (identityToken == null) {
+      throw AuthException('Apple 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+    try {
+      final oauthCredential = fb_auth.OAuthProvider(
+        'apple.com',
+      ).credential(idToken: identityToken, rawNonce: rawNonce);
+      await user.reauthenticateWithCredential(oauthCredential);
+    } catch (e) {
+      throw AuthException('Apple 재인증에 실패했습니다. 다시 시도해 주세요.');
+    }
+  }
+
+  /// 계정 삭제 재인증 진입점 — 현재 로그인된 SNS provider에 맞는 재인증
+  /// 메서드로 라우팅한다. 호출자(설정 화면)는 provider별 분기를 알 필요
+  /// 없이 이 메서드 하나만 부르면 된다.
+  ///
+  /// provider를 알 수 없는 경우(예: 게스트 QA 로그인)에는 재인증할 SNS
+  /// 계정 자체가 없으므로 명확한 예외를 던진다.
+  Future<void> reauthenticateCurrentProvider() async {
+    switch (_provider) {
+      case SnsAuthProvider.google:
+        await reauthenticateWithGoogle();
+      case SnsAuthProvider.apple:
+        await reauthenticateWithApple();
+      case null:
+        throw AuthException('재인증할 수 있는 로그인 수단이 없습니다. 다시 로그인해 주세요.');
+    }
+  }
+
   /// 계정 삭제(backlog #49)의 마지막 단계 — Firebase Auth 계정 자체를
   /// 지우고, 로그아웃과 동일하게 로컬 세션(Google 로그아웃 + 암호화 저장된
   /// 세션 삭제)도 정리한다.
@@ -204,7 +345,7 @@ class AuthRepository extends ChangeNotifier {
   ///
   /// 최근 로그인 상태가 아니면 Firebase가 `requires-recent-login` 에러를
   /// 던지는데, 이 경우 [AuthException.requiresReauth]를 true로 세팅해
-  /// 던진다 — 호출자(설정 화면)가 이를 보고 [reauthenticateWithGoogle]로
+  /// 던진다 — 호출자(설정 화면)가 이를 보고 [reauthenticateCurrentProvider]로
   /// 재인증한 뒤 이 메서드를 다시 호출해야 한다.
   Future<void> deleteFirebaseAccountAndLocalSession() async {
     final user = fb_auth.FirebaseAuth.instance.currentUser;

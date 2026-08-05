@@ -74,6 +74,10 @@ dependencies:
   # pure Dart 구현이라 플랫폼별 네이티브 바인딩 문제가 없다.
   cryptography: ^2.9.0
   cloud_functions: ^6.3.6
+  # Sign in with Apple(App Store Review Guideline 4.8 대응, iOS/macOS 전용).
+  # PKCE 유사 nonce 검증에 필요한 raw nonce SHA-256 해시를 crypto 패키지로 만든다.
+  sign_in_with_apple: ^8.1.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:
