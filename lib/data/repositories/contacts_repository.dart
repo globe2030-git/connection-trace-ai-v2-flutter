@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/data_crypto_service.dart';
 import '../../core/services/encryption_key_service.dart';
+import '../../core/services/geo_backfill_service.dart';
 import '../models/contact_model.dart';
 import '../services/data_backup_service.dart';
 
@@ -30,6 +32,20 @@ class ContactsRepository extends ChangeNotifier {
   // 마이그레이션 로직으로 자동 암호화된다).
   final EncryptionKeyService _encryptionKeyService;
 
+  // 좌표는 서버에 백업하지 않는다(backlog 추가 75, C안). 기기를 바꾸거나
+  // 계정을 다시 연결해 서버에서 복원하면 좌표가 빈 채로 내려오므로, 주소로
+  // 다시 계산해 채워 넣는 역할을 이 서비스가 맡는다.
+  final GeoBackfillService _geoBackfillService;
+
+  // 좌표 재계산 진행 상태 — 복원 직후에는 거리 계산이 안 되는 구간이
+  // 생기므로 화면에서 "준비 중"을 보여줄 수 있게 노출한다.
+  bool _isBackfillingGeo = false;
+  int _geoBackfillDone = 0;
+  int _geoBackfillTotal = 0;
+
+  // 서버 백업에서 좌표를 걷어내는 1회성 마이그레이션이 진행 중인지.
+  bool _strippingGeoBackups = false;
+
   // 앱 시작 직후(uid를 아직 모를 때) 로드를 시도했는데 저장된 값이
   // 암호화된 형태라 열지 못한 경우 true. 이후 [setCurrentUid]로 실제
   // uid가 들어오면 그 시점에 다시 로드를 시도한다.
@@ -39,12 +55,21 @@ class ContactsRepository extends ChangeNotifier {
   // 로그인 완료 후 uid가 생기면 그 시점에 즉시 암호화해서 재저장한다.
   bool _pendingPlaintextMigration = false;
 
-  ContactsRepository({EncryptionKeyService? encryptionKeyService})
-    : _encryptionKeyService = encryptionKeyService ?? EncryptionKeyService() {
+  ContactsRepository({
+    EncryptionKeyService? encryptionKeyService,
+    GeoBackfillService? geoBackfillService,
+  }) : _encryptionKeyService = encryptionKeyService ?? EncryptionKeyService(),
+       _geoBackfillService = geoBackfillService ?? GeoBackfillService() {
     _loadFromDisk();
   }
 
   List<ContactModel> get contacts => List.unmodifiable(_contacts);
+
+  /// 좌표 재계산이 진행 중인지. 복원 직후 주변 인맥 목록이 비어 보이는 구간을
+  /// 화면에서 설명하기 위해 쓴다.
+  bool get isBackfillingGeo => _isBackfillingGeo;
+  int get geoBackfillDone => _geoBackfillDone;
+  int get geoBackfillTotal => _geoBackfillTotal;
 
   Future<void> setCurrentUid(String? uid) async {
     _uid = uid;
@@ -56,6 +81,17 @@ class ContactsRepository extends ChangeNotifier {
       _pendingPlaintextMigration = false;
       await _saveToDisk();
     }
+    // 좌표를 서버에서 빼기 전에 올라간 문서에는 암호문 안에 좌표가 남아
+    // 있다. 계정당 한 번 전체를 다시 올려 지운다(기다리지 않는다 — 실패해도
+    // 다음 로그인에 다시 시도된다).
+    unawaited(_stripGeoFromServerBackupsOnce(uid));
+    // 복원 때 지오코딩에 실패한 명함이 남아 있을 수 있다(일시적 네트워크
+    // 오류, 지오코더 호출 제한 등). 복원 경로에서만 재시도하면 복원이 다시
+    // 일어나지 않는 한 영영 재시도되지 않고, 그 명함은 좌표가 없어 주변
+    // 인맥 목록에서 조용히 빠진 채로 남는다(실기기에서 확인 — 추가 79).
+    // 그래서 로그인할 때마다 미완료분을 이어서 처리한다. 남은 게 없으면
+    // 즉시 반환하므로 비용은 거의 없다.
+    unawaited(backfillMissingGeo());
   }
 
   /// 새 기기(또는 재설치)에서 로그인한 뒤 로컬 명함 목록이 비어있을 때만
@@ -69,6 +105,12 @@ class ContactsRepository extends ChangeNotifier {
     _contacts = restored;
     notifyListeners();
     await _saveToDisk();
+    // 복원 시점에는 서버 문서에 좌표가 남아 있을 수 있다 — 여기서 한 번 더
+    // 정리 기회를 준다(setCurrentUid 시점에는 로컬이 비어 있어 건너뛴다).
+    unawaited(_stripGeoFromServerBackupsOnce(uid));
+    // 서버에서 내려온 명함에는 좌표가 없다 — 주소로 다시 계산해 채운다.
+    // 지오코딩은 건당 최대 10초라 로그인 흐름을 막지 않도록 기다리지 않는다.
+    unawaited(backfillMissingGeo());
   }
 
   /// 계정 전환 안전장치(backlog #50)에서 사용자가 "현재 계정 데이터로
@@ -81,6 +123,85 @@ class ContactsRepository extends ChangeNotifier {
     _contacts = restored;
     notifyListeners();
     await _saveToDisk();
+    unawaited(_stripGeoFromServerBackupsOnce(uid));
+    unawaited(backfillMissingGeo());
+  }
+
+  /// 주소는 있는데 좌표가 없는 명함들의 좌표를 주소로부터 다시 계산해 채운다.
+  ///
+  /// 좌표를 서버에 백업하지 않기로 했기 때문에(backlog 추가 75, C안) 기기를
+  /// 바꾸거나 계정을 다시 연결해 복원하면 좌표가 빈 상태로 내려온다. 이
+  /// 메서드가 그 빈자리를 메운다. 채운 결과는 **기기에만 저장**한다 — 좌표는
+  /// 애초에 서버로 보내지 않으므로 재백업할 이유가 없다.
+  ///
+  /// 실패한 건은 다음 호출에서 다시 시도되며, 반복 실패하면
+  /// [GeoBackfillService]가 알아서 포기한다. 호출자는 결과를 기다릴 필요가
+  /// 없다(진행 상황은 [isBackfillingGeo]로 관찰).
+  Future<void> backfillMissingGeo() async {
+    if (_isBackfillingGeo) return;
+
+    final pending = await _geoBackfillService.pendingContacts(_contacts);
+    if (pending.isEmpty) return;
+
+    _isBackfillingGeo = true;
+    _geoBackfillDone = 0;
+    _geoBackfillTotal = pending.length;
+    notifyListeners();
+
+    try {
+      final resolved = await _geoBackfillService.backfill(
+        pending,
+        onProgress: (done, total) {
+          _geoBackfillDone = done;
+          _geoBackfillTotal = total;
+          notifyListeners();
+        },
+      );
+      if (resolved.isNotEmpty) {
+        _contacts = _contacts
+            .map(
+              (c) => resolved.containsKey(c.id)
+                  ? c.copyWith(geo: resolved[c.id])
+                  : c,
+            )
+            .toList();
+        await _saveToDisk();
+      }
+    } catch (e) {
+      debugPrint('좌표 재계산 중 오류: $e');
+    } finally {
+      _isBackfillingGeo = false;
+      _geoBackfillDone = 0;
+      _geoBackfillTotal = 0;
+      notifyListeners();
+    }
+  }
+
+  /// 좌표를 서버에서 빼기로 하기 전에 올라간 백업 문서에는 암호문 안에
+  /// 좌표가 들어 있다. 암호문이라 서버 쪽에서 필드만 지울 수 없으므로,
+  /// 좌표가 빠진 페이로드로 전체를 한 번 덮어쓴다. 계정당 1회.
+  Future<void> _stripGeoFromServerBackupsOnce(String uid) async {
+    // setCurrentUid와 복원 양쪽에서 호출되므로 동시에 두 번 돌 수 있다.
+    // 같은 내용을 두 번 올리는 게 위험하진 않지만(set은 멱등) 굳이 쓰기를
+    // 두 배로 낼 이유가 없다.
+    if (_strippingGeoBackups) return;
+    _strippingGeoBackups = true;
+    try {
+      final flagKey = 'geo_stripped_from_backup_v1_$uid';
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(flagKey) ?? false) return;
+      if (_contacts.isEmpty) {
+        // 아직 로컬에 명함이 없으면(복원 전) 지울 대상도 판단할 수 없다.
+        // 플래그를 세우지 않고 다음 로그인에 다시 시도한다.
+        return;
+      }
+      final ok = await DataBackupService.rebackupAllContacts(uid, _contacts);
+      if (ok) await prefs.setBool(flagKey, true);
+    } catch (e) {
+      debugPrint('서버 백업 좌표 제거 실패: $e');
+    } finally {
+      _strippingGeoBackups = false;
+    }
   }
 
   /// 계정 삭제(backlog #49) 또는 계정 전환 시 로컬 명함 데이터를 전부

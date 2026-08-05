@@ -191,6 +191,19 @@ class _RadarViewState extends State<RadarView> {
                           const SizedBox(height: 16),
                         ],
 
+                        // 새 기기에서 복원한 직후에는 명함 좌표가 없어 거리
+                        // 계산이 안 된다(좌표는 서버에 백업하지 않고 주소로
+                        // 다시 계산한다 — backlog 추가 75). 그동안 "주변에
+                        // 아무도 없음"으로 보이면 오해를 사므로 준비 중임을
+                        // 알린다.
+                        if (viewModel.isPreparingContactLocations) ...[
+                          _PreparingLocationsCard(
+                            done: viewModel.contactLocationsPrepared,
+                            total: viewModel.contactLocationsToPrepare,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+
                         // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
                         _NearbyCountCard(
                           count: nearbyCount,
@@ -485,6 +498,77 @@ class _RadarViewState extends State<RadarView> {
 }
 
 /// "지금 가까운 사람 N명" 요약 카드.
+/// 명함 좌표를 주소로부터 다시 계산하는 동안 보여주는 안내.
+///
+/// 좌표는 서버에 백업하지 않기 때문에(backlog 추가 75, C안) 기기를 바꾸거나
+/// 계정을 다시 연결하면 이 구간이 잠깐 생긴다. 이 카드가 없으면 사용자에게는
+/// "인맥이 다 사라진 것"처럼 보인다.
+class _PreparingLocationsCard extends StatelessWidget {
+  final int done;
+  final int total;
+
+  const _PreparingLocationsCard({required this.done, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  total > 0
+                      ? '인맥 위치를 준비하고 있어요 ($done/$total)'
+                      : '인맥 위치를 준비하고 있어요',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  '명함 주소로 위치를 계산하는 중입니다. 끝나면 주변 인맥이 표시됩니다.',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NearbyCountCard extends StatelessWidget {
   final int? count;
   final bool isRefreshing;

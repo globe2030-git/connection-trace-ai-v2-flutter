@@ -43,11 +43,15 @@ class DataBackupService {
   /// 명함 1건을 암호화해서 서버에 백업한다. 실패해도 로컬 저장은 이미 끝난
   /// 뒤라 사용자 작업을 막지 않는다 — 조용히 실패하고 다음 저장 때 다시
   /// 시도된다.
+  ///
+  /// 페이로드는 [ContactModel.toBackupJson]으로 만든다 — **좌표(lat/lng)를
+  /// 제외한 형태**다(backlog 추가 75, C안). `toJson()`으로 바꾸면 좌표가
+  /// 다시 서버에 올라가므로 주의.
   static Future<void> backupContact(String uid, ContactModel contact) async {
     try {
       final key = await _encryptionKeyService.getOrCreateUserKey(uid);
       final encrypted = await DataCryptoService.encryptJson(
-        contact.toJson(),
+        contact.toBackupJson(),
         key,
       );
       await _contactsCollection(uid).doc(contact.id).set({
@@ -56,6 +60,45 @@ class DataBackupService {
       });
     } catch (e) {
       debugPrint('명함 서버 백업 실패(${contact.id}): $e');
+    }
+  }
+
+  /// 명함 전체를 현재 백업 포맷으로 다시 올린다.
+  ///
+  /// 좌표를 서버에서 빼기로 한 뒤(backlog 추가 75, C안) **이미 서버에 올라가
+  /// 있는 문서에는 좌표가 암호문 안에 들어 있다.** 암호문이라 서버 쪽에서
+  /// 필드만 골라 지울 수 없으므로, 좌표가 빠진 페이로드로 문서를 통째로
+  /// 덮어써야 한다(`set()`은 전체 교체라 이전 암호문이 남지 않는다).
+  ///
+  /// 계정당 한 번만 돌면 되는 작업이라 호출자가 완료 플래그를 관리한다.
+  /// 한 건이라도 실패하면 `false`를 반환해 다음 기회에 다시 시도하게 한다.
+  static Future<bool> rebackupAllContacts(
+    String uid,
+    List<ContactModel> contacts,
+  ) async {
+    if (contacts.isEmpty) return true;
+    try {
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final collection = _contactsCollection(uid);
+      const chunkSize = 450; // Firestore batch 상한(500)보다 여유 있게.
+      for (var i = 0; i < contacts.length; i += chunkSize) {
+        final batch = _db.batch();
+        for (final contact in contacts.skip(i).take(chunkSize)) {
+          final encrypted = await DataCryptoService.encryptJson(
+            contact.toBackupJson(),
+            key,
+          );
+          batch.set(collection.doc(contact.id), {
+            'encrypted': encrypted,
+            'schemaVersion': 2,
+          });
+        }
+        await batch.commit();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('명함 전체 재백업 실패: $e');
+      return false;
     }
   }
 

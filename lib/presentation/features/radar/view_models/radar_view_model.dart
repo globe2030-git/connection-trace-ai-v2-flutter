@@ -74,6 +74,14 @@ class RadarViewModel extends ChangeNotifier {
       _locationAccessState == LocationAccessState.consentRequired;
   LocationConsentRecord get locationConsent => _locationConsent;
   LocationAccessState get locationAccessState => _locationAccessState;
+  // 좌표는 서버에 백업하지 않으므로(backlog 추가 75, C안) 새 기기에서 복원한
+  // 직후에는 명함에 좌표가 없어 거리 계산이 안 된다. 주소로 좌표를 다시
+  // 계산하는 동안 화면이 "주변에 아무도 없음"으로 보이면 오해를 사므로,
+  // 준비 중이라는 사실을 그대로 노출한다.
+  bool get isPreparingContactLocations => _contactsRepository.isBackfillingGeo;
+  int get contactLocationsPrepared => _contactsRepository.geoBackfillDone;
+  int get contactLocationsToPrepare => _contactsRepository.geoBackfillTotal;
+
   ContactModel? get selectedContactForBriefing => _selectedContactForBriefing;
   ContactModel? get previewContact => _previewContact;
   String get searchTerm => _searchTerm;

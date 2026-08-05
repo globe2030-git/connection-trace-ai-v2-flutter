@@ -96,7 +96,22 @@ class ContactModel {
     this.isPriority = true,
   });
 
-  Map<String, dynamic> toJson() {
+  /// 기기 저장용 — 좌표를 포함한다. 좌표를 매번 다시 계산하지 않기 위해
+  /// 기기에는 그대로 들고 있는다.
+  Map<String, dynamic> toJson() => _toJson(includeGeo: true);
+
+  /// 서버 백업용 — **좌표(lat/lng)를 제외한다.**
+  ///
+  /// 좌표는 [address]를 지오코딩해서 얻은 파생값이라 서버에 보관할 이유가
+  /// 없고, 보관하면 "회사가 위치정보를 보유한다"는 해석 여지가 생긴다
+  /// (backlog 추가 75에서 확정한 C안). 새 기기에서 복원하면 좌표가 빈 채로
+  /// 내려오고, `GeoBackfillService`가 주소로 다시 계산해 채운다.
+  ///
+  /// 서버 백업에는 반드시 이 메서드를 쓸 것 — [toJson]을 쓰면 좌표가 다시
+  /// 올라간다.
+  Map<String, dynamic> toBackupJson() => _toJson(includeGeo: false);
+
+  Map<String, dynamic> _toJson({required bool includeGeo}) {
     return {
       'id': id,
       'name': name,
@@ -109,8 +124,8 @@ class ContactModel {
       'addressDetail': addressDetail,
       'postalCode': postalCode,
       'avatarUrl': avatarUrl,
-      'lat': geo?.lat,
-      'lng': geo?.lng,
+      if (includeGeo) 'lat': geo?.lat,
+      if (includeGeo) 'lng': geo?.lng,
       'tags': tags,
       'interests': interests,
       'talkingPoints': talkingPoints,
