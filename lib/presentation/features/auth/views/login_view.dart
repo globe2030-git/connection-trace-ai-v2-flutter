@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../common/legal_document_view.dart';
 
 /// 앱 진입을 막는 SNS 로그인 화면. Google은 기존 Gmail 연동에서 이미 쓰던
 /// google_sign_in을 그대로 재사용해 바로 동작하고, Apple은 iOS/macOS에서만
@@ -95,6 +97,14 @@ class _LoginViewState extends State<LoginView> {
                   onPressed: () => _signIn(SnsAuthProvider.apple),
                 ),
               ],
+              // 약관규제법 제3조(명시 의무) 대응. v1은 별도 체크박스 대신
+              // 고지 문구 방식을 쓴다 — 개인정보는 계약 이행에 필요한
+              // 최소분만 처리해 별도 동의가 필요 없고(개인정보 보호법
+              // 제15조 제1항 제4호), 위치·AI 전송은 각각 별도 동의 화면이
+              // 이미 있기 때문. 선택 동의 항목(마케팅 수신 등)이 생기면
+              // 체크박스 방식으로 올려야 한다.
+              const SizedBox(height: 20),
+              _LegalNotice(),
               if (_errorMessage != null) ...[
                 const SizedBox(height: 16),
                 Text(
@@ -205,6 +215,49 @@ class _ProviderIcon extends StatelessWidget {
         fontWeight: FontWeight.w800,
         color: AppColors.accent,
       ),
+    );
+  }
+}
+
+/// 로그인 화면 하단의 약관·방침 고지. 각 문서 이름을 눌러 바로 열 수 있어야
+/// "명시했다"고 볼 수 있으므로 링크로 만든다.
+class _LegalNotice extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    const base = TextStyle(
+      fontSize: 12,
+      color: AppColors.textMuted,
+      height: 1.5,
+    );
+    final link = base.copyWith(
+      color: AppColors.accentText,
+      fontWeight: FontWeight.w700,
+      decoration: TextDecoration.underline,
+      decorationColor: AppColors.accentText,
+    );
+
+    return Text.rich(
+      TextSpan(
+        style: base,
+        children: [
+          const TextSpan(text: '계속하기를 누르면 '),
+          TextSpan(
+            text: LegalDocument.terms.title,
+            style: link,
+            recognizer: TapGestureRecognizer()
+              ..onTap = () => showLegalDocument(context, LegalDocument.terms),
+          ),
+          const TextSpan(text: '과 '),
+          TextSpan(
+            text: LegalDocument.privacy.title,
+            style: link,
+            recognizer: TapGestureRecognizer()
+              ..onTap = () => showLegalDocument(context, LegalDocument.privacy),
+          ),
+          const TextSpan(text: '에 동의하는 것으로 봅니다.'),
+        ],
+      ),
+      textAlign: TextAlign.center,
     );
   }
 }

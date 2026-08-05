@@ -9,10 +9,47 @@ import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../../data/services/data_backup_service.dart';
 import '../../../common/auth_gate.dart';
 import '../../../common/glass_card.dart';
+import '../../../common/legal_document_view.dart';
+import 'open_source_notice_view.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
 import 'ai_connection_modal_view.dart';
+
+/// 앱 버전 표기. `pubspec.yaml`의 `version:`과 함께 올려야 한다 —
+/// `package_info_plus` 도입 전까지는 수동 동기화다(P1-18).
+const String _appVersion = '1.0.0 (1)';
+
+/// 전자상거래법 제10조에 따른 사업자 정보 표시. 웹(법적 고지 인덱스)에도
+/// 같은 내용이 있고, 여기서는 앱 안에서 바로 볼 수 있게 한다.
+Future<void> _showBusinessInfo(BuildContext context) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: const Text('사업자 정보'),
+      content: const Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('크림하우스주식회사', style: TextStyle(fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          Text('대표자  최우진'),
+          Text('사업자등록번호  220-86-89511'),
+          SizedBox(height: 8),
+          Text('서울특별시 영등포구 양평로21가길 19,\n208·209호(양평동5가)'),
+          SizedBox(height: 8),
+          Text('문의  connectionsense@creamhouse.net'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('확인'),
+        ),
+      ],
+    ),
+  );
+}
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -253,6 +290,64 @@ class SettingsView extends StatelessWidget {
                     title: 'AI 데이터 안내',
                     subtitle:
                         'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 26),
+              // 앱 안에서 약관·방침으로 갈 수 있는 경로가 없으면 이용자가
+              // 확인할 방법이 사실상 없다(스토어 심사에서도 요구된다).
+              // 문서 본문은 Firebase Hosting에 올려 두고 웹뷰로 띄운다 —
+              // 앱에 문안을 복사해 두면 개정 시 두 벌이 어긋난다.
+              const _SectionTitle('약관 및 정책'),
+              const SizedBox(height: 10),
+              _GroupedCard(
+                children: [
+                  _SettingsRow(
+                    icon: Icons.description_outlined,
+                    title: LegalDocument.terms.title,
+                    subtitle: '서비스 이용 조건과 회사·이용자의 권리·의무',
+                    onTap: () =>
+                        showLegalDocument(context, LegalDocument.terms),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.privacy_tip_outlined,
+                    title: LegalDocument.privacy.title,
+                    subtitle: '수집 항목, 보유 기간, 국외 이전, 이용자의 권리',
+                    onTap: () =>
+                        showLegalDocument(context, LegalDocument.privacy),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.admin_panel_settings_outlined,
+                    title: LegalDocument.permissions.title,
+                    subtitle: '위치·카메라·사진 접근 사유와 철회 방법',
+                    onTap: () =>
+                        showLegalDocument(context, LegalDocument.permissions),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.code_outlined,
+                    title: '오픈소스 라이선스',
+                    subtitle: '이 앱이 사용하는 오픈소스 목록',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => OpenSourceNoticeView(
+                          applicationName: '커넥션센스',
+                          applicationVersion: _appVersion,
+                          applicationLegalese: '© 2026 크림하우스주식회사',
+                        ),
+                      ),
+                    ),
+                  ),
+                  _SettingsRow(
+                    icon: Icons.business_outlined,
+                    title: '사업자 정보',
+                    subtitle: '상호·대표자·사업자등록번호·문의처',
+                    onTap: () => _showBusinessInfo(context),
+                  ),
+                  const _SettingsRow(
+                    icon: Icons.info_outline,
+                    title: '앱 버전',
+                    subtitle: '커넥션센스',
+                    value: _appVersion,
                   ),
                 ],
               ),
