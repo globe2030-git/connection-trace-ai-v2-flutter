@@ -1,0 +1,117 @@
+/* 커넥션센스 법적 고지 문서 공통 스타일
+   docs/legal/ 아래 모든 문서가 이 파일을 공유한다.
+   앱 내 WebView 폴백(assets/legal/)에서도 같은 상대경로로 로드된다. */
+
+:root{
+  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
+  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
+  --good:#1B8A5A;
+  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+  --font-ui:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Pretendard Variable',Pretendard,sans-serif;
+  --font-mono:ui-monospace,'SFMono-Regular',Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
+    --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
+    --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+    --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+    --good:#3FD38C;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
+  --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
+  --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+  --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+  --good:#3FD38C;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+}
+:root[data-theme="light"]{
+  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
+  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
+  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
+  --good:#1B8A5A;
+  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+}
+*{box-sizing:border-box;}
+body{margin:0; font-family:var(--font-ui); background:var(--bg); color:var(--ink); font-size:15.5px; line-height:1.75; -webkit-font-smoothing:antialiased;}
+
+.wrap{max-width:760px; margin:0 auto; padding:56px 24px 96px;}
+
+.masthead{margin-bottom:8px;}
+.masthead .eyebrow{font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--brand-deep);}
+.masthead h1{font-size:28px; font-weight:800; margin:10px 0 6px; text-wrap:balance; letter-spacing:-.01em;}
+.masthead .sub{font-size:13.5px; color:var(--ink-faint);}
+
+.backlink{display:inline-block; font-size:12.5px; color:var(--ink-faint); text-decoration:none; margin-bottom:22px;}
+.backlink:hover{color:var(--brand-deep);}
+
+.meta-row{display:flex; gap:18px; flex-wrap:wrap; margin:20px 0 32px; padding:14px 18px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; font-size:12.5px; color:var(--ink-dim);}
+.meta-row b{color:var(--ink); font-weight:700;}
+
+nav.toc{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:20px 22px; margin-bottom:48px; box-shadow:var(--shadow);}
+nav.toc .toc-label{font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:10px;}
+nav.toc ol{margin:0; padding:0; list-style:none; columns:2; column-gap:28px;}
+nav.toc li{break-inside:avoid; margin-bottom:7px; font-size:13px;}
+nav.toc a{color:var(--ink-dim); text-decoration:none; border-bottom:1px solid transparent;}
+nav.toc a:hover{color:var(--brand-deep); border-bottom-color:var(--brand-deep);}
+
+section{margin-bottom:40px; scroll-margin-top:24px;}
+section h2{display:flex; align-items:baseline; gap:10px; font-size:17px; font-weight:800; margin:0 0 14px; letter-spacing:-.005em;}
+section h2 .n{font-family:var(--font-mono); font-size:13px; font-weight:700; color:var(--brand-deep); flex:none;}
+section h3{font-size:14.5px; font-weight:700; margin:22px 0 8px;}
+section p{margin:0 0 12px; color:var(--ink);}
+section ul, section ol.legal{margin:0 0 12px; padding-left:22px;}
+section li{margin-bottom:6px;}
+section .note{font-size:13px; color:var(--ink-faint);}
+section a{color:var(--brand-deep);}
+
+.field-table{width:100%; border-collapse:collapse; margin:14px 0 18px; font-size:13.5px;}
+.field-table th{text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-faint); padding:8px 12px; border-bottom:1px solid var(--border); background:var(--paper-2); white-space:nowrap;}
+.field-table td{padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top;}
+.field-table tr:last-child td{border-bottom:none;}
+.field-table td:first-child{font-weight:600; width:26%;}
+.field-table.wide td:first-child{width:auto; white-space:normal;}
+.table-wrap{overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:var(--paper); box-shadow:var(--shadow); margin:14px 0 18px;}
+.table-wrap .field-table{margin:0; min-width:520px;}
+.table-wrap .field-table th:first-child, .table-wrap .field-table td:first-child{padding-left:16px;}
+
+.callout{border-radius:10px; padding:16px 18px; font-size:13.5px; line-height:1.7; border:1px solid; margin:14px 0;}
+.callout.info{background:var(--brand-soft); border-color:var(--brand); color:var(--ink);}
+.callout.good{background:color-mix(in srgb, var(--good) 12%, var(--paper)); border-color:var(--good); color:var(--ink);}
+.callout.warn{background:var(--warn-soft); border-color:var(--warn-border); color:var(--ink);}
+.callout b{font-weight:800;}
+
+.pill{display:inline-block; font-size:11px; font-weight:700; padding:2px 9px; border-radius:999px; background:var(--brand-soft); color:var(--brand-deep); margin-right:6px;}
+.pill.no{background:color-mix(in srgb, var(--good) 15%, var(--paper)); color:var(--good);}
+.pill.opt{background:var(--paper-2); color:var(--ink-dim);}
+
+.doc-list{list-style:none; margin:0; padding:0;}
+.doc-list li{margin-bottom:12px;}
+.doc-list a{display:block; padding:16px 18px; background:var(--paper); border:1px solid var(--border); border-radius:12px; text-decoration:none; color:var(--ink); box-shadow:var(--shadow);}
+.doc-list a:hover{border-color:var(--brand);}
+.doc-list .t{font-size:15px; font-weight:700; margin-bottom:3px;}
+.doc-list .d{font-size:12.5px; color:var(--ink-faint); line-height:1.6;}
+
+.article{margin-bottom:26px;}
+.article h3{font-size:14.5px; font-weight:700; margin:0 0 8px;}
+.article h3 .no{font-family:var(--font-mono); font-size:12.5px; color:var(--brand-deep); margin-right:8px;}
+.article ol.clause{margin:0; padding-left:20px;}
+.article ol.clause > li{margin-bottom:7px;}
+.article ol.sub{margin:6px 0 0; padding-left:20px; list-style:lower-roman; font-size:14.5px; color:var(--ink-dim);}
+
+footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--border); font-size:11.5px; color:var(--ink-faint); line-height:1.8;}
+footer .biz{margin-bottom:10px; color:var(--ink-dim);}
+footer .biz b{color:var(--ink);}
+footer a{color:var(--ink-faint);}
+
+@media (max-width:600px){
+  .wrap{padding:36px 18px 72px;}
+  nav.toc ol{columns:1;}
+  .field-table td:first-child{width:auto;}
+}

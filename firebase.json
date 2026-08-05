@@ -32,5 +32,29 @@
   },
   "storage": {
     "rules": "storage.rules"
+  },
+  "hosting": {
+    "public": "docs/legal",
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "ignore": [
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "redirects": [
+      { "source": "/privacy", "destination": "/privacy-policy", "type": 301 },
+      { "source": "/terms", "destination": "/terms-of-service", "type": 301 },
+      { "source": "/permissions", "destination": "/app-permissions", "type": 301 },
+      { "source": "/legal", "destination": "/", "type": 301 },
+      { "source": "/legal/**", "destination": "/", "type": 301 }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(html|css)",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=300" }
+        ]
+      }
+    ]
   }
 }
