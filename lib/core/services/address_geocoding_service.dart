@@ -17,6 +17,17 @@ class AddressValidationResult {
   });
 }
 
+/// 주소 끝에 붙은 참고항목 괄호를 떼어낸다.
+///
+/// 예: "경기 성남시 분당구 판교역로 235 (삼평동, 에이치스퀘어)"
+///  →  "경기 성남시 분당구 판교역로 235"
+///
+/// 표시·저장에는 괄호를 포함한 원본을 쓰고, 좌표 조회에만 이 결과를 쓴다.
+String stripReferenceText(String address) {
+  final stripped = address.replaceFirst(RegExp(r'\s*\([^()]*\)\s*$'), '').trim();
+  return stripped.isEmpty ? address.trim() : stripped;
+}
+
 class AddressGeocodingService {
   // geocoding 5.x부터 top-level 함수(geocoding.locationFromAddress(...))가 아니라
   // Geocoding 인스턴스 메서드로 API가 바뀜(4.x대 breaking change).
@@ -45,8 +56,14 @@ class AddressGeocodingService {
       // 던지지도 않고 Future가 영원히 안 끝나는 경우가 있다("주소 확인 중..."
       // 상태로 멈추는 문제로 실기기에서 확인됨) — 타임아웃을 걸어서 일정
       // 시간 안에 안 끝나면 실패로 처리한다.
+      // 주소 끝의 참고항목 괄호는 떼고 조회한다. 우편번호 서비스에서 고른
+      // 주소에는 "… 판교역로 235 (삼평동, 에이치스퀘어)"처럼 법정동·건물명이
+      // 붙어 있는데(backlog 추가 83), OS 지오코더는 이 괄호가 붙으면 주소를
+      // 못 찾는 경우가 있다. 저장되는 문자열은 괄호를 포함한 원본 그대로다 —
+      // 여기서 떼는 것은 좌표 조회용 질의뿐이다.
+      final query = stripReferenceText(trimmed);
       final locations = await _geocoder
-          .locationFromAddress(trimmed)
+          .locationFromAddress(query)
           .timeout(const Duration(seconds: 10));
       if (locations.isEmpty) {
         return AddressValidationResult(

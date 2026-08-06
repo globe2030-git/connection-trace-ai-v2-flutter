@@ -12,6 +12,11 @@ import '../../core/theme/app_colors.dart';
 /// 경우)을 같이 담는다 — 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소
 /// 칸에 자동으로 채워 넣을 수 있게 하기 위함.
 class AddressSearchResult {
+  /// 목록에 보인 그대로의 주소 문장(도로명/지번 + 참고항목).
+  ///
+  /// 예전에는 도로명주소만 넘겨받아 "경기 성남시 분당구 판교역로 235 (삼평동,
+  /// 에이치스퀘어)"가 "경기 성남시 분당구 판교역로 235"로 짧아졌고, 사용자
+  /// 눈에는 주소가 잘린 것처럼 보였다(backlog 추가 83).
   final String address;
   final String? buildingName;
   final String? postalCode;
@@ -72,14 +77,19 @@ class _AddressSearchViewState extends State<AddressSearchView> {
           }
           try {
             final data = jsonDecode(message.message) as Map<String, dynamic>;
+            final fullAddress = data['fullAddress'] as String?;
             final roadAddress = data['roadAddress'] as String?;
             final jibunAddress = data['jibunAddress'] as String?;
             final buildingName = data['buildingName'] as String?;
             final zonecode = data['zonecode'] as String?;
+            // 목록에 보인 문장을 그대로 쓴다. 예전 저장분과의 호환을 위해
+            // fullAddress가 없으면 기존 방식으로 물러선다.
             final address =
-                (roadAddress != null && roadAddress.trim().isNotEmpty)
-                ? roadAddress
-                : jibunAddress;
+                (fullAddress != null && fullAddress.trim().isNotEmpty)
+                ? fullAddress
+                : (roadAddress != null && roadAddress.trim().isNotEmpty)
+                      ? roadAddress
+                      : jibunAddress;
             if (address == null || address.trim().isEmpty) {
               debugPrint('[AddressSearch] 주소가 비어 결과 없이 닫음');
               Navigator.pop(context);
