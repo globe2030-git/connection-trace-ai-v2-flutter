@@ -8,9 +8,11 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: AppColors.bgDarkSlate,
-      // 2026-08-06: 앱 전체 폰트를 Pretendard로 통일(assets/fonts/, pubspec
-      // fonts: 섹션 참고). fontFamily를 최상위에 두면 아래 textTheme의
-      // 개별 스타일에도 상속된다.
+      // 폰트는 Pretendard로 통일한다(assets/fonts, pubspec.yaml 참고).
+      // 예전에는 GoogleFonts.notoSansKrTextTheme()로 런타임에 내려받았는데,
+      // 네트워크가 없거나 첫 실행에서는 기본 폰트로 보였다가 뒤늦게 바뀌는
+      // 문제가 있었다. 번들 폰트는 그런 구간이 없다. fontFamily를 최상위에
+      // 두면 아래 textTheme의 개별 스타일에도 상속된다.
       fontFamily: 'Pretendard',
       colorScheme: const ColorScheme.light(
         primary: AppColors.accent,
@@ -24,30 +26,30 @@ class AppTheme {
         elevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
-      textTheme: ThemeData.light().textTheme.copyWith(
-        displayLarge: const TextStyle(
-          fontSize: 36,
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
-          letterSpacing: -1.0,
+      textTheme: ThemeData.light().textTheme.apply(fontFamily: 'Pretendard').copyWith(
+          displayLarge: const TextStyle(
+            fontSize: 36,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+            letterSpacing: -1.0,
+          ),
+          titleLarge: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            letterSpacing: -0.5,
+          ),
+          bodyLarge: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textPrimary,
+          ),
+          bodyMedium: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            color: AppColors.textSecondary,
+          ),
         ),
-        titleLarge: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
-          color: AppColors.textPrimary,
-          letterSpacing: -0.5,
-        ),
-        bodyLarge: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: AppColors.textPrimary,
-        ),
-        bodyMedium: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: AppColors.textSecondary,
-        ),
-      ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         backgroundColor: AppColors.bgDarkObsidian,

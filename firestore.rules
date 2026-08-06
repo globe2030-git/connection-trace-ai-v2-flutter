@@ -61,11 +61,49 @@ service cloud.firestore {
       }
     }
 
+    // `users/{uid}` 문서에 클라이언트가 직접 쓸 수 있는 필드.
+    //
+    // 여기에 없는 필드(대표적으로 `aiUsage`)는 서버만 쓴다. Cloud Functions는
+    // Admin SDK로 접근해 보안 규칙을 우회하므로, 클라이언트 쓰기를 막아도
+    // 서버 동작에는 영향이 없다.
+    function clientWritableUserFields() {
+      return ['encryptionKeyB64', 'profile', 'updatedAt'];
+    }
+
+    // 이미 발급된 암호화 키는 바꿀 수 없다. 키가 바뀌면 그 키로 암호화해 둔
+    // 서버 백업 전체를 영원히 열 수 없게 된다 — 악의보다 버그로 터질 확률이
+    // 높은 종류의 사고라 규칙으로 막는다. 아직 없을 때 처음 넣는 것만 허용.
+    function encryptionKeyUnchanged() {
+      return !('encryptionKeyB64' in resource.data) ||
+        request.resource.data.encryptionKeyB64 == resource.data.encryptionKeyB64;
+    }
+
     match /users/{uid} {
-      // `encryptionKeyB64`(backlog 추가 72 — 암호화 대칭키 백업 필드)도
-      // 이 문서 전체 규칙에 포함되므로 본인 uid만 읽고 쓸 수 있다. 별도
-      // 필드 단위 규칙을 추가할 필요 없음(2026-08-04 확인).
-      allow read, write: if isOwner(uid);
+      // 읽기는 문서 전체 허용 — 앱이 `encryptionKeyB64`(기기 변경 시 복원용,
+      // backlog 추가 72)와 `profile`을 모두 읽어야 한다.
+      allow read: if isOwner(uid);
+
+      // 계정 삭제(설정 → 계정 삭제)에서 이 문서를 통째로 지운다.
+      allow delete: if isOwner(uid);
+
+      // ⚠️ 2026-08-06 강화(P0-8, backlog 추가 82).
+      //
+      // 이전에는 `allow read, write: if isOwner(uid)`로 문서 **전체** 쓰기를
+      // 허용했다. 그 판단은 이 문서에 `encryptionKeyB64`밖에 없던 시점의
+      // 것이었는데, 이후 AI 프록시가 호출 한도 카운터(`aiUsage`)를 같은
+      // 문서에 기록하기 시작하면서 구멍이 됐다 — 로그인한 사용자가 앱을
+      // 거치지 않고 SDK로 `aiUsage.dailyCount = 0`을 써넣으면 일 10회 한도가
+      // 무한 초기화되고, 그 비용은 회사 명의 유료 Gemini 키로 나간다.
+      //
+      // 그래서 쓰기를 필드 단위로 좁힌다. 앱은 `merge: true`로만 쓰므로
+      // 건드리지 않은 필드는 `affectedKeys()`에 잡히지 않는다.
+      allow create: if isOwner(uid) &&
+        request.resource.data.keys().hasOnly(clientWritableUserFields());
+
+      allow update: if isOwner(uid) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(clientWritableUserFields()) &&
+        encryptionKeyUnchanged();
 
       match /contacts/{contactId} {
         allow read, write: if isOwner(uid);

@@ -1,5 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'core/services/fresh_install_service.dart';
@@ -24,7 +26,26 @@ void main() async {
   // 세션과 암호화 키가 되살아난다(backlog 추가 78). 저장소를 읽는 리포지토리
   // 들이 생성되기 전에 정리해야 하므로 runApp보다 먼저 호출한다.
   await FreshInstallService.purgeIfReinstalled();
+  _registerBundledFontLicense();
   runApp(const ConnectionTraceApp());
+}
+
+/// 앱에 번들한 Pretendard 폰트의 라이선스를 "오픈소스 라이선스" 화면에
+/// 함께 표시되게 등록한다.
+///
+/// SIL Open Font License 1.1은 폰트를 재배포할 때 라이선스 원문과 저작권
+/// 고지를 함께 제공하도록 요구한다. pub 패키지들의 라이선스는 Flutter가
+/// 자동으로 모아주지만, 우리가 직접 넣은 에셋은 그 대상이 아니라서 이렇게
+/// 직접 등록해야 화면에 나온다.
+void _registerBundledFontLicense() {
+  LicenseRegistry.addLicense(() async* {
+    try {
+      final text = await rootBundle.loadString('assets/fonts/OFL.txt');
+      yield LicenseEntryWithLineBreaks(const ['Pretendard'], text);
+    } catch (e) {
+      debugPrint('폰트 라이선스 등록 실패: $e');
+    }
+  });
 }
 
 class ConnectionTraceApp extends StatelessWidget {

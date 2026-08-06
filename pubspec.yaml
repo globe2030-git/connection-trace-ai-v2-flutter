@@ -163,16 +163,15 @@ flutter:
     - assets/icons/
     - assets/CI.png
     - assets/web/address_search.html
+    # 번들한 폰트의 라이선스 원문. 앱 안 "오픈소스 라이선스" 화면에서
+    # 읽어 표시하므로 에셋으로 포함해야 한다(SIL OFL 1.1의 고지 의무).
+    - assets/fonts/OFL.txt
 
-  # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
-
-  # For details regarding adding assets from package dependencies, see
-  # https://flutter.dev/to/asset-from-package
-
-  # 2026-08-06: 앱 전체 폰트를 Pretendard로 통일(구글 폰트에 없어 로컬
-  # 에셋으로 번들). 앱이 실제로 쓰는 굵기(400/500/700/800)만 받아뒀다 —
-  # weight 미지정 글자는 Flutter가 가장 가까운 걸 합성해서 안 씀.
+  # 폰트는 Pretendard로 통일한다(사용자 지정). Google Fonts에 없는 폰트라
+  # 런타임에 내려받을 수 없어 앱에 직접 번들한다 — 대신 첫 실행에서 네트워크
+  # 없이도 폰트가 제대로 나오고, 기기마다 폰트가 달라 보이는 문제도 없어진다.
+  # SIL Open Font License 1.1이라 상업적 사용·번들 배포가 허용된다.
+  # w900은 별도로 넣지 않았다(사용처 1곳) — Flutter가 가장 가까운 w800으로 그린다.
   fonts:
     - family: Pretendard
       fonts:
@@ -186,6 +185,12 @@ flutter:
           weight: 700
         - asset: assets/fonts/Pretendard-ExtraBold.otf
           weight: 800
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package

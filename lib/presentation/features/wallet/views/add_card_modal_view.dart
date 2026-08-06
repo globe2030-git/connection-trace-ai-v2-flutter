@@ -295,10 +295,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
     if (result == null || !mounted) return;
     setState(() {
-      _setTextFromStart(_addressController, result.address.trim());
+      final picked = result.address.trim();
+      _setTextFromStart(_addressController, picked);
+      // 공식 우편번호 서비스에서 고른 주소는 이미 검증된 주소다. 저장할 때
+      // 좌표를 역지오코딩해 만든 문자열로 "변환하시겠습니까?"를 다시 묻지
+      // 않는다 — 그 제안은 오히려 구 단위가 빠진 짧은 주소를 만든다
+      // (backlog 추가 83, 사용자 제보).
+      _confirmedRoadNameAddress = picked;
+
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
+      // 건물명이 주소 문장에 이미 들어간 경우(공동주택 등)에는 상세주소에
+      // 중복으로 넣지 않는다.
       if (result.buildingName != null &&
+          !picked.contains(result.buildingName!) &&
           _addressDetailController.text.trim().isEmpty) {
         _addressDetailController.text = result.buildingName!;
       }

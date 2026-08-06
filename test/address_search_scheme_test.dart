@@ -4,7 +4,7 @@ import 'package:connection_trace_ai_flutter/presentation/common/address_search_v
 
 /// 다음 우편번호 위젯에는 "카카오맵에서 찾기" 같은 앱 스킴 링크가 섞여 있다.
 /// 웹뷰가 이를 열려고 하면 ERR_UNKNOWN_URL_SCHEME 오류 페이지가 화면을
-/// 덮어써서 주소 선택 흐름이 끊긴다(backlog 추가 80, 실기기에서 확인).
+/// 덮어써서 주소 선택 흐름이 끊긴다(backlog 추가 81, 실기기에서 확인).
 void main() {
   group('isWebViewNavigable', () {
     test('웹뷰가 직접 열 수 있는 주소는 통과시킨다', () {

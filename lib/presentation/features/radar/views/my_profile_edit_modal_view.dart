@@ -80,10 +80,14 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     );
     if (result == null || !mounted) return;
     setState(() {
-      _setTextFromStart(_addressController, result.address.trim());
+      final picked = result.address.trim();
+      _setTextFromStart(_addressController, picked);
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
+      // 건물명이 주소 문장에 이미 들어간 경우(공동주택 등)에는 상세주소에
+      // 중복으로 넣지 않는다.
       if (result.buildingName != null &&
+          !picked.contains(result.buildingName!) &&
           _addressDetailController.text.trim().isEmpty) {
         _addressDetailController.text = result.buildingName!;
       }
