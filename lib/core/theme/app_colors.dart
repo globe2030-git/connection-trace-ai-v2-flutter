@@ -28,6 +28,9 @@ class AppColors {
   static const Color accent = Color(0xFF2563EB);
   static const Color accentText = Color(0xFF1D4ED8);
   static const Color accentSoft = Color(0xFFE8F0FE);
+  // accentSoft를 accent 쪽으로 10% 블렌드한 톤 — 원형 아이콘 배경처럼 좀 더
+  // 존재감이 필요한 자리에 쓴다(2026-08-06, 헤더 아이콘 배경 피드백).
+  static const Color accentSoftStrong = Color(0xFFD5E2FC);
 
   // 상태색 — 장식이 아니라 의미가 있는 최소한의 예외(에러/삭제)
   static const Color destructive = Color(0xFFEF4444);

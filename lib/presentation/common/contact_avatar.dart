@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../../core/icons/app_icons.dart';
 import '../../core/theme/app_colors.dart';
 
 /// 인맥 아바타 — 사용자가 실제로 촬영/선택한 사진 파일이 있으면 그 사진을,
@@ -15,12 +16,18 @@ class ContactAvatar extends StatelessWidget {
   final String? photoPath;
   final String name;
   final double radius;
+  // 이름 이니셜 대신 커넥션센스 브랜드 아이콘을 기본값으로 쓸지 여부.
+  // "내 명함"처럼 앱을 대표하는 자리에서만 true로 쓴다 — 다른 사람의
+  // 명함에 브랜드 아이콘을 쓰면 그 사람을 나타내는 게 아니게 되어 버리므로
+  // 일반 인맥 아바타는 계속 이니셜을 쓴다.
+  final bool useBrandFallback;
 
   const ContactAvatar({
     super.key,
     required this.photoPath,
     required this.name,
     this.radius = 24,
+    this.useBrandFallback = false,
   });
 
   @override
@@ -34,6 +41,12 @@ class ContactAvatar extends StatelessWidget {
       backgroundImage: hasPhoto ? FileImage(File(path)) : null,
       child: hasPhoto
           ? null
+          : (useBrandFallback && name.trim().isEmpty)
+          ? AppIcon(
+              AppIconId.appIconMark,
+              size: radius * 1.1,
+              color: AppColors.accentText,
+            )
           : Text(
               name.trim().isEmpty ? '?' : name.trim().substring(0, 1),
               style: TextStyle(

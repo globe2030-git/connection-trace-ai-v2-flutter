@@ -111,7 +111,8 @@ class _RadarViewState extends State<RadarView> {
                                 IconButton(
                                   tooltip: 'QR 스캔',
                                   style: IconButton.styleFrom(
-                                    backgroundColor: AppColors.accentSoft,
+                                    backgroundColor:
+                                        AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                   ),
                                   icon: const AppIcon(
@@ -144,7 +145,8 @@ class _RadarViewState extends State<RadarView> {
                                 IconButton(
                                   tooltip: '명함 등록',
                                   style: IconButton.styleFrom(
-                                    backgroundColor: AppColors.accentSoft,
+                                    backgroundColor:
+                                        AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                   ),
                                   icon: const AppIcon(
@@ -173,13 +175,14 @@ class _RadarViewState extends State<RadarView> {
                                     );
                                   },
                                   child: Padding(
-                                    padding: const EdgeInsets.all(4),
+                                    padding: const EdgeInsets.all(2),
                                     child: ContactAvatar(
                                       photoPath: myProfile.avatarPath,
-                                      name: myProfile.name.isEmpty
-                                          ? '?'
-                                          : myProfile.name,
-                                      radius: 16,
+                                      name: myProfile.name,
+                                      useBrandFallback: true,
+                                      // 옆의 QR·명함등록 아이콘 버튼(지름
+                                      // 40px)과 크기를 맞춘다.
+                                      radius: 18,
                                     ),
                                   ),
                                 ),
