@@ -379,6 +379,7 @@ async function editLegalDoc(slug, title) {
       <div class="hint">docs/legal/${slug}.html의 본문 영역과 같은 HTML 마크업을 그대로 붙여넣으면 됩니다.</div>
       <div class="row" style="margin-top:14px;">
         <button class="btn-primary" id="legalDocSaveBtn">저장</button>
+        ${snap.exists() ? '<button class="btn-danger" id="legalDocDeleteBtn" type="button">삭제</button>' : ""}
       </div>
     </div>
   `;
@@ -392,4 +393,14 @@ async function editLegalDoc(slug, title) {
     await loadLegalDocs();
     editor.innerHTML = `<div class="card">저장했습니다.</div>`;
   });
+
+  const deleteBtn = $("#legalDocDeleteBtn");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm(`"${title}" 문서를 삭제할까요? 삭제하면 앱/웹에서 바로 미등록 상태로 보입니다.`)) return;
+      await deleteDoc(doc(db, "legalDocs", slug));
+      await loadLegalDocs();
+      editor.innerHTML = `<div class="card">삭제했습니다.</div>`;
+    });
+  }
 }
