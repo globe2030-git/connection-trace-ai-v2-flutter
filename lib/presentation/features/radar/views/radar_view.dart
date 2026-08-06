@@ -5,12 +5,10 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
-import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/radar_view_model.dart';
 import 'qr_code_modal_view.dart';
-import 'my_profile_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
 import '../../../common/connection_sense_background_painter.dart';
@@ -31,7 +29,6 @@ class _RadarViewState extends State<RadarView> {
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<RadarViewModel>();
-    final myProfile = context.watch<MyProfileRepository>().profile;
     if (viewModel.shouldShowLocationConsent &&
         !_initialConsentPromptScheduled &&
         !_consentSheetVisible) {
@@ -115,9 +112,8 @@ class _RadarViewState extends State<RadarView> {
                                         AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                     // 기본 IconButton은 최소 48x48로 렌더링돼
-                                    // 옆의 내 프로필 아바타(지름 40px)보다
-                                    // 커 보였다 — 세 아이콘을 정확히 같은
-                                    // 크기(40px)로 고정.
+                                    // 옆의 명함등록 버튼과 크기가 안 맞았다 —
+                                    // 두 아이콘을 정확히 같은 크기(40px)로 고정.
                                     padding: EdgeInsets.zero,
                                     minimumSize: const Size(40, 40),
                                     maximumSize: const Size(40, 40),
@@ -156,9 +152,8 @@ class _RadarViewState extends State<RadarView> {
                                         AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                     // 기본 IconButton은 최소 48x48로 렌더링돼
-                                    // 옆의 내 프로필 아바타(지름 40px)보다
-                                    // 커 보였다 — 세 아이콘을 정확히 같은
-                                    // 크기(40px)로 고정.
+                                    // 옆의 QR 버튼과 크기가 안 맞았다 —
+                                    // 두 아이콘을 정확히 같은 크기(40px)로 고정.
                                     padding: EdgeInsets.zero,
                                     minimumSize: const Size(40, 40),
                                     maximumSize: const Size(40, 40),
@@ -177,29 +172,9 @@ class _RadarViewState extends State<RadarView> {
                                     );
                                   },
                                 ),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(20),
-                                  onTap: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (_) =>
-                                          const MyProfileModalView(),
-                                    );
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(2),
-                                    child: ContactAvatar(
-                                      photoPath: myProfile.avatarPath,
-                                      name: myProfile.name,
-                                      useBrandFallback: true,
-                                      // 옆의 QR·명함등록 아이콘 버튼(지름
-                                      // 40px)과 크기를 맞춘다.
-                                      radius: 18,
-                                    ),
-                                  ),
-                                ),
+                                // 내 프로필 진입 아이콘은 QR 버튼(내 QR 화면에서
+                                // "내 프로필 설정하기"로 이어짐)과 기능이 겹쳐
+                                // 2026-08-06 제거함(사용자 피드백, IMG_3933).
                               ],
                             ),
                           ],
