@@ -21,7 +21,11 @@ service cloud.firestore {
       return request.auth != null &&
         request.auth.token.email_verified == true &&
         request.auth.token.email in [
-          'connectionsense@creamhouse.net'
+          'connectionsense@creamhouse.net',
+          // 그룹메일(위)이 회사 Google Workspace 그룹 게시 권한 설정 탓에
+          // Firebase 인증 메일을 못 받아(2026-08-06 확인) 개인 메일도
+          // 같이 허용. 그룹메일 수신 문제를 나중에 해결하면 지워도 됨.
+          'globe@creamhouse.net'
         ];
     }
 
