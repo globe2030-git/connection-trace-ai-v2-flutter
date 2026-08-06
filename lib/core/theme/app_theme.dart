@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
@@ -21,8 +20,12 @@ class AppTheme {
         elevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
-      textTheme: GoogleFonts.notoSansKrTextTheme(
-        ThemeData.light().textTheme.copyWith(
+      // 폰트는 Pretendard로 통일한다(assets/fonts, pubspec.yaml 참고).
+      // 예전에는 GoogleFonts.notoSansKrTextTheme()로 런타임에 내려받았는데,
+      // 네트워크가 없거나 첫 실행에서는 기본 폰트로 보였다가 뒤늦게 바뀌는
+      // 문제가 있었다. 번들 폰트는 그런 구간이 없다.
+      fontFamily: 'Pretendard',
+      textTheme: ThemeData.light().textTheme.apply(fontFamily: 'Pretendard').copyWith(
           displayLarge: const TextStyle(
             fontSize: 36,
             fontWeight: FontWeight.w800,
@@ -46,7 +49,6 @@ class AppTheme {
             color: AppColors.textSecondary,
           ),
         ),
-      ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         backgroundColor: AppColors.bgDarkObsidian,
