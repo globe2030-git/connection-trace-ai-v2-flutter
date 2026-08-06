@@ -129,14 +129,9 @@ class _RadarViewState extends State<RadarView> {
                                     color: AppColors.accentText,
                                     size: 20,
                                   ),
-                                  onPressed: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (_) => const AddCardModalView(),
-                                    );
-                                  },
+                                  onPressed: () => AddCardModalView.show(
+                                    context,
+                                  ),
                                 ),
                                 IconButton(
                                   tooltip: 'QR 스캔',
@@ -167,13 +162,9 @@ class _RadarViewState extends State<RadarView> {
                                           !context.mounted) {
                                         return;
                                       }
-                                      showModalBottomSheet(
-                                        context: context,
-                                        isScrollControlled: true,
-                                        backgroundColor: Colors.transparent,
-                                        builder: (_) => AddCardModalView(
-                                          prefillData: scannedContact,
-                                        ),
+                                      AddCardModalView.show(
+                                        context,
+                                        prefillData: scannedContact,
                                       );
                                     });
                                   },

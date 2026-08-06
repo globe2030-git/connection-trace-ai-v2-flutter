@@ -169,12 +169,7 @@ class WalletView extends StatelessWidget {
   }
 
   void _openCardEditor(BuildContext context, {ContactModel? contact}) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => AddCardModalView(contactToEdit: contact),
-    );
+    AddCardModalView.show(context, contact: contact);
   }
 }
 

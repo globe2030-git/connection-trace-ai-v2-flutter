@@ -27,6 +27,31 @@ class AddCardModalView extends StatefulWidget {
 
   const AddCardModalView({super.key, this.contactToEdit, this.prefillData});
 
+  /// 이 화면은 입력 필드가 많아 isScrollControlled 시트가 내용 높이만큼
+  /// 자라나는데, iOS는 필드 한 줄 높이가 안드로이드보다 약간씩 커서(폰트
+  /// 지표 차이) 시트가 화면 맨 위 노치까지 거의 닿아 "위로 붙어 보인다"는
+  /// 문제가 있었다(실기기 확인, 안드로이드는 정상 — 사용자 피드백). 시트
+  /// 최대 높이를 "명함 지갑" 화면의 제목 시작 위치(상태 표시줄 높이 + 그
+  /// 화면과 같은 12px 여백)로 고정해, 내용이 아무리 길어도 시트 위쪽이 그
+  /// 지점보다 올라가지 않게 한다 — 넘치는 내용은 내부 스크롤로 처리된다.
+  static Future<T?> show<T>(
+    BuildContext context, {
+    ContactModel? contact,
+    ContactModel? prefillData,
+  }) {
+    final topInset = MediaQuery.of(context).padding.top;
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height - topInset - 12,
+      ),
+      builder: (_) =>
+          AddCardModalView(contactToEdit: contact, prefillData: prefillData),
+    );
+  }
+
   @override
   State<AddCardModalView> createState() => _AddCardModalViewState();
 }
