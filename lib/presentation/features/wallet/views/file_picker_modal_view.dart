@@ -87,8 +87,8 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               children: [
                 const Row(
                   children: [
-                    Icon(
-                      Icons.folder_open,
+                    AppIcon(
+                      AppIconId.galleryUpload,
                       color: AppColors.accentText,
                       size: 22,
                     ),

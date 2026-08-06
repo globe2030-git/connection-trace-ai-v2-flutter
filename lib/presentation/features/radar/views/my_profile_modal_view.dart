@@ -46,13 +46,23 @@ class MyProfileModalView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  '👤 내 디지털 명함',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                const Row(
+                  children: [
+                    AppIcon(
+                      AppIconId.cardWallet,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      '내 디지털 명함',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
                 ),
                 IconButton(
                   icon: const AppIcon(

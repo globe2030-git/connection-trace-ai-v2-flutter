@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
@@ -64,7 +65,13 @@ class AiConnectionModalView extends StatelessWidget {
                   color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: const Center(child: Text('✨', style: TextStyle(fontSize: 22))),
+                child: const Center(
+                  child: AppIcon(
+                    AppIconId.aiChip,
+                    size: 24,
+                    color: AppColors.accentText,
+                  ),
+                ),
               ),
               const SizedBox(height: 12),
               const Text(

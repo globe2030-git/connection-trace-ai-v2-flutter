@@ -110,8 +110,8 @@ class _RadarViewState extends State<RadarView> {
                               children: [
                                 IconButton(
                                   tooltip: 'QR 스캔',
-                                  icon: const Icon(
-                                    Icons.qr_code_scanner,
+                                  icon: const AppIcon(
+                                    AppIconId.qrScan,
                                     color: AppColors.textPrimary,
                                     size: 22,
                                   ),

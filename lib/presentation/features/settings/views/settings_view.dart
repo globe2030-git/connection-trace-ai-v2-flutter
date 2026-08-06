@@ -301,8 +301,8 @@ class SettingsView extends StatelessWidget {
                       color: AppColors.accentText,
                     ),
                     title: '명함 데이터',
-                    subtitle: '저장된 명함은 이 기기에 보관',
-                    value: '로컬 저장',
+                    subtitle: '이 기기와 서버에 암호화하여 보관',
+                    value: '로컬 + 서버 백업',
                   ),
                   _SettingsRow(
                     icon: const AppIcon(

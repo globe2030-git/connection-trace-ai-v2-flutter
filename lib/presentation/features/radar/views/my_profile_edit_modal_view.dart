@@ -280,13 +280,23 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '✏️ 내 디지털 명함 수정',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
+                      const Row(
+                        children: [
+                          AppIcon(
+                            AppIconId.editCard,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            '내 디지털 명함 수정',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                       IconButton(
                         icon: const Icon(
@@ -338,8 +348,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                           child: OutlinedButton.icon(
                             onPressed: () =>
                                 _performOcrScan(isFromCamera: false),
-                            icon: const Icon(
-                              Icons.folder_open,
+                            icon: const AppIcon(
+                              AppIconId.galleryUpload,
                               size: 18,
                               color: AppColors.textSecondary,
                             ),

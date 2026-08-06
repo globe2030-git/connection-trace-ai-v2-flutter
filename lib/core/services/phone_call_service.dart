@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../data/models/contact_model.dart';
+import '../icons/app_icons.dart';
 import '../theme/app_colors.dart';
 import '../../presentation/common/glass_card.dart';
 
@@ -54,13 +55,25 @@ class PhoneCallService {
                 ),
                 const SizedBox(height: 16),
 
-                Text(
-                  '📞 ${contact.name} ${contact.title}님께 전화 걸기',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
+                Row(
+                  children: [
+                    const AppIcon(
+                      AppIconId.call,
+                      size: 18,
+                      color: AppColors.textPrimary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${contact.name} ${contact.title}님께 전화 걸기',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
 

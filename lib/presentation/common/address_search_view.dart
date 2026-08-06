@@ -171,7 +171,13 @@ class _AddressSearchViewState extends State<AddressSearchView> {
       appBar: AppBar(
         backgroundColor: AppColors.cardDark,
         foregroundColor: Colors.white,
-        title: const Text('🔍 도로명주소 검색'),
+        title: const Row(
+          children: [
+            Icon(Icons.search, size: 20),
+            SizedBox(width: 8),
+            Text('도로명주소 검색'),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),

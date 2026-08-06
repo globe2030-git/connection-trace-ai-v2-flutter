@@ -54,7 +54,12 @@ enum AppIconId {
   back('back'),
 
   // 브랜드
-  appIconMark('app-icon');
+  appIconMark('app-icon'),
+
+  // 2026-08-06 추가 — 공식 38종 핸드오프에 없어 같은 그리드(24×24·1.25px·
+  // currentColor+#2563EB 강조) 규칙으로 직접 제작한 보충 아이콘.
+  qrScan('qr-scan'),
+  galleryUpload('gallery-upload');
 
   const AppIconId(this.assetId);
 

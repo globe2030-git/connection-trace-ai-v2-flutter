@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M3.5 8.6V5.6a2.1 2.1 0 0 1 2.1-2.1h3"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M15.4 3.5h3a2.1 2.1 0 0 1 2.1 2.1v3"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M20.5 15.4v3a2.1 2.1 0 0 1-2.1 2.1h-3"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" d="M8.6 20.5h-3a2.1 2.1 0 0 1-2.1-2.1v-3"/>
+  <rect fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x="6.4" y="6.4" width="4" height="4" rx="0.8"/>
+  <rect fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x="13.6" y="6.4" width="4" height="4" rx="0.8"/>
+  <rect fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x="6.4" y="13.6" width="4" height="4" rx="0.8"/>
+  <rect fill="#2563EB" stroke="none" x="14.2" y="14.2" width="3.4" height="3.4" rx="0.7"/>
+</svg>

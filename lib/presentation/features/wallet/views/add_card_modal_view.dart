@@ -1065,13 +1065,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
-                      child: Text(
-                        _isEditing ? '🎴 명함 정보 수정' : '🎴 새 명함 직접 등록',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
+                      child: Row(
+                        children: [
+                          AppIcon(
+                            _isEditing
+                                ? AppIconId.editCard
+                                : AppIconId.addCard,
+                            size: 20,
+                            color: AppColors.textPrimary,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isEditing ? '명함 정보 수정' : '새 명함 직접 등록',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     IconButton(
@@ -1083,17 +1095,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
-                ),
-                const Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    '* 필수 입력 항목',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.destructive,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -1110,13 +1111,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '📷 명함 자동 스캔 (OCR)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.accentText,
-                        ),
+                      const Row(
+                        children: [
+                          AppIcon(
+                            AppIconId.scanCard,
+                            size: 15,
+                            color: AppColors.accentText,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            '명함 자동 스캔 (OCR)',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.accentText,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -1162,8 +1173,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                               onPressed: _isScanningOcr
                                   ? null
                                   : () => _performOcrScan(isFromCamera: false),
-                              icon: const Icon(
-                                Icons.photo_library,
+                              icon: const AppIcon(
+                                AppIconId.galleryUpload,
                                 size: 16,
                                 color: AppColors.accentText,
                               ),
@@ -1333,6 +1344,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   nextFocusNode: _companyFocusNode,
                   label: '이름 *',
                   hint: '예: 홍길동',
+                  trailingLegend: '* 필수 입력 항목',
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) {
                       return '이름을 입력해 주세요.';
@@ -1618,19 +1630,37 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     String? Function(String?)? validator,
     List<TextInputFormatter>? inputFormatters,
     Widget? suffixIcon,
+    // 화면 맨 위에 따로 떠 있던 "* 필수 입력 항목" 범례를 첫 필드(이름) 라벨
+    // 옆으로 옮겨 붙이기 위한 파라미터.
+    String? trailingLegend,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: label.contains('*')
-                ? AppColors.accentText
-                : AppColors.textSecondary,
-          ),
+        Row(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: label.contains('*')
+                    ? AppColors.accentText
+                    : AppColors.textSecondary,
+              ),
+            ),
+            if (trailingLegend != null) ...[
+              const Spacer(),
+              Text(
+                trailingLegend,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.destructive,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ],
         ),
         const SizedBox(height: 4),
         TextFormField(
