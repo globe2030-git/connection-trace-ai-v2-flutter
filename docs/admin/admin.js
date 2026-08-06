@@ -9,6 +9,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendEmailVerification, onAuthStateChanged, signOut,
+  GoogleAuthProvider, signInWithPopup,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
@@ -78,6 +79,20 @@ $("#signupBtn").addEventListener("click", async () => {
   }
 });
 
+// 구글 계정 로그인 — 이메일/비밀번호와 달리 별도 이메일 인증이 필요 없다
+// (구글이 이미 소유를 확인했으므로). 이미 앱에서 구글 로그인을 쓰는
+// creamhouse.net 계정들(예: globe@creamhouse.net)은 비밀번호가 아예
+// 없는 구글 전용 계정이라, 이 버튼으로만 관리자 콘솔에 들어올 수 있다.
+$("#googleLoginBtn").addEventListener("click", async () => {
+  $("#loginError").innerHTML = "";
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch (e) {
+    $("#loginError").innerHTML =
+      `<div class="error">구글 로그인에 실패했습니다: ${escapeHtml(e.message)}</div>`;
+  }
+});
+
 $("#logoutBtn").addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, async (user) => {
@@ -87,8 +102,23 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   if (!user.emailVerified) {
-    $("#loginError").innerHTML =
-      `<div class="error">이메일 인증이 필요합니다. 받은 메일함에서 인증 링크를 클릭한 뒤 다시 로그인해주세요.</div>`;
+    const pendingUser = user;
+    $("#loginError").innerHTML = `
+      <div class="error">이메일 인증이 필요합니다. 받은 메일함에서 인증 링크를 클릭한 뒤 다시 로그인해주세요.</div>
+      <div class="row" style="margin-top:8px;">
+        <button class="btn-ghost" id="resendVerificationBtn" type="button">인증 메일 재발송</button>
+      </div>
+    `;
+    $("#resendVerificationBtn").addEventListener("click", async () => {
+      try {
+        await sendEmailVerification(pendingUser);
+        $("#loginError").innerHTML =
+          `<div class="error" style="background:var(--good-soft); color:var(--good);">` +
+          `인증 메일을 다시 보냈습니다. 메일함을 확인해주세요.</div>`;
+      } catch (e) {
+        $("#loginError").innerHTML = `<div class="error">재발송 실패: ${escapeHtml(e.message)}</div>`;
+      }
+    });
     await signOut(auth);
     return;
   }
