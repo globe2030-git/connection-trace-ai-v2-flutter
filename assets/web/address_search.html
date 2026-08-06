@@ -19,18 +19,17 @@
   // 에이치스퀘어)"로 보였는데 주소칸에는 "경기 성남시 분당구 판교역로 235"만
   // 들어가 사용자에게 주소가 잘린 것처럼 보였다(backlog 추가 83).
   //
-  // 조합 규칙은 다음이 제공하는 예제(법정동은 동/로/가로 끝나는 경우만,
-  // 건물명은 공동주택(data.apartment === 'Y')인 경우만)를 그대로 따랐었는데,
-  // 실기기에서 확인해보니 공동주택이 아닌 건물(예: "소프트하우스")도 다음
-  // 목록 화면에는 건물명이 표시되는 경우가 있었다 — apartment 플래그가
-  // 목록 표시 여부와 정확히 일치하지 않는다. 정보를 누락시키느니 건물명이
-  // 있으면 무조건 넣는 쪽이 "목록에 보인 그대로"라는 원래 목적에 맞다.
+  // 조합 규칙은 원래 다음이 제공하는 공식 예제(법정동은 동/로/가로 끝나는
+  // 경우만, 건물명은 공동주택(data.apartment === 'Y')인 경우만)를 따랐는데,
+  // 실기기 확인 결과 그 공식 예제가 실제 목록 화면 표시와 다르다는 게
+  // 드러났다 — "서울 관악구 승방1길 5" 주소에서 목록에는 "(소프트하우스)"만
+  // 보였는데(공동주택 아님에도 건물명 표시, 법정동 "남현동"은 표시 안 됨),
+  // 공식 예제 로직대로면 정반대(법정동은 넣고 건물명은 뺌)가 나왔다.
+  // data.bname/apartment 필드로는 실제 목록 표시 여부를 신뢰성 있게 예측할
+  // 수 없다는 뜻이라, 법정동 조합은 포기하고 건물명만 있으면 넣는다.
   function buildReferenceText(data) {
     if (data.userSelectedType !== 'R') return '';
-    var parts = [];
-    if (data.bname && /[동로가]$/.test(data.bname)) parts.push(data.bname);
-    if (data.buildingName) parts.push(data.buildingName);
-    return parts.length ? ' (' + parts.join(', ') + ')' : '';
+    return data.buildingName ? ' (' + data.buildingName + ')' : '';
   }
 
   new daum.Postcode({
