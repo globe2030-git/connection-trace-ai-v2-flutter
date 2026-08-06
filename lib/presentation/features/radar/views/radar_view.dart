@@ -110,10 +110,14 @@ class _RadarViewState extends State<RadarView> {
                               children: [
                                 IconButton(
                                   tooltip: 'QR 스캔',
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: AppColors.accentSoft,
+                                    shape: const CircleBorder(),
+                                  ),
                                   icon: const AppIcon(
                                     AppIconId.qrScan,
-                                    color: AppColors.textPrimary,
-                                    size: 22,
+                                    color: AppColors.accentText,
+                                    size: 20,
                                   ),
                                   onPressed: () {
                                     showModalBottomSheet<ContactModel>(
@@ -139,10 +143,14 @@ class _RadarViewState extends State<RadarView> {
                                 ),
                                 IconButton(
                                   tooltip: '명함 등록',
+                                  style: IconButton.styleFrom(
+                                    backgroundColor: AppColors.accentSoft,
+                                    shape: const CircleBorder(),
+                                  ),
                                   icon: const AppIcon(
                                     AppIconId.addCard,
-                                    color: AppColors.textPrimary,
-                                    size: 22,
+                                    color: AppColors.accentText,
+                                    size: 20,
                                   ),
                                   onPressed: () {
                                     showModalBottomSheet(
@@ -312,7 +320,7 @@ class _RadarViewState extends State<RadarView> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  '위치는 앱 사용 중 요청할 때만 확인합니다.',
+                                  '위치는 사용 중에만 확인해요.',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -320,60 +328,46 @@ class _RadarViewState extends State<RadarView> {
                                   ),
                                 ),
                               ),
-                              InkWell(
-                                onTap: viewModel.isRefreshingLocation
-                                    ? null
-                                    : () => handleLocationAccessAction(
-                                        context,
-                                        viewModel,
-                                      ),
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentText.withValues(
-                                      alpha: 0.2,
-                                    ),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: AppColors.accentText.withValues(
-                                        alpha: 0.5,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      viewModel.isRefreshingLocation
-                                          ? const SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: AppColors.accentText,
-                                              ),
-                                            )
-                                          : const Icon(
-                                              Icons.my_location,
-                                              color: AppColors.accentText,
-                                              size: 14,
-                                            ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        viewModel.isRefreshingLocation
-                                            ? 'GPS 확인 중...'
-                                            : viewModel.usingRealGps
-                                            ? '내 위치 갱신'
-                                            : '위치 설정',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.accentText,
+                              Tooltip(
+                                message: viewModel.isRefreshingLocation
+                                    ? 'GPS 확인 중...'
+                                    : viewModel.usingRealGps
+                                    ? '내 위치 갱신'
+                                    : '위치 설정',
+                                child: InkWell(
+                                  onTap: viewModel.isRefreshingLocation
+                                      ? null
+                                      : () => handleLocationAccessAction(
+                                          context,
+                                          viewModel,
                                         ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(7),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.accentText.withValues(
+                                        alpha: 0.2,
                                       ),
-                                    ],
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: AppColors.accentText
+                                            .withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                    child: viewModel.isRefreshingLocation
+                                        ? const SizedBox(
+                                            width: 14,
+                                            height: 14,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: AppColors.accentText,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.my_location,
+                                            color: AppColors.accentText,
+                                            size: 14,
+                                          ),
                                   ),
                                 ),
                               ),
