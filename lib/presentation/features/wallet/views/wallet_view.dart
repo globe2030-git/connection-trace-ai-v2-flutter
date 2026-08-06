@@ -54,25 +54,32 @@ class WalletView extends StatelessWidget {
                   ),
                   // "+"와 하단 "명함 스캔" 버튼이 같은 기능이라 하나로
                   // 합쳤다 — 새 명함 등록 진입점은 이거 하나만 남긴다.
-                  ElevatedButton.icon(
+                  // 내 명함 등록 화면의 "내 명함 카메라 스캔" 버튼과 같은
+                  // 아웃라인 스타일로 통일(꽉 채운 배경은 부담스럽다는 피드백).
+                  OutlinedButton.icon(
                     onPressed: () => _openCardEditor(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      foregroundColor: Colors.white,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.accentText),
+                      foregroundColor: AppColors.accentText,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 10,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: const AppIcon(AppIconId.scanCard, size: 18),
+                    icon: const AppIcon(
+                      AppIconId.scanCard,
+                      size: 18,
+                      color: AppColors.accentText,
+                    ),
                     label: const Text(
                       '명함 스캔',
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 13,
+                        color: AppColors.accentText,
                       ),
                     ),
                   ),
