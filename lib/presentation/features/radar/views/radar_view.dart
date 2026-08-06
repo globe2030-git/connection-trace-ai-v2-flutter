@@ -73,9 +73,15 @@ class _RadarViewState extends State<RadarView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Header: title + greeting, QR / 명함등록 / 내 프로필
+                        // Header: title + greeting, 명함등록 / QR
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          // 오른쪽 버튼 묶음의 높이가 화면마다 달라도(원형
+                          // 아이콘 2개 vs 라벨 있는 버튼 등) 제목이 항상
+                          // 같은 높이에서 시작하도록 맨 위로 고정 — 기본값인
+                          // center로 두면 제목이 버튼 높이에 따라 미묘하게
+                          // 위아래로 밀린다(다른 탭과 비교 시 눈에 띔).
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: Column(

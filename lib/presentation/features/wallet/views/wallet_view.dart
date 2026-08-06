@@ -26,6 +26,11 @@ class WalletView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                // 오른쪽 "명함 스캔" 버튼의 높이가 주변 화면의 원형 아이콘
+                // 버튼과 달라도 제목이 항상 같은 높이에서 시작하도록 맨
+                // 위로 고정 — 기본값인 center로 두면 제목이 버튼 높이에
+                // 따라 미묘하게 위아래로 밀려 다른 탭과 위치가 안 맞는다.
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: Column(
