@@ -472,7 +472,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         backgroundColor: AppColors.cardDark,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
-          '주소 위치 확인 필요',
+          '정확한 위치를 찾지 못했어요',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.bold,
@@ -483,7 +483,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '입력하신 주소 ("$rawAddress")의 GPS 위치를 정밀하게 찾을 수 없습니다.',
+              '"$rawAddress"의 정확한 GPS 좌표를 지도 서비스에서 찾지 못했습니다. 신축 건물이거나 지도에 아직 반영되지 않은 주소인 경우 흔히 있는 일이에요 — 주소 자체가 틀렸다는 뜻은 아닙니다.',
               style: const TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 14,
@@ -517,7 +517,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               const SizedBox(height: 12),
             ],
             const Text(
-              '건물명이나 도로명 주소(예: 테헤란로 123)로 직접 수정하여 입력해 주세요.',
+              '위치 없이 저장해도 명함 정보는 그대로 저장되고, "주변 인맥" 거리 계산에서만 제외돼요. 주소에 오타가 있는 것 같다면 수정해 주세요.',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
             ),
           ],
@@ -544,7 +544,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               _executeFinalSave(rawAddress, null);
             },
             child: const Text(
-              '주소 없이 저장',
+              '위치 없이 저장',
               style: TextStyle(
                 color: AppColors.accentText,
                 fontWeight: FontWeight.bold,
