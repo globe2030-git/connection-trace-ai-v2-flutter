@@ -1,0 +1,54 @@
+# 커밋·PR마다 정적 분석과 테스트를 자동으로 돌려 회귀를 막는다.
+#
+# 왜 필요한가(backlog 추가 81): 지금까지 `flutter analyze`와 `flutter test`가
+# "사람이 기억해서 돌릴 때만" 돌았다. 테스트 39건이 있어도 실행되지 않으면
+# 없는 것과 같다.
+#
+# 실기기가 필요한 검증(카메라·OCR·위치·Firestore 실물 대조)은 여기서 돌릴 수
+# 없다 — 그건 릴리스 체크리스트(P1-30)와 실물 점검 스크립트(P1-29)의 몫이다.
+# 이 워크플로가 잡는 것은 "컴파일·정적 분석·순수 로직" 계층까지다.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+# 같은 브랜치에 연달아 푸시하면 이전 실행을 취소한다(무료 사용량 절약).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: 정적 분석 · 테스트
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Flutter 설치
+        uses: subosito/flutter-action@v2
+        with:
+          # 로컬 개발 환경과 같은 버전으로 고정한다. 버전이 갈리면 CI만
+          # 통과하거나 CI만 실패하는 상황이 생긴다.
+          flutter-version: '3.44.8'
+          channel: stable
+          cache: true
+
+      - name: 의존성 내려받기
+        run: flutter pub get
+
+      - name: 정적 분석
+        # --no-fatal-infos: 현재 info 19건(스타일 지적, 웹 전용 코드 경고 등)이
+        # 남아 있어 그대로 두면 CI가 항상 빨간불이 된다. error·warning은
+        # 여전히 실패로 처리되므로 진짜 문제는 걸린다.
+        # info 정리는 별도 항목(P2-8 등)으로 진행한다.
+        run: flutter analyze --no-fatal-infos
+
+      - name: 테스트
+        run: flutter test --reporter expanded
