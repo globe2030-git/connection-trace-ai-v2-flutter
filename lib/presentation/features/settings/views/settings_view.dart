@@ -69,17 +69,18 @@ class SettingsView extends StatelessWidget {
       backgroundColor: AppColors.bgDarkSlate,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
                 '설정',
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
-                  letterSpacing: -0.7,
+                  letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 20),

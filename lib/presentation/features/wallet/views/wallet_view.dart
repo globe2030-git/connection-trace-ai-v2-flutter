@@ -21,7 +21,7 @@ class WalletView extends StatelessWidget {
       backgroundColor: AppColors.bgDarkSlate,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -33,18 +33,19 @@ class WalletView extends StatelessWidget {
                       children: [
                         const Text(
                           '명함 지갑',
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 28,
+                            fontSize: 24,
                             fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
-                            letterSpacing: -0.7,
+                            letterSpacing: -0.5,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Text(
                           '${viewModel.contacts.length}명의 인맥',
                           style: const TextStyle(
-                            fontSize: 14,
+                            fontSize: 13,
                             color: AppColors.textSecondary,
                           ),
                         ),
