@@ -74,7 +74,12 @@ class OcrScannerService {
     final recognizer = TextRecognizer(script: TextRecognitionScript.korean);
     try {
       final inputImage = InputImage.fromFilePath(imageFile.path);
-      final recognizedText = await recognizer.processImage(inputImage);
+      // ML Kit이 예외 없이 끝없이 대기만 하는 경우가 있어(촬영 화면이
+      // "AI 텍스트 추출 중..."에서 멈추는 문제로 실기기에서 확인됨) 타임아웃을
+      // 걸어 일정 시간 안에 안 끝나면 실패로 처리한다.
+      final recognizedText = await recognizer
+          .processImage(inputImage)
+          .timeout(const Duration(seconds: 20));
       final orderedLines = _extractOrderedLines(recognizedText);
       return _parse(orderedLines, imageFile.path);
     } finally {

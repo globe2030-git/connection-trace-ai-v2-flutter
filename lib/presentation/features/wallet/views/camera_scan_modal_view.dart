@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -15,10 +16,14 @@ class CameraScanModalView extends StatefulWidget {
 
 class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1) — 명함 자체가 가로로
-  // 길고 세로가 짧은 형태라 가이드도 그 비율을 따른다(화면·기기는 세로
-  // 그대로 유지, 가이드 박스만 이 비율). 실제 픽셀 크기는 화면 크기별로
-  // [_guideFrameSizeFor]가 다시 계산한다 — 고정값이 아님.
+  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1). 화면 자체를 가로로
+  // 고정해서(아래 initState) 명함과 같은 방향으로 두 손으로 잡고 찍게
+  // 한다 — 2026-08-03에 "버튼 조작이 어려워졌다"는 이유로 되돌렸었는데,
+  // 세로 화면에 가로로 긴 가이드를 억지로 맞추는 게 더 어렵다는
+  // 재요청으로 다시 적용함(2026-08-06). 촬영 결과물은 EXIF 방향 그대로
+  // 저장되므로 [_cropToGuideFrame]의 bakeOrientation()이 항상 정방향으로
+  // 바로잡아 OCR·저장에는 방향 문제가 생기지 않는다. 실제 픽셀 크기는
+  // 화면 크기별로 [_guideFrameSizeFor]가 다시 계산한다 — 고정값이 아님.
   static const _cardAspectRatio = 330 / 184;
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
@@ -63,6 +68,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
+    // 명함이 가로로 긴 형태라 폰을 가로로 눕혀 두 손으로 잡으면 흔들림이
+    // 줄어든다는 피드백에 따라, 이 화면에 있는 동안만 가로 방향으로 고정한다
+    // (앱의 나머지 화면은 세로 전용이라 나갈 때 dispose에서 다시 되돌림).
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _initCamera();
   }
 
@@ -71,13 +83,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       setState(() => _isInitializing = false);
       return;
     }
+    CameraController? controller;
     try {
       final cameras = await availableCameras();
       final backCamera = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(
+      controller = CameraController(
         backCamera,
         ResolutionPreset.veryHigh,
         enableAudio: false,
@@ -86,17 +99,33 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         // 위한 포맷 — yuv420이 플랫폼 간 가장 널리 지원됨.
         imageFormatGroup: ImageFormatGroup.yuv420,
       );
-      await controller.initialize();
+      // 권한 요청 다이얼로그와 겹치거나 카메라가 다른 프로세스에 점유된
+      // 경우 등, initialize()가 예외 없이 그냥 끝없이 대기만 하는 경우가
+      // 있었다(사용자 제보 — 화면이 로딩 스피너에서 멈춤). 일정 시간 안에
+      // 안 끝나면 에러로 처리해 재시도 버튼이 뜨게 한다.
+      await controller.initialize().timeout(const Duration(seconds: 12));
       if (!mounted) {
         await controller.dispose();
         return;
       }
+      // 화면을 가로로 고정했으니 촬영 결과물도 그 방향으로 고정 — 안 그러면
+      // 기기가 가로/세로 어느 쪽으로 눕혀졌는지에 따라 결과 이미지가 매번
+      // 다르게 회전되어 나올 수 있다.
+      try {
+        await controller.lockCaptureOrientation();
+      } catch (_) {}
       setState(() {
         _controller = controller;
         _isInitializing = false;
       });
       await _startAutoCaptureStream();
     } catch (e) {
+      // 타임아웃으로 포기한 뒤 initialize()가 뒤늦게 성공해도 카메라를
+      // 계속 붙들고 있으면 재시도 시 "카메라 사용 중" 에러가 나므로
+      // 반드시 놓아준다.
+      try {
+        await controller?.dispose();
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
         _initError = '카메라를 시작할 수 없습니다.\n설정에서 카메라 접근 권한을 확인해 주세요.\n($e)';
@@ -144,6 +173,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     WidgetsBinding.instance.removeObserver(this);
     _laserController.dispose();
     _controller?.dispose();
+    // 앱의 나머지 화면은 세로 전용이라 이 화면을 나갈 때 다시 세로로 되돌린다.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
