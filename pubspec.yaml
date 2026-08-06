@@ -38,7 +38,6 @@ dependencies:
   # currentColor 테마 적용(다크 배경에서 기본색만 치환)과 함께 렌더링하기 위함.
   flutter_svg: ^2.0.10+1
   provider: ^6.1.5+1
-  google_fonts: ^8.2.0
   url_launcher: ^6.3.0
   shared_preferences: ^2.3.5
   # main.dart에서 FlutterNativeSplash.preserve()/.remove()를 런타임에 직접
@@ -103,8 +102,10 @@ dev_dependencies:
 # 추가됐는데, 이 Flutter SDK(3.44.8)의 native-assets 처리기가 objective_c의
 # 아키텍처별 프레임워크 이름 불일치(objective_c.framework vs objective_c1.framework)를
 # 파싱하다 "Null check operator used on a null value"로 크래시하는 툴체인 버그가 있음
-# (iOS 시뮬레이터 빌드 시 100% 재현). google_fonts가 path_provider를 통해 이를
-# 전이 의존하므로, objective_c 의존이 없는 마지막 버전으로 고정해서 우회한다.
+# (iOS 시뮬레이터 빌드 시 100% 재현). path_provider(내 프로필 사진 저장용
+# 직접 의존)가 이를 전이 의존하므로, objective_c 의존이 없는 마지막
+# 버전으로 고정해서 우회한다 — google_fonts를 뺀 뒤(2026-08-06,
+# Pretendard로 교체)에도 계속 필요하다.
 dependency_overrides:
   path_provider_foundation: 2.5.1
 
@@ -169,22 +170,22 @@ flutter:
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
 
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
+  # 2026-08-06: 앱 전체 폰트를 Pretendard로 통일(구글 폰트에 없어 로컬
+  # 에셋으로 번들). 앱이 실제로 쓰는 굵기(400/500/700/800)만 받아뒀다 —
+  # weight 미지정 글자는 Flutter가 가장 가까운 걸 합성해서 안 씀.
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Pretendard-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Pretendard-ExtraBold.otf
+          weight: 800
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package

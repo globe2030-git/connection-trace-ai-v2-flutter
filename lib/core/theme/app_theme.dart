@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 class AppTheme {
@@ -9,6 +8,10 @@ class AppTheme {
       useMaterial3: true,
       brightness: Brightness.light,
       scaffoldBackgroundColor: AppColors.bgDarkSlate,
+      // 2026-08-06: 앱 전체 폰트를 Pretendard로 통일(assets/fonts/, pubspec
+      // fonts: 섹션 참고). fontFamily를 최상위에 두면 아래 textTheme의
+      // 개별 스타일에도 상속된다.
+      fontFamily: 'Pretendard',
       colorScheme: const ColorScheme.light(
         primary: AppColors.accent,
         surface: AppColors.cardDark,
@@ -21,30 +24,28 @@ class AppTheme {
         elevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
-      textTheme: GoogleFonts.notoSansKrTextTheme(
-        ThemeData.light().textTheme.copyWith(
-          displayLarge: const TextStyle(
-            fontSize: 36,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-            letterSpacing: -1.0,
-          ),
-          titleLarge: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
-            letterSpacing: -0.5,
-          ),
-          bodyLarge: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textPrimary,
-          ),
-          bodyMedium: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w400,
-            color: AppColors.textSecondary,
-          ),
+      textTheme: ThemeData.light().textTheme.copyWith(
+        displayLarge: const TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textPrimary,
+          letterSpacing: -1.0,
+        ),
+        titleLarge: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textPrimary,
+          letterSpacing: -0.5,
+        ),
+        bodyLarge: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
+        bodyMedium: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: AppColors.textSecondary,
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
