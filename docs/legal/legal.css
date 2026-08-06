@@ -3,40 +3,40 @@
    앱 내 WebView 폴백(assets/legal/)에서도 같은 상대경로로 로드된다. */
 
 :root{
-  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
-  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
-  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --bg:#F7F8FA; --paper:#FFFFFF; --paper-2:#F1F3F7;
+  --border:#E8EBF0; --ink:#171A21; --ink-dim:#5F6673; --ink-faint:#7B8391;
+  --brand:#2563EB; --brand-deep:#1D4ED8; --brand-soft:#E8F0FE;
   --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
   --good:#1B8A5A;
-  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+  --shadow:0 1px 2px rgba(23,26,33,.04), 0 12px 32px -20px rgba(23,26,33,.20);
   --font-ui:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Pretendard Variable',Pretendard,sans-serif;
   --font-mono:ui-monospace,'SFMono-Regular',Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
-    --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
-    --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+    --bg:#12151C; --paper:#191D26; --paper-2:#212632;
+    --border:#2C3342; --ink:#E9EDF5; --ink-dim:#A7B0C0; --ink-faint:#78829A;
+    --brand:#7DA6F5; --brand-deep:#A8C5FB; --brand-soft:#17243D;
     --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
     --good:#3FD38C;
     --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
   }
 }
 :root[data-theme="dark"]{
-  --bg:#17151F; --paper:#1E1B29; --paper-2:#252131;
-  --border:#332C4A; --ink:#EFEBFA; --ink-dim:#B3ABCC; --ink-faint:#7C7396;
-  --brand:#A796F5; --brand-deep:#C4B8FF; --brand-soft:#2A2340;
+  --bg:#12151C; --paper:#191D26; --paper-2:#212632;
+  --border:#2C3342; --ink:#E9EDF5; --ink-dim:#A7B0C0; --ink-faint:#78829A;
+  --brand:#7DA6F5; --brand-deep:#A8C5FB; --brand-soft:#17243D;
   --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
   --good:#3FD38C;
   --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
 }
 :root[data-theme="light"]{
-  --bg:#FAF8F5; --paper:#FFFFFF; --paper-2:#F4F1EC;
-  --border:#E5E0D6; --ink:#211D2E; --ink-dim:#5B5570; --ink-faint:#8C86A0;
-  --brand:#6C5CE7; --brand-deep:#5541C6; --brand-soft:#EFECFC;
+  --bg:#F7F8FA; --paper:#FFFFFF; --paper-2:#F1F3F7;
+  --border:#E8EBF0; --ink:#171A21; --ink-dim:#5F6673; --ink-faint:#7B8391;
+  --brand:#2563EB; --brand-deep:#1D4ED8; --brand-soft:#E8F0FE;
   --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
   --good:#1B8A5A;
-  --shadow:0 1px 2px rgba(33,29,46,.04), 0 12px 32px -20px rgba(33,29,46,.20);
+  --shadow:0 1px 2px rgba(23,26,33,.04), 0 12px 32px -20px rgba(23,26,33,.20);
 }
 *{box-sizing:border-box;}
 body{margin:0; font-family:var(--font-ui); background:var(--bg); color:var(--ink); font-size:15.5px; line-height:1.75; -webkit-font-smoothing:antialiased;}

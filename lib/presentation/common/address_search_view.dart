@@ -117,7 +117,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
             // 섞여 있다(kakaomap://search?q=...). 웹뷰는 http(s)가 아닌 스킴을
             // 처리하지 못해 ERR_UNKNOWN_URL_SCHEME 오류 페이지로 넘어가고,
             // 그 페이지가 웹뷰를 덮어써서 주소 선택 흐름 자체가 끊긴다
-            // (실기기에서 확인 — backlog 추가 80).
+            // (실기기에서 확인 — backlog 추가 81).
             //
             // 그래서 웹뷰 안에서는 막고, 해당 앱이 깔려 있으면 외부로 넘긴다.
             // 깔려 있지 않으면 아무 일도 일어나지 않는다 — 주소 검색 화면은
@@ -139,7 +139,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
   /// 이 전달이 막힌다. 그러면 주소를 선택해도 `oncomplete`가 호출되지 않고
   /// 위젯이 대체 경로(카카오맵 앱 열기, `kakaomap://search?q=...`)로 빠져
   /// **검색은 되는데 선택만 안 되는** 상태가 된다(실기기에서 확인 —
-  /// backlog 추가 80).
+  /// backlog 추가 81).
   ///
   /// HTML 자체는 앱 안에 그대로 두고 `baseUrl`만 https로 지정한다 — 문서를
   /// 서버에서 내려받지 않으므로 네트워크 왕복이 늘지 않는다.
