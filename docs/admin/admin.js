@@ -1,18 +1,14 @@
 // 커넥션센스 관리자 콘솔.
 //
-// ⚠️ 배포 전 반드시 해야 할 일 (README.md 참고):
-// 1) 아래 firebaseConfig를 Firebase 콘솔 > 프로젝트 설정 > 앱 추가(웹)에서
-//    발급받은 실제 값으로 채울 것 — 지금은 이 프로젝트에 웹 앱이 등록된
-//    적이 없어서 placeholder 상태다.
-// 2) Firebase 콘솔 > Authentication에서 관리자로 쓸 이메일/비밀번호 계정을
-//    직접 만들 것.
-// 3) Firestore의 `admins` 컬렉션에 그 계정의 uid를 문서 ID로 하는 빈
-//    문서를 하나 만들 것(예: admins/AbCdEf123... , 필드는 아무거나 상관없음).
-//    firestore.rules가 이 컬렉션 자체는 클라이언트가 직접 못 읽고 쓰게
-//    막아뒀기 때문에 Firebase 콘솔에서 수동으로만 추가할 수 있다.
+// 관리자 등록 방식(2026-08-06): Firebase 콘솔에 들어가 계정을 만들거나
+// Firestore에 문서를 손으로 추가할 필요가 없다. 이 페이지에서 지정된
+// 이메일(firestore.rules의 isAdmin() 허용목록)로 직접 회원가입하면
+// 이메일 인증 후 그대로 관리자가 된다. 관리자를 추가/제거하려면
+// firestore.rules의 이메일 목록만 고치고 배포하면 된다.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
-  getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+  getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendEmailVerification, onAuthStateChanged, signOut,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
@@ -20,11 +16,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
+  apiKey: "AIzaSyA71ZLPoz3YZR0X3-g2P_uBXM4rK41D3kU",
   authDomain: "connection-sense.firebaseapp.com",
   projectId: "connection-sense",
   storageBucket: "connection-sense.firebasestorage.app",
-  appId: "REPLACE_ME",
+  appId: "1:79345379389:web:483f3096c5d7d484182254",
 };
 
 const app = initializeApp(firebaseConfig);
@@ -35,7 +31,7 @@ const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
 const dashboard = $("#dashboard");
 
-// ---------- 로그인 ----------
+// ---------- 로그인 / 회원가입 ----------
 
 $("#loginBtn").addEventListener("click", async () => {
   const email = $("#loginEmail").value.trim();
@@ -50,6 +46,38 @@ $("#loginBtn").addEventListener("click", async () => {
   }
 });
 
+$("#signupToggle").addEventListener("click", () => {
+  const isSignup = $("#signupFields").style.display !== "none";
+  $("#signupFields").style.display = isSignup ? "none" : "block";
+  $("#loginBtn").style.display = isSignup ? "inline-block" : "none";
+  $("#signupBtn").style.display = isSignup ? "none" : "inline-block";
+  $("#signupToggle").textContent = isSignup ? "회원가입" : "로그인 화면으로";
+  $("#loginError").innerHTML = "";
+});
+
+$("#signupBtn").addEventListener("click", async () => {
+  const email = $("#loginEmail").value.trim();
+  const password = $("#loginPassword").value;
+  const passwordConfirm = $("#signupPasswordConfirm").value;
+  $("#loginError").innerHTML = "";
+  if (!email || !password) return;
+  if (password !== passwordConfirm) {
+    $("#loginError").innerHTML = `<div class="error">비밀번호가 서로 다릅니다.</div>`;
+    return;
+  }
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await sendEmailVerification(cred.user);
+    await signOut(auth);
+    $("#loginError").innerHTML =
+      `<div class="error" style="background:var(--good-soft); color:var(--good);">` +
+      `가입되었습니다. ${escapeHtml(email)}으로 보낸 인증 메일의 링크를 클릭한 뒤 로그인해주세요.</div>`;
+  } catch (e) {
+    $("#loginError").innerHTML =
+      `<div class="error">가입에 실패했습니다: ${escapeHtml(e.message)}</div>`;
+  }
+});
+
 $("#logoutBtn").addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, async (user) => {
@@ -58,14 +86,20 @@ onAuthStateChanged(auth, async (user) => {
     dashboard.classList.remove("visible");
     return;
   }
-  // admins/{uid} 컬렉션은 규칙상 직접 못 읽으므로, "관리자만 통과하는 쿼리"를
-  // 실제로 날려보는 방식으로 판별한다 — notices를 published 필터 없이
-  // 전부 조회하는 건 firestore.rules상 isAdmin()만 통과할 수 있다.
+  if (!user.emailVerified) {
+    $("#loginError").innerHTML =
+      `<div class="error">이메일 인증이 필요합니다. 받은 메일함에서 인증 링크를 클릭한 뒤 다시 로그인해주세요.</div>`;
+    await signOut(auth);
+    return;
+  }
+  // 이메일이 firestore.rules의 허용목록에 없으면 "관리자만 통과하는 쿼리"가
+  // 그대로 실패한다 — notices를 published 필터 없이 전부 조회하는 건
+  // isAdmin()만 통과할 수 있다.
   try {
     await getDocs(collection(db, "notices"));
   } catch (e) {
     $("#loginError").innerHTML =
-      `<div class="error">이 계정은 관리자 권한이 없습니다.</div>`;
+      `<div class="error">이 계정(${escapeHtml(user.email ?? "")})은 관리자로 등록되지 않았습니다.</div>`;
     await signOut(auth);
     return;
   }

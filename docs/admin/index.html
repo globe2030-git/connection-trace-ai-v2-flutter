@@ -94,8 +94,15 @@ button:disabled{opacity:.5; cursor:not-allowed;}
       <input type="email" id="loginEmail" autocomplete="username">
       <label for="loginPassword">비밀번호</label>
       <input type="password" id="loginPassword" autocomplete="current-password">
+      <div id="signupFields" style="display:none;">
+        <label for="signupPasswordConfirm">비밀번호 확인</label>
+        <input type="password" id="signupPasswordConfirm" autocomplete="new-password">
+        <p class="hint">등록된 이메일로 가입해야만 관리자 권한이 생깁니다.</p>
+      </div>
       <div class="row" style="margin-top:18px;">
         <button class="btn-primary" id="loginBtn">로그인</button>
+        <button class="btn-primary" id="signupBtn" style="display:none;">가입하기</button>
+        <button class="btn-ghost" id="signupToggle" type="button">회원가입</button>
       </div>
       <div id="loginError"></div>
     </div>

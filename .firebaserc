@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "connection-sense"
-  }
+  },
+  "targets": {
+    "connection-sense": {
+      "hosting": {
+        "legal": [
+          "connection-sense"
+        ],
+        "admin": [
+          "connection-sense-admin"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
