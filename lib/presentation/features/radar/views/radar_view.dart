@@ -114,6 +114,13 @@ class _RadarViewState extends State<RadarView> {
                                     backgroundColor:
                                         AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
+                                    // 기본 IconButton은 최소 48x48로 렌더링돼
+                                    // 옆의 내 프로필 아바타(지름 40px)보다
+                                    // 커 보였다 — 세 아이콘을 정확히 같은
+                                    // 크기(40px)로 고정.
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: const Size(40, 40),
+                                    maximumSize: const Size(40, 40),
                                   ),
                                   icon: const AppIcon(
                                     AppIconId.qrScan,
@@ -148,6 +155,13 @@ class _RadarViewState extends State<RadarView> {
                                     backgroundColor:
                                         AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
+                                    // 기본 IconButton은 최소 48x48로 렌더링돼
+                                    // 옆의 내 프로필 아바타(지름 40px)보다
+                                    // 커 보였다 — 세 아이콘을 정확히 같은
+                                    // 크기(40px)로 고정.
+                                    padding: EdgeInsets.zero,
+                                    minimumSize: const Size(40, 40),
+                                    maximumSize: const Size(40, 40),
                                   ),
                                   icon: const AppIcon(
                                     AppIconId.addCard,
