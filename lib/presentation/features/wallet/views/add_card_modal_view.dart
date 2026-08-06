@@ -1110,106 +1110,75 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                 _buildInlineNotice(),
 
-                // 📸 OCR Camera & Gallery Scan Action Buttons
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.bgDarkSlate,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.borderDark),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          AppIcon(
-                            AppIconId.scanCard,
-                            size: 15,
-                            color: AppColors.accentText,
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            '명함 자동 스캔 (OCR)',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.accentText,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _isScanningOcr
-                                  ? null
-                                  : () => _performOcrScan(isFromCamera: true),
-                              icon: _isScanningOcr
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const AppIcon(
-                                      AppIconId.scanCard,
-                                      size: 16,
-                                      color: Colors.white,
-                                    ),
-                              label: const Text(
-                                '명함 촬영 스캔',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                // 내 디지털 명함 수정 화면과 같은 스타일(박스·"OCR" 라벨
+                // 없이 아웃라인 버튼 2개만)로 통일 — 사용자 피드백.
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isScanningOcr
+                            ? null
+                            : () => _performOcrScan(isFromCamera: true),
+                        icon: _isScanningOcr
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.accentText,
                                 ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _isScanningOcr
-                                  ? null
-                                  : () => _performOcrScan(isFromCamera: false),
-                              icon: const AppIcon(
-                                AppIconId.galleryUpload,
-                                size: 16,
+                              )
+                            : const AppIcon(
+                                AppIconId.scanCard,
+                                size: 18,
                                 color: AppColors.accentText,
                               ),
-                              label: const Text(
-                                '이미지 업로드',
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentText,
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                side: const BorderSide(
-                                  color: AppColors.accentText,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
+                        label: const Text(
+                          '명함 촬영 스캔',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accentText,
                           ),
-                        ],
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.accentText),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _isScanningOcr
+                            ? null
+                            : () => _performOcrScan(isFromCamera: false),
+                        icon: const AppIcon(
+                          AppIconId.galleryUpload,
+                          size: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                        label: const Text(
+                          '이미지 업로드',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.borderDark),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
 
                 const SizedBox(height: 16),
