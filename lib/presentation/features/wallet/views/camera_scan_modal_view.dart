@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -16,15 +15,20 @@ class CameraScanModalView extends StatefulWidget {
 
 class _CameraScanModalViewState extends State<CameraScanModalView>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1). 화면 자체를 가로로
-  // 고정해서(아래 initState) 명함과 같은 방향으로 두 손으로 잡고 찍게
-  // 한다 — 2026-08-03에 "버튼 조작이 어려워졌다"는 이유로 되돌렸었는데,
-  // 세로 화면에 가로로 긴 가이드를 억지로 맞추는 게 더 어렵다는
-  // 재요청으로 다시 적용함(2026-08-06). 촬영 결과물은 EXIF 방향 그대로
-  // 저장되므로 [_cropToGuideFrame]의 bakeOrientation()이 항상 정방향으로
-  // 바로잡아 OCR·저장에는 방향 문제가 생기지 않는다. 실제 픽셀 크기는
-  // 화면 크기별로 [_guideFrameSizeFor]가 다시 계산한다 — 고정값이 아님.
-  static const _cardAspectRatio = 330 / 184;
+  // 국내 명함 표준 규격(90×50mm, 가로세로비 약 1.8:1)이지만, 가이드
+  // 프레임 자체는 세로로 긴 모양(비율을 뒤집음)으로 그린다. 폰은 계속
+  // 세로로 잡고, 명함을 시계 방향으로 90도 돌려서 그 세로 프레임 안에
+  // 맞춰 넣는 방식 — 2026-08-03에 화면 자체를 가로로 고정했다가 "버튼
+  // 조작이 어려워졌다"는 피드백으로 되돌렸고, 이후 다시 화면 회전
+  // 방식으로 시도했으나(2026-08-06 오전) 사용자가 다른 명함 앱 영상을
+  // 보여주며 "이 방법이 아니다"라고 정정함 — 화면/기기는 그대로 세로
+  // 유지하고 명함만 돌려서 넣는 게 맞는 방식이었다(2026-08-06 저녁,
+  // backlog 추가 85). 세로 프레임에 맞춰 명함을 최대한 크게(고해상도로)
+  // 담을 수 있는 장점도 있다. 촬영 후 [_cropToGuideFrame]에서 크롭한
+  // 결과물을 고정 -90도(반시계) 회전시켜 정방향으로 되돌린다 — 기기
+  // 회전이 없으므로 EXIF 기반이 아니라 항상 같은 방향으로 고정 회전.
+  // 실제 픽셀 크기는 화면 크기별로 [_guideFrameSizeFor]가 다시 계산한다.
+  static const _cardAspectRatio = 184 / 330;
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
   // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
@@ -33,14 +37,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 임계값을 넉넉히 잡아 자연스러운 손떨림 정도는 "불안정"으로 치지 않게
   // 하고(정렬 여유), 실제 촬영은 프레임 개수가 아니라 안정 상태가 시작된
   // 시점부터 경과 시간으로 판단한다(기기 프레임레이트와 무관하게 일정
-  // 시간 유지되면 촬영). 유지 시간은 0.15초로 확정(1초가 너무 길다는
-  // 사용자 피드백 → 0.2초 → 0.15초로 재조정). 임계값은 "가이드 안에
+  // 시간 유지되면 촬영). 유지 시간은 2026-08-06 저녁 사이 0.15초 → 1초 →
+  // 0.5초 → 0.25초 → 0.2초로 여러 차례 재조정됐다(짧다/길다 피드백이
+  // 반복돼 왔다는 뜻 — 값 자체보다 "사용자가 직접 다시 조정을 요청할 수
+  // 있다"는 점을 기억할 것). 임계값은 "가이드 안에
   // 훨씬 정확히 들어와야(≈95%) 촬영되면 좋겠다"는 요청에 맞춰 다시
   // 좁혔다 — 실제로 카드-가이드 겹침 비율을 픽셀 단위로 재는 건 아니고
   // (별도의 문서 경계 검출이 필요한 더 큰 작업), 전체 화면 흔들림
   // 허용치를 좁혀서 더 정확히 멈춰야만 "안정"으로 인정되게 하는 근사치.
   static const _stabilityDiffThreshold = 8.0;
-  static const _requiredStableDuration = Duration(milliseconds: 150);
+  static const _requiredStableDuration = Duration(milliseconds: 200);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
   // 카메라는 초당 30~60프레임을 보내지만 흔들림 판단에는 8fps면
@@ -68,13 +74,6 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       vsync: this,
       duration: const Duration(milliseconds: 1800),
     )..repeat(reverse: true);
-    // 명함이 가로로 긴 형태라 폰을 가로로 눕혀 두 손으로 잡으면 흔들림이
-    // 줄어든다는 피드백에 따라, 이 화면에 있는 동안만 가로 방향으로 고정한다
-    // (앱의 나머지 화면은 세로 전용이라 나갈 때 dispose에서 다시 되돌림).
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
     _initCamera();
   }
 
@@ -92,7 +91,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       );
       controller = CameraController(
         backCamera,
-        ResolutionPreset.veryHigh,
+        // OCR 인식률 개선 요청(2026-08-06 밤)에 대응해 veryHigh(약 1080p)
+        // 에서 기기가 지원하는 최대 해상도로 올렸다 — 명함 글자가 원본에서
+        // 차지하는 실제 픽셀 수가 많을수록 ML Kit 인식률이 좋아진다. 파일
+        // 용량/처리 시간이 늘지만 이 화면은 어차피 한 장씩 찍는 흐름이라
+        // 감내 가능한 트레이드오프로 판단.
+        ResolutionPreset.max,
         enableAudio: false,
         // takePicture()의 실제 촬영 결과물 포맷과는 무관하고(항상 JPEG),
         // startImageStream()으로 안정성(흔들림) 감지용 프레임을 받아오기
@@ -108,11 +112,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         await controller.dispose();
         return;
       }
-      // 화면을 가로로 고정했으니 촬영 결과물도 그 방향으로 고정 — 안 그러면
-      // 기기가 가로/세로 어느 쪽으로 눕혀졌는지에 따라 결과 이미지가 매번
-      // 다르게 회전되어 나올 수 있다.
+      // 명함은 보통 10~15cm 거리에서 가깝게 촬영하는데, 초점 관련 설정을
+      // 전혀 안 건드리면 기기에 따라 초기 초점이 먼 거리에 맞춰진 채
+      // 안 움직이거나(특히 iOS) 흐릿하게 남는 경우가 있었다(사용자 제보 —
+      // "카메라 초점이 흐려"). 가이드 프레임이 있는 화면 중앙에 지속
+      // 자동초점 지점을 명시적으로 지정해 근거리에서도 계속 초점을
+      // 다시 잡도록 한다. 지원 안 하는 기기/플랫폼은 조용히 무시.
       try {
-        await controller.lockCaptureOrientation();
+        await controller.setFocusMode(FocusMode.auto);
+        await controller.setFocusPoint(const Offset(0.5, 0.5));
+        await controller.setExposureMode(ExposureMode.auto);
+        await controller.setExposurePoint(const Offset(0.5, 0.5));
       } catch (_) {}
       setState(() {
         _controller = controller;
@@ -173,8 +183,6 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     WidgetsBinding.instance.removeObserver(this);
     _laserController.dispose();
     _controller?.dispose();
-    // 앱의 나머지 화면은 세로 전용이라 이 화면을 나갈 때 다시 세로로 되돌린다.
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
@@ -326,18 +334,23 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   }
 
   /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
-  /// 명함 표준 가로세로비(1.8:1)는 항상 유지하되, 세로 화면보다 짧은 가로
-  /// 화면 높이에 맞춰 크기를 다시 잡아야 해서 고정값 대신 매번 계산한다.
+  /// 명함의 긴 변(90mm)이 화면에서 차지하는 크기를 화면 "폭"의 86%로 고정
+  /// 한다 — 가로 모드였을 때 긴 변(가로)을 이 기준으로 잡았던 것과 동일한
+  /// 값이다. 세로 가이드로 바뀌면서 긴 변이 세로가 됐다고 화면 "높이"
+  /// 기준(예: 0.62)으로 잡으면, 화면 높이가 폭보다 훨씬 크기 때문에 실제
+  /// 화면에 표시되는 카드 이미지가 훨씬 커지고, 그만큼 사용자가 카메라를
+  /// 명함에 더 가깝게 대야 한다 — 그 결과 카메라 렌즈의 최소 초점 거리보다
+  /// 가까워져 초점이 영영 안 맞는 문제가 있었다(2026-08-06 실기기 확인,
+  /// "가이드에 맞추려 가까이 가면서 초점을 못맞춤"). 촬영 거리를 가로
+  /// 모드 때와 동일하게 유지하는 게 핵심이라, 긴 변 크기는 화면 폭 기준을
+  /// 그대로 쓰고 짧은 변은 비율로 계산한다. 화면이 유난히 작아 긴 변이
+  /// 세로 공간을 넘칠 때만 안전장치로 줄인다.
   Size _guideFrameSizeFor(Size screenSize) {
-    final maxW = screenSize.width * 0.86;
-    final maxH = screenSize.height * 0.62;
-    var w = maxW;
-    var h = w / _cardAspectRatio;
-    if (h > maxH) {
-      h = maxH;
-      w = h * _cardAspectRatio;
-    }
-    return Size(w, h);
+    var longEdge = screenSize.width * 0.86;
+    final maxLongEdge = screenSize.height * 0.8;
+    if (longEdge > maxLongEdge) longEdge = maxLongEdge;
+    final shortEdge = longEdge * _cardAspectRatio;
+    return Size(shortEdge, longEdge);
   }
 
   /// 화면에 보이는 가이드 프레임(카드 사각형) 위치를 실제 촬영본의 픽셀 좌표로
@@ -385,13 +398,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final cropX = rawCropX.clamp(0.0, imgW - cropW);
       final cropY = rawCropY.clamp(0.0, imgH - cropH);
 
-      final cropped = img.copyCrop(
+      var cropped = img.copyCrop(
         decoded,
         x: cropX.round(),
         y: cropY.round(),
         width: cropW.round(),
         height: cropH.round(),
       );
+
+      // 가이드 프레임이 세로로 길어서 사용자가 명함을 시계 방향으로 90도
+      // 돌려 넣었으므로, 크롭한 결과물은 항상 옆으로 누운 상태다. 기기
+      // 자체는 회전하지 않았으니 EXIF가 아니라 고정 각도(반시계 90도)로
+      // 되돌리면 된다 — 실제 촬영 영상에서 이 방향으로 확인함.
+      cropped = img.copyRotate(cropped, angle: -90);
 
       final jpgBytes = img.encodeJpg(cropped, quality: 100);
       final outPath =
@@ -557,6 +576,37 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (!_isFrameStable)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(
+                            Icons.rotate_90_degrees_cw,
+                            color: Colors.white70,
+                            size: 16,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            '명함을 시계 방향으로 90° 돌려서 넣어주세요',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: guideSize.width,
