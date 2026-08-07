@@ -26,7 +26,16 @@ class EmailSyncService {
     // 읽는다(Android: strings.xml의 default_web_client_id 또는 앱 서명 SHA-1로
     // 자동 매칭, iOS: Info.plist의 GIDClientID, 웹: index.html의 meta 태그).
     await GoogleAuthGateway.ensureInitialized();
-    final account = await GoogleSignIn.instance.authenticate();
+
+    // 2026-08-07: `_currentAccount`가 인메모리 상태라 앱을 껐다 켤 때마다
+    // 화면에 보이는 로그인(authenticate)이 다시 떴다("매번 연결해야 하나"라는
+    // 사용자 피드백). 이 기기에서 이미 로그인한 적이 있으면 화면을 띄우지
+    // 않고 조용히 이어가는 attemptLightweightAuthentication을 먼저 시도하고,
+    // 그게 안 되는 경우(최초 로그인 등)에만 화면에 보이는 로그인으로 넘어간다.
+    final lightweight = GoogleSignIn.instance.attemptLightweightAuthentication();
+    var account = lightweight == null ? null : await lightweight;
+    account ??= await GoogleSignIn.instance.authenticate();
+
     await account.authorizationClient.authorizeScopes([_gmailReadonlyScope]);
     _currentAccount = account;
     return account;

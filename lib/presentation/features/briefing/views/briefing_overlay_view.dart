@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
@@ -94,6 +95,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
         myProfile: myProfile,
         communicationLogs: selection.communicationLogs,
         weatherSummary: selection.weatherSummary,
+        extraNote: selection.extraNote,
       );
       if (!mounted) return;
       setState(() {
@@ -793,7 +795,31 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                 height: 52,
                 child: ElevatedButton.icon(
                   onPressed: () async {
+                    // 2026-08-07: 통화를 누르면 전화 앱으로 넘어가면서 대화
+                    // 포인트 화면이 그대로 사라져 "외워서 말해야 하는" 문제가
+                    // 있었다(사용자 피드백). 제3자 앱이 전화 화면 위에 계속
+                    // 떠 있는 건 OS가 막아서(iOS/Android 공통) 화면 자체를
+                    // 유지할 수는 없지만, 선택된 대화 포인트를 클립보드에
+                    // 복사해 통화 중에도 메모 앱 등에 붙여넣어 참고할 수
+                    // 있게 한다.
+                    if (_points.isNotEmpty && _selectedIndex < _points.length) {
+                      final selectedPoint = _points[_selectedIndex];
+                      await Clipboard.setData(
+                        ClipboardData(text: selectedPoint),
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.',
+                            ),
+                            backgroundColor: AppColors.accent,
+                          ),
+                        );
+                      }
+                    }
                     widget.onClose();
+                    if (!context.mounted) return;
                     await PhoneCallService.showCallPicker(context, contact);
                   },
                   icon: const AppIcon(AppIconId.callCheck, color: Colors.white),

@@ -59,6 +59,10 @@ interface GenerateBriefingRequest {
   // 상대방 명함에 등록된 관심사(쉼표 구분 등은 클라이언트가 이미 문자열로
   // 합쳐서 넘김). 클라이언트 측 필드는 ContactModel.interests 참고.
   interests?: string;
+  // 2026-08-07: 통화/문자/카카오톡 자동 연동이 플랫폼 정책상 안 되는 경우가
+  // 많아, 사용자가 AiDataReviewSheet에서 직접 몇 줄 적어 넣은 메모(선택).
+  // 비어 있으면 넘어오지 않는다.
+  extraNote?: string;
 }
 
 interface GenerateBriefingResponse {
@@ -77,6 +81,10 @@ function buildPrompt(data: GenerateBriefingRequest): string {
     ...(data.weatherSummary ? [`오늘 상대방 지역 날씨: ${data.weatherSummary}`] : []),
   ];
 
+  const extraNoteSection = data.extraNote?.trim()
+    ? `\n[사용자가 직접 남긴 메모]\n${data.extraNote.trim()}\n`
+    : "";
+
   return `당신은 비즈니스 네트워킹 어시스턴트입니다. 사용자는 낯을 가리는 편이라 먼저
 연락하는 것을 어색해합니다. 아래 정보를 참고해 사용자가 상대방에게 부담 없이
 자연스럽게 안부를 전하며 인연을 이어갈 수 있는 대화 포인트를 만들어 주세요.
@@ -89,7 +97,7 @@ ${contextLines.join("\n")}
 
 [최근 소통 기록]
 ${commLogSummary}
-
+${extraNoteSection}
 각 대화 포인트는 한 문장, 한국어로, 실제로 그대로 말할 수 있는 구체적인 문장으로
 작성하세요. 날씨 정보가 있다면 그중 한 문장 정도에 자연스럽게 녹여도 좋습니다.
 상대방의 관심사나 직함/업종과 관련된 일반적인 화제(업계 동향, 최근 이슈 등 당신이
@@ -238,6 +246,7 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       communicationLogs,
       weatherSummary,
       interests,
+      extraNote,
     } = request.data;
     if (!contactSummary || !myProfileSummary) {
       throw new HttpsError(
@@ -254,6 +263,7 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       communicationLogs: communicationLogs ?? [],
       weatherSummary,
       interests,
+      extraNote,
     });
     const rawText = await callGemini(prompt, geminiApiKey.value());
     const talkingPoints = parseTalkingPoints(rawText);
