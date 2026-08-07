@@ -46,7 +46,7 @@ from _firebase_admin import (  # noqa: E402
     access_token,
     decrypt_payload,
     encryption_key,
-    get_json,
+    get_json_or_none,
 )
 
 PKG = "com.connectiontrace.connection_trace_ai_flutter"
@@ -128,7 +128,14 @@ def main() -> int:
         print(f"\n❌ {exc}")
         return 2
 
-    user_doc = get_json(f"{BASE}/users/{uid}", token)
+    user_doc = get_json_or_none(f"{BASE}/users/{uid}", token)
+    if user_doc is None:
+        print(f"\n⚠️ 서버에 이 계정({uid[:10]}…)의 문서가 없습니다.")
+        print("   계정이 삭제됐는데 기기에는 로그인 기록과 명함이 남아 있는 상태입니다.")
+        print("   암호화 키가 없어 기기 저장분을 열 수 없습니다 — 앱에서 다시 로그인하거나")
+        print("   앱 데이터를 지운 뒤 다시 실행하세요.")
+        return 2
+
     key = encryption_key(user_doc)
     if key is None:
         print("\n❌ 서버에 이 계정의 암호화 키가 없어 복호화할 수 없습니다.")

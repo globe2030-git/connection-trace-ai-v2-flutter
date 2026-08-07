@@ -82,6 +82,21 @@ def get_json(url: str, token: str):
     return json.load(urllib.request.urlopen(req, timeout=30))
 
 
+def get_json_or_none(url: str, token: str):
+    """문서가 없으면(404) None을 돌려준다.
+
+    기기에는 로그인 기록이 남아 있는데 서버에서는 그 계정이 이미 삭제된
+    경우가 실제로 있다(계정 삭제 후 앱을 지우지 않은 기기). 그때 예외가
+    그대로 터지면 도구가 무슨 상황인지 알려주지 못한다.
+    """
+    try:
+        return get_json(url, token)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+
+
 def list_users(token: str) -> list[dict]:
     return get_json(f"{BASE}/users?pageSize=100", token).get("documents", [])
 
