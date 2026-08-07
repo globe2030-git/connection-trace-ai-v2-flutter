@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
+import 'core/app_version.dart';
 import 'core/services/fresh_install_service.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
@@ -27,6 +28,9 @@ void main() async {
   // 들이 생성되기 전에 정리해야 하므로 runApp보다 먼저 호출한다.
   await FreshInstallService.purgeIfReinstalled();
   _registerBundledFontLicense();
+  // 설정 화면에 지금 실행 중인 빌드를 표시하기 위해 미리 읽어 둔다
+  // (backlog 추가 77 — 낡은 빌드를 버그로 오인한 전례).
+  await AppVersion.initialize();
   runApp(const ConnectionTraceApp());
 }
 

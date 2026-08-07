@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -19,9 +20,7 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 
-/// 앱 버전 표기. `pubspec.yaml`의 `version:`과 함께 올려야 한다 —
-/// `package_info_plus` 도입 전까지는 수동 동기화다(P1-18).
-const String _appVersion = '1.0.0 (1)';
+
 
 /// 전자상거래법 제10조에 따른 사업자 정보 표시. 웹(법적 고지 인덱스)에도
 /// 같은 내용이 있고, 여기서는 앱 안에서 바로 볼 수 있게 한다.
@@ -391,7 +390,7 @@ class SettingsView extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => OpenSourceNoticeView(
                           applicationName: '커넥션센스',
-                          applicationVersion: _appVersion,
+                          applicationVersion: AppVersion.versionOnly,
                           applicationLegalese: '© 2026 크림하우스주식회사',
                         ),
                       ),
@@ -407,15 +406,17 @@ class SettingsView extends StatelessWidget {
                     subtitle: '상호·대표자·사업자등록번호·문의처',
                     onTap: () => _showBusinessInfo(context),
                   ),
-                  const _SettingsRow(
-                    icon: Icon(
+                  _SettingsRow(
+                    icon: const Icon(
                       Icons.info_outline,
                       color: AppColors.accentText,
                       size: 22,
                     ),
                     title: '앱 버전',
                     subtitle: '커넥션센스',
-                    value: _appVersion,
+                    // 실행 중인 빌드를 그대로 보여준다 — 낡은 빌드를 버그로
+                    // 오인하는 일을 막기 위함(backlog 추가 77).
+                    value: AppVersion.display,
                   ),
                 ],
               ),
