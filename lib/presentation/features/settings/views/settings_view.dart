@@ -16,6 +16,7 @@ import 'open_source_notice_view.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
+import '../../radar/views/my_profile_edit_modal_view.dart';
 import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
@@ -60,6 +61,7 @@ class SettingsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final radarViewModel = context.watch<RadarViewModel>();
     final auth = context.watch<AuthRepository>();
+    final myProfile = context.watch<MyProfileRepository>().profile;
     final (statusTitle, statusMessage, statusColor) = _locationStatus(
       radarViewModel.locationAccessState,
     );
@@ -87,6 +89,30 @@ class SettingsView extends StatelessWidget {
               const SizedBox(height: 10),
               _GroupedCard(
                 children: [
+                  // 최초 설정 후에는 QR 코드 화면의 "내 프로필 설정하기" 버튼도
+                  // 사라져서(이미 설정된 프로필엔 그 버튼 자체가 안 보임) 내
+                  // 프로필을 다시 수정할 진입점이 앱 전체에 하나도 없었다
+                  // (실기기 테스트로 발견) — 여기에 상시 진입점을 둔다.
+                  _SettingsRow(
+                    icon: const AppIcon(
+                      AppIconId.editCard,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
+                    title: '내 프로필',
+                    subtitle: myProfile.isSetUp
+                        ? [
+                            myProfile.title,
+                            myProfile.company,
+                          ].where((s) => s.trim().isNotEmpty).join(' · ')
+                        : '아직 설정하지 않았습니다',
+                    onTap: () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const MyProfileEditModalView(),
+                    ),
+                  ),
                   _SettingsRow(
                     icon: const Icon(
                       Icons.account_circle_outlined,
