@@ -36,8 +36,13 @@ const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const DAILY_LIMIT = 10;
 const MONTHLY_LIMIT = 100;
 
-// 출력 토큰 상한 — 대화 포인트 3개, 한 문장씩이라 짧게 유지한다(비용 통제).
-const MAX_OUTPUT_TOKENS = 400;
+// 출력 토큰 상한. 2026-08-07: 원래 400이었는데 gemini-3.6-flash가 "*Draft
+// A:*" 같은 내부 사고/초안 텍스트를 답변 앞에 먼저 쓰는 습성이 있어(thinking을
+// 끄는 옵션도 이 모델에서 400 INVALID_ARGUMENT로 거부됨 — callGemini 참고),
+// 진짜 최종 답변에 도달하기 전에 토큰이 바닥나 버렸다(실기기 확인 —
+// "contact since exchanging cards)." 같은 초안 파편만 남고 끝남). 사고 과정 몫
+// 여유를 넉넉히 두고, 최종 파싱에서 한국어 문장만 걸러낸다(parseTalkingPoints).
+const MAX_OUTPUT_TOKENS = 3000;
 
 const GEMINI_MODEL = "gemini-3.6-flash";
 
@@ -93,6 +98,12 @@ ${commLogSummary}
 포인트 문장만 줄바꿈으로 구분해서 정확히 3개 작성하세요.`;
 }
 
+// 프롬프트가 "한국어로" 작성하라고 명시했으므로, 진짜 대화 포인트는 항상
+// 한글을 포함한다. gemini-3.6-flash가 답변 앞에 남기는 영어 초안/사고 과정
+// 파편("*Draft A:*", "Include industry/profession topic in *one* sentence
+// naturally" 등, 실기기 확인)은 전부 한글이 없다 — 이 성질로 걸러낸다.
+const HANGUL_RE = /[가-힣]/;
+
 function parseTalkingPoints(raw: string): string[] {
   return raw
     .split("\n")
@@ -100,6 +111,7 @@ function parseTalkingPoints(raw: string): string[] {
     .filter((l) => l.length > 0)
     .map((l) => l.replace(/^[\d.\-*•]+\s*/, ""))
     .map((l) => l.replace(/^"|"$/g, ""))
+    .filter((l) => HANGUL_RE.test(l))
     .slice(0, 3);
 }
 
@@ -110,14 +122,25 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
     headers: {"content-type": "application/json"},
     body: JSON.stringify({
       contents: [{parts: [{text: prompt}]}],
-      generationConfig: {maxOutputTokens: MAX_OUTPUT_TOKENS},
+      generationConfig: {
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        // 2026-08-07: gemini-3.6-flash의 thinking을 끄려고 thinkingConfig:
+        // {thinkingBudget: 0}을 넣었더니 400 INVALID_ARGUMENT로 거부당했다 —
+        // 이 모델의 정확한 thinkingConfig 스키마(필드명·허용 범위)를 확신할
+        // 수 없어 옵션 자체를 뺐다. 대신 아래 파싱에서 thought 파트를 걸러내는
+        // 방식으로만 대응한다(방어적이지만 요청이 항상 성공하는 게 더 중요).
+      },
     }),
   });
 
   if (!response.ok) {
-    // 실제 에러 본문(사용자 프롬프트가 포함되지 않은 API 에러 메시지만)은
-    // 로그에 남겨도 되지만, 여기서는 상태 코드만 남겨 최소한으로 유지한다.
-    logger.error("Gemini API error", {status: response.status});
+    // 2026-08-07: 상태 코드만 로그에 남겼더니 429가 어느 한도(무료 티어 RPM인지,
+    // 결제 연결이 아직 인식 안 된 것인지, 실제 유료 티어 쿼터 초과인지) 때문인지
+    // 알 수가 없어 원인 파악이 막혔다. 본문은 Google이 반환하는 에러 사유
+    // 텍스트(쿼터 메트릭 이름 등)뿐이라 사용자 프롬프트나 개인정보가 섞이지
+    // 않는다 — 진단을 위해 본문도 함께 남긴다.
+    const bodyText = await response.text().catch(() => "");
+    logger.error("Gemini API error", {status: response.status, body: bodyText});
     throw new HttpsError(
       "unavailable",
       "AI 응답을 받지 못했습니다. 잠시 후 다시 시도해 주세요."
@@ -125,10 +148,15 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
   }
 
   const json = (await response.json()) as {
-    candidates?: {content?: {parts?: {text?: string}[]}}[];
+    candidates?: {content?: {parts?: {text?: string; thought?: boolean}[]}}[];
   };
   const parts = json.candidates?.[0]?.content?.parts ?? [];
-  return parts.map((p) => p.text ?? "").join("\n");
+  // thinkingBudget: 0으로 꺼도 혹시 thought 파트가 섞여 오면 최종 답변이 아니니
+  // 안전하게 걸러낸다.
+  return parts
+    .filter((p) => !p.thought)
+    .map((p) => p.text ?? "")
+    .join("\n");
 }
 
 /**

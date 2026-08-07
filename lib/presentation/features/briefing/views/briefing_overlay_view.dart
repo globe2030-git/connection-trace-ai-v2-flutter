@@ -41,6 +41,13 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   bool _isGenerating = false;
   String? _errorMessage;
 
+  // 이 화면(같은 상대방의 AI 브리핑을 보는 동안)을 여는 중에는 재동의 없이
+  // "다시 시도"/새로고침이 되도록 최초 동의 결과를 들고 있는다. 화면을 닫았다
+  // 다시 열면(= 새 State 인스턴스) 다시 물어본다 — 완전한 세션(앱 재시작 전까지)
+  // 단위로 넓히면 다른 상대방 전송 항목까지 안 보고 넘어갈 수 있어 과하다고
+  // 판단했다. AiDataReviewSheet의 동의 문구도 이 범위에 맞춰 함께 고쳤다.
+  AiBriefingSelection? _consentedSelection;
+
   @override
   void initState() {
     super.initState();
@@ -54,20 +61,27 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
       _points = widget.contact.talkingPoints;
       _selectedIndex = 0;
     }
+    if (oldWidget.contact.id != widget.contact.id) {
+      _consentedSelection = null;
+    }
   }
 
   Future<void> _generate() async {
     final myProfile = context.read<MyProfileRepository>().profile;
-    final selection = await showModalBottomSheet<AiBriefingSelection>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => AiDataReviewSheet(
-        contact: widget.contact,
-        myProfile: myProfile,
-      ),
-    );
-    if (selection == null || !mounted) return;
+    var selection = _consentedSelection;
+    if (selection == null) {
+      selection = await showModalBottomSheet<AiBriefingSelection>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => AiDataReviewSheet(
+          contact: widget.contact,
+          myProfile: myProfile,
+        ),
+      );
+      if (selection == null || !mounted) return;
+      _consentedSelection = selection;
+    }
 
     setState(() {
       _isGenerating = true;
