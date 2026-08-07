@@ -104,6 +104,19 @@ class AddressGeocodingService {
       if (placemarks.isEmpty) return null;
 
       final p = placemarks.first;
+
+      // Android 네이티브 역지오코딩이 이 좌표에 대해 시/도(administrativeArea)
+      // 만 돌려주고 도로명(thoroughfare)은 비워서 주는 경우가 실기기에서
+      // 확인됐다(예: "경기도 성남시 분당구 대왕판교로644번길 49" 주소가
+      // "경기도"로만 돌아옴 — 판교 한컴타워 주소, 2026-08-07). 도로명이
+      // 없으면 "도로명 주소"라고 부를 수 없는데, 예전엔 이걸 그대로 받아들여
+      // 멀쩡하던 원본 주소를 시/도 한 단어로 덮어써 버리는 심각한 데이터
+      // 손실이 있었다. 도로명 자체가 없으면 변환 결과를 아예 버리고
+      // null(변환 실패)로 처리해 원본 주소를 그대로 쓰게 한다.
+      if (p.thoroughfare == null || p.thoroughfare!.trim().isEmpty) {
+        return null;
+      }
+
       final parts = [
         p.administrativeArea,
         p.subAdministrativeArea,

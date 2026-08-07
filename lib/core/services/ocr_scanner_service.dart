@@ -384,6 +384,12 @@ class OcrScannerService {
     // 바로 다음 줄을 상세주소로 본다(명함에서 도로명 주소와 건물명/층수가
     // 서로 다른 줄로 나뉘는 흔한 레이아웃).
     int? addressLineIndex;
+    // 주소 줄이 "…대왕판교로"처럼 로/길로 끝나고 건물번호가 아예 없이
+    // 잘렸는지 표시한다 — 실제 명함(라움소프트)에서 도로명이 "…판교로"까지
+    // 한 줄에 있고 건물번호("644번길 49")는 다음 줄로 넘어가는 레이아웃이
+    // 확인됐다. 이 경우 이전엔 다음 줄 전체를 상세주소로 통째로 넘겨서
+    // 정작 주소 자체엔 건물번호가 영영 안 들어가는 문제가 있었다.
+    var addressLooksIncomplete = false;
     final remaining = <String>[];
 
     for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -499,11 +505,51 @@ class OcrScannerService {
             if (detailInline != null) {
               addressDetail = matched.substring(detailInline.start).trim();
               matched = matched.substring(0, detailInline.start).trim();
+            } else if (matched.endsWith('로') || matched.endsWith('길')) {
+              // 건물번호 없이 도로명에서 줄이 끝났다 — 실제 명함(라움소프트,
+              // "…대왕판교로")에서 건물번호("644번길 49")가 다음 줄로 넘어가는
+              // 레이아웃이 확인됐다. 바로 아래에서 다음 줄이 숫자로 시작하면
+              // 이어붙일 수 있게 표시만 해둔다.
+              addressLooksIncomplete = true;
             }
           }
         }
         address = matched;
         addressLineIndex = lineIndex;
+        continue;
+      }
+      // 도로명이 건물번호 없이 줄 끝에서 잘렸는데(addressLooksIncomplete),
+      // 바로 다음 줄이 숫자로 시작하면 건물번호가 이어지는 것으로 보고
+      // 주소에 합친다 — 상세주소 자리로 통째로 넘기면(아래 두 분기) 정작
+      // 주소엔 건물번호가 영영 안 들어가는 문제가 있었다(2026-08-07 실기기
+      // 확인, 원문 "…대왕판교로" / "644번길 49, 한컴타워 3층"이 두 줄로
+      // 나뉘어 있었음). 합친 뒤엔 콤마/건물번호 기준으로 다시 상세주소를
+      // 뽑아낸다 — 처음 주소를 나눌 때와 같은 규칙.
+      if (addressLooksIncomplete &&
+          addressLineIndex != null &&
+          lineIndex == addressLineIndex + 1 &&
+          RegExp(r'^\d').hasMatch(line.trim())) {
+        var merged = '$address${line.trim()}';
+        final mergedCommaIdx = merged.indexOf(',');
+        if (mergedCommaIdx != -1) {
+          addressDetail = merged.substring(mergedCommaIdx + 1).trim();
+          merged = merged.substring(0, mergedCommaIdx).trim();
+        } else {
+          final mergedRoadNumberMatches = RegExp(
+            r'(로|길|가)\s*\d+(?:-\d+)?',
+          ).allMatches(merged).toList();
+          if (mergedRoadNumberMatches.isNotEmpty) {
+            final lastMerged = mergedRoadNumberMatches.last;
+            final afterMerged = merged.substring(lastMerged.end).trim();
+            if (afterMerged.isNotEmpty) {
+              addressDetail = afterMerged;
+              merged = merged.substring(0, lastMerged.end).trim();
+            }
+          }
+        }
+        address = merged;
+        addressLineIndex = lineIndex;
+        addressLooksIncomplete = false;
         continue;
       }
       if (addressDetail == null && addressDetailRegExp.hasMatch(line)) {
