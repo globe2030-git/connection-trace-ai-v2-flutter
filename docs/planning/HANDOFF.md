@@ -5,6 +5,10 @@
 특정 결정의 배경이 궁금하면 거기서 검색하는 게 가장 빠르다. 이 문서는 "지금
 상태"의 요약본.
 
+**앱 정식 배포 후**: [`dev-story-prompt.md`](./dev-story-prompt.md)에
+"앱 개발 후기"(AI 동영상 제작용 원고) 생성 프롬프트를 미리 만들어 뒀다.
+배포 완료되면 그 프롬프트를 그대로 새 대화창에 붙여넣으면 된다.
+
 **새 대화창/CLI에서 이어받는 경우**: 이 문서(HANDOFF.md) → "2-0. 사용자가
 결정할 일" → "2. 하고 있는 일" → "3. 해야 할 일" 순서로 읽으면 됨.
 
@@ -357,7 +361,7 @@ mode without Flutter tooling or Xcode"). 실기기 확인을 위해 devicectl로
 
 ### 타겟 시장 문서 보강
 
-`docs/planning/business/pnl-analysis-freemium.html`의 타겟 시장 섹션에
+`docs/admin/reports/pnl-analysis-freemium.html`의 타겟 시장 섹션에
 "관계 유지가 곧 매출"인 대표 영업직군으로 보험설계사(71.2만 명,
 2025년 말 생명보험협회 집계)·자동차 영업사원(약 3만 명, 업계 추정)을
 실제 통계와 함께 추가. 기존 577만 명(경영·회계 사무직+매장판매직)과는
@@ -568,7 +572,7 @@ auto-commit]] 규칙대로 완료 단위마다 커밋. `main` 병합/원격 push
 들어가지 않고 사용자 답을 기다린다**:
 
 1. **v1 출시 스코프 — 무료 단독 출시 vs 구독(유료) 포함 출시.** 손익분석
-   문서(`docs/planning/business/pnl-analysis-freemium.html` 11번 섹션)는
+   문서(`docs/admin/reports/pnl-analysis-freemium.html` 11번 섹션)는
    "C안(₩1,000/월, 무료 등급 없이 유료 전용)"이 구조적으로 가장 안전하다는
    결론이었지만 최종 승인은 아직 없다. 이 답에 따라 아래 "3.해야 할 일"의
    구독 SKU/IAP/결제동의/영수증검증/AI 호출 한도 차등(5건)이 v1에 포함되는
@@ -795,11 +799,11 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P1-19 | Android 릴리스 서명 키 설정 | `android/app/build.gradle.kts:38-40`이 `signingConfig = signingConfigs.getByName("debug")` + `// TODO: Add your own signing config` — **debug 키로 서명된 빌드는 Play에 업로드할 수 없다.** iOS의 App Store Connect 403(P0-1)에 대응하는 Android 쪽 배포 블로커 | 소 | 사용자(키스토어 생성·보관) + 개발 |
 | P1-20 | Android `<queries>`에 전화 인텐트 추가 | `AndroidManifest.xml:57-62`에 PROCESS_TEXT만 있고 DIAL/`tel:` 인텐트가 없어, Android 11+에서 `canLaunchUrl(tel:)`이 false를 반환해 **전화 걸기가 조용히 실패**할 수 있음(`phone_call_service.dart:9-15`). 실기기 검증 기록 없음 | 소 | 개발 → QA |
 | P1-21 | iOS 수출규정 키 추가 | `ios/Runner/Info.plist`에 `ITSAppUsesNonExemptEncryption` 키가 없어 업로드마다 수출규정 질문에 수동 응답해야 함. 앱이 AES-256-GCM을 쓰므로 값 판단 후 명시 필요 | 소 | 개발 |
-| P1-31 | **Gmail 스코프 유지 시 CASA 보안평가 비용** | **신규(2026-08-06, 추가 82)**. ※ 관리자 콘솔 항목과 번호가 겹쳐 P1-26 → **P1-31**로 재부여(추가 85). `gmail.readonly`로 가져온 제목·미리보기가 소통기록에 담겨 AI 프록시로 서버에 나간다. Google은 restricted scope 데이터가 제3자 서버로 이동하면 **상위 티어 보안평가(사실상 모의해킹, 연 1회 갱신)** 대상으로 본다. **"2-0" 사용자 결정 2번(Gmail을 v1에 넣을지)이 사실상 "매년 수백만 원짜리 평가를 받을지"와 같은 질문**이라는 점이 이번에 드러났다. 정확한 티어 판정은 Google/평가기관이 하므로 **확인 필요** | 판정에 따라 대 | 사용자(결정) |
+| P1-31 | **Gmail 스코프 유지 시 CASA 보안평가 비용** | **신규(2026-08-06, 추가 82)**. ※ 관리자 콘솔 항목과 번호가 겹쳐 P1-26 → **P1-31**로 재부여(추가 92). `gmail.readonly`로 가져온 제목·미리보기가 소통기록에 담겨 AI 프록시로 서버에 나간다. Google은 restricted scope 데이터가 제3자 서버로 이동하면 **상위 티어 보안평가(사실상 모의해킹, 연 1회 갱신)** 대상으로 본다. **"2-0" 사용자 결정 2번(Gmail을 v1에 넣을지)이 사실상 "매년 수백만 원짜리 평가를 받을지"와 같은 질문**이라는 점이 이번에 드러났다. 정확한 티어 판정은 Google/평가기관이 하므로 **확인 필요** | 판정에 따라 대 | 사용자(결정) |
 | ~~P1-32~~ | ~~커밋 시 `analyze`+`test` 자동 실행(CI)~~ → ✅ **완료** | 2026-08-06 도입(추가 82·85). 모든 브랜치 push와 main 대상 PR에서 `flutter analyze` + `flutter test`가 자동 실행된다. `analyze`는 `--no-fatal-infos`로 돌린다(기존 info 19건 때문에 항상 빨간불이 되면 아무도 안 보게 되므로 — error·warning은 여전히 실패로 잡힘). ※ `legalDocs` 이전 항목과 번호가 겹쳐 P1-27 → **P1-32**로 재부여 | — | 완료 |
-| ~~P1-33~~ | ~~배선 테스트 추가~~ → ✅ **완료** | 2026-08-07 추가(추가 85). `test/contacts_repository_wiring_test.dart` 6건 — "A가 B를 실제로 부르는가"를 고정한다. **테스트가 실제로 결함을 잡는지 확인했다** — 추가 79의 결함(setCurrentUid에서 backfill 호출 누락)을 일부러 되돌리자 2건이 실패했고 되돌리자 통과했다 | — | 완료 |
-| ~~P1-34~~ | ~~실물 점검 스크립트 레포 자산화~~ → ✅ **완료** | 2026-08-07 이전(추가 85). `tool/verify_server_privacy.py`(서버 평문·좌표), `tool/verify_device_local.py`(기기 암호문·좌표·재계산 실패), 공통 헬퍼와 `tool/README.md`. 서버 점검은 실제로 돌려 통과 확인. 기기 점검은 릴리스 빌드에서 `run-as`가 막히므로 그 안내까지 포함 | — | 완료 |
-| ~~P1-35~~ | ~~릴리스 체크리스트 + 앱 내 빌드번호 표시~~ → ✅ **완료** | 2026-08-07 완료(추가 85). 앱 버전을 `package_info_plus`로 빌드 산출물에서 읽고, 커밋 해시를 `tool/build_app.sh`가 주입한다(커밋 안 된 변경이 섞이면 "+수정중" 표시). 설정 → 앱 버전이 "1.0.0 (1) · a1b2c3d" 형태가 된다. `docs/planning/release-checklist.md` 신설 | — | 완료 |
+| ~~P1-33~~ | ~~배선 테스트 추가~~ → ✅ **완료** | 2026-08-07 추가(추가 92). `test/contacts_repository_wiring_test.dart` 6건 — "A가 B를 실제로 부르는가"를 고정한다. **테스트가 실제로 결함을 잡는지 확인했다** — 추가 79의 결함(setCurrentUid에서 backfill 호출 누락)을 일부러 되돌리자 2건이 실패했고 되돌리자 통과했다 | — | 완료 |
+| ~~P1-34~~ | ~~실물 점검 스크립트 레포 자산화~~ → ✅ **완료** | 2026-08-07 이전(추가 92). `tool/verify_server_privacy.py`(서버 평문·좌표), `tool/verify_device_local.py`(기기 암호문·좌표·재계산 실패), 공통 헬퍼와 `tool/README.md`. 서버 점검은 실제로 돌려 통과 확인. 기기 점검은 릴리스 빌드에서 `run-as`가 막히므로 그 안내까지 포함 | — | 완료 |
+| ~~P1-35~~ | ~~릴리스 체크리스트 + 앱 내 빌드번호 표시~~ → ✅ **완료** | 2026-08-07 완료(추가 92). 앱 버전을 `package_info_plus`로 빌드 산출물에서 읽고, 커밋 해시를 `tool/build_app.sh`가 주입한다(커밋 안 된 변경이 섞이면 "+수정중" 표시). 설정 → 앱 버전이 "1.0.0 (1) · a1b2c3d" 형태가 된다. `docs/planning/release-checklist.md` 신설 | — | 완료 |
 
 ### 🟢 P2 — 여유 있을 때
 

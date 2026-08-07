@@ -140,7 +140,50 @@ onAuthStateChanged(auth, async (user) => {
   await loadNotices();
   await loadInquiries();
   await loadLegalDocs();
+  loadReports();
 });
+
+// ---------- 경영 리포트 ----------
+// 공지/문의/법적문서와 달리 Firestore가 아니라 docs/admin/reports/ 아래
+// 정적 HTML 파일 그대로 서빙한다 — 임원 보고용 문서라 편집 UI 없이,
+// 파일을 고치고 `firebase deploy --only hosting:admin`으로 재배포하면
+// 이 목록에서 항상 최신 버전이 열린다(새로고침만 하면 됨, 별도 동기화
+// 절차 없음).
+const REPORTS = [
+  {
+    file: "reports/pnl-analysis-freemium.html",
+    title: "프리미엄 구독 손익분석",
+    desc: "무료:유료 전환 시나리오, 규모별 손익, AI 파싱 도입 영향 등",
+  },
+];
+
+function loadReports() {
+  const panel = $("#tab-reports");
+  panel.innerHTML = `
+    <div class="card">
+      <p class="hint" style="margin-top:0;">
+        여기 목록은 정적 문서라 이 화면에서 직접 편집할 수 없습니다.
+        내용을 갱신하려면 해당 HTML 파일을 고치고 다시 배포해야 합니다 —
+        배포만 되면 아래 링크는 항상 최신 버전을 엽니다.
+      </p>
+      <div id="reportList"></div>
+    </div>
+  `;
+  const list = $("#reportList");
+  list.innerHTML = "";
+  for (const r of REPORTS) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML = `
+      <div>
+        <div class="title">${escapeHtml(r.title)}</div>
+        <div class="meta">${escapeHtml(r.desc)}</div>
+      </div>
+      <a class="btn-ghost" style="text-decoration:none; display:inline-block;" href="${r.file}" target="_blank" rel="noopener">열기 →</a>
+    `;
+    list.appendChild(item);
+  }
+}
 
 function escapeHtml(str) {
   const div = document.createElement("div");
