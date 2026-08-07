@@ -8,8 +8,8 @@
  * docs/planning/backlog.md 추가 68 참고.
  *
  * 배포 전제조건: Firebase 프로젝트가 Blaze(종량제) 요금제여야 한다(Cloud
- * Functions는 Spark 요금제에서 아예 실행되지 않음). 카드 등록 전까지는 이
- * 코드는 작성만 되어 있고 배포되지 않은 상태로 둔다.
+ * Functions는 Spark 요금제에서 아예 실행되지 않음). 2026-08-07 Blaze 전환 후
+ * asia-northeast3에 배포 완료됐다.
  *
  * 반드시 지킬 것(카드 등록 후 실제 배포 전 재확인):
  * - GEMINI_API_KEY는 반드시 결제가 연결된 유료 등급 계정에서 발급할 것.

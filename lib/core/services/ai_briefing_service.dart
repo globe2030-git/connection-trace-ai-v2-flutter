@@ -35,10 +35,9 @@ class AiQuotaExceededException extends AiBriefingException {
 /// 구조로 바꿨다. 클라이언트는 더 이상 어떤 키도 다루지 않는다.
 ///
 /// 서버 함수는 functions/src/index.ts의 generateBriefing — 하루 10회/월
-/// 100회 한도, Gemini 호출, Firestore 트랜잭션 기반 사용량 카운팅까지 이미
-/// 구현되어 있지만, Firebase 프로젝트가 아직 Blaze 요금제로 전환되지 않아
-/// 배포되지 않은 상태다(task #43·#44). 배포가 끝나면 [kAiServiceDeployed]만
-/// true로 바꾸면 된다.
+/// 100회 한도, Gemini 호출, Firestore 트랜잭션 기반 사용량 카운팅까지 구현돼
+/// 2026-08-07 Blaze 전환 후 asia-northeast3에 배포 완료됐다(task #41·#43·#44).
+/// 한도는 아직 구독 등급 구분 없이 전 사용자 동일하다(#58, 별도 작업 예정).
 class AiBriefingService {
   static const _timeout = Duration(seconds: 30);
   static const _region = 'asia-northeast3';
@@ -49,7 +48,7 @@ class AiBriefingService {
   static const int monthlyLimit = 100;
 
   /// Cloud Functions 배포 완료 여부 — task #44에서 배포 후 true로 변경.
-  static const bool kAiServiceDeployed = false;
+  static const bool kAiServiceDeployed = true;
 
   static Future<List<String>> generateTalkingPoints({
     required ContactModel contact,
