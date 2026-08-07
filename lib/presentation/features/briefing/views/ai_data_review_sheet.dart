@@ -12,10 +12,17 @@ class AiBriefingSelection {
   // 없거나 조회에 실패했으면 null — AiBriefingService.buildPrompt에서
   // 조용히 생략된다.
   final String? weatherSummary;
+  // 2026-08-07: 전화/문자/카카오톡이 플랫폼 정책상 자동 연동이 안 되다 보니
+  // (통화 버튼을 누르면 대화 포인트가 안 보이게 되는 문제와 별개로) 사용자가
+  // "최근에 이런 얘기를 나눴다" 같은 맥락을 AI에 직접 전달할 방법이 아예
+  // 없었다(사용자 피드백). 소통 기록 선택과 별도로 자유롭게 몇 줄 적어 넣을
+  // 수 있게 한다 — null/빈 문자열이면 프롬프트에서 조용히 생략된다.
+  final String? extraNote;
 
   const AiBriefingSelection({
     required this.communicationLogs,
     this.weatherSummary,
+    this.extraNote,
   });
 }
 
@@ -39,6 +46,7 @@ class AiDataReviewSheet extends StatefulWidget {
 class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
   late final List<CommunicationLogModel> _availableLogs;
   final Set<String> _selectedIds = {};
+  final _extraNoteController = TextEditingController();
   bool _consented = false;
 
   // 상대방 위치(geo)가 있으면 동의 화면을 여는 시점에 미리 조회해서 "AI에
@@ -72,6 +80,12 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
     }
   }
 
+  @override
+  void dispose() {
+    _extraNoteController.dispose();
+    super.dispose();
+  }
+
   String _channelLabel(String type) => switch (type) {
     'call' => '통화 메모',
     'sms' => '문자',
@@ -82,6 +96,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
 
   void _submit() {
     if (!_consented) return;
+    final note = _extraNoteController.text.trim();
     Navigator.pop(
       context,
       AiBriefingSelection(
@@ -89,6 +104,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
             .where((log) => _selectedIds.contains(log.id))
             .toList(),
         weatherSummary: _weatherSummary,
+        extraNote: note.isEmpty ? null : note,
       ),
     );
   }
@@ -249,6 +265,67 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                             ),
                           ),
                         ),
+                      const SizedBox(height: 18),
+                      const Text(
+                        '직접 남길 메모 (선택)',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '통화·문자·카카오톡이 자동으로 연동되지 않는 경우, 최근 나눈 대화나'
+                        ' 참고할 내용을 몇 줄 적어두면 AI가 반영합니다.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _extraNoteController,
+                        maxLines: 3,
+                        maxLength: 300,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '예: 지난주에 신제품 출시 준비로 바쁘다고 하셨음',
+                          hintStyle: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 12.5,
+                          ),
+                          filled: true,
+                          fillColor: AppColors.bgDarkSlate,
+                          contentPadding: const EdgeInsets.all(12),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.borderFunctional,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.borderFunctional,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: const BorderSide(
+                              color: AppColors.accent,
+                            ),
+                          ),
+                          counterStyle: const TextStyle(
+                            color: AppColors.textMuted,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       DecoratedBox(
                         decoration: BoxDecoration(

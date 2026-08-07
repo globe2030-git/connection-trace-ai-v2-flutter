@@ -58,6 +58,9 @@ class AiBriefingService {
     // WeatherService로 미리 조회해 동의 화면에 보여준 뒤 여기로 넘긴다.
     // geo가 없거나 조회에 실패했으면 null — 그 경우 프롬프트에서 조용히 생략된다.
     String? weatherSummary,
+    // 통화/문자/카카오톡 자동 연동이 없는 상황을 보완하기 위해 동의 화면에서
+    // 사용자가 직접 적어 넣은 메모(선택). 비어 있으면 null.
+    String? extraNote,
   }) async {
     if (!kAiServiceDeployed) {
       throw AiServiceUnavailableException();
@@ -75,7 +78,8 @@ class AiBriefingService {
             'communicationLogs': communicationLogs
                 .map(formatCommunicationLog)
                 .toList(),
-            if (weatherSummary != null) 'weatherSummary': weatherSummary,
+            'weatherSummary': ?weatherSummary,
+            'extraNote': ?extraNote,
             'interests': contact.interests.join(', '),
           })
           .timeout(_timeout);
