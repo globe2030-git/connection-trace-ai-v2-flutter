@@ -275,7 +275,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                               ),
                             ),
                             subtitle: const Text(
-                              '동의는 이번 요청에만 적용됩니다.',
+                              '동의는 이 화면을 여는 동안(다시 시도 포함) 유지되며, 화면을 닫으면 사라집니다.',
                               style: TextStyle(
                                 color: AppColors.textMuted,
                                 fontSize: 11.5,
