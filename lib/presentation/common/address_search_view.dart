@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -48,7 +48,15 @@ bool isWebViewNavigable(String url) {
 /// 한다(API 키가 필요 없는 무료 공개 서비스). 주소를 고르면 [AddressSearchResult]를
 /// 반환하며 팝업을 닫는다. 검색 없이 닫으면 null을 반환한다.
 class AddressSearchView extends StatefulWidget {
-  const AddressSearchView({super.key});
+  // OCR 스캔 결과나 기존 입력값처럼 "이미 갖고 있던 주소 텍스트"를 넘겨
+  // 받으면, 사용자가 다음 우편번호 검색창에 처음부터 다시 타이핑하지
+  // 않아도 되게 돕는다. 다음 우편번호 위젯(postcode.v2.js)은 검색어를
+  // 미리 채워 넣는 공식 파라미터를 제공하지 않아서(iframe이 다른
+  // origin이라 직접 DOM 조작도 불가), 화면 상단에 원문을 보여주고
+  // 자동으로 클립보드에 복사해 "검색창에 붙여넣기만 하면" 되게 한다.
+  final String? initialQuery;
+
+  const AddressSearchView({super.key, this.initialQuery});
 
   @override
   State<AddressSearchView> createState() => _AddressSearchViewState();
@@ -61,10 +69,18 @@ class _AddressSearchViewState extends State<AddressSearchView> {
 
   late final WebViewController _controller;
   bool _isLoading = true;
+  bool _justCopied = false;
 
   @override
   void initState() {
     super.initState();
+    final query = widget.initialQuery?.trim();
+    if (query != null && query.isNotEmpty) {
+      // 검색창에 자동으로 타이핑해 넣는 공식 API가 없어서, 대신 클립보드에
+      // 바로 복사해 둔다 — 사용자는 검색창을 탭한 뒤 붙여넣기만 하면 된다.
+      Clipboard.setData(ClipboardData(text: query));
+      _justCopied = true;
+    }
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -193,14 +209,52 @@ class _AddressSearchViewState extends State<AddressSearchView> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Stack(
+      body: Column(
         children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: AppColors.accentText),
+          if (_justCopied) _buildCopiedBanner(),
+          Expanded(
+            child: Stack(
+              children: [
+                WebViewWidget(controller: _controller),
+                if (_isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.accentText),
+                  ),
+              ],
             ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCopiedBanner() {
+    return Material(
+      color: AppColors.accentText.withValues(alpha: 0.12),
+      child: InkWell(
+        onTap: () => setState(() => _justCopied = false),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.content_copy, size: 16, color: AppColors.accentText),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '"${widget.initialQuery!.trim()}" 클립보드에 복사됨 — 검색창을 탭하고 붙여넣기 하세요',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.accentText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const Icon(Icons.close, size: 16, color: AppColors.accentText),
+            ],
+          ),
+        ),
       ),
     );
   }

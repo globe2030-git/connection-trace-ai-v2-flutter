@@ -5,6 +5,10 @@
 특정 결정의 배경이 궁금하면 거기서 검색하는 게 가장 빠르다. 이 문서는 "지금
 상태"의 요약본.
 
+**앱 정식 배포 후**: [`dev-story-prompt.md`](./dev-story-prompt.md)에
+"앱 개발 후기"(AI 동영상 제작용 원고) 생성 프롬프트를 미리 만들어 뒀다.
+배포 완료되면 그 프롬프트를 그대로 새 대화창에 붙여넣으면 된다.
+
 **새 대화창/CLI에서 이어받는 경우**: 이 문서(HANDOFF.md) → "2-0. 사용자가
 결정할 일" → "2. 하고 있는 일" → "3. 해야 할 일" 순서로 읽으면 됨.
 
@@ -357,7 +361,7 @@ mode without Flutter tooling or Xcode"). 실기기 확인을 위해 devicectl로
 
 ### 타겟 시장 문서 보강
 
-`docs/planning/business/pnl-analysis-freemium.html`의 타겟 시장 섹션에
+`docs/admin/reports/pnl-analysis-freemium.html`의 타겟 시장 섹션에
 "관계 유지가 곧 매출"인 대표 영업직군으로 보험설계사(71.2만 명,
 2025년 말 생명보험협회 집계)·자동차 영업사원(약 3만 명, 업계 추정)을
 실제 통계와 함께 추가. 기존 577만 명(경영·회계 사무직+매장판매직)과는
@@ -568,7 +572,7 @@ auto-commit]] 규칙대로 완료 단위마다 커밋. `main` 병합/원격 push
 들어가지 않고 사용자 답을 기다린다**:
 
 1. **v1 출시 스코프 — 무료 단독 출시 vs 구독(유료) 포함 출시.** 손익분석
-   문서(`docs/planning/business/pnl-analysis-freemium.html` 11번 섹션)는
+   문서(`docs/admin/reports/pnl-analysis-freemium.html` 11번 섹션)는
    "C안(₩1,000/월, 무료 등급 없이 유료 전용)"이 구조적으로 가장 안전하다는
    결론이었지만 최종 승인은 아직 없다. 이 답에 따라 아래 "3.해야 할 일"의
    구독 SKU/IAP/결제동의/영수증검증/AI 호출 한도 차등(5건)이 v1에 포함되는
