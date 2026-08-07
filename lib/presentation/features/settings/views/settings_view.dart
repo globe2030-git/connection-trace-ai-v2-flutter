@@ -106,12 +106,7 @@ class SettingsView extends StatelessWidget {
                             myProfile.company,
                           ].where((s) => s.trim().isNotEmpty).join(' · ')
                         : '아직 설정하지 않았습니다',
-                    onTap: () => showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const MyProfileEditModalView(),
-                    ),
+                    onTap: () => MyProfileEditModalView.show(context),
                   ),
                   _SettingsRow(
                     icon: const Icon(

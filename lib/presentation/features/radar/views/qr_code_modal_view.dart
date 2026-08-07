@@ -205,12 +205,7 @@ class _QrCodeModalViewState extends State<QrCodeModalView> {
                       ElevatedButton(
                         onPressed: () {
                           Navigator.pop(context);
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (_) => const MyProfileEditModalView(),
-                          );
+                          MyProfileEditModalView.show(context);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.accent,
