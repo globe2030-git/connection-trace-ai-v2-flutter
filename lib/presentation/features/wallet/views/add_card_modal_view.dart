@@ -126,6 +126,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 띄우지 않는다 — 저장할 때마다 변환창이 계속 다시 뜨던 문제.
   String? _confirmedRoadNameAddress;
 
+  // X 버튼으로 닫으려 할 때 "정말 취소할지" 물을지 판단하는 기준값 — 화면을
+  // 열었을 때(수정이면 기존 명함 값, 신규면 빈 값) 스냅샷을 떠 두고, 닫기
+  // 직전 각 필드와 비교한다. 신규 등록 중 아무것도 안 적고 바로 닫으면
+  // 굳이 물어볼 필요가 없어서, 값이 하나라도 바뀐 경우에만 확인창을 띄운다.
+  late final Map<String, String> _initialValues;
+  late final String? _initialAvatarUrl;
+
   bool get _isEditing => widget.contactToEdit != null;
 
   @override
@@ -166,6 +173,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _memoFocusNode,
     ];
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
+
+    _initialAvatarUrl = _selectedAvatarUrl;
+    _initialValues = {
+      'name': _nameController.text,
+      'company': _companyController.text,
+      'title': _titleController.text,
+      'address': _addressController.text,
+      'addressDetail': _addressDetailController.text,
+      'postalCode': _postalCodeController.text,
+      'phone': _phoneController.text,
+      'officePhone': _officePhoneController.text,
+      'email': _emailController.text,
+      'tags': _tagsController.text,
+      'interests': _interestsController.text,
+      'memo': _memoController.text,
+    };
   }
 
   @override
@@ -234,32 +257,72 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     if (result == null || !mounted) return;
 
-    // 명함 앞/뒷면에 정보가 나뉘어 있는 경우가 흔해서(예: 앞면엔 이름·직함만,
-    // 뒷면에 전화번호·주소·이메일) 새 스캔 결과로 폼을 통째로 덮어쓰지 않고
-    // "이미 채워진 필드는 그대로 두고, 비어 있는 필드만" 채운다 — 뒷면을 이어서
-    // 스캔해도 앞면에서 읽은 값이 날아가지 않게.
+    // 이미 이름이 채워져 있는데 새로 스캔한 이름이 다르면, 같은 명함의
+    // 뒷면이 아니라 완전히 "다른 명함"을 스캔한 것으로 본다 — 이 경우
+    // 그대로 fill-if-empty만 하면 새 명함 정보가 하나도 안 들어가고
+    // 조용히 무시되는 문제가 있었다(사용자 제보: "다른 명함을 스캔하면
+    // 필드가 변경되지 않네"). 덮어쓸지, 기존처럼 빈 칸만 채울지 사용자에게
+    // 물어본다.
+    final existingName = _nameController.text.trim();
+    final scannedName = result.name.trim();
+    final looksLikeDifferentCard =
+        existingName.isNotEmpty &&
+        scannedName.isNotEmpty &&
+        existingName != scannedName;
+
+    var overwrite = false;
+    if (looksLikeDifferentCard) {
+      final choice = await _showDifferentCardScannedDialog(
+        existingName: existingName,
+        scannedName: scannedName,
+      );
+      if (!mounted) return;
+      if (choice == null) return; // 대화상자 닫힘 — 아무것도 안 바꾸고 그대로 둔다.
+      overwrite = choice;
+    }
+
     setState(() {
       _isScanningOcr = false;
       _showRawTextCard = true;
       // RAW 텍스트 박스는 "방금 스캔한 사진에서 뭘 읽었는지" 확인용이라 앞/뒷면을
       // 여러 번 스캔해도 누적시키지 않고 가장 최근 스캔 결과만 보여준다 — 계속
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
-      // 확인하기 어려워짐(폼 필드 자체는 _fillIfEmpty로 이미 누적되고 있음).
+      // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
-      _fillIfEmpty(_nameController, result.name);
-      _fillIfEmpty(_companyController, result.company);
-      _fillIfEmpty(_titleController, result.title);
-      _fillIfEmpty(_addressController, result.address);
-      _fillIfEmpty(_addressDetailController, result.addressDetail);
-      _fillIfEmpty(_postalCodeController, result.postalCode);
-      _fillIfEmpty(_phoneController, result.phone);
-      _fillIfEmpty(_officePhoneController, result.officePhone);
-      _fillIfEmpty(_emailController, result.email);
-      if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
+      if (overwrite) {
+        _setTextFromStart(_nameController, result.name);
+        _setTextFromStart(_companyController, result.company);
+        _setTextFromStart(_titleController, result.title);
+        _setTextFromStart(_addressController, result.address);
+        _setTextFromStart(_addressDetailController, result.addressDetail);
+        _setTextFromStart(_postalCodeController, result.postalCode);
+        _setTextFromStart(_phoneController, result.phone);
+        _setTextFromStart(_officePhoneController, result.officePhone);
+        _setTextFromStart(_emailController, result.email);
         _tagsController.text = result.tags.join(', ');
-      }
-      if (_memoController.text.trim().isEmpty) {
-        _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+        _memoController.text = result.rawText.isEmpty
+            ? ''
+            : 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+      } else {
+        // 명함 앞/뒷면에 정보가 나뉘어 있는 경우가 흔해서(예: 앞면엔 이름·직함만,
+        // 뒷면에 전화번호·주소·이메일) 새 스캔 결과로 폼을 통째로 덮어쓰지 않고
+        // "이미 채워진 필드는 그대로 두고, 비어 있는 필드만" 채운다 — 뒷면을
+        // 이어서 스캔해도 앞면에서 읽은 값이 날아가지 않게.
+        _fillIfEmpty(_nameController, result.name);
+        _fillIfEmpty(_companyController, result.company);
+        _fillIfEmpty(_titleController, result.title);
+        _fillIfEmpty(_addressController, result.address);
+        _fillIfEmpty(_addressDetailController, result.addressDetail);
+        _fillIfEmpty(_postalCodeController, result.postalCode);
+        _fillIfEmpty(_phoneController, result.phone);
+        _fillIfEmpty(_officePhoneController, result.officePhone);
+        _fillIfEmpty(_emailController, result.email);
+        if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
+          _tagsController.text = result.tags.join(', ');
+        }
+        if (_memoController.text.trim().isEmpty) {
+          _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+        }
       }
     });
 
@@ -290,6 +353,57 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
   }
 
+  /// 이름이 이미 채워진 상태에서 다른 이름의 명함을 스캔했을 때 묻는다.
+  /// true = 새 명함으로 전체 덮어쓰기, false = 기존처럼 빈 칸만 채우기
+  /// (뒷면 이어서 스캔), null = 사용자가 그냥 닫음(아무 것도 안 바꿈).
+  Future<bool?> _showDifferentCardScannedDialog({
+    required String existingName,
+    required String scannedName,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          '다른 명함을 스캔하셨나요?',
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          '입력 중이던 "$existingName" 님과 이름이 달라요("$scannedName").\n'
+          '같은 명함의 뒷면이면 "뒷면 이어서" 를, 아예 다른 명함이면\n'
+          '"새 명함으로 시작" 을 선택해 주세요.',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              '뒷면 이어서',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '새 명함으로 시작',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ScaffoldMessenger 대신 폼 안에 직접 그리는 안내 배너 — 위쪽 설명 참고.
   void _showInlineNotice(
     String text, {
@@ -313,10 +427,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     });
   }
 
-  Future<void> _openAddressSearch() async {
+  Future<void> _openAddressSearch({String? initialQuery}) async {
+    // 검색 화면 진입 시점에 이미 입력칸에 있는 텍스트(OCR 스캔 결과 포함)를
+    // 넘겨서, 처음부터 다시 타이핑하지 않아도 되게 한다 — "위치를 찾지
+    // 못했어요" 다이얼로그에서 재검색할 때 특히 도움이 된다(사용자 요청).
+    final query = initialQuery ?? _addressController.text.trim();
     final result = await Navigator.push<AddressSearchResult>(
       context,
-      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+      MaterialPageRoute(
+        builder: (_) => AddressSearchView(
+          initialQuery: query.isEmpty ? null : query,
+        ),
+      ),
     );
     if (result == null || !mounted) return;
     setState(() {
@@ -554,8 +676,24 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               _addressFocusNode.requestFocus();
             },
             child: const Text(
-              '주소 수정하기',
+              '직접 수정',
               style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          // 스캔/입력된 주소를 그대로 검색창에 붙여넣기만 하면 되게 넘겨서,
+          // "위치를 못 찾았다"는 이유만으로 처음부터 다시 타이핑하지 않아도
+          // 되게 한다(사용자 요청 — 이 경우가 자주 발생한다고 확인됨).
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _openAddressSearch(initialQuery: rawAddress);
+            },
+            child: const Text(
+              '주소 다시 검색',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           // 다음(카카오) 우편번호 검색처럼 이미 실제로 존재하는 주소로
@@ -1062,20 +1200,100 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _showInlineNotice(message, isError: true);
   }
 
+  bool _hasUnsavedChanges() {
+    if (_selectedAvatarUrl != _initialAvatarUrl) return true;
+    return _initialValues.entries.any((entry) {
+      final controller = switch (entry.key) {
+        'name' => _nameController,
+        'company' => _companyController,
+        'title' => _titleController,
+        'address' => _addressController,
+        'addressDetail' => _addressDetailController,
+        'postalCode' => _postalCodeController,
+        'phone' => _phoneController,
+        'officePhone' => _officePhoneController,
+        'email' => _emailController,
+        'tags' => _tagsController,
+        'interests' => _interestsController,
+        'memo' => _memoController,
+        _ => null,
+      };
+      return controller != null && controller.text != entry.value;
+    });
+  }
+
+  // X 버튼 처리 — 입력한 내용이 있는데 실수로 눌러 닫으면 그대로 사라지는
+  // 문제가 있어서, 뭔가 바뀐 게 있을 때만 확인창을 띄운다(사용자 요청).
+  Future<void> _handleCancelTap() async {
+    if (!_hasUnsavedChanges()) {
+      Navigator.pop(context);
+      return;
+    }
+    final shouldDiscard = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _isEditing ? '명함 수정을 취소할까요?' : '명함 등록을 취소할까요?',
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: const Text(
+          '지금까지 입력한 내용이 저장되지 않고 모두 사라져요.',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              '계속 작성',
+              style: TextStyle(
+                color: AppColors.accentText,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '취소하기',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (shouldDiscard == true && mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      decoration: const BoxDecoration(
-        color: AppColors.cardDark,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SafeArea(
+    return PopScope(
+      // X 버튼뿐 아니라 안드로이드 뒤로가기/스와이프로 시트를 닫으려 할
+      // 때도 같은 확인 절차를 타게 한다 — X 버튼만 막으면 뒤로가기로는
+      // 그냥 바로 닫혀서 입력 내용이 조용히 사라지는 구멍이 남는다.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleCancelTap();
+      },
+      child: Container(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        decoration: const BoxDecoration(
+          color: AppColors.cardDark,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
         child: SingleChildScrollView(
           child: Form(
             key: _formKey,
@@ -1127,7 +1345,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                         color: AppColors.textSecondary,
                       ),
                       tooltip: '입력 취소',
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: _handleCancelTap,
                     ),
                   ],
                 ),
@@ -1567,6 +1785,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
           ),
         ),
+      ),
       ),
     );
   }
