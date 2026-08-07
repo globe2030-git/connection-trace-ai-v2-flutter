@@ -25,7 +25,7 @@ import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
-import {FieldValue, getFirestore} from "firebase-admin/firestore";
+import {getFirestore} from "firebase-admin/firestore";
 
 initializeApp();
 
