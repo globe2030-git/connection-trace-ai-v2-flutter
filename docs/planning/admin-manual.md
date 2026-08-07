@@ -100,12 +100,33 @@ firebase deploy --only functions
 
 ---
 
-## 2. 참고 — 이 프로젝트의 다른 콘솔 주소
+## 2. 참고 — 이 프로젝트에서 쓰는 Google 관련 주소 전부
 
-| 용도 | 주소 |
-|---|---|
-| Firebase 콘솔 | https://console.firebase.google.com |
-| Google Cloud 콘솔(결제/예산) | https://console.cloud.google.com/billing |
-| Google AI Studio(Gemini API 키) | https://aistudio.google.com/api-keys |
-| GitHub 저장소 | https://github.com/globe2030-git/connection-trace-ai-v2-flutter |
-| 관리자 웹 콘솔(공지/문의/법적문서/경영리포트) | Firebase Hosting `admin` 타겟으로 배포 (`firebase deploy --only hosting:admin`) |
+**주의**: Firebase Blaze 결제, Google Cloud 결제, Google AI Studio(Gemini)
+결제는 **서로 다른 시스템**이다(2026-08-07 확인 — backlog 추가 96 참고).
+카드를 한 번 등록했다고 셋 다 자동으로 연결되는 게 아니라서, 문제가 생기면
+아래 표에서 "정확히 어느 콘솔"인지 구분해서 확인해야 한다.
+
+| 용도 | 주소 | 비고 |
+|---|---|---|
+| Firebase 콘솔(프로젝트 개요) | https://console.firebase.google.com/project/connection-sense/overview | |
+| Firestore 데이터 직접 조회/수정 | https://console.firebase.google.com/project/connection-sense/firestore/data | 사용량 카운터(`users/{uid}.aiUsage`) 등을 관리자 권한으로 직접 볼 때. **운영 데이터라 신중히.** |
+| Google Cloud 콘솔 — 결제 예산 및 알림 | https://console.cloud.google.com/billing/budgets | Firebase Blaze 전체 사용량 예산. **Gemini API 자체 결제는 여기 안 잡힘**(아래 항목 참고). |
+| Google Cloud 콘솔 — API 라이브러리(Gmail API) | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=connection-sense | 앱의 Gmail 가져오기 기능이 403으로 실패하면 여기서 "사용 설정"이 꺼져 있는지 가장 먼저 확인(2026-08-07 실제로 이게 원인이었음 — 추가 98). |
+| Google AI Studio — API 키 발급 | https://aistudio.google.com/api-keys | 반드시 "connection-sense" 프로젝트로 만든 키를 쓸 것(위 1-3 참고). |
+| Google AI Studio — 프로젝트/선불 크레딧 | https://aistudio.google.com/projects | Gemini API는 Firebase Blaze와 별개로 **자체 선불 크레딧**을 쓴다. "prepayment credits are depleted" 에러가 나면 여기서 충전(최소 단위 16,000원 확인됨, 2026-08-07). |
+| Google AI Studio — 월 지출 한도(spend cap) | https://aistudio.google.com/spend | 크레딧을 충전해도 이 한도가 낮게 잡혀 있으면 또 429로 막힌다 — "project has exceeded its monthly spending cap" 에러가 나면 여기서 상향(2026-08-07 실제로 겪음 — 추가 96). |
+| GitHub 저장소 | https://github.com/globe2030-git/connection-trace-ai-v2-flutter | |
+| 관리자 웹 콘솔(공지/문의/법적문서/경영리포트) | Firebase Hosting `admin` 타겟으로 배포 (`firebase deploy --only hosting:admin`) | |
+
+### 2026-08-07에 실제로 겪은 문제 → 어느 콘솔에서 풀었는지
+
+AI 브리핑을 처음 실기기로 써보면서 겪은 순서 그대로. 다음에 비슷한 에러가
+나면 이 표에서 증상으로 먼저 찾아볼 것.
+
+| 에러 메시지(요지) | 원인 | 어디서 해결 |
+|---|---|---|
+| "Your prepayment credits are depleted" | Gemini API 자체 선불 크레딧이 0원 | AI Studio — 프로젝트/선불 크레딧 페이지에서 충전 |
+| "Your project has exceeded its monthly spending cap" | 위 크레딧을 채워도 월 지출 한도 자체가 낮게 걸려 있음 | AI Studio — 월 지출 한도 페이지에서 상향 |
+| "AI 브리핑 서비스 준비 중이에요" (반복) | 서버(`generateBriefing`)의 사용자별 하루 호출 한도(10회)를 오늘 테스트로 다 씀 | Firestore 데이터 직접 조회/수정 페이지에서 `users/{uid}.aiUsage.dailyCount`를 0으로 |
+| Gmail 가져오기 "Bad state: Gmail 조회에 실패했습니다 (403)" | connection-sense 프로젝트에서 Gmail API 자체가 비활성화 상태 | Google Cloud 콘솔 — API 라이브러리(Gmail API) 페이지에서 "사용 설정" |
