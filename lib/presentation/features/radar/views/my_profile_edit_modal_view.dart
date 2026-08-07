@@ -18,6 +18,25 @@ import '../../wallet/views/file_picker_modal_view.dart';
 class MyProfileEditModalView extends StatefulWidget {
   const MyProfileEditModalView({super.key});
 
+  /// `AddCardModalView.show()`와 같은 이유로 필요하다: isScrollControlled
+  /// 시트가 내용 높이만큼 자라나는데, iOS는 필드 한 줄 높이가 안드로이드보다
+  /// 커서 시트가 화면 맨 위까지 붙어 보인다(실기기 확인 — "명함지갑에서
+  /// 수정할 때 올라오는 방식이 아니어서 너무 위로 올라갔어"). 명함 편집
+  /// 화면은 이미 이 방식으로 고쳐져 있었는데 내 프로필 편집 화면엔 그 수정이
+  /// 안 들어가 있었다 — 같은 상한을 적용한다.
+  static Future<void> show(BuildContext context) {
+    final topInset = MediaQuery.of(context).padding.top;
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height - topInset - 12,
+      ),
+      builder: (_) => const MyProfileEditModalView(),
+    );
+  }
+
   @override
   State<MyProfileEditModalView> createState() => _MyProfileEditModalViewState();
 }
