@@ -2,6 +2,31 @@
 
 ## 작업 로그
 
+### 2026-08-07 밤 (추가 94) — Firebase Blaze 전환 + Gemini API 키 발급, 관리자 매뉴얼 작성
+
+사용자가 실제로 Firebase Blaze 요금제 전환(#41)과 Gemini 유료 API 키
+발급(#43)을 직접 진행했다. 진행 중 겪은 문제와 해결책:
+
+- **Secret Manager 등록 실패(`Secret Payload cannot be empty`)** —
+  `firebase functions:secrets:set GEMINI_API_KEY`를 실행한 뒤 뜨는
+  인터랙티브 프롬프트에 값을 입력하는 방식이 반복 실패했다. 원인은
+  API 키 값을 명령어의 "시크릿 이름" 자리에 넣는 실수(그 자리는
+  `GEMINI_API_KEY`라는 고정 문자열이어야 함)였다. `echo -n "키값" |
+  firebase functions:secrets:set GEMINI_API_KEY` 파이프 방식으로
+  전환해 해결.
+- **API 키가 채팅에 노출된 사고**: 사용자가 실제 키 값을 대화에
+  붙여넣은 적이 있어, 즉시 해당 키를 삭제하고 재발급하도록 안내했다.
+  이후 "키 값은 채팅에 남기지 말 것"을 반복 안내.
+- **잘못된 프로젝트로 키 발급**: Google AI Studio에서 기본으로 뜨는
+  "Default Gemini Project"로 키를 만들면 무료 등급으로 잡혀 Blaze
+  결제와 무관하게 동작한다 — "프로젝트 가져오기"로 connection-sense를
+  명시적으로 선택해야 한다.
+
+`docs/planning/admin-manual.md` 신규 작성 — 위 절차를 사이트 주소와
+함께 재현 가능한 순서로 정리(운영자가 앞으로 같은 작업을 반복하거나
+다른 프로젝트에 적용할 때 참고용). Cloud Functions 배포(#44)는
+사용자가 Secret Manager 등록까지 마친 뒤 진행 예정.
+
 ### 2026-08-07 오후 (추가 93) — 앱 실행 절차를 저장소 스킬로 (`.claude/skills/run-app`)
 
 > **번호 재부여 안내.** 이 항목과 아래 추가 92는 원래 `chore/verification-tooling`
