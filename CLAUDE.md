@@ -118,6 +118,12 @@ flutter test      # 현재 39건
 
 ## 6. 빌드·배포
 
+**릴리스 전 절차는 [`docs/planning/release-checklist.md`](docs/planning/release-checklist.md)를
+따른다.** 검증 도구 사용법은 [`tool/README.md`](tool/README.md)에 있다.
+
+- 빌드는 `flutter build`를 직접 쓰지 말고 **`tool/build_app.sh`**를 쓴다 —
+  커밋 해시가 앱에 심어져 "설정 → 앱 버전"에서 어느 빌드인지 확인할 수 있다.
+  낡은 빌드를 버그로 오인한 전례가 있다.
 - 테스터 배포는 **release 빌드로만** 한다. debug 빌드에는 로그인 화면에
   "로그인 건너뛰기" 버튼이 그대로 보인다.
 - Android 테스터 배포는 Firebase App Distribution(무료).
