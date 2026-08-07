@@ -2,6 +2,30 @@
 
 ## 작업 로그
 
+### 2026-08-07 밤 (추가 97) — 내 프로필 재수정 진입점 부재 + iOS 편집 시트 높이 버그
+
+추가 96 검증 도중 사용자가 실사용하며 발견: "처음 앱을 설치하고 내 명함을
+등록한 후에 내 프로필을 수정할 수 있는 진입점이 없다."
+
+- **진입점 부재(PR #11)**: `MyProfileEditModalView`를 여는 곳이 앱 전체에
+  `qr_code_modal_view.dart`의 "내 프로필 설정하기" 버튼 하나뿐이었는데, 이
+  버튼이 `if (!myProfile.isSetUp)` 안에만 있어 최초 설정 후엔 진입로 자체가
+  사라졌다. 설정 화면 "계정" 섹션 맨 위에 "내 프로필" 항목을 상시 노출하도록
+  추가.
+- **iOS 편집 시트가 화면 맨 위까지 붙어 보임(PR #12)**: 위 진입점이 생기고
+  나서야 처음 반복 검증이 가능해져 드러난 버그. `AddCardModalView.show()`에
+  이미 같은 문제(iOS는 필드 한 줄 높이가 안드로이드보다 커서
+  isScrollControlled 시트가 노치까지 붙음)를 고친 전례가 있었는데
+  `MyProfileEditModalView`엔 한 번도 적용된 적이 없었다. 같은 패턴으로
+  `MyProfileEditModalView.show(context)` 정적 헬퍼를 만들어 호출부 2곳
+  전부 통일.
+
+iOS 실기기(무선 연결, LHK의 iPhone Pro16)로 두 수정 모두 최종 확인 완료.
+빌드 중 `flutter run`이 "Timed out waiting for CONFIGURATION_BUILD_DIR"로
+반복 실패했는데, 원인은 Xcode.app GUI가 동시에 열려 있어 명령줄 빌드와
+충돌한 것이었다 — Xcode를 완전히 종료하니 해결됨(다음에 iOS `flutter run`이
+같은 에러를 내면 먼저 Xcode.app이 열려 있는지 확인할 것).
+
 ### 2026-08-07 밤 (추가 96) — AI 브리핑 실기기 최종 검증: 결제 3종 + Gemini 응답 파싱 버그까지 전부 해결
 
 추가 94에서 배포까지 마친 AI 브리핑을 실기기에서 처음으로 끝까지 눌러보며
