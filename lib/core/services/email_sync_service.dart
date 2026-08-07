@@ -66,7 +66,24 @@ class EmailSyncService {
     );
     final listResp = await http.get(listUri, headers: headers);
     if (listResp.statusCode != 200) {
-      throw StateError('Gmail 조회에 실패했습니다 (${listResp.statusCode}).');
+      // 2026-08-07: 상태 코드만 보여줬더니 403이 스코프 미승인인지, Gmail
+      // API 미활성화인지, 다른 이유인지 실기기에서 원인을 알 수 없었다.
+      // 본문은 Google이 반환하는 에러 사유 텍스트(예: "Gmail API has not
+      // been used in project ... before or it is disabled")뿐이라 개인
+      // 이메일 내용과는 무관하다 — 사용자에게 그대로 보여줘도 안전하다.
+      String reason = listResp.body;
+      try {
+        final decoded = jsonDecode(listResp.body) as Map<String, dynamic>;
+        reason =
+            (decoded['error'] as Map<String, dynamic>?)?['message']
+                as String? ??
+            listResp.body;
+      } catch (_) {
+        // 본문이 JSON이 아니면(드묾) 원문 그대로 보여준다.
+      }
+      throw StateError(
+        'Gmail 조회에 실패했습니다 (${listResp.statusCode}): $reason',
+      );
     }
     final listData = jsonDecode(listResp.body) as Map<String, dynamic>;
     final messages = (listData['messages'] as List<dynamic>?) ?? const [];
