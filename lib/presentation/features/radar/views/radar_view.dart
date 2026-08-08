@@ -5,9 +5,11 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/radar_view_model.dart';
+import 'my_profile_edit_modal_view.dart';
 import 'qr_code_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
@@ -114,8 +116,7 @@ class _RadarViewState extends State<RadarView> {
                                 IconButton(
                                   tooltip: '명함 등록',
                                   style: IconButton.styleFrom(
-                                    backgroundColor:
-                                        AppColors.accentSoftStrong,
+                                    backgroundColor: AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                     // 기본 IconButton은 최소 48x48로 렌더링돼
                                     // 옆의 QR 버튼과 크기가 안 맞았다 —
@@ -129,15 +130,13 @@ class _RadarViewState extends State<RadarView> {
                                     color: AppColors.accentText,
                                     size: 20,
                                   ),
-                                  onPressed: () => AddCardModalView.show(
-                                    context,
-                                  ),
+                                  onPressed: () =>
+                                      AddCardModalView.show(context),
                                 ),
                                 IconButton(
                                   tooltip: 'QR 스캔',
                                   style: IconButton.styleFrom(
-                                    backgroundColor:
-                                        AppColors.accentSoftStrong,
+                                    backgroundColor: AppColors.accentSoftStrong,
                                     shape: const CircleBorder(),
                                     // 기본 IconButton은 최소 48x48로 렌더링돼
                                     // 옆의 명함등록 버튼과 크기가 안 맞았다 —
@@ -191,6 +190,19 @@ class _RadarViewState extends State<RadarView> {
                         // 다시 계산한다 — backlog 추가 75). 그동안 "주변에
                         // 아무도 없음"으로 보이면 오해를 사므로 준비 중임을
                         // 알린다.
+                        // 앱을 처음 깔면 내 명함이 없는데 화면 어디에도 그걸
+                        // 알리는 표시가 없어서, 무엇을 먼저 해야 하는지 알 수
+                        // 없었다(실사용 피드백). 위치 안내보다 아래, 인맥
+                        // 목록보다 위에 둬서 "권한 → 내 명함 → 인맥"이라는
+                        // 자연스러운 순서가 되게 한다.
+                        if (context
+                            .watch<MyProfileRepository>()
+                            .profile
+                            .isUnset) ...[
+                          const _SetupMyCardCard(),
+                          const SizedBox(height: 16),
+                        ],
+
                         if (viewModel.isPreparingContactLocations) ...[
                           _PreparingLocationsCard(
                             done: viewModel.contactLocationsPrepared,
@@ -205,8 +217,10 @@ class _RadarViewState extends State<RadarView> {
                           isRefreshing: viewModel.isRefreshingLocation,
                           onTap: viewModel.isRefreshingLocation
                               ? null
-                              : () =>
-                                    handleLocationAccessAction(context, viewModel),
+                              : () => handleLocationAccessAction(
+                                  context,
+                                  viewModel,
+                                ),
                         ),
 
                         const SizedBox(height: 14),
@@ -336,8 +350,9 @@ class _RadarViewState extends State<RadarView> {
                                       ),
                                       shape: BoxShape.circle,
                                       border: Border.all(
-                                        color: AppColors.accentText
-                                            .withValues(alpha: 0.5),
+                                        color: AppColors.accentText.withValues(
+                                          alpha: 0.5,
+                                        ),
                                       ),
                                     ),
                                     child: viewModel.isRefreshingLocation
@@ -405,12 +420,9 @@ class _RadarViewState extends State<RadarView> {
                                         ),
                                       ),
                                       Text(
-                                        [
-                                          contact.company,
-                                          contact.phone,
-                                        ].where((s) => s.trim().isNotEmpty).join(
-                                          ' · ',
-                                        ),
+                                        [contact.company, contact.phone]
+                                            .where((s) => s.trim().isNotEmpty)
+                                            .join(' · '),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
@@ -484,6 +496,91 @@ class _RadarViewState extends State<RadarView> {
 /// 좌표는 서버에 백업하지 않기 때문에(backlog 추가 75, C안) 기기를 바꾸거나
 /// 계정을 다시 연결하면 이 구간이 잠깐 생긴다. 이 카드가 없으면 사용자에게는
 /// "인맥이 다 사라진 것"처럼 보인다.
+/// 내 명함을 아직 만들지 않았을 때 첫 화면에 띄우는 안내.
+///
+/// 왜 필요한가: 앱을 처음 설치하면 할 일이 무엇인지 알려주는 것이 아무것도
+/// 없었다. 내 명함 설정은 설정 화면 안에 있어서 찾아 들어가야 했고, 그걸
+/// 모르면 "명함을 등록해도 AI가 나를 모르는" 상태로 계속 쓰게 된다 —
+/// AI 대화 가이드는 내 정보를 상대에게 소개하는 근거로 쓰기 때문이다.
+///
+/// 닫기 버튼을 두지 않은 이유: 이 카드는 내 명함을 만들면 저절로 사라진다.
+/// 닫을 수 있게 하면 "닫아 놓고 영영 설정하지 않는" 상태가 되는데, 그 상태의
+/// 사용자는 앱의 핵심 기능을 반쪽만 쓰게 된다.
+class _SetupMyCardCard extends StatelessWidget {
+  const _SetupMyCardCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const AppIcon(
+              AppIconId.cardData,
+              size: 22,
+              color: AppColors.accentText,
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '내 명함을 먼저 만들어 주세요',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'AI가 상대에게 나를 소개할 때 이 정보를 씁니다',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: () => MyProfileEditModalView.show(context),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              '만들기',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PreparingLocationsCard extends StatelessWidget {
   final int done;
   final int total;
