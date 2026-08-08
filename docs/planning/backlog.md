@@ -2,6 +2,80 @@
 
 ## 작업 로그
 
+### 2026-08-08 (추가 102) — Functions SDK 업그레이드 (P1-36) + npm audit 오탐 정리
+
+**한 일**: `firebase-functions` 6.6.0 → 7.3.2, `firebase-admin` 13.10.0 →
+14.2.0. 배포 시 뜨던 "outdated version of firebase-functions" 경고가 사라졌다.
+
+**breaking change가 우리 코드에 닿지 않은 이유**: v7에서 제거된 건
+`functions.config()`인데 이 프로젝트는 처음부터 `params`(`defineSecret`)를
+써 왔다. `onCall`·`HttpsError`·`logger`는 변경 없음. 코드 수정 0줄.
+
+**순서가 맞아떨어진 것**: `firebase-admin` 14는 `engines: {node: ">=22"}`라
+**P0-10(Node 22 전환)이 선행조건**이었다. 런타임을 먼저 올려두지 않았으면
+여기서 막혔을 것이다.
+
+**검증**(실기기 3회 호출):
+- `onCall` 계약 — 앱이 응답 정상 수신
+- App Check — `app: VALID`
+- `logger`/`defineSecret` — 토큰 로그 정상, Gemini 호출 성공
+- **Firestore 트랜잭션** — 사용량 카운터가 실제로 증가(`firebase-admin`
+  메이저 업그레이드의 주요 영향 범위라 이걸 따로 확인했다)
+- 토큰 값도 이전과 동일(입력 1,030 / 출력 96~114 / 사고 0)
+
+#### ⚠️ 정정 — `npm audit`는 이 업그레이드로 해소되지 않았다
+
+추가 101에서 "SDK 업그레이드로 해소된다"고 적었는데 **틀린 예상이었다.**
+8건 → 7건으로만 줄었고 원인은 그대로다.
+
+```
+firebase-admin@14.2.0 (최신)
+└─ @google-cloud/storage@7.21.0
+   ├─ gaxios@6.7.1        → uuid@9.0.1   ← 취약(수정본은 uuid ≥ 11.1.1)
+   └─ teeny-request@9.0.0 → uuid@9.0.1
+```
+
+**최신 버전을 써도 안 풀린다** — 상류(`@google-cloud/storage`)가 아직
+`uuid`를 안 올렸다. 게다가 `npm audit fix`가 제시하는 해결책은
+`firebase-admin`을 **10.3.0으로 다운그레이드**하는 것이라 그대로 따르면 안
+된다(최신이 오히려 취약하다고 뜨는 형태의 권고다).
+
+**병목은 정확히 한 곳이고, 수정은 이미 상류에 나와 있다.**
+
+```
+@google-cloud/storage@7.21.0  ← 최신인데도 gaxios: "^6.0.2" 에 묶여 있음
+gaxios@6.7.1  → uuid ^9.0.1   ← 취약
+gaxios@7.3.0  → uuid 의존 없음 ← 수정본. 이미 배포돼 있음
+```
+
+즉 `@google-cloud/storage`가 `gaxios`를 `^7`로 올리기만 하면 끝난다. 이건
+Google 저장소(`googleapis/nodejs-storage`) 일이라 우리가 손댈 수 없다.
+
+**확인 명령**(다음 사람이 이것만 보면 됨):
+
+```bash
+npm view @google-cloud/storage dependencies.gaxios
+# 값이 ^7이 되면 → functions/에서 npm update → npm audit 0건
+```
+
+**그때까지 위험이 낮은 이유 — 조사 중 더 강한 근거가 나왔다.**
+`@google-cloud/storage`는 `firebase-admin`의 **`optionalDependencies`**이고,
+우리 함수는 `firebase-admin/app`과 `firebase-admin/firestore`만 import한다.
+즉 취약 코드는 디스크에 설치만 되고 **런타임에 로드조차 되지 않는다**
+(처음엔 "취약 조건에 해당하는 호출이 없다"까지만 확인했었다).
+
+**`overrides`로 지금 없앨 수도 있지만 택하지 않았다.** 얻는 것은 "실행되지
+않는 코드의 감사 건수 0"뿐인데, 쓰지도 않는 패키지를 위해 상류와 어긋난
+트리를 유지하게 되고, 상류가 정식으로 올린 뒤에는 그 `overrides`가 오히려
+버전을 붙잡는 족쇄가 된다 — 지우는 걸 잊으면 다음 사람이 원인을 못 찾는다.
+감사 건수 0이 외부 요구(보안 점검 제출 등)로 필요해지면 그때 넣어도 몇 분이면
+된다.
+
+**교훈**: `npm audit` 건수는 "고칠 수 있는 것"과 "상류를 기다려야 하는 것"이
+섞여 있다. 건수만 보고 목표를 세우면 다운그레이드 같은 잘못된 조치로 이어질
+수 있으니, 루트 원인과 의존성 경로를 먼저 볼 것.
+
+
 ### 2026-08-08 (추가 101) — Cloud Functions 런타임 Node.js 20 → 22 (P0-10)
 
 **왜 지금**: 추가 99에서 배포하다 발견한 경고 — Node.js 20은 2026-04-30에
