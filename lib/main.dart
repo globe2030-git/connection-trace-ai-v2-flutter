@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -25,9 +27,17 @@ void main() async {
   // 로그인 사용자를 식별하고 Cloud Firestore에 데이터를 백업한다.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   // AI 브리핑 서버 프록시가 회사 명의 유료 Gemini 키를 쓰므로, 호출이 진짜
-  // 우리 앱에서 온 것인지 증명하는 토큰을 미리 받아 둔다(backlog 추가 82).
-  // Firebase 초기화 이후여야 하고, 실패해도 앱을 멈추지 않는다.
-  await AppCheckService.activate();
+  // 우리 앱에서 온 것인지 증명하는 토큰을 받아 둔다(backlog 추가 82).
+  //
+  // ⚠️ **기다리지 않는다.** 2026-08-08에 이걸 `await`로 걸어뒀다가 실기기에서
+  // 앱이 통째로 안 뜨는 사고가 났다 — 디버그 토큰이 Firebase 등록분과
+  // 달라지자 토큰 교환이 끝없이 재시도됐고, 예외가 아니라 "응답 없음"이라
+  // try/catch로도 못 잡았다. runApp()에 도달하지 못해 UI가 하나도 없는
+  // 네이티브 스플래시만 영원히 떠 있었다(사용자 눈에는 무한 로딩).
+  //
+  // App Check 토큰은 AI 브리핑을 부를 때 필요하지 앱을 켜는 데 필요하지
+  // 않다. 시작 경로에서 떼어내는 것이 맞다.
+  unawaited(AppCheckService.activate());
   // iOS Keychain은 앱을 삭제해도 지워지지 않아, 재설치하면 이전 로그인
   // 세션과 암호화 키가 되살아난다(backlog 추가 78). 저장소를 읽는 리포지토리
   // 들이 생성되기 전에 정리해야 하므로 runApp보다 먼저 호출한다.
