@@ -810,17 +810,73 @@ Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
 
 /// 계정 삭제(backlog #49) 확인 다이얼로그. 로그아웃과 달리 되돌릴 수 없고
 /// 서버 데이터까지 함께 지워진다는 점을 명시적으로 안내한다.
+///
+/// **어느 계정이 지워지는지 반드시 화면에 보여준다.** 예전에는 "이 계정"이라고만
+/// 적혀 있었는데, 2026-08-08에 실제로 사고가 났다 — Google과 Apple 두 계정을
+/// 오가며 테스트하던 중 의도와 다른 계정이 삭제돼 서버 명함 9건이 사라졌다.
+/// 계정 삭제는 서버 데이터뿐 아니라 **암호화 키(`users/{uid}.encryptionKeyB64`)도
+/// 함께 지우기 때문에**, 다른 기기에 남아 있던 로컬 사본까지 열 수 없게 된다.
+/// 즉 잘못 누르면 되돌릴 방법이 없다.
 Future<void> _confirmDeleteAccount(
   BuildContext context,
   AuthRepository auth,
 ) async {
+  // 이메일이 가장 알아보기 쉽지만 항상 있지는 않다 — Apple은 "이메일 가리기"를
+  // 쓰거나 최초 1회 이후로는 이메일을 내려주지 않는다(auth_repository 주석).
+  // 그래서 이름 → uid 앞자리 순으로 물러난다. 무엇이든 화면에 보여야 한다.
+  final accountLabel =
+      auth.email ?? auth.displayName ?? '${auth.firebaseUid?.substring(0, 8)}…';
+  final providerName = auth.provider?.displayName;
+
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
       title: const Text('계정을 삭제할까요?'),
-      content: const Text(
-        '계정을 삭제하면 이 계정으로 서버에 백업된 명함·프로필 데이터가 함께 '
-        '영구적으로 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.destructive.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '삭제할 계정',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  accountLabel,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.destructive,
+                  ),
+                ),
+                if (providerName != null)
+                  Text(
+                    '$providerName 로그인',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            '이 계정으로 서버에 백업된 명함·프로필 데이터가 함께 영구적으로 '
+            '삭제됩니다. 다른 기기에 남아 있는 데이터도 열 수 없게 됩니다.\n\n'
+            '이 작업은 되돌릴 수 없습니다.',
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -829,9 +885,15 @@ Future<void> _confirmDeleteAccount(
         ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
+          // 버튼 라벨은 "무엇이 일어나는지"를 말해야 한다. 예전 라벨
+          // ("정말 삭제하시겠습니까")은 질문형이라 버튼으로 어색했고, 확인
+          // 다이얼로그에서 취소와 실행을 순간적으로 헷갈리게 만든다.
           child: const Text(
-            '정말 삭제하시겠습니까',
-            style: TextStyle(color: AppColors.destructive),
+            '영구 삭제',
+            style: TextStyle(
+              color: AppColors.destructive,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
