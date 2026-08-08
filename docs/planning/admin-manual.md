@@ -206,12 +206,78 @@ Gemini 월 지출 한도가 마지막 방어선이다. 위 두 가지를 다 뚫
 
 ---
 
-## 3. 참고 — 이 프로젝트에서 쓰는 Google 관련 주소 전부
+## 3. 출시 준비 — Apple / Google Play 콘솔 작업
+
+앱을 스토어에 올리기까지 **운영자가 콘솔에서 직접 해야 하는 일**만 순서대로
+정리했다. 각 항목이 어느 주소인지 붙여 뒀으므로 이 문서 하나만 열어두고
+진행하면 된다.
+
+> ⚠️ **Apple 주소의 하위 경로는 로그인 없이 검증할 수 없다.** Apple은 없는
+> 경로도 로그인 페이지로 넘겨버려서(302) 404로 구분이 안 된다. 아래 최상위
+> 주소는 확인했고 하위 경로는 Apple 표준 구조 기준이다 — 링크가 엉뚱한 데로
+> 가면 최상위에서 메뉴를 따라 들어갈 것.
+
+### 3-0. 순서를 이렇게 잡는 이유
+
+**① Apple 권한 문제(P-1)를 가장 먼저 던져둔다.** 계정 이메일 왕복에 시간이
+걸릴 수 있고, 이게 안 풀리면 iOS는 TestFlight도 App Attest 검증도 전부 막힌다.
+답을 기다리는 동안 나머지를 진행하면 된다.
+
+**② 테스터를 늘리려면 Play 내부 테스트(A-3)를 먼저 한다.** 지금처럼 APK를
+직접 전달하면 **기기마다 App Check 디버그 토큰을 등록해야 AI 브리핑이
+동작한다**(2절 참고). 사람이 늘수록 관리가 안 되고, 디버그 토큰은 사실상
+우회 열쇠라 유출 위험도 함께 커진다. Play 내부 테스트 트랙에 올리면 Play
+Integrity가 정상 동작해 **토큰 등록이 아예 필요 없어진다.**
+
+### 3-1. 🍎 Apple
+
+| # | 할 일 | 주소 | 비고 |
+|---|---|---|---|
+| **P-1** | **빌드 업로드 403 해결** — `apps@creamhouse.net`의 역할 확인, 목록에 없으면 신규 초대 | [App Store Connect → 사용자 및 접근](https://appstoreconnect.apple.com/access/users) | **최대 병목.** Developer Portal 권한과 App Store Connect 권한은 **별개 시스템**이라, 포털에서 Admin이어도 여기 목록에 없으면 업로드가 막힌다 |
+| P-2 | Sign in with Apple 키(.p8) 발급 | [Developer → Keys](https://developer.apple.com/account/resources/authkeys/list) | **.p8 파일은 발급 시 한 번만 내려받을 수 있다.** 잃어버리면 재발급뿐 |
+| P-2b | App ID에 Sign in with Apple 활성화 + Services ID 생성 | [Developer → Identifiers](https://developer.apple.com/account/resources/identifiers/list) | App ID는 `com.creamhouse.connectionsense` |
+| P-3 | Firebase에 Apple 제공사 등록 | [Firebase → Authentication → 로그인 방법](https://console.firebase.google.com/project/connection-sense/authentication/providers) | Services ID · Team ID(`77L7BH2M2W`) · Key ID · .p8 키 |
+| P-4 | 앱 레코드 생성 + TestFlight 테스터 등록 | [App Store Connect → 앱](https://appstoreconnect.apple.com/apps) | P-1 해결 후에만 가능 |
+| P-5 | **App Privacy 양식** 작성 | 위 앱 레코드 → 앱 개인정보 보호 | 개인정보처리방침과 **불일치하면 즉시 반려**. 방침 URL은 3-3 참고 |
+| P-6 | 인증서·프로비저닝 만료 확인 | [Developer → Certificates](https://developer.apple.com/account/resources/certificates/list) | 만료일 정책은 [여기](https://developer.apple.com/support/expiration/) |
+
+### 3-2. 🤖 Google Play
+
+| # | 할 일 | 주소 | 비고 |
+|---|---|---|---|
+| A-1 | 개발자 계정 등록(**$25 1회**) | [Play Console 가입](https://play.google.com/console/signup) | 개인/사업자 선택 주의 — 사업자로 하면 사업자등록증 확인이 필요하다 |
+| **A-2** | **업로드 키스토어 생성** | 로컬 작업 | ⚠️ **키를 만들기 전에 `.gitignore`에 `*.jks`/`*.keystore`/`key.properties`를 먼저 넣을 것.** 안 하면 서명 키가 그대로 커밋된다. 키를 잃으면 **앱 업데이트를 영원히 못 올린다** — 반드시 백업 |
+| A-3 | 앱 등록 + **내부 테스트 트랙** 생성, 테스터 이메일 등록 | [Play Console](https://play.google.com/console) | 이걸 해야 App Check 디버그 토큰에서 벗어난다(3-0 참고) |
+| A-4 | **앱 콘텐츠** — 개인정보처리방침 URL, **계정 삭제 URL** 입력 | Play Console → 앱 → 정책 → 앱 콘텐츠 | URL은 3-3에 준비돼 있다. 계정 삭제 URL이 없으면 **제출 자체가 진행되지 않는다** |
+| A-5 | **데이터 보안(Data safety) 양식** | 같은 "앱 콘텐츠" 화면 | 방침과 불일치하면 즉시 반려 |
+| A-6 | App Check에서 Play Integrity 동작 확인 | [Firebase → App Check](https://console.firebase.google.com/project/connection-sense/appcheck) | A-3 후 자동 동작 |
+
+### 3-3. 스토어 양식에 넣을 URL (이미 게시돼 있음)
+
+Firebase Hosting에 배포돼 서비스 중이다(2026-08-08 확인).
+
+| 용도 | URL |
+|---|---|
+| 개인정보처리방침 | https://connection-sense.web.app/privacy-policy |
+| 이용약관 | https://connection-sense.web.app/terms-of-service |
+| 접근권한 안내 | https://connection-sense.web.app/app-permissions |
+| **계정 삭제 안내** | https://connection-sense.web.app/account-deletion |
+
+> ⚠️ 이 공개 페이지(`docs/legal/*.html`)와 앱 안에서 보이는 문서
+> (`legalDocs` Firestore)는 **서로 동기화되지 않는다.** 관리자 콘솔에서만
+> 고치면 여기 URL은 옛 문안 그대로 남는다 — 스토어에 등록한 문서는 특히
+> 양쪽을 함께 고칠 것(`docs/admin/README.md` 참고).
+
+---
+
+## 4. 참고 — 이 프로젝트에서 쓰는 주소 전부
 
 **주의**: Firebase Blaze 결제, Google Cloud 결제, Google AI Studio(Gemini)
 결제는 **서로 다른 시스템**이다(2026-08-07 확인 — backlog 추가 96 참고).
 카드를 한 번 등록했다고 셋 다 자동으로 연결되는 게 아니라서, 문제가 생기면
-아래 표에서 "정확히 어느 콘솔"인지 구분해서 확인해야 한다.
+아래 표에서 "정확히 어느 콘솔"인지 구분해서 확인해야 한다. 같은 이유로
+**Apple Developer Portal 권한과 App Store Connect 권한도 별개 시스템**이다
+(3-1의 P-1 참고).
 
 | 용도 | 주소 | 비고 |
 |---|---|---|
@@ -224,6 +290,20 @@ Gemini 월 지출 한도가 마지막 방어선이다. 위 두 가지를 다 뚫
 | Google AI Studio — 프로젝트/선불 크레딧 | https://aistudio.google.com/projects | Gemini API는 Firebase Blaze와 별개로 **자체 선불 크레딧**을 쓴다. "prepayment credits are depleted" 에러가 나면 여기서 충전(최소 단위 16,000원 확인됨, 2026-08-07). |
 | Google AI Studio — 월 지출 한도(spend cap) | https://aistudio.google.com/spend | 크레딧을 충전해도 이 한도가 낮게 잡혀 있으면 또 429로 막힌다 — "project has exceeded its monthly spending cap" 에러가 나면 여기서 상향(2026-08-07 실제로 겪음 — 추가 96). |
 | GitHub 저장소 | https://github.com/globe2030-git/connection-trace-ai-v2-flutter | |
+| **App Store Connect** | https://appstoreconnect.apple.com | 빌드 업로드·앱 레코드·TestFlight·App Privacy. ⚠️ `appstoreconnect.com`이 아니라 **`.apple.com`**이다 |
+| App Store Connect — 사용자 및 접근 | https://appstoreconnect.apple.com/access/users | 업로드 403(P-1)이 나면 **여기부터** 볼 것 |
+| Apple Developer — 계정 | https://developer.apple.com/account | 팀 ID `77L7BH2M2W` |
+| Apple Developer — Keys(.p8) | https://developer.apple.com/account/resources/authkeys/list | Sign in with Apple 키. **발급 시 한 번만 내려받을 수 있다** |
+| Apple Developer — Identifiers | https://developer.apple.com/account/resources/identifiers/list | App ID `com.creamhouse.connectionsense`, Services ID |
+| Apple Developer — Certificates | https://developer.apple.com/account/resources/certificates/list | 만료 정책: https://developer.apple.com/support/expiration/ |
+| **Google Play Console** | https://play.google.com/console | 앱 등록·내부 테스트·앱 콘텐츠·데이터 보안 |
+| Play Console — 개발자 계정 가입 | https://play.google.com/console/signup | $25 1회 |
+| Firebase — Authentication(로그인 방법) | https://console.firebase.google.com/project/connection-sense/authentication/providers | Apple 제공사 등록(P-3) |
+| Firebase — Authentication(사용자) | https://console.firebase.google.com/project/connection-sense/authentication/users | 계정 정리·인증 상태 확인 |
+| Firebase — App Distribution | https://console.firebase.google.com/project/connection-sense/appdistribution | Play 트랙 쓰기 전 임시 테스터 배포 |
+| Firebase — Hosting | https://console.firebase.google.com/project/connection-sense/hosting/sites | `legal`·`admin` 두 사이트 |
+| **관리자 콘솔(운영)** | https://connection-sense-admin.web.app | 공지·1:1문의·법적문서 편집. `connectionsense@creamhouse.net`으로 **Google 계정 로그인** |
+| 법적 고지(공개) | https://connection-sense.web.app | 스토어 양식에 넣는 URL — 3-3 참고 |
 | 관리자 웹 콘솔(공지/문의/법적문서/경영리포트) | Firebase Hosting `admin` 타겟으로 배포 (`firebase deploy --only hosting:admin`) | |
 
 ### 2026-08-07에 실제로 겪은 문제 → 어느 콘솔에서 풀었는지
