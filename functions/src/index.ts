@@ -33,7 +33,15 @@ const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 // 정상 사용 범위와 명백한 어뷰징 사이의 안전한 상한선(14.4절 근거).
 // 실사용 데이터가 쌓이면 재조정 가능 — 사용자 확인 후 조정.
-const DAILY_LIMIT = 10;
+//
+// 🚧 **DAILY_LIMIT은 2026-08-08 현재 테스트용 임시값(20)이다. 출시 전 10으로
+// 되돌릴 것** — 원래 값은 10이었고, 사고 토큰 단가 측정처럼 하루에 여러 번
+// 호출해야 하는 작업이 반복돼 사용자 확인 후 올렸다. 지금 올려도 되는 이유는
+// App Check 강제(enforceAppCheck) 이후 우리 앱만 호출할 수 있게 됐기
+// 때문이다. 되돌리기 항목은 HANDOFF "3. 해야 할 일"에 등록돼 있다.
+const DAILY_LIMIT = 20;
+// 월 한도는 올리지 않았다. 하루 20회를 5일 채우면 여기에 먼저 걸리므로,
+// 테스트가 길어지면 이쪽이 다음 병목이 된다.
 const MONTHLY_LIMIT = 100;
 
 // 출력 토큰 상한. 2026-08-07: 원래 400이었는데 gemini-3.6-flash가 "*Draft
@@ -67,10 +75,30 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 // at 'generation_config'". **모델 파라미터는 문서 예시가 아니라 그 API 버전의
 // 디스커버리 문서를 봐야 한다.**
 //
-// LOW를 고른 이유: 이 작업은 "짧은 한국어 문장 3개 쓰기"라 깊은 추론이 필요
-// 없다. MINIMAL이 더 싸지만 품질 저하 위험이 있어 한 단계 보수적으로 잡고,
-// 아래 usageMetadata 로그로 실측한 뒤 조정한다.
-const THINKING_LEVEL = "LOW";
+// 단계별 실측(2026-08-08, 서로 다른 명함 2개 × 단계당 2~3회, 캐시 0).
+// 상세 표와 경위는 docs/planning/server-setup-plan.md 14.5절 / backlog 추가 100.
+//
+//   회당 비용        명함 A(입력 379)   명함 B(입력 1,030)
+//   MINIMAL          $0.0014            $0.0023      ← 채택
+//   LOW              $0.0070            $0.0067
+//   MEDIUM           $0.0094            $0.0138
+//   HIGH             $0.0103            $0.0124
+//
+// **MINIMAL을 고른 이유는 싸서가 아니라 예측 가능해서다.** 사고 토큰이 세
+// 명함 모두에서 0이었다. 나머지 단계는 같은 값을 줘도 명함에 따라 사고가
+// 0~1,566까지 튀어서 원가를 계산할 수 없다 — 특히 LOW는 어떤 명함에선 0,
+// 다른 명함에선 823이었다. 구독 원가를 설계하려면 이 예측 가능성이 필요하다.
+//
+// 주의: 단계 이름과 실제 사고량이 정확히 비례하지 않는다. 명함 B에서는
+// MEDIUM(1,472~1,566)이 HIGH(1,339)보다 더 많이 생각했다.
+//
+// **품질은 결론을 내지 않았다.** 명함 A에서는 단계가 높을수록 좋아 보였는데
+// (MINIMAL "괜찮음" → HIGH "좋음") 명함 B에서는 재현되지 않았다(LOW가 가장
+// 좋고 MEDIUM·HIGH는 MINIMAL 수준). 단계당 2~3회·판단자 1명으로는 이 정도
+// 차이를 가릴 수 없다. "높은 단계 = 좋은 품질"은 **유망한 가설이지 검증된
+// 사실이 아니다** — 구독 등급(무료=MINIMAL / 유료=HIGH)의 근거로 쓰려면
+// 표본을 늘려 다시 검증해야 한다. HANDOFF "3. 해야 할 일" P1-5 참고.
+const THINKING_LEVEL = "MINIMAL";
 
 interface GenerateBriefingRequest {
   contactSummary: string;
@@ -151,6 +179,10 @@ function parseTalkingPoints(raw: string): string[] {
 
 interface GeminiUsage {
   promptTokenCount?: number;
+  // 캐시된 입력 토큰. 같은 프롬프트를 반복해서 보내면 Gemini의 암묵적 캐싱이
+  // 걸려 입력이 할인될 수 있는데, 단가를 "같은 화면 새로고침"으로 재는 동안은
+  // 이게 켜지면 실사용보다 싸게 측정된다. 값이 0인지 확인하려고 남긴다.
+  cachedContentTokenCount?: number;
   candidatesTokenCount?: number;
   thoughtsTokenCount?: number;
   totalTokenCount?: number;
@@ -235,6 +267,7 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
     thinkingLevel: usedThinkingLevel ? THINKING_LEVEL : "(미적용)",
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     promptTokenCount: usage.promptTokenCount,
+    cachedContentTokenCount: usage.cachedContentTokenCount ?? 0,
     candidatesTokenCount: usage.candidatesTokenCount,
     thoughtsTokenCount: usage.thoughtsTokenCount,
     totalTokenCount: usage.totalTokenCount,
