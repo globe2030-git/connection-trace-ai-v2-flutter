@@ -36,6 +36,20 @@
 **부수 확인**: Firebase Auth 계정 6개 중 `connectsense@creamhouse.net`(철자
 다름)이 오타 가입으로 보인다. 관리자 허용목록에 없어 무해하지만 정리 대상.
 
+**같은 날 후속 — 정식 관리자 계정 인증 해소**: 사용자가
+`connectionsense@creamhouse.net`을 **그룹메일 대신 사용자 메일함으로 다시
+만들어** 인증 문제를 해결했다(`emailVerified=true` 확인). 다만 이때 계정이
+**Google 계정으로 바뀌어**(제공사 `password` → `google.com`) 관리자 콘솔에서
+이메일/비밀번호가 아니라 **"Google 계정 로그인" 버튼**을 써야 한다 — README에
+명시했다. 개인 메일(`globe@creamhouse.net`)은 그룹메일이 막혀 있던 동안의
+우회용이었으므로, 원하면 `firestore.rules` 허용목록에서 빼도 된다.
+
+**부수 발견**: 사용자가 "appstoreconnect.com이 맞는 주소냐"고 물어 확인해 보니
+**내가 채팅에서 잘못 안내한 것**이었다(정확히는 `appstoreconnect.apple.com`).
+문서에는 안 들어갔지만, 확인하다 보니 `admin-manual.md`의 주소 표에 **Google
+관련만 있고 Apple·Play 콘솔 주소가 통째로 빠져 있다**는 것이 드러났다 —
+콘솔 작업을 시작하면 매번 주소를 찾아 헤매게 되므로 채워 넣을 것.
+
 
 ### 2026-08-08 (추가 102) — Functions SDK 업그레이드 (P1-36) + npm audit 오탐 정리
 
