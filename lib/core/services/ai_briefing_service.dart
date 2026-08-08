@@ -13,12 +13,34 @@ class AiBriefingException implements Exception {
   String toString() => message;
 }
 
-/// Cloud Functions(`generateBriefing`)가 아직 배포되지 않았을 때 던진다.
-/// 서버 배포가 끝나 [AiBriefingService.kAiServiceDeployed]를 true로 바꾸기
-/// 전까지는 호출을 시도하지 않고 바로 이 예외로 안내한다.
+/// 서버 함수가 아직 배포되지 않았거나(`kAiServiceDeployed == false`) 함수를
+/// 찾지 못한 경우(`not-found`). 사용자가 할 수 있는 일이 없는 상태다.
 class AiServiceUnavailableException extends AiBriefingException {
-  AiServiceUnavailableException()
-    : super('AI 브리핑 서비스 준비 중이에요. 곧 제공될 예정이에요.');
+  AiServiceUnavailableException() : super('AI 브리핑 서비스 준비 중이에요. 곧 제공될 예정이에요.');
+}
+
+/// 서버는 살아 있는데 일시적으로 응답하지 못하는 경우(`unavailable`).
+///
+/// **"준비 중"과 반드시 구분해야 한다.** 예전에는 둘을 같은 예외로 묶어
+/// 일시적 장애에도 "서비스 준비 중이에요"라고 안내했는데, 사용자는 기능이
+/// 아직 출시되지 않은 것으로 이해하고 **다시 시도하지 않는다.** 실제로는
+/// 잠시 후 되는 상황이므로 그렇게 말해야 한다.
+class AiServiceTemporarilyDownException extends AiBriefingException {
+  AiServiceTemporarilyDownException()
+    : super('AI 서버가 잠시 응답하지 못하고 있어요. 잠시 후 다시 시도해 주세요.');
+}
+
+/// 앱 인증(App Check) 실패. 우리 앱임을 증명하지 못한 경우.
+///
+/// 사용자 잘못이 아니고 사용자가 고칠 수도 없는 상황이라, 원인을 설명하기보다
+/// 할 수 있는 일을 알려준다. 예전에는 이 경우가 기본 분기로 떨어져 서버가 준
+/// 영문 원문("Unauthenticated")이 그대로 화면에 나왔다.
+class AiAppCheckRejectedException extends AiBriefingException {
+  AiAppCheckRejectedException()
+    : super(
+        '앱 인증에 실패했어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.\n'
+        '계속 같은 문제가 생기면 설정 → 1:1 문의로 알려주세요.',
+      );
 }
 
 /// 서버가 하루/월 사용 한도 초과로 거절했을 때. 메시지는 서버
@@ -42,9 +64,18 @@ class AiBriefingService {
   static const _timeout = Duration(seconds: 30);
   static const _region = 'asia-northeast3';
 
-  /// 하루/월 사용 한도 — 실제 값은 functions/src/index.ts의
-  /// DAILY_LIMIT/MONTHLY_LIMIT가 최종 진실이며, 여기는 화면 안내용 표시값이다.
-  static const int dailyLimit = 10;
+  /// 하루/월 사용 한도.
+  ///
+  /// ⚠️ **`functions/src/index.ts`의 `DAILY_LIMIT`/`MONTHLY_LIMIT`과 반드시
+  /// 같은 값이어야 한다.** 판정은 서버가 하고 여기는 표시만 하는데, 두 값이
+  /// 어긋나면 화면에 "3회 남음"이라고 띄워 놓고 서버가 거절하는(또는 그 반대)
+  /// 상황이 된다. 언어가 달라 상수를 공유할 수 없으므로 **바꿀 때 두 파일을
+  /// 함께 고치는 수밖에 없다.**
+  ///
+  /// 지금 값이 20인 이유: 사고 토큰 단가 측정처럼 하루에 여러 번 호출해야 하는
+  /// 작업 때문에 2026-08-08에 10 → 20으로 올렸다(테스트용 임시).
+  /// **출시 전 서버와 함께 10으로 되돌릴 것 — HANDOFF P0-11.**
+  static const int dailyLimit = 20;
   static const int monthlyLimit = 100;
 
   /// Cloud Functions 배포 완료 여부 — task #44에서 배포 후 true로 변경.
@@ -90,17 +121,35 @@ class AiBriefingService {
       if (points.isEmpty) throw AiBriefingException('AI가 빈 응답을 반환했습니다.');
       return points;
     } on FirebaseFunctionsException catch (e) {
+      // 서버가 주는 코드별로 "사용자가 무엇을 할 수 있는지"가 다르다.
+      // 뭉뚱그리면 다시 시도하면 될 상황에 포기하거나(그 반대) 하게 된다.
       switch (e.code) {
         case 'not-found':
-        case 'unavailable':
+          // 함수가 배포되지 않았다 — 사용자가 할 수 있는 일이 없다.
           throw AiServiceUnavailableException();
+        case 'unavailable':
+        case 'internal':
+          // 서버는 있는데 지금 안 된다 — 잠시 후 되면 되는 상황.
+          throw AiServiceTemporarilyDownException();
+        case 'unauthenticated':
+          // App Check 거부 또는 로그인 만료. 서버가 주는 원문이 영문
+          // ("Unauthenticated")이라 그대로 노출하면 안 된다.
+          throw AiAppCheckRejectedException();
         case 'resource-exhausted':
+          // 서버 문구가 이미 한글이고 어느 한도인지(일/월)까지 알려주므로
+          // 그대로 쓴다.
           throw AiQuotaExceededException(e.message ?? '사용 한도에 도달했어요.');
         default:
-          throw AiBriefingException(e.message ?? 'AI 응답을 받지 못했습니다.');
+          // 남은 경우에도 영문이 새어 나가지 않게 우리 문구를 쓴다.
+          throw AiBriefingException('AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.');
       }
     } on TimeoutException {
-      throw AiBriefingException('요청 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.');
+      throw AiBriefingException('응답이 오지 않았어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.');
+    } catch (e) {
+      // 통신이 아예 안 되는 경우 등 Functions 예외로 오지 않는 실패도 있다.
+      // 여기서 막지 않으면 화면에 개발자용 예외 문자열이 그대로 나온다.
+      debugPrint('AI 브리핑 실패: ${e.runtimeType}');
+      throw AiBriefingException('AI 가이드를 만들지 못했어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.');
     }
   }
 

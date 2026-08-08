@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -55,6 +56,12 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
   String? _weatherSummary;
   bool _isLoadingWeather = false;
 
+  // 오늘 몇 번 더 쓸 수 있는지. 사용자가 "쓸까 말까"를 정하는 바로 이 화면에
+  // 보여줘야 의미가 있다 — 눌러본 뒤 "한도 초과"를 만나면 이미 늦다.
+  // 못 읽었으면 null이고, 그 경우 아무것도 표시하지 않는다(추정치를 보여주면
+  // 서버 판정과 어긋나 오히려 혼란스럽다).
+  AiUsage? _usage;
+
   @override
   void initState() {
     super.initState();
@@ -66,11 +73,14 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
     );
     _selectedIds.addAll(_availableLogs.take(5).map((log) => log.id));
 
+    // 남은 횟수는 서버 카운터가 유일한 진실이라 매번 새로 읽는다.
+    AiUsageService.fetch().then((usage) {
+      if (mounted) setState(() => _usage = usage);
+    });
+
     if (widget.contact.geo != null) {
       _isLoadingWeather = true;
-      WeatherService.getTodayWeatherSummary(widget.contact.geo).then((
-        summary,
-      ) {
+      WeatherService.getTodayWeatherSummary(widget.contact.geo).then((summary) {
         if (!mounted) return;
         setState(() {
           _weatherSummary = summary;
@@ -368,33 +378,87 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton.icon(
-                    onPressed: _consented ? _submit : null,
-                    icon: const Icon(Icons.auto_awesome, color: Colors.white),
-                    label: const Text(
-                      '동의하고 AI 가이드 만들기',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_usage != null) ...[
+                      _UsageRemainingLine(usage: _usage!),
+                      const SizedBox(height: 10),
+                    ],
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: _consented ? _submit : null,
+                        icon: const Icon(
+                          Icons.auto_awesome,
+                          color: Colors.white,
+                        ),
+                        label: const Text(
+                          '동의하고 AI 가이드 만들기',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          disabledBackgroundColor: AppColors.borderDark,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
                       ),
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      disabledBackgroundColor: AppColors.borderDark,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 동의 버튼 바로 위에 "몇 번 더 쓸 수 있는지"를 보여준다.
+///
+/// 여기에 두는 이유: 사용자가 쓸지 말지를 정하는 지점이 여기다. 눌러본 뒤에
+/// "오늘 한도를 다 썼어요"를 만나면 이미 늦고, 왜 안 되는지도 알기 어렵다
+/// (실사용 피드백 — 잔여 횟수를 확인할 방법이 없어 불편하다).
+class _UsageRemainingLine extends StatelessWidget {
+  final AiUsage usage;
+
+  const _UsageRemainingLine({required this.usage});
+
+  @override
+  Widget build(BuildContext context) {
+    final exhausted = usage.exhausted;
+    // 오늘 한도와 이번 달 한도 중 먼저 걸리는 쪽을 보여준다. 둘 다 적으면
+    // 사용자는 "어느 게 나를 막는 건지" 헷갈린다.
+    final scope = usage.isMonthlyBinding ? '이번 달' : '오늘';
+    final text = exhausted
+        ? '$scope 사용 가능한 횟수를 모두 썼어요'
+        : '$scope ${usage.remaining}회 더 쓸 수 있어요';
+    final color = exhausted ? AppColors.destructive : AppColors.textSecondary;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          exhausted ? Icons.error_outline : Icons.bolt_outlined,
+          size: 15,
+          color: color,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12.5,
+            color: color,
+            fontWeight: exhausted ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ],
     );
   }
 }
