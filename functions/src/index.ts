@@ -37,14 +37,40 @@ const DAILY_LIMIT = 10;
 const MONTHLY_LIMIT = 100;
 
 // 출력 토큰 상한. 2026-08-07: 원래 400이었는데 gemini-3.6-flash가 "*Draft
-// A:*" 같은 내부 사고/초안 텍스트를 답변 앞에 먼저 쓰는 습성이 있어(thinking을
-// 끄는 옵션도 이 모델에서 400 INVALID_ARGUMENT로 거부됨 — callGemini 참고),
-// 진짜 최종 답변에 도달하기 전에 토큰이 바닥나 버렸다(실기기 확인 —
-// "contact since exchanging cards)." 같은 초안 파편만 남고 끝남). 사고 과정 몫
-// 여유를 넉넉히 두고, 최종 파싱에서 한국어 문장만 걸러낸다(parseTalkingPoints).
+// A:*" 같은 내부 사고/초안 텍스트를 답변 앞에 먼저 쓰는 습성이 있어 진짜 최종
+// 답변에 도달하기 전에 토큰이 바닥나 버렸다(실기기 확인 — "contact since
+// exchanging cards)." 같은 초안 파편만 남고 끝남). 사고 과정 몫 여유를 넉넉히
+// 두고, 최종 파싱에서 한국어 문장만 걸러낸다(parseTalkingPoints).
+//
+// 이 값은 **과금액이 아니라 최악의 경우를 묶는 천장**이다(과금은 실제 사용한
+// 토큰 기준). 다만 Gemini는 **사고(thinking) 토큰을 출력과 같은 단가로 과금**
+// 하므로($7.50/1M, 입력은 $1.50/1M), 모델이 마음껏 생각하면 이 천장까지 요금이
+// 오를 수 있다 — 2026-08-08 실측에서 사고 토큰이 회당 1,275~1,328개로 과금
+// 출력의 91%를 차지했다. 그래서 천장을 낮추는 대신 아래 THINKING_LEVEL로
+// 사고량 자체를 줄였고, 그 뒤 실측은 사고 0~590 / 출력 97~108이다.
+// 천장을 3000으로 남겨 두는 이유는 2026-08-07의 응답 잘림 버그 재발 방지다.
 const MAX_OUTPUT_TOKENS = 3000;
 
 const GEMINI_MODEL = "gemini-3.6-flash";
+
+// 사고(reasoning) 깊이. 위치와 형식은 **추측하지 말고 API 디스커버리 문서에서
+// 확인한 것**이다(2026-08-08):
+//
+//   GET https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta
+//   GenerationConfig.thinkingConfig → ThinkingConfig.thinkingLevel
+//   enum: THINKING_LEVEL_UNSPECIFIED | MINIMAL | LOW | MEDIUM | HIGH
+//
+// 이 자리에서 두 번 틀렸다. 2026-08-07엔 `thinkingConfig.thinkingBudget: 0`이
+// 거부됐고(그래서 "스키마를 확신할 수 없다"며 옵션을 통째로 뺐다),
+// 2026-08-08엔 문서 예시만 보고 `generationConfig.thinkingLevel`(한 단계 바깥,
+// 소문자)로 넣었다가 또 거부됐다 — 실기기 로그에 "Unknown name thinkingLevel
+// at 'generation_config'". **모델 파라미터는 문서 예시가 아니라 그 API 버전의
+// 디스커버리 문서를 봐야 한다.**
+//
+// LOW를 고른 이유: 이 작업은 "짧은 한국어 문장 3개 쓰기"라 깊은 추론이 필요
+// 없다. MINIMAL이 더 싸지만 품질 저하 위험이 있어 한 단계 보수적으로 잡고,
+// 아래 usageMetadata 로그로 실측한 뒤 조정한다.
+const THINKING_LEVEL = "LOW";
 
 interface GenerateBriefingRequest {
   contactSummary: string;
@@ -123,23 +149,57 @@ function parseTalkingPoints(raw: string): string[] {
     .slice(0, 3);
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+interface GeminiUsage {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+/**
+ * Gemini에 한 번 요청한다. [withThinkingLevel]이 false면 thinkingLevel을
+ * 아예 빼고 보낸다(아래 fallback 용도).
+ */
+async function requestGemini(
+  prompt: string,
+  apiKey: string,
+  withThinkingLevel: boolean
+): Promise<Response> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const response = await fetch(url, {
+  return fetch(url, {
     method: "POST",
     headers: {"content-type": "application/json"},
     body: JSON.stringify({
       contents: [{parts: [{text: prompt}]}],
       generationConfig: {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
-        // 2026-08-07: gemini-3.6-flash의 thinking을 끄려고 thinkingConfig:
-        // {thinkingBudget: 0}을 넣었더니 400 INVALID_ARGUMENT로 거부당했다 —
-        // 이 모델의 정확한 thinkingConfig 스키마(필드명·허용 범위)를 확신할
-        // 수 없어 옵션 자체를 뺐다. 대신 아래 파싱에서 thought 파트를 걸러내는
-        // 방식으로만 대응한다(방어적이지만 요청이 항상 성공하는 게 더 중요).
+        ...(withThinkingLevel
+          ? {thinkingConfig: {thinkingLevel: THINKING_LEVEL}}
+          : {}),
       },
     }),
   });
+}
+
+async function callGemini(prompt: string, apiKey: string): Promise<string> {
+  let usedThinkingLevel = true;
+  let response = await requestGemini(prompt, apiKey, true);
+
+  // thinkingLevel이 거부되면 그것 없이 한 번 더 보낸다.
+  //
+  // 왜 이런 안전장치를 두나: 2026-08-07에 thinking 관련 파라미터(당시엔 잘못된
+  // 필드명 thinkingBudget)가 400으로 거부돼 AI 브리핑이 통째로 죽은 전례가
+  // 있다. 모델 파라미터 스키마는 우리가 통제하지 못하고 예고 없이 바뀔 수
+  // 있는데, 그때 기능이 "비싸지는 것"과 "아예 안 되는 것" 중에는 전자가 낫다.
+  // 어느 경로로 응답했는지는 아래 usage 로그에 함께 남긴다.
+  if (response.status === 400) {
+    const bodyText = await response.text().catch(() => "");
+    logger.warn("thinkingLevel이 거부됨 — 이 옵션 없이 재시도", {
+      body: bodyText.slice(0, 500),
+    });
+    usedThinkingLevel = false;
+    response = await requestGemini(prompt, apiKey, false);
+  }
 
   if (!response.ok) {
     // 2026-08-07: 상태 코드만 로그에 남겼더니 429가 어느 한도(무료 티어 RPM인지,
@@ -157,10 +217,31 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 
   const json = (await response.json()) as {
     candidates?: {content?: {parts?: {text?: string; thought?: boolean}[]}}[];
+    usageMetadata?: GeminiUsage;
   };
+
+  // 토큰 사용량을 남긴다 — **숫자와 설정값뿐이라 개인정보가 섞이지 않는다.**
+  //
+  // 왜 필요한가: 2026-08-08에 "회당 얼마인가"를 물었을 때 답할 근거가 없어,
+  // 지출액 ÷ 추정 호출 수 + 환율 가정으로 역산해야 했다(server-setup-plan.md
+  // 14.5절의 설계 추정과 5배 차이). 비용은 손익 모델과 구독 가격 결정에
+  // 직접 연결되므로 추정이 아니라 실측으로 다뤄야 한다.
+  //
+  // thoughtsTokenCount가 핵심이다 — 사고 토큰은 출력과 같은 단가로 과금되므로
+  // 이 값이 곧 "눈에 안 보이는 비용"이다.
+  const usage = json.usageMetadata ?? {};
+  logger.info("Gemini 토큰 사용량", {
+    model: GEMINI_MODEL,
+    thinkingLevel: usedThinkingLevel ? THINKING_LEVEL : "(미적용)",
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+    promptTokenCount: usage.promptTokenCount,
+    candidatesTokenCount: usage.candidatesTokenCount,
+    thoughtsTokenCount: usage.thoughtsTokenCount,
+    totalTokenCount: usage.totalTokenCount,
+  });
+
   const parts = json.candidates?.[0]?.content?.parts ?? [];
-  // thinkingBudget: 0으로 꺼도 혹시 thought 파트가 섞여 오면 최종 답변이 아니니
-  // 안전하게 걸러낸다.
+  // 사고량을 낮춰도 thought 파트가 섞여 오면 최종 답변이 아니니 걸러낸다.
   return parts
     .filter((p) => !p.thought)
     .map((p) => p.text ?? "")
