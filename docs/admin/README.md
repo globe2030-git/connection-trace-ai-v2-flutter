@@ -8,14 +8,17 @@
 
 **https://connection-sense-admin.web.app**
 
-**로그인: `globe@creamhouse.net`으로 "Google 계정 로그인" 버튼을 쓴다.**
+**로그인: `connectionsense@creamhouse.net` 또는 `globe@creamhouse.net`으로
+"Google 계정 로그인" 버튼을 쓴다.** 둘 다 인증 완료 상태다(2026-08-08 확인).
 
-> ⚠️ **이메일/비밀번호로는 지금 들어갈 수 없다.**
-> `connectionsense@creamhouse.net`은 가입돼 있지만 Firebase Auth에서
-> `emailVerified=false`다 — 아래 관리자 판별 규칙이 인증된 이메일만 인정하므로
-> 거부된다. 원인은 회사 Google Workspace 그룹메일의 게시 권한 설정 탓에
-> Firebase 인증 메일을 받지 못하는 것이다(2026-08-06 확인, 미해결).
-> 그래서 개인 메일(`globe@creamhouse.net`)도 허용목록에 함께 넣어 뒀다.
+> **이메일/비밀번호 입력란이 아니라 "Google 계정 로그인" 버튼이다.** 두 계정
+> 모두 제공사가 `google.com`이라 비밀번호 로그인은 동작하지 않는다.
+>
+> (경위) `connectionsense@creamhouse.net`은 원래 Workspace **그룹메일**이라
+> 게시 권한 설정 탓에 Firebase 인증 메일을 받지 못해 `emailVerified=false`로
+> 막혀 있었다(2026-08-06). 2026-08-08에 **사용자 메일함으로 다시 만들어**
+> 해소됐다. 개인 메일(`globe@creamhouse.net`)은 그때 우회용으로 넣은 것이라,
+> 정리하고 싶으면 `firestore.rules`의 허용목록에서 빼도 된다.
 
 ## 관리자 판별 방식
 
