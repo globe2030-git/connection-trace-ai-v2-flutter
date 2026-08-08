@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/foundation.dart';
 
@@ -37,22 +39,44 @@ class AppCheckService {
     'APP_CHECK_DEBUG',
   );
 
+  /// 토큰 발급을 기다리는 상한. 이 시간을 넘기면 포기하고 앱을 계속 띄운다.
+  static const _activateTimeout = Duration(seconds: 5);
+
   /// 앱 시작 시 한 번 호출한다. `Firebase.initializeApp()` 이후여야 한다.
   ///
-  /// 실패해도 앱을 멈추지 않는다 — 토큰 발급은 네트워크와 OS 서비스(Play
-  /// 서비스, Apple 서버)에 의존해 실패할 수 있는데, 그때 앱 전체가 안 뜨는
-  /// 것보다 AI 브리핑만 안 되는 편이 낫다. 다른 화면은 App Check와 무관하다.
+  /// **절대 앱 시작을 막지 않는다.** 예외뿐 아니라 "응답 없음"까지 막아야 한다.
+  ///
+  /// 왜 이렇게까지 하나 — 2026-08-08 실기기에서 실제로 터졌다. 이 함수를
+  /// `main()`에서 `await`로 부르고 있었는데, 기기의 App Check 디버그 토큰이
+  /// Firebase에 등록된 것과 달라지자 토큰 교환이 끝없이 재시도됐다. 예외가
+  /// 나지 않으니 try/catch로도 못 잡았고, `runApp()`에 도달하지 못해 **UI가
+  /// 하나도 없는 네이티브 스플래시가 영원히 떠 있는** 상태가 됐다. 사용자
+  /// 눈에는 "무한 로딩"이고, 앱을 껐다 켜도 똑같았다.
+  ///
+  /// 더 위험한 건 테스터 배포다. TestFlight 빌드는 App Attest를 쓰는데 그게
+  /// 느리거나 실패하는 기기에서는 **앱이 아예 열리지 않는다.** 20명에게
+  /// 뿌렸다면 몇 명은 앱을 못 열었을 것이다.
+  ///
+  /// **App Check 토큰은 AI 브리핑을 호출할 때 필요하지 앱을 켜는 데 필요하지
+  /// 않다.** 그래서 시작 경로에서 떼어낸다. 호출부는 `unawaited`로 부르고,
+  /// 여기서도 타임아웃으로 한 번 더 막는다(이중 방어).
   static Future<void> activate() async {
     final useDebugProvider = _forceDebugProvider || !kReleaseMode;
     try {
-      await FirebaseAppCheck.instance.activate(
-        providerAndroid: useDebugProvider
-            ? const AndroidDebugProvider()
-            : const AndroidPlayIntegrityProvider(),
-        providerApple: useDebugProvider
-            ? const AppleDebugProvider()
-            : const AppleAppAttestProvider(),
-      );
+      await FirebaseAppCheck.instance
+          .activate(
+            providerAndroid: useDebugProvider
+                ? const AndroidDebugProvider()
+                : const AndroidPlayIntegrityProvider(),
+            providerApple: useDebugProvider
+                ? const AppleDebugProvider()
+                : const AppleAppAttestProvider(),
+          )
+          .timeout(_activateTimeout);
+    } on TimeoutException {
+      // 토큰이 늦게 준비돼도 SDK가 이후 호출에서 알아서 다시 시도한다.
+      // 여기서 실패로 처리해도 AI 브리핑이 영구히 막히는 것은 아니다.
+      debugPrint('App Check 활성화가 ${_activateTimeout.inSeconds}초 안에 끝나지 않아 계속 진행합니다.');
     } catch (e) {
       // 토큰 원문이나 계정 식별자가 섞이지 않도록 예외 타입만 남긴다.
       debugPrint('App Check 활성화 실패: ${e.runtimeType}');
