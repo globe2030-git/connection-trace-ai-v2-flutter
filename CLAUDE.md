@@ -130,6 +130,10 @@ flutter test      # 현재 39건
 - 법적 고지 문서는 `firebase deploy --only hosting`으로 배포한다
   (Spark 무료 요금제로 가능, `public: docs/legal`).
 - Cloud Functions 배포는 Blaze 유료 요금제가 필요하다.
-- ⚠️ Android 릴리스가 아직 **debug 키스토어로 서명**돼 있다. 정식 키를
-  만들기 **전에** `.gitignore`에 `*.jks`/`*.keystore`/`key.properties`를
-  먼저 넣어야 한다.
+- ⚠️ Android 릴리스가 아직 **debug 키스토어로 서명**돼 있다(P1-19).
+- **서명 키·인증서는 저장소 밖(예: `~/keys/`)에 두는 것을 원칙으로 한다.**
+  루트 `.gitignore`에 `*.jks`/`*.keystore`/`key.properties`/`*.p8`/`*.p12`/
+  서비스 계정 JSON을 넣어 뒀지만(2026-08-08), 그건 실수로 안에 들여놨을 때의
+  안전망이지 보관 위치가 아니다. 한 번 커밋되면 히스토리에서 지우기 어렵다.
+  Android 업로드 키를 잃으면 **앱 업데이트를 영원히 못 올리고**, Apple `.p8`은
+  **발급 시 한 번만 내려받을 수 있다** — 둘 다 별도 백업이 필요하다.
