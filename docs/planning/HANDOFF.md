@@ -512,6 +512,60 @@ CONFIGURATION_BUILD_DIR"로 실패하면 **Xcode.app GUI가 동시에 열려 있
 - P0-1(App Store Connect 403), P0-2(Apple 로그인 Firebase 설정),
   P0-9(App Check) 등 기존 P0 항목은 그대로 남아 있음.
 
+## 0-6. 2026-08-08 — App Check 도입(P0-9) + 옛 iOS 앱 참조 교정 (가장 최신)
+
+상세는 [`backlog.md`](./backlog.md) 추가 99, 운영 절차는
+[`admin-manual.md`](./admin-manual.md) 2절.
+
+**배경**: 어제(추가 96~98) AI 프록시를 실제로 켰는데, P0-9(App Check)는
+"프록시 배포 **전에** 선행"으로 등록돼 있던 항목이었다. 순서가 뒤집힌 채
+하루가 지나 있었고, 그동안 **Google 로그인만 통과하면 우리 앱이 아닌
+스크립트도 회사 명의 유료 Gemini 키를 쓸 수 있는 상태**였다.
+
+**한 일**: `firebase_app_check` 도입 + `AppCheckService`, 서버
+`enforceAppCheck: true` 전환·배포, `maxInstances` 코드 명시,
+`tool/build_app.sh`에 `appcheck-debug` 인자 추가, `firebase.json`의 옛 iOS
+앱 ID 교정.
+
+**검증**: `flutter analyze` 18건(신규 0) / `flutter test` 89/89 /
+**아이폰 실기기에서 강제 상태로 호출 성공**(`{"app":"VALID","auth":"VALID"}`).
+
+### ⚠️ 다음 사람이 반드시 알아야 할 것
+
+**정식 무결성 검증기는 스토어 배포를 전제로 한다.** 이번에 실기기로 확인했다.
+
+| 검증기 | 통과 조건 | 지금 |
+|---|---|---|
+| Play Integrity | Google Play가 아는 앱(내부 테스트 포함) | ❌ Play 미배포 + debug 키 서명(P1-19) |
+| App Attest | TestFlight / App Store 빌드 | ❌ 개발 서명은 `403 App attestation failed` |
+
+그래서 **스토어를 거치지 않는 빌드는 반드시**
+`tool/build_app.sh <타겟> release appcheck-debug`로 빌드하고 그 기기의
+디버그 토큰을 Firebase에 등록해야 한다. 안 그러면 AI 브리핑이 막힌다.
+**반대로 스토어 업로드 빌드에는 이 인자를 붙이면 안 된다** — 붙이면 디버그
+토큰만 있으면 누구나 우리 앱인 척할 수 있어 App Check가 무의미해진다.
+
+즉 **P0-9의 남은 절반은 P0-1(App Store Connect)과 P1-19(Android 서명 키)에
+묶여 있다.**
+
+### 이번에 드러난 함정들 (전부 코드로는 안 보이던 것)
+
+- **Firebase App Check API가 꺼져 있었다.** 이 상태에선 등록을 정확히 해도
+  기기에서 403이 나는데, 앱 로그는 "콘솔에 등록하라"는 엉뚱한 안내만 준다.
+- **Firebase iOS 앱에 Apple 팀 ID가 비어 있었다** → `77L7BH2M2W` 등록.
+- **iOS 앱이 두 개다.** 옛 번들 ID(`…ios:711add…`)와 현재(`…ios:534c87…`).
+  `firebase.json`만 옛 앱을 가리키고 있었다 — `flutterfire configure`를
+  돌리면 iOS 로그인·백업이 통째로 깨지는 지뢰였고 이번에 교정했다.
+  **옛 앱을 Firebase에서 삭제할지는 아직 결정 안 됨**(참조를 끊어 위험은 제거).
+- **App Check REST API는 등록 여부와 무관하게 기본 config를 돌려준다** —
+  조회 결과만 보고 "등록돼 있다"고 판단하면 안 된다.
+- **`maxInstanceCount`가 코드 지정 없이 이미 3이었다.** 처음에 10으로
+  잡았다가 발견하고 되돌렸다 — 상한을 거는 줄 알았는데 푸는 셈이었다.
+- **예산 알림은 차단 장치가 아니다.** 실제 방어는 `maxInstances`, uid별 한도,
+  Gemini 월 지출 한도 셋뿐.
+- **Node.js 20 런타임이 2026-10-30에 폐기된다** — 그 뒤엔 런타임을 올리기
+  전까지 Cloud Functions 배포 자체가 막힌다(신규 항목으로 등록).
+
 ## 1. 한 일 (완료된 기능)
 
 ### 핵심 플로우
@@ -812,7 +866,8 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P0-5 | ~~개인정보처리방침 담당자·전용 문의메일 정식화~~ → **법적 고지 문서 게시** | **2026-08-05 갱신: 문서 작성은 완료**(0-2 섹션). 보호책임자·문의메일 임시값은 최우진(대표이사) + `connectionsense@creamhouse.net`으로 정식화했고, 방침 v2.0 전부개정·이용약관·접근권한 안내·계정삭제 안내까지 작성 완료. 남은 것은 ① **`connectionsense@creamhouse.net` 메일 계정 생성**(사용자) ② C안 코드 구현 후 Firebase Hosting 배포 ③ 스토어 콘솔에 URL 등록 | 소 | 사용자(메일 개설) + 개발(배포) |
 | P0-6 | 계정 삭제 안내 웹페이지 게시 | **신규(2026-08-05 발견)**. Google Play는 앱 내 삭제 기능과 **별개로** 계정 삭제 안내 웹 URL을 "앱 콘텐츠"에 요구한다 — 없으면 제출 자체가 진행되지 않는다. 문서(`docs/legal/account-deletion.html`)는 작성 완료, Hosting 배포와 콘솔 등록만 남음 | 소 | 개발(배포) + 사용자(콘솔 입력) |
 | ~~P0-8~~ | ~~Firestore 규칙 필드 단위 강화~~ → ✅ **완료** | 2026-08-06 강화·배포 완료(추가 83). 클라이언트 쓰기를 `encryptionKeyB64`/`profile`/`updatedAt`로 한정하고 이미 발급된 암호화 키는 변경 불가로 막았다. **검증 15건 통과**(`test/firestore_rules/verify_rules.py` — 로컬 에뮬레이터가 이 환경의 JDK에서 뜨지 않아 Firebase 규칙 테스트 API로 서버 평가). 배포 후 실기기에서 명함 저장이 정상 동작하는 것까지 확인. ⚠️ **프로필 쓰기는 아직 실기기 미확인**(서버에 `profile` 필드가 아직 없음) | — | 완료 |
-| P0-9 | **App Check 도입 + 예산 상한** | **신규(2026-08-06, 추가 82). AI 프록시 배포(P1-8) 전 필수.** `grep AppCheck` 0건. `generateBriefing`이 `request.auth`만 검사해 **우리 앱이 아닌 스크립트도 Google 로그인만 하면 호출 가능**하다. P0-8과 합치면 한도 없는 AI 호출이 된다. Blaze는 종량제라 상한이 없으므로 예산 알림·상한도 함께 | 중 | 개발 + 사용자(콘솔) |
+| P0-9 | **App Check 도입 + 예산 상한** → 🟡 **절반 완료(2026-08-08, 추가 99)** | 강제(`enforceAppCheck: true`) 전환·배포 완료, `maxInstances`를 코드에 명시, App Check API 활성화·iOS 팀 ID 등록까지 끝냈고 **아이폰 실기기에서 강제 상태 호출 성공을 확인**했다. **남은 절반**: 지금 통과하는 건 디버그 토큰 경로뿐이고, 실사용자가 쓸 정식 경로(Play Integrity / App Attest)는 **스토어 배포 전까지 검증 자체가 불가능**하다 — 즉 P0-1·P1-19에 묶여 있다. 상세·주의사항은 "0-6" 섹션 | 잔여: 스토어 배포 후 재확인 | 개발 |
+| P0-10 | **Cloud Functions Node.js 20 런타임 업그레이드** | **신규(2026-08-08, 추가 99)**. 배포 시 경고로 확인 — Node.js 20은 2026-04-30 deprecated, **2026-10-30 폐기**되며 그 뒤로는 런타임을 올리기 전까지 **배포 자체가 막힌다.** 지금 도는 건 문제없지만, 긴급 수정이 필요한 순간에 발목이 잡히는 종류의 부채다. `firebase-functions` 패키지도 구버전이라 함께 올려야 하고 breaking change가 예고돼 있다 | 소~중 | 개발 |
 | P0-7 | Play Data safety / Apple App Privacy 양식 작성 | 양식과 개인정보처리방침이 **불일치하면 즉시 반려**된다. 방침 v2.0에서 수집 항목·국외이전·위탁·삭제 경로가 크게 바뀌었으므로 양식을 그 기준으로 새로 채워야 함 | 중 | 기획 + 사용자(콘솔 입력) |
 
 ### 🟡 P1 — 출시 전 권장 (블로커는 아니지만 방치하면 출시 품질·리스크에 직결)
