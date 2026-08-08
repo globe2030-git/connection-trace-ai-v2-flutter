@@ -13,6 +13,10 @@
 #   tool/build_app.sh apk debug       # Android 디버그(기기 저장소 점검용)
 #   tool/build_app.sh ios release     # iOS 릴리스
 #   tool/build_app.sh appbundle release
+#
+#   세 번째 인자로 appcheck-debug를 주면 App Check를 debug 제공자로 빌드한다:
+#   tool/build_app.sh ios release appcheck-debug
+#   tool/build_app.sh apk release appcheck-debug
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -32,8 +36,21 @@ if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; th
   echo "⚠️  커밋되지 않은 변경이 있습니다 — 버전 표시에 '+수정중'을 붙입니다."
 fi
 
+# App Check 제공자 선택. 스토어(Play/App Store)를 거치지 않는 빌드는 정식
+# 무결성 검증기(Play Integrity / App Attest)를 통과할 수 없어서, 이 플래그로
+# debug 제공자를 쓰고 기기별 디버그 토큰을 Firebase에 등록해 쓴다.
+# 근거와 주의사항은 lib/core/services/app_check_service.dart 주석 참고.
+EXTRA_DEFINES=""
+if [ "${3:-}" = "appcheck-debug" ]; then
+  EXTRA_DEFINES="--dart-define=APP_CHECK_DEBUG=true"
+  echo "⚠️  App Check를 debug 제공자로 빌드합니다 — 스토어 업로드용 빌드에는 쓰지 마세요."
+elif [ -n "${3:-}" ]; then
+  echo "세 번째 인자는 appcheck-debug만 쓸 수 있습니다: ${3}" >&2; exit 2
+fi
+
 echo "빌드: $TARGET ($MODE)  커밋: $COMMIT"
-flutter build "$TARGET" "--$MODE" --dart-define=GIT_COMMIT="$COMMIT"
+# shellcheck disable=SC2086  # EXTRA_DEFINES는 공백 없는 단일 옵션이라 분리 확장이 맞다
+flutter build "$TARGET" "--$MODE" --dart-define=GIT_COMMIT="$COMMIT" $EXTRA_DEFINES
 
 echo
 echo "완료. 설정 → 앱 버전에서 '$COMMIT'이 보이면 이 빌드입니다."

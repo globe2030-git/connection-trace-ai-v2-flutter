@@ -2,6 +2,68 @@
 
 ## 작업 로그
 
+### 2026-08-08 (추가 99) — App Check 도입(P0-9): AI 프록시를 우리 앱만 부를 수 있게 막음
+
+**왜 지금**: 추가 96~98에서 AI 프록시를 실제로 배포해 켰는데, P0-9(App
+Check)는 "프록시 배포 **전에** 반드시 선행"으로 등록돼 있던 항목이었다.
+순서가 뒤집힌 채로 하루가 지나 있었다. `generateBriefing`은 `request.auth`만
+검사하므로 **Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사 명의
+유료 Gemini 키를 쓸 수 있는 상태**였다(추가 82 신규-B).
+
+**한 일**
+- `firebase_app_check` 추가, `AppCheckService`로 앱 시작 시 토큰 발급.
+- 서버 `generateBriefing`에 `enforceAppCheck: true` 적용 + `maxInstances`
+  명시. 두 기기 디버그 토큰 등록 후 전환했다.
+- `tool/build_app.sh`에 `appcheck-debug` 인자 추가(아래 "스토어 전제" 참고).
+- `firebase.json`이 가리키던 **옛 iOS 앱 ID를 현재 앱으로 교정**.
+
+**조사하면서 드러난 것 — 전부 코드로는 안 보이던 것들**
+
+1. **Firebase App Check API 자체가 꺼져 있었다**(`state: DISABLED`). 이
+   상태에서는 등록을 아무리 정확히 해도 기기에서 403으로 실패하는데, 앱
+   로그에는 "등록 안 했으면 콘솔에서 등록하라"는 **엉뚱한 안내**만 떠서
+   원인을 등록 실수로 오해하기 쉽다.
+2. **Firebase iOS 앱에 Apple 팀 ID가 비어 있었다** → `77L7BH2M2W` 등록.
+3. **Firebase 프로젝트에 iOS 앱이 두 개**다 — 옛 번들 ID
+   (`com.connectiontrace.…`, appId `…ios:711add…`, 2026-08-04에 버린 것)와
+   현재 것(`com.creamhouse.connectionsense`, appId `…ios:534c87…`).
+   `GoogleService-Info.plist`/`firebase_options.dart`는 올바른 쪽을 쓰는데
+   **`firebase.json`만 옛 앱을 가리키고 있었다.** 지금 고장난 건 없지만
+   누가 `flutterfire configure`를 돌리면 두 파일이 옛 앱으로 덮어써져 iOS
+   로그인·백업이 통째로 깨진다 — 밟으면 터지는 지뢰라 이번에 교정했다.
+   조사 초반에 이 옛 앱 ID로 App Check 설정을 조회하고 "설정돼 있다"고 잘못
+   읽을 뻔했다. **App Check REST API는 등록 여부와 무관하게 기본 config를
+   돌려주므로, 조회 결과만으로는 아무것도 확인되지 않는다.**
+4. **배포 전 `maxInstanceCount`가 이미 3이었다.** 코드에 지정이 없는데도
+   그랬다. 처음에 10으로 잡았다가 이 사실을 발견하고 3으로 되돌렸다 —
+   상한을 새로 건 게 아니라 **3배 느슨하게 풀 뻔했다.** 어디서 온 건지 모르는
+   기본값에 기대면 다음 배포에서 조용히 바뀌어도 아무도 모르므로 코드에 못박음.
+5. **예산 알림(₩5,000/월)은 차단 장치가 아니다** — 알림만 보낸다. 실제로
+   요금을 막는 건 `maxInstances`, uid별 한도, Gemini 월 지출 한도 셋뿐이다.
+
+**정식 검증기는 스토어 배포를 전제로 한다 (이번 세션 최대 발견)**
+
+| 검증기 | 결과 |
+|---|---|
+| Android + 디버그 토큰 | ✅ `{"auth":"VALID","app":"VALID"}` 서버 로그로 확인 |
+| Android 릴리스 + Play Integrity | ❌ Play 미배포 + debug 키 서명(P1-19)이라 검증 불가 |
+| iOS 개발 서명 + App Attest | ❌ `403 App attestation failed` — 아이폰 콘솔 로그로 원인 확정 |
+| iOS TestFlight + App Attest | ⬜ P0-1 해결 후에나 가능 |
+
+즉 **진짜 운영 경로는 양쪽 다 스토어 배포가 선행돼야 검증된다.** 그래서
+스토어를 거치지 않는 빌드는 `tool/build_app.sh <타겟> release appcheck-debug`로
+debug 제공자를 쓰고 기기별 디버그 토큰을 등록한다. ⚠️ **스토어 업로드 빌드에는
+절대 이 인자를 붙이면 안 된다** — 붙이면 App Check가 무의미해진다.
+
+**부수적으로 확인된 것**
+- **아이폰이 앱 실행 중 죽는다**는 제보 → 크래시 리포트를 열어 보니
+  `FlutterViewController viewDidLoad` → `VSyncClient init`에서 SIGSEGV.
+  이전 세션이 남긴 **debug 빌드**가 원인이었고(HANDOFF "0-3"의 그 문제),
+  오늘 01:20·12:01에도 같은 크래시가 있었다. 릴리스 빌드 설치로 해결.
+- **Cloud Functions Node.js 20 런타임이 2026-10-30에 폐기된다**(배포 시 경고).
+  그 뒤로는 런타임을 올리기 전까지 배포 자체가 막힌다 — 긴급 수정이 필요한
+  시점에 발목이 잡히므로 미리 올려둘 것. `firebase-functions` 패키지도 구버전.
+
 ### 2026-08-07 밤 (추가 98) — AI 브리핑 사용성 피드백 3건 + Podfile.lock 동기화, 오늘 세션 마무리
 
 추가 96·97에서 AI 브리핑을 처음 끝까지 써본 사용자가 준 실사용 피드백을

@@ -100,7 +100,113 @@ firebase deploy --only functions
 
 ---
 
-## 2. 참고 — 이 프로젝트에서 쓰는 Google 관련 주소 전부
+## 2. App Check — AI 호출을 우리 앱만 할 수 있게 막기
+
+**목적**: `generateBriefing`은 로그인 여부(`request.auth`)만 확인한다. 즉
+Google 로그인만 통과하면 **우리 앱이 아닌 스크립트도 호출할 수 있고**, 그
+호출은 회사 명의 유료 Gemini 키로 나가 그대로 요금이 된다. uid당 하루 10회
+한도가 있지만 계정을 여러 개 만들면 우회된다. App Check는 "이 호출이 진짜
+우리 앱, 진짜 기기에서 왔는가"를 증명하는 토큰을 붙여 이 구멍을 막는다.
+
+**⚠️ 강제(`enforceAppCheck: true`)를 켠 뒤로는 토큰을 못 만드는 빌드에서
+AI 브리핑이 막힌다.** 그리고 **정식 무결성 검증기는 스토어 배포를 전제로
+한다** — 2026-08-08 실기기에서 확인한 사실이다.
+
+| 검증기 | 언제 통과하나 | 지금 |
+|---|---|---|
+| Play Integrity (Android) | Google Play가 아는 앱(내부 테스트 트랙 포함) | ❌ Play 미배포 + debug 키 서명(P1-19) |
+| App Attest (iOS) | TestFlight / App Store 빌드 | ❌ 개발 서명 빌드는 Firebase가 `403 App attestation failed`로 거부 |
+
+그래서 **스토어를 거치지 않는 빌드는 debug 제공자 + 기기별 디버그 토큰**으로
+쓴다. 빌드할 때 세 번째 인자를 붙이면 된다.
+
+```bash
+tool/build_app.sh ios release appcheck-debug   # devicectl로 직접 설치할 때
+tool/build_app.sh apk release appcheck-debug   # 테스터 배포용 APK
+```
+
+⚠️ **스토어에 올리는 빌드에는 이 인자를 붙이지 말 것.** 붙이면 디버그 토큰만
+있으면 누구나 우리 앱인 척할 수 있어 App Check가 무의미해진다.
+
+| 단계 | 누가 | 상태(2026-08-08) |
+|---|---|---|
+| 앱에 App Check 붙이기(코드) | 개발 | ✅ 완료 |
+| 인스턴스 상한 명시(코드) | 개발 | ✅ 배포 완료(`maxInstances=3` 확인) |
+| App Check API 활성화(2-0) | 개발 | ✅ 완료 |
+| iOS 앱에 Apple 팀 ID 등록 | 개발 | ✅ 완료(`77L7BH2M2W`) |
+| 갤럭시 디버그 토큰 등록 + 서버 도달 확인 | 개발 | ✅ `app: VALID` 확인 |
+| 아이폰 디버그 토큰 등록 + 서버 도달 확인 | 개발 | ⬜ |
+| `enforceAppCheck: true`로 전환·재배포 | 개발 | ⬜ |
+| 스토어 배포 후 정식 검증기로 재확인 | 개발 | ⬜ P0-1 / P1-19 이후 |
+
+### 2-0. Firebase App Check API 켜기 (가장 먼저)
+
+**2026-08-08 확인: 이 프로젝트는 App Check API가 꺼져 있었다**(`state:
+DISABLED`). 이 상태에서는 콘솔에 앱과 디버그 토큰을 아무리 정확히 등록해도
+기기에서 토큰 교환이 403으로 실패한다. 그런데 앱 로그에는 "등록 안 했으면
+콘솔에서 등록하라"는 **엉뚱한 안내**만 떠서, 원인을 등록 실수로 오해하기 쉽다.
+
+- 확인·활성화: https://console.cloud.google.com/apis/api/firebaseappcheck.googleapis.com/overview?project=connection-sense
+- 2026-08-08에 이미 켰으므로 지금은 추가 조치 없음. 위 증상이 재발하면 여기부터 볼 것.
+
+### 2-1. Firebase 콘솔에 앱 등록
+
+1. [Firebase 콘솔 → App Check](https://console.firebase.google.com/project/connection-sense/appcheck) 접속
+2. "앱" 탭에 Android/iOS 앱이 목록에 보인다. 각각 클릭해서 인증 제공자를 등록한다.
+   - **Android** → **Play Integrity** 선택 후 저장
+   - **iOS** → **App Attest** 선택 후 저장 (팀 ID를 물으면 `77L7BH2M2W`)
+3. 각 앱 행의 "⋮ → 디버그 토큰 관리"에서 개발용 토큰을 등록한다(아래 2-2).
+
+> ⚠️ **iOS 앱이 목록에 두 개 보인다.** 반드시 번들 ID가
+> `com.creamhouse.connectionsense`인 쪽(appId `…ios:534c871d9bfd7d78182254`)을
+> 고를 것. 다른 하나(`com.connectiontrace.…`, appId `…ios:711add…`)는
+> 2026-08-04에 버린 옛 앱이다. 앱 ID를 헷갈리면 등록은 성공한 것처럼 보이는데
+> 기기에서는 계속 실패한다 — 2026-08-08에 실제로 이 함정을 밟았다.
+>
+> 또 하나: App Check REST API는 **등록 여부와 무관하게 기본 config를
+> 돌려준다.** 조회 결과가 그럴듯하다고 "등록돼 있다"고 판단하면 안 된다.
+
+### 2-2. 디버그 토큰 등록 (개발·테스트 기기용)
+
+debug 빌드로 앱을 실행하면 로그에 아래 같은 줄이 한 번 찍힌다.
+
+```
+Enter this debug secret into the allow list in the Firebase Console for your project:
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+- Android: `adb logcat | grep -i "debug secret"`
+- iOS: Xcode 콘솔 출력에서 검색
+
+이 값을 위 2-1의 "디버그 토큰 관리"에 등록하면 그 기기만 통과한다.
+
+> ⚠️ **디버그 토큰은 사실상 우회 열쇠다.** 유출되면 누구나 우리 앱인 척할 수
+> 있으니 채팅·캡처·커밋에 남기지 말고, 안 쓰는 토큰은 콘솔에서 지운다.
+
+### 2-3. 비용 한도 — 예산 알림은 차단 장치가 아니다
+
+1-2의 예산(₩5,000/월)은 **알림만** 보낸다. 한도에 닿아도 자동으로 멈추지
+않으므로, 실제로 요금을 막는 건 아래 세 가지다.
+
+| 장치 | 어디 | 지금 값 |
+|---|---|---|
+| App Check 강제 | 코드 `enforceAppCheck` | ✅ 켜짐(2026-08-08) |
+| 동시 인스턴스 상한 | 코드 `functions/src/index.ts`의 `maxInstances` | 3 |
+| 사용자별 호출 한도 | 코드 `DAILY_LIMIT`/`MONTHLY_LIMIT` | 10/일, 100/월 |
+| Gemini 월 지출 한도 | [AI Studio — spend cap](https://aistudio.google.com/spend) | **확인 필요** |
+
+> `maxInstances`가 3인 이유: 값을 지정하지 않았는데도 이미 3이 잡혀 있었다.
+> 어디서 온 건지 모르는 기본값에 기대면 다음 배포에서 조용히 바뀌어도 아무도
+> 모르므로, 그 값을 그대로 코드에 못 박았다. 인스턴스당 동시 요청이 80이라
+> 3개면 최대 240건을 동시에 처리한다.
+
+Gemini 월 지출 한도가 마지막 방어선이다. 위 두 가지를 다 뚫어도 이 한도를
+넘으면 Google이 호출을 거절한다 — **감당 가능한 금액으로 잡혀 있는지
+확인해 둘 것.**
+
+---
+
+## 3. 참고 — 이 프로젝트에서 쓰는 Google 관련 주소 전부
 
 **주의**: Firebase Blaze 결제, Google Cloud 결제, Google AI Studio(Gemini)
 결제는 **서로 다른 시스템**이다(2026-08-07 확인 — backlog 추가 96 참고).
@@ -111,7 +217,8 @@ firebase deploy --only functions
 |---|---|---|
 | Firebase 콘솔(프로젝트 개요) | https://console.firebase.google.com/project/connection-sense/overview | |
 | Firestore 데이터 직접 조회/수정 | https://console.firebase.google.com/project/connection-sense/firestore/data | 사용량 카운터(`users/{uid}.aiUsage`) 등을 관리자 권한으로 직접 볼 때. **운영 데이터라 신중히.** |
-| Google Cloud 콘솔 — 결제 예산 및 알림 | https://console.cloud.google.com/billing/budgets | Firebase Blaze 전체 사용량 예산. **Gemini API 자체 결제는 여기 안 잡힘**(아래 항목 참고). |
+| Google Cloud 콘솔 — 결제 예산 및 알림 | https://console.cloud.google.com/billing/budgets | Firebase Blaze 전체 사용량 예산. **알림만 보내고 자동 차단은 안 한다**(2-3 참고). **Gemini API 자체 결제는 여기 안 잡힘**(아래 항목 참고). |
+| Firebase 콘솔 — App Check | https://console.firebase.google.com/project/connection-sense/appcheck | 앱별 인증 제공자(Play Integrity/App Attest) 등록, 디버그 토큰 관리, 토큰 도착 현황 확인. 위 2절 참고. |
 | Google Cloud 콘솔 — API 라이브러리(Gmail API) | https://console.cloud.google.com/apis/library/gmail.googleapis.com?project=connection-sense | 앱의 Gmail 가져오기 기능이 403으로 실패하면 여기서 "사용 설정"이 꺼져 있는지 가장 먼저 확인(2026-08-07 실제로 이게 원인이었음 — 추가 98). |
 | Google AI Studio — API 키 발급 | https://aistudio.google.com/api-keys | 반드시 "connection-sense" 프로젝트로 만든 키를 쓸 것(위 1-3 참고). |
 | Google AI Studio — 프로젝트/선불 크레딧 | https://aistudio.google.com/projects | Gemini API는 Firebase Blaze와 별개로 **자체 선불 크레딧**을 쓴다. "prepayment credits are depleted" 에러가 나면 여기서 충전(최소 단위 16,000원 확인됨, 2026-08-07). |

@@ -1227,6 +1227,11 @@ PODS:
   - Firebase/Functions (12.17.0):
     - Firebase/CoreOnly
     - FirebaseFunctions (~> 12.17.0)
+  - firebase_app_check (0.4.6):
+    - Firebase/CoreOnly (~> 12.17.0)
+    - firebase_core
+    - FirebaseAppCheck (~> 12.17.0)
+    - Flutter
   - firebase_auth (6.5.7):
     - Firebase/Auth (= 12.17.0)
     - firebase_core
@@ -1234,6 +1239,12 @@ PODS:
   - firebase_core (4.13.0):
     - Firebase/CoreOnly (= 12.17.0)
     - Flutter
+  - FirebaseAppCheck (12.17.0):
+    - AppCheckCore (~> 11.3)
+    - FirebaseAppCheckInterop (~> 12.17.0)
+    - FirebaseCore (~> 12.17.0)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GoogleUtilities/UserDefaults (~> 8.1)
   - FirebaseAppCheckInterop (12.17.0)
   - FirebaseAuth (12.17.0):
     - FirebaseAppCheckInterop (~> 12.17.0)
@@ -1510,6 +1521,7 @@ DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
+  - firebase_app_check (from `.symlinks/plugins/firebase_app_check/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - Flutter (from `Flutter`)
@@ -1536,6 +1548,7 @@ SPEC REPOS:
     - AppCheckCore
     - BoringSSL-GRPC
     - Firebase
+    - FirebaseAppCheck
     - FirebaseAppCheckInterop
     - FirebaseAuth
     - FirebaseAuthInterop
@@ -1575,6 +1588,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/cloud_firestore/ios"
   cloud_functions:
     :path: ".symlinks/plugins/cloud_functions/ios"
+  firebase_app_check:
+    :path: ".symlinks/plugins/firebase_app_check/ios"
   firebase_auth:
     :path: ".symlinks/plugins/firebase_auth/ios"
   firebase_core:
@@ -1619,8 +1634,10 @@ SPEC CHECKSUMS:
   cloud_firestore: 511375ce1aea4e819e2df382fb1a141015cb8c60
   cloud_functions: 2830ef3170b23784800335888af15c6c856ced91
   Firebase: e8400c058702940d53f31fc0653e4e7a06332326
+  firebase_app_check: 5da86a4ec92047b87f16009122e2c0e23864516e
   firebase_auth: 3e82fa3e632856cd5a8e2bedf458d682740c8168
   firebase_core: c94f9efeed0ded590b7eecaf6110a374eb865d7a
+  FirebaseAppCheck: 64d364d08ad1f6e8e084f7183c802df0a69eba3c
   FirebaseAppCheckInterop: 6d4cd7b9df8047da8cfc98c3fef4618bab2a8e0d
   FirebaseAuth: d27d2fc54508c3af9db2f617300fcf3042328d80
   FirebaseAuthInterop: 1679f5a45921270225b7eabf1ad4ebff8790fe82
