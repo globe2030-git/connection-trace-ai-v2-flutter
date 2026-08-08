@@ -230,8 +230,37 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
   });
 }
 
+// 동시에 뜰 수 있는 인스턴스 상한. 어뷰징이나 버그로 호출이 몰리면 인스턴스가
+// 늘어나며 Gemini 호출 요금이 그대로 따라 늘어나므로 낮게 묶어 둔다.
+//
+// **3인 이유**: 2026-08-08에 배포된 함수 설정을 직접 조회해 보니 코드에
+// 아무 지정이 없는데도 이미 `maxInstanceCount: 3`이 잡혀 있었다. 값을
+// 명시하지 않으면 이렇게 "어디서 온 건지 모르는 숫자"에 의존하게 되고,
+// 다음 배포에서 조용히 바뀌어도 아무도 모른다 — 그래서 지금 걸려 있던 값을
+// 그대로 코드에 고정한다. 올릴 이유가 생기면 그때 근거와 함께 올린다.
+//
+// 인스턴스당 동시 요청이 80이라 3개면 최대 240건을 동시에 처리한다. 실사용은
+// 사람이 화면에서 한 번씩 누르는 패턴이라 충분하고, 넘쳐도 사용자에게는
+// "잠시 후 다시 시도" 안내로 끝난다 — 요금이 새는 것보다 낫다.
+const MAX_INSTANCES = 3;
+
 export const generateBriefing = onCall<GenerateBriefingRequest>(
-  {secrets: [geminiApiKey], region: "asia-northeast3"},
+  {
+    secrets: [geminiApiKey],
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    // 유효한 App Check 토큰이 없는 호출은 거부한다(2026-08-08 전환). 이걸
+    // 켜기 전에는 Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사
+    // 명의 유료 Gemini 키를 쓸 수 있었다(backlog 추가 82 신규-B).
+    //
+    // ⚠️ 이걸 켠 뒤로는 **토큰을 못 만드는 빌드는 AI 브리핑이 막힌다.**
+    // 스토어를 거치지 않는 빌드(테스터 APK, devicectl 직접 설치 iOS)는
+    // `tool/build_app.sh <타겟> release appcheck-debug`로 빌드하고 그 기기의
+    // 디버그 토큰을 Firebase에 등록해야 한다. 근거는
+    // lib/core/services/app_check_service.dart 주석, 절차는
+    // docs/planning/admin-manual.md의 App Check 절.
+    enforceAppCheck: true,
+  },
   async (request): Promise<GenerateBriefingResponse> => {
     if (!request.auth) {
       throw new HttpsError(
@@ -239,6 +268,10 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         "로그인 후 이용할 수 있어요."
       );
     }
+
+    // 강제 전환 판단에 필요한 유일한 정보는 "유효한 토큰이 왔는가" 하나다.
+    // uid나 토큰 원문은 남기지 않는다(Cloud Logging 기본 30일 보관).
+    logger.info("generateBriefing 호출", {appCheckVerified: !!request.app});
 
     const {
       contactSummary,
