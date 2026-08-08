@@ -16,7 +16,12 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+# `+` 뒤가 빌드 번호(iOS CFBundleVersion / Android versionCode).
+# **스토어에 올릴 때마다 반드시 올려야 한다** — App Store Connect는 같은 버전에
+# 같은 빌드 번호를 두 번 받지 않고 "Redundant Binary Upload"(code 90189)로
+# 거부한다(2026-08-08 실제로 겪음). 앱 버전(1.0.0)은 그대로 두고 뒤 숫자만
+# 올리면 된다.
+version: 1.0.0+2
 
 environment:
   sdk: ^3.12.2
