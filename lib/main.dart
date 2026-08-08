@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 import 'core/app_version.dart';
+import 'core/services/app_check_service.dart';
 import 'core/services/fresh_install_service.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
@@ -23,6 +24,10 @@ void main() async {
   // 명함/프로필 서버 백업·복원(backlog 추가 66)의 기반 — Firebase Auth로
   // 로그인 사용자를 식별하고 Cloud Firestore에 데이터를 백업한다.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // AI 브리핑 서버 프록시가 회사 명의 유료 Gemini 키를 쓰므로, 호출이 진짜
+  // 우리 앱에서 온 것인지 증명하는 토큰을 미리 받아 둔다(backlog 추가 82).
+  // Firebase 초기화 이후여야 하고, 실패해도 앱을 멈추지 않는다.
+  await AppCheckService.activate();
   // iOS Keychain은 앱을 삭제해도 지워지지 않아, 재설치하면 이전 로그인
   // 세션과 암호화 키가 되살아난다(backlog 추가 78). 저장소를 읽는 리포지토리
   // 들이 생성되기 전에 정리해야 하므로 runApp보다 먼저 호출한다.

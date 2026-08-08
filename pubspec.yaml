@@ -82,6 +82,10 @@ dependencies:
   crypto: ^3.0.7
   flutter_markdown_plus: ^1.0.12
   package_info_plus: ^9.0.1
+  # AI 브리핑 서버 프록시(generateBriefing)를 "우리 앱에서 온 호출"만 받도록
+  # 막기 위한 패키지. 로그인만으로는 호출자가 우리 앱인지 스크립트인지 구분할
+  # 수 없고, 그 호출은 회사 명의 유료 Gemini 키로 나간다(backlog 추가 82 신규-B).
+  firebase_app_check: ^0.4.6
 
 dev_dependencies:
   flutter_test:
