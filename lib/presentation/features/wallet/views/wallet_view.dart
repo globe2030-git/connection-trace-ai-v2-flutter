@@ -7,6 +7,7 @@ import '../../../../data/models/contact_model.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/wallet_view_model.dart';
+import '../../briefing/views/briefing_overlay_view.dart';
 import 'add_card_modal_view.dart';
 
 class WalletView extends StatelessWidget {
@@ -158,6 +159,8 @@ class WalletView extends StatelessWidget {
                           ),
                           onDelete: () =>
                               viewModel.deleteContact(contacts[index].id),
+                          onBriefing: () =>
+                              _openBriefing(context, contacts[index]),
                         ),
                       ),
               ),
@@ -171,6 +174,26 @@ class WalletView extends StatelessWidget {
   void _openCardEditor(BuildContext context, {ContactModel? contact}) {
     AddCardModalView.show(context, contact: contact);
   }
+
+  /// AI 대화 가이드를 전체 화면으로 연다.
+  ///
+  /// 주변 화면은 이 위젯을 자기 `Stack` 위에 겹쳐 놓지만, 지갑 화면에는 그런
+  /// 스택이 없다. 화면 구조를 바꾸는 대신 라우트로 밀어 올린다 — 뒤로 가기
+  /// 제스처와 시스템 뒤로 가기가 그대로 동작하는 이점도 있다.
+  void _openBriefing(BuildContext context, ContactModel contact) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (routeContext) => Scaffold(
+          backgroundColor: AppColors.bgDarkSlate,
+          body: BriefingOverlayView(
+            contact: contact,
+            onClose: () => Navigator.of(routeContext).pop(),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ContactCard extends StatelessWidget {
@@ -178,12 +201,14 @@ class _ContactCard extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onCall;
   final VoidCallback onDelete;
+  final VoidCallback onBriefing;
 
   const _ContactCard({
     required this.contact,
     required this.onEdit,
     required this.onCall,
     required this.onDelete,
+    required this.onBriefing,
   });
 
   @override
@@ -294,6 +319,19 @@ class _ContactCard extends StatelessWidget {
                       color: AppColors.accentText,
                     ),
                   ),
+                // AI 대화 가이드는 원래 "주변" 화면에서만 열 수 있었다. 그런데
+                // 주변 화면은 지금 근처에 있는 인맥만 보여주므로, 평소에 "이
+                // 사람에게 연락해 볼까" 하는 순간에는 진입할 길이 없었다
+                // (실사용 피드백 — 쓸 수 있는 곳이 한 곳뿐이라 잘 안 쓰게 된다).
+                // 명함 지갑은 인맥 전체가 있는 곳이라 여기서 바로 열 수 있어야 한다.
+                IconButton(
+                  tooltip: '${contact.name} AI 대화 가이드',
+                  onPressed: onBriefing,
+                  icon: const Icon(
+                    Icons.auto_awesome,
+                    color: AppColors.accentText,
+                  ),
+                ),
                 // 왼쪽으로 밀어서 삭제(Dismissible)만 있으면 알아채기 어려워서,
                 // 눈에 보이는 삭제 버튼도 같이 둔다.
                 IconButton(
