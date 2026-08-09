@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -26,6 +28,22 @@ void main() async {
   // 명함/프로필 서버 백업·복원(backlog 추가 66)의 기반 — Firebase Auth로
   // 로그인 사용자를 식별하고 Cloud Firestore에 데이터를 백업한다.
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // 실사용자 크래시를 Crashlytics로 모은다(P1-13). 지금까지는 크래시가 나도
+  // 아무 데도 안 남아, 테스터 피드백이 "가끔 죽어요"에서 멈췄다. Flutter
+  // 프레임워크 예외(FlutterError)와 그 바깥의 비동기/플랫폼 예외
+  // (PlatformDispatcher) 둘 다 잡는다.
+  //
+  // 디버그 빌드에서는 걸지 않는다 — 개발 중 예외는 콘솔에 그대로 찍히는 게
+  // 낫고, 개발용 예외까지 리포트에 쌓이면 노이즈가 된다. 개인정보 원칙상
+  // 크래시 스택에 개인정보를 남기지 않는다(로그에 이름·전화 등을 찍지 않는
+  // 기존 원칙이 그대로 스택 안전성으로 이어진다).
+  if (!kDebugMode) {
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+  }
   // AI 브리핑 서버 프록시가 회사 명의 유료 Gemini 키를 쓰므로, 호출이 진짜
   // 우리 앱에서 온 것인지 증명하는 토큰을 받아 둔다(backlog 추가 82).
   //
