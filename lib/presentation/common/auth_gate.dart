@@ -44,13 +44,19 @@ class _AuthGateState extends State<AuthGate> {
     _lastHandledUid = uid;
     final contactsRepo = context.read<ContactsRepository>();
     final profileRepo = context.read<MyProfileRepository>();
-    contactsRepo.setCurrentUid(uid);
+    // 복호화 재로드가 시작되도록 uid를 알리고, 그 완료(Future)를 붙잡는다.
+    // 아래 동기화 전에 이 로드를 기다려야 로컬을 "비었다"고 오판하지 않는다
+    // (2026-08-09 실기기에서 확인된 경합 — 추가 120, P1-39 A안).
+    final contactsLoaded = contactsRepo.setCurrentUid(uid);
     profileRepo.setCurrentUid(uid);
     if (uid == null) return;
     // 계정 전환 다이얼로그를 띄울 수도 있으므로, 이번 프레임의 build가
     // 끝난 뒤(Navigator가 안전하게 쓸 수 있는 시점)로 미룬다.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // 복호화 로드가 끝난 뒤에 동기화한다(경합 수정).
+      await contactsLoaded;
+      if (!context.mounted) return;
       _handleAccountSync(context, uid, contactsRepo, profileRepo);
     });
   }
@@ -90,13 +96,13 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
 
-    await contactsRepo.restoreFromServerIfEmpty(uid);
+    // 다기기 동기화(P1-39 A안): 서버와 로컬을 결정적으로 병합한다 — 추가·편집·
+    // 삭제 전파 + 오프라인 로컬 손실 방지(updatedAt LWW + tombstone). 위
+    // _syncUidAndRestore가 복호화 로드 완료를 기다린 뒤 여기 도달하므로 로컬을
+    // 빈 것으로 오판하지 않는다. 계정 전환("유지") 경로(위 return)엔 넣지 않는다
+    // — 다른 계정 데이터가 섞일 수 있어서다. 여기는 같은 계정(또는 최초)만 도달.
+    await contactsRepo.syncWithServer(uid);
     await profileRepo.restoreFromServerIfEmpty(uid);
-    // 다기기 동기화(P1-39): 로컬이 이미 있어도 서버에만 있는 명함을 더한다.
-    // 같은 계정으로 다른 기기에서 등록한 명함이 이 기기에 뜨지 않던 문제 해결.
-    // 계정 전환("유지") 경로(위 return)에는 넣지 않는다 — 다른 계정 데이터가
-    // 섞일 수 있어서다. 여기는 같은 계정(또는 최초/로컬없음)만 도달한다.
-    await contactsRepo.mergeFromServer(uid);
     await prefs.setString(kLastSignedInUidPrefsKey, uid);
   }
 

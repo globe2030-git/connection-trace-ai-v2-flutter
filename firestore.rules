@@ -134,6 +134,12 @@ service cloud.firestore {
           allow read, write: if isOwner(uid);
         }
       }
+
+      // 삭제 기록(tombstone) — 다기기 동기화(P1-39 A안)에서 삭제 전파용.
+      // 본인만 읽고 쓴다. id·삭제시각만 들어가며 개인정보는 없다.
+      match /deletedContacts/{contactId} {
+        allow read, write: if isOwner(uid);
+      }
     }
 
     // 명시적으로 나열되지 않은 모든 경로는 기본 거부.

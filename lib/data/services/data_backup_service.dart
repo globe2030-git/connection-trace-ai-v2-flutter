@@ -110,6 +110,38 @@ class DataBackupService {
     }
   }
 
+  /// 삭제 기록(tombstone). 다기기 동기화(P1-39 A안)에서 "다른 기기에서 지운
+  /// 명함"을 이 기기에도 반영하기 위한 것 — 삭제는 "없음"이라 그냥 두면 병합이
+  /// 다시 살려낸다. 그래서 삭제 시각을 남긴다. 개인정보는 없고 id·시각만 남긴다.
+  /// 시각은 클라이언트 시계(ISO)로 남겨 명함의 updatedAt(같은 클라이언트 시계)과
+  /// 같은 기준으로 비교한다.
+  static Future<void> writeTombstone(String uid, String contactId) async {
+    try {
+      await _userDoc(uid).collection('deletedContacts').doc(contactId).set({
+        'deletedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('삭제 기록(tombstone) 저장 실패($contactId): $e');
+    }
+  }
+
+  /// 서버의 삭제 기록 전체를 `{contactId: deletedAt}`로 내려받는다.
+  static Future<Map<String, DateTime>> fetchTombstones(String uid) async {
+    try {
+      final snap = await _userDoc(uid).collection('deletedContacts').get();
+      final result = <String, DateTime>{};
+      for (final doc in snap.docs) {
+        final raw = doc.data()['deletedAt'];
+        final dt = raw is String ? DateTime.tryParse(raw) : null;
+        if (dt != null) result[doc.id] = dt;
+      }
+      return result;
+    } catch (e) {
+      debugPrint('삭제 기록(tombstone) 조회 실패: $e');
+      return {};
+    }
+  }
+
   static Future<void> backupProfile(String uid, MyProfileModel profile) async {
     try {
       final key = await _encryptionKeyService.getOrCreateUserKey(uid);
