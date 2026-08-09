@@ -22,6 +22,7 @@
  */
 
 import {HttpsError, onCall} from "firebase-functions/v2/https";
+import * as functionsV1 from "firebase-functions/v1";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
@@ -556,6 +557,35 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
     }
   }
 );
+
+/**
+ * 회원 탈퇴(설정 → 계정 삭제) 시 그 사용자의 AI 호출 로그를 함께 파기한다.
+ *
+ * 왜 트리거인가: 클라이언트는 users/{uid}·contacts를 직접 지우지만,
+ * aiAuditLogs는 보안 규칙상 클라이언트가 못 지운다(관리자 읽기 전용, 서버만
+ * 기록). Firebase Auth 계정이 삭제되면(탈퇴 흐름의 마지막 단계) 이 트리거가
+ * 그 uid의 감사 로그를 batch로 삭제한다. 개인정보처리방침 "회원 탈퇴 시 파기"와
+ * 일치시키기 위함(backlog 추가 112). 어떤 경로로 계정이 삭제돼도 확실히 지운다.
+ *
+ * v2에는 auth onDelete 트리거가 없어 v1(gen1)로 둔다 — 이름이 겹치지 않으므로
+ * 같은 코드베이스의 v2 함수들과 함께 배포된다.
+ */
+export const onUserDeletedCleanup = functionsV1.auth
+  .user()
+  .onDelete(async (user) => {
+    const db = getFirestore();
+    const snap = await db
+      .collection("aiAuditLogs")
+      .where("uid", "==", user.uid)
+      .get();
+    if (snap.empty) return;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = db.batch();
+      docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  });
 
 interface GetUserUsageRequest {
   email: string;
