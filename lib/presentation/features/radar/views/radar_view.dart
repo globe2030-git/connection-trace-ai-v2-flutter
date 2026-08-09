@@ -5,6 +5,7 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../common/contact_avatar.dart';
@@ -409,6 +410,14 @@ class _RadarViewState extends State<RadarView> {
                                   photoPath: contact.avatarUrl,
                                   name: contact.name,
                                   radius: 20,
+                                  cardImagePath: contact.useCardAsAvatar
+                                      ? contact.cardImagePath
+                                      : null,
+                                  uid: contact.useCardAsAvatar
+                                      ? context
+                                            .read<AuthRepository>()
+                                            .firebaseUid
+                                      : null,
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
@@ -762,7 +771,13 @@ class _FeaturedContactCard extends StatelessWidget {
                 photoPath: contact.avatarUrl,
                 name: contact.name,
                 radius: 30,
+                cardImagePath:
+                    contact.useCardAsAvatar ? contact.cardImagePath : null,
+                uid: contact.useCardAsAvatar
+                    ? context.read<AuthRepository>().firebaseUid
+                    : null,
               ),
+
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

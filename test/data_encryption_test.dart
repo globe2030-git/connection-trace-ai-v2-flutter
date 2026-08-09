@@ -54,6 +54,30 @@ void main() {
         throwsA(isA<DataDecryptionException>()),
       );
     });
+
+    test('⭐ 바이트(명함 이미지) 암호화 후 복호화하면 원본과 동일 (P1-9)', () async {
+      final key = await AesGcm.with256bits().newSecretKey();
+      // JPG 헤더 흉내 + 임의 바이트로 이미지 바이트를 대신한다.
+      final original = List<int>.generate(2000, (i) => (i * 31 + 7) % 256);
+
+      final encrypted = await DataCryptoService.encryptBytes(original, key);
+      // 암호문에 원본이 그대로 들어있지 않다(앞부분이 원본과 다름).
+      expect(encrypted.sublist(0, 16), isNot(equals(original.sublist(0, 16))));
+
+      final decrypted = await DataCryptoService.decryptBytes(encrypted, key);
+      expect(decrypted, equals(original));
+    });
+
+    test('바이트 복호화도 잘못된 키면 예외를 던진다', () async {
+      final key = await AesGcm.with256bits().newSecretKey();
+      final wrongKey = await AesGcm.with256bits().newSecretKey();
+      final encrypted = await DataCryptoService.encryptBytes([1, 2, 3, 4], key);
+
+      expect(
+        () => DataCryptoService.decryptBytes(encrypted, wrongKey),
+        throwsA(isA<DataDecryptionException>()),
+      );
+    });
   });
 
   group('ContactsRepository 암호화/레거시 마이그레이션', () {
