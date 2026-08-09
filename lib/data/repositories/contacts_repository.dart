@@ -127,43 +127,106 @@ class ContactsRepository extends ChangeNotifier {
     unawaited(backfillMissingGeo());
   }
 
-  /// 로컬에 없는(id 기준) 서버 명함만 골라낸다. Firestore 접근과 분리한
-  /// 순수 함수라 단위 테스트가 쉽다.
-  static List<ContactModel> computeServerAdditions(
-    List<ContactModel> local,
-    List<ContactModel> server,
-  ) {
-    final localIds = local.map((c) => c.id).toSet();
-    return server.where((c) => !localIds.contains(c.id)).toList();
+  /// 명함의 "최신 시각" — 다기기 병합의 last-write-wins 기준. updatedAt이 없는
+  /// 예전 데이터는 "가장 오래됨"(epoch)으로 취급해, 이후 어떤 실제 편집이든 이긴다.
+  static final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0);
+  static DateTime _updatedAtOf(ContactModel c) => c.updatedAt ?? _epoch;
+
+  /// 다기기 동기화(P1-39 A안)의 핵심 병합 — **순수 함수라 단위 테스트로 고정**한다.
+  ///
+  /// - [local]: 이 기기 명함(좌표 포함)
+  /// - [server]: 서버 백업 명함(좌표 없음, updatedAt 포함)
+  /// - [tombstones]: `{id: deletedAt}` 삭제 기록
+  ///
+  /// 규칙(전부 결정적):
+  /// - 같은 id가 양쪽에 있으면 updatedAt이 더 최신인 쪽 채택(편집 전파, LWW).
+  ///   같으면 서버 쪽을 채택(불필요한 재업로드 방지).
+  /// - 한쪽에만 있으면 그걸 채택(추가 전파, 오프라인 로컬 보존).
+  /// - 삭제 기록이 채택본보다 최신이면 제거(삭제 전파). 삭제 이후 다시 편집한
+  ///   건(updatedAt이 삭제보다 최신)은 살아남는다(부활).
+  ///
+  /// 반환:
+  /// - `merged`: 로컬에 저장할 최종 목록(updatedAt 내림차순).
+  /// - `toPush`: 서버로 올려야 할 것(로컬에만 있거나 로컬이 더 최신 — 손실 방지·편집 전파 완성).
+  static ({List<ContactModel> merged, List<ContactModel> toPush}) mergeSync({
+    required List<ContactModel> local,
+    required List<ContactModel> server,
+    required Map<String, DateTime> tombstones,
+  }) {
+    final localById = {for (final c in local) c.id: c};
+    final serverById = {for (final c in server) c.id: c};
+    final allIds = <String>{...localById.keys, ...serverById.keys};
+
+    final merged = <ContactModel>[];
+    final toPush = <ContactModel>[];
+
+    for (final id in allIds) {
+      final l = localById[id];
+      final s = serverById[id];
+
+      final ContactModel candidate;
+      final bool fromLocal;
+      if (l != null && s != null) {
+        if (_updatedAtOf(l).isAfter(_updatedAtOf(s))) {
+          candidate = l;
+          fromLocal = true;
+        } else {
+          candidate = s;
+          fromLocal = false;
+        }
+      } else if (l != null) {
+        candidate = l;
+        fromLocal = true;
+      } else {
+        candidate = s!;
+        fromLocal = false;
+      }
+
+      final tomb = tombstones[id];
+      if (tomb != null && tomb.isAfter(_updatedAtOf(candidate))) {
+        // 다른 기기의 삭제가 이 후보보다 최신 → 제거(로컬·서버 어디에도 안 남김).
+        continue;
+      }
+
+      merged.add(candidate);
+      // 로컬에만 있거나 로컬이 더 최신이면 서버로 올려 손실을 막고 편집을 전파한다.
+      if (fromLocal) toPush.add(candidate);
+    }
+
+    merged.sort((a, b) => _updatedAtOf(b).compareTo(_updatedAtOf(a)));
+    return (merged: merged, toPush: toPush);
   }
 
-  /// 다기기 동기화(P1-39) — **추가형 병합**. 로컬을 절대 지우지 않고, 서버
-  /// 백업에만 있는 명함을 로컬에 더한다. 기기 A에서 등록한 명함이 기기 B에
-  /// 나타나지 않던 문제(복원이 "로컬이 빌 때만" 일어나 백업이지 동기화가
-  /// 아니었음)를 해결한다.
+  /// 다기기 동기화(P1-39 A안) — [mergeSync]를 서버 데이터에 적용한다.
   ///
-  /// ⚠️ **한계(의도된 안전 선택)**: 다른 기기에서 **삭제**된 명함은 이 병합으로
-  /// 로컬에서 제거되지 않는다(삭제 전파는 tombstone이 필요 — 별도 작업).
-  /// 로컬을 지우지 않으므로 데이터 손실 위험이 없는 대신, "삭제가 즉시 모든
-  /// 기기에 반영"되지는 않는다. 또 두 기기에서 각각 등록한 같은 사람 명함은
-  /// id가 달라 둘 다 남는다(P1-40 크로스기기 중복은 여기서 안 잡음).
-  ///
-  /// [restoreFromServerIfEmpty] 다음에 부르면 된다 — 로컬이 비어 그쪽이 전량
-  /// 복원한 경우엔 더할 게 없어 조용히 반환한다(양쪽 모두 안전하게 중복 호출 가능).
-  Future<void> mergeFromServer(String uid) async {
+  /// ⚠️ 반드시 로컬 복호화 로드가 끝난 뒤 불러야 한다 — 로그인 시 `setCurrentUid`
+  /// (복호화 재로드)를 **기다린 뒤** 이 메서드를 부르도록 `auth_gate`가 순서를
+  /// 보장한다. 안 그러면 로드가 끝나기 전 로컬을 "비었다"고 오판해, 서버로
+  /// 통째로 덮어쓰고 오프라인 로컬 데이터를 잃을 수 있다(2026-08-09 실기기에서
+  /// 확인된 경합, 추가 120).
+  Future<void> syncWithServer(String uid) async {
     final List<ContactModel> serverContacts;
+    final Map<String, DateTime> tombstones;
     try {
       serverContacts = await DataBackupService.restoreContacts(uid);
+      tombstones = await DataBackupService.fetchTombstones(uid);
     } catch (_) {
       // 네트워크 실패 등 — 로컬은 그대로 두고 다음 로그인에 다시 시도.
       return;
     }
-    final additions = computeServerAdditions(_contacts, serverContacts);
-    if (additions.isEmpty) return;
-    _contacts = [...additions, ..._contacts];
+    final outcome = mergeSync(
+      local: _contacts,
+      server: serverContacts,
+      tombstones: tombstones,
+    );
+    _contacts = outcome.merged;
     notifyListeners();
     await _saveToDisk();
-    // 서버 백업엔 좌표가 없으므로(C안) 더해진 명함의 좌표를 주소로 다시 채운다.
+    // 로컬에만 있거나 로컬이 더 최신인 명함을 서버로 올린다(손실 방지·편집 전파).
+    for (final c in outcome.toPush) {
+      unawaited(DataBackupService.backupContact(uid, c));
+    }
+    // 서버 백업엔 좌표가 없으므로(C안) 좌표 없는 명함의 좌표를 주소로 채운다.
     unawaited(backfillMissingGeo());
   }
 
@@ -351,22 +414,29 @@ class ContactsRepository extends ChangeNotifier {
   static String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
   void addContact(ContactModel newContact) {
-    _contacts = [newContact, ..._contacts];
+    // 다기기 병합의 최신본 판정(LWW) 기준을 지금 시각으로 찍는다(P1-39 A안).
+    final stamped = newContact.updatedAt == null
+        ? newContact.copyWith(updatedAt: DateTime.now())
+        : newContact;
+    _contacts = [stamped, ..._contacts];
     notifyListeners();
     _saveToDisk();
-    _backup(newContact);
+    _backup(stamped);
   }
 
   void updateContact(ContactModel updatedContact) {
+    // 편집이 있었으므로 updatedAt을 지금으로 갱신 — 이래야 다른 기기와 병합할 때
+    // 이 편집이 최신본으로 인식돼 전파된다(P1-39 A안).
+    final stamped = updatedContact.copyWith(updatedAt: DateTime.now());
     _contacts = _contacts.map((c) {
-      if (c.id == updatedContact.id) {
-        return updatedContact;
+      if (c.id == stamped.id) {
+        return stamped;
       }
       return c;
     }).toList();
     notifyListeners();
     _saveToDisk();
-    _backup(updatedContact);
+    _backup(stamped);
   }
 
   void deleteContact(String id) {
@@ -374,7 +444,12 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
     final uid = _uid;
-    if (uid != null) DataBackupService.deleteContactBackup(uid, id);
+    if (uid != null) {
+      DataBackupService.deleteContactBackup(uid, id);
+      // 삭제 기록(tombstone)을 남겨 다른 기기도 이 삭제를 반영하게 한다(P1-39 A안).
+      // 안 남기면 다른 기기와 병합할 때 그 기기의 사본이 다시 살아난다.
+      DataBackupService.writeTombstone(uid, id);
+    }
   }
 
   void _backup(ContactModel contact) {

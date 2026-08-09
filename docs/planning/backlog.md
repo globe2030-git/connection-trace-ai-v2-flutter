@@ -2,6 +2,36 @@
 
 ## 작업 로그
 
+### 2026-08-09 (추가 120) — P1-39 A안: 경합 발견 → 결정적 양방향 동기화로 재작성
+
+**QA가 잡은 진짜 결함**: 시나리오 3(편집)·4(삭제)를 돌리니 편집·삭제가 B로
+전파됐다 — 그런데 추가형 병합(mergeFromServer)은 이미 있는 id를 안 건드리므로
+그럴 수 없다. 원인은 **경합(race)**: 로그인 시 `auth_gate`가 `setCurrentUid`
+(암호화 로컬 복호화 재로드)를 **기다리지 않고** `restoreFromServerIfEmpty`를
+불러서, 복호화가 끝나기 전 로컬을 "비었다"고 오판 → 서버 전체를 다시 받아
+로컬을 통째로 덮어쓰고 있었다. 그래서 편집·삭제가 "우연히" 전파됐고, 추가
+119의 "검증 완료"는 사실 병합이 아니라 이 경합 덕분이었다. **비결정적**(기기·
+타이밍에 따라 다름)이고 **오프라인 로컬 데이터 손실 위험**이 있는 버그다.
+
+**A안 — 결정적·안전한 양방향 동기화로 재작성**:
+- **경합 수정**: `setCurrentUid`가 반환하는 Future를 붙잡아 동기화 전에 await
+  (복호화 로드 완료 보장). `context.mounted`로 가드.
+- **편집 전파(LWW)**: `ContactModel.updatedAt`(nullable) 추가. add/update 시
+  지금 시각을 찍고, 병합에서 updatedAt이 더 최신인 쪽을 채택. null은 epoch 취급.
+- **삭제 전파(tombstone)**: 삭제 시 `users/{uid}/deletedContacts/{id}`에 삭제
+  시각 기록. 병합에서 tombstone이 채택본보다 최신이면 제거. 삭제 후 편집한
+  건(부활)은 살아남음.
+- **손실 방지**: 로컬에만 있거나 로컬이 더 최신인 명함은 서버로 올림(push).
+- `computeServerAdditions`/`mergeFromServer` → **순수 함수 `mergeSync`
+  + `syncWithServer`**로 대체. `firestore.rules`에 deletedContacts 추가.
+- `auth_gate` 정상 로그인 경로만 `syncWithServer`(계정 전환 "유지"·prefs 실패
+  경로는 안전하게 `restoreFromServerIfEmpty` 유지).
+
+**검증**: mergeSync 순수 함수 테스트 7건(추가·편집 LWW 양방향·삭제·부활·
+손실방지·null), flutter analyze 0, flutter test 100건. **실기기 2대 재검증 예정**
+(rebuild + QA 시나리오 재실행). ⚠️ tombstone 정리(오래된 것 prune)·프로필 동기화·
+크로스기기 전화번호 중복은 별도로 남음.
+
 ### 2026-08-09 (추가 119) — P1-39 실기기 검증 완료 (iPhone→Android 병합)
 
 추가 117의 다기기 추가형 병합을 **실기기 2대(iPhone 16 Pro + 갤럭시)**로

@@ -189,25 +189,87 @@ void main() {
     });
   });
 
-  group('다기기 추가형 병합(P1-39)', () {
-    test('⭐ 서버에만 있는 명함(id 기준)만 골라낸다', () {
-      final local = [contact(id: '1'), contact(id: '2')];
-      final server = [contact(id: '2'), contact(id: '3'), contact(id: '4')];
-      final add = ContactsRepository.computeServerAdditions(local, server);
-      expect(add.map((c) => c.id).toList(), ['3', '4'],
-          reason: '로컬에 이미 있는 2는 빼고 서버에만 있는 3·4만');
+  group('다기기 결정적 병합(P1-39 A안 mergeSync)', () {
+    ContactModel c(String id, {DateTime? updatedAt, String company = '회사'}) =>
+        ContactModel(
+          id: id,
+          name: '이름$id',
+          company: company,
+          title: '직함',
+          phone: '010-0000-0000',
+          email: 'a@b.c',
+          tags: const [],
+          talkingPoints: const [],
+          updatedAt: updatedAt,
+        );
+    final t1 = DateTime(2026, 8, 2);
+    final t2 = DateTime(2026, 8, 3);
+
+    test('⭐ 추가 전파 — 서버에만 있는 건 merged에 들어온다', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t1)],
+        server: [c('1', updatedAt: t1), c('2', updatedAt: t1)],
+        tombstones: {},
+      );
+      expect(r.merged.map((x) => x.id).toSet(), {'1', '2'});
     });
 
-    test('로컬이 서버를 다 포함하면 추가 없음', () {
-      final local = [contact(id: '1'), contact(id: '2'), contact(id: '3')];
-      final server = [contact(id: '1'), contact(id: '2')];
-      expect(ContactsRepository.computeServerAdditions(local, server), isEmpty);
+    test('⭐ 편집 전파(LWW) — 서버가 최신이면 서버 내용 채택, push 없음', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t1, company: '옛회사')],
+        server: [c('1', updatedAt: t2, company: '새회사')],
+        tombstones: {},
+      );
+      expect(r.merged.single.company, '새회사');
+      expect(r.toPush, isEmpty);
     });
 
-    test('로컬이 비면 서버 전체가 추가 대상', () {
-      final server = [contact(id: '1'), contact(id: '2')];
-      final add = ContactsRepository.computeServerAdditions([], server);
-      expect(add.map((c) => c.id).toList(), ['1', '2']);
+    test('로컬이 더 최신이면 로컬 채택 + 서버로 push', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t2, company: '새회사')],
+        server: [c('1', updatedAt: t1, company: '옛회사')],
+        tombstones: {},
+      );
+      expect(r.merged.single.company, '새회사');
+      expect(r.toPush.single.id, '1');
+    });
+
+    test('⭐ 삭제 전파 — tombstone이 최신이면 제거', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t1)],
+        server: [c('1', updatedAt: t1)],
+        tombstones: {'1': t2},
+      );
+      expect(r.merged, isEmpty);
+    });
+
+    test('부활 — 삭제 후 편집(updatedAt이 삭제보다 최신)이면 살아남고 push', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t2)],
+        server: const [],
+        tombstones: {'1': t1},
+      );
+      expect(r.merged.single.id, '1');
+      expect(r.toPush.single.id, '1');
+    });
+
+    test('로컬 온리(오프라인 추가)는 유지 + 서버로 올라감(손실 방지)', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', updatedAt: t1)],
+        server: const [],
+        tombstones: {},
+      );
+      expect(r.merged.single.id, '1');
+      expect(r.toPush.single.id, '1');
+    });
+
+    test('updatedAt 없는 예전 데이터는 실제 편집에 진다', () {
+      final r = ContactsRepository.mergeSync(
+        local: [c('1', company: '옛')],
+        server: [c('1', updatedAt: t1, company: '편집됨')],
+        tombstones: {},
+      );
+      expect(r.merged.single.company, '편집됨');
     });
   });
 

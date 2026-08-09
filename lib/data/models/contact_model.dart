@@ -75,6 +75,11 @@ class ContactModel {
   // VIP가 됐음 — 그 선택 UI 자체를 제거).
   final bool isPriority;
 
+  /// 마지막으로 이 명함이 생성/수정된 시각. 다기기 동기화(P1-39 A안)에서
+  /// "어느 쪽이 최신본인가"를 정하는 기준(last-write-wins). 예전 데이터에는
+  /// 없을 수 있어 nullable이며, 병합에서 null은 "가장 오래됨"으로 취급한다.
+  final DateTime? updatedAt;
+
   const ContactModel({
     required this.id,
     required this.name,
@@ -94,6 +99,7 @@ class ContactModel {
     this.commLogs = const [],
     this.memo,
     this.isPriority = true,
+    this.updatedAt,
   });
 
   /// 기기 저장용 — 좌표를 포함한다. 좌표를 매번 다시 계산하지 않기 위해
@@ -132,6 +138,9 @@ class ContactModel {
       'commLogs': commLogs.map((l) => l.toJson()).toList(),
       'memo': memo,
       'isPriority': isPriority,
+      // 서버 백업에도 포함한다 — 다기기 병합의 최신본 판정 기준이라 서버에
+      // 남아야 다른 기기가 비교할 수 있다(좌표와 달리 파생값이 아니다).
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
@@ -167,6 +176,9 @@ class ContactModel {
           [],
       memo: json['memo'] as String?,
       isPriority: json['isPriority'] as bool? ?? true,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'] as String)
+          : null,
     );
   }
 
@@ -189,6 +201,7 @@ class ContactModel {
     List<CommunicationLogModel>? commLogs,
     String? memo,
     bool? isPriority,
+    DateTime? updatedAt,
   }) {
     return ContactModel(
       id: id ?? this.id,
@@ -209,6 +222,7 @@ class ContactModel {
       commLogs: commLogs ?? this.commLogs,
       memo: memo ?? this.memo,
       isPriority: isPriority ?? this.isPriority,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
