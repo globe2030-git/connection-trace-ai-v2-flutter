@@ -22,10 +22,12 @@
  */
 
 import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {onDocumentDeleted} from "firebase-functions/v2/firestore";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore} from "firebase-admin/firestore";
+import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getAuth} from "firebase-admin/auth";
 
 initializeApp();
 
@@ -213,7 +215,10 @@ async function requestGemini(
   });
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+async function callGemini(
+  prompt: string,
+  apiKey: string,
+): Promise<{text: string; usage: GeminiUsage}> {
   let usedThinkingLevel = true;
   let response = await requestGemini(prompt, apiKey, true);
 
@@ -275,10 +280,11 @@ async function callGemini(prompt: string, apiKey: string): Promise<string> {
 
   const parts = json.candidates?.[0]?.content?.parts ?? [];
   // 사고량을 낮춰도 thought 파트가 섞여 오면 최종 답변이 아니니 걸러낸다.
-  return parts
+  const text = parts
     .filter((p) => !p.thought)
     .map((p) => p.text ?? "")
     .join("\n");
+  return {text, usage};
 }
 
 /**
@@ -358,22 +364,105 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 // "잠시 후 다시 시도" 안내로 끝난다 — 요금이 새는 것보다 낫다.
 const MAX_INSTANCES = 3;
 
+/**
+ * 테스터 허용목록 검사. 스토어를 거치지 않은 빌드는 App Check 토큰을 못 만들어
+ * AI 호출이 막힌다. 관리자 콘솔에서 `config/testers.emails`에 등록한 이메일은
+ * 테스트 기간 동안 App Check 없이도 허용한다. Admin SDK로 읽어 보안 규칙을
+ * 우회한다. 대소문자 차이로 빠지지 않도록 소문자로 비교한다.
+ */
+async function isAllowlistedTester(
+  email: string | undefined | null,
+): Promise<boolean> {
+  if (!email) return false;
+  const db = getFirestore();
+  const snap = await db.collection("config").doc("testers").get();
+  if (!snap.exists) return false;
+  const emails = (snap.data()?.emails ?? []) as string[];
+  const target = email.toLowerCase();
+  return emails.some((e) => String(e).toLowerCase() === target);
+}
+
+// 관리자 이메일 — firestore.rules의 isAdmin() 허용목록과 같은 값을 둔다.
+// (커스텀 클레임을 안 쓰므로 규칙과 함수가 각자 이메일로 판별한다. 관리자를
+// 바꾸면 두 곳을 함께 고칠 것.)
+const ADMIN_EMAILS = [
+  "connectionsense@creamhouse.net",
+  "globe@creamhouse.net",
+];
+
+function isAdminRequest(auth: {token: {email?: string; email_verified?: boolean}} | undefined): boolean {
+  const token = auth?.token;
+  return (
+    !!token &&
+    token.email_verified === true &&
+    !!token.email &&
+    ADMIN_EMAILS.includes(token.email)
+  );
+}
+
+/**
+ * AI 호출 감사 로그. 불만 처리·비용 추적을 위해 "누가 언제 호출했고 성공했는지,
+ * 실패했다면 왜인지, 토큰을 얼마나 썼는지"를 남긴다.
+ *
+ * ⚠️ 개인정보 원칙: **계정 식별자(uid·로그인 이메일)와 사용량만** 남긴다.
+ * 명함(제3자) 정보나 프롬프트 원문·응답 본문은 절대 남기지 않는다.
+ * 이 로그를 남기는 것은 개인정보처리방침의 "지원·부정사용/비용 관리 목적
+ * 이용 로그"에 근거한다(방침 반영 필요, backlog 추가 112).
+ *
+ * 절대 throw하지 않는다 — 로깅 실패가 본 기능(AI 응답)을 막으면 안 된다.
+ */
+async function writeAiAuditLog(record: {
+  uid: string;
+  email: string | null;
+  ok: boolean;
+  errorCode: string | null;
+  appCheckVerified: boolean;
+  viaAllowlist: boolean;
+  usage?: GeminiUsage;
+  latencyMs: number;
+}): Promise<void> {
+  try {
+    const db = getFirestore();
+    const u = record.usage ?? {};
+    await db.collection("aiAuditLogs").add({
+      at: FieldValue.serverTimestamp(),
+      uid: record.uid,
+      email: record.email,
+      ok: record.ok,
+      errorCode: record.errorCode,
+      appCheckVerified: record.appCheckVerified,
+      viaAllowlist: record.viaAllowlist,
+      promptTokenCount: u.promptTokenCount ?? null,
+      candidatesTokenCount: u.candidatesTokenCount ?? null,
+      thoughtsTokenCount: u.thoughtsTokenCount ?? null,
+      totalTokenCount: u.totalTokenCount ?? null,
+      latencyMs: record.latencyMs,
+    });
+  } catch (e) {
+    // 로그 자체가 실패해도 본 기능은 계속된다.
+    logger.warn("aiAuditLog 기록 실패", {errorType: (e as Error)?.name});
+  }
+}
+
 export const generateBriefing = onCall<GenerateBriefingRequest>(
   {
     secrets: [geminiApiKey],
     region: "asia-northeast3",
     maxInstances: MAX_INSTANCES,
-    // 유효한 App Check 토큰이 없는 호출은 거부한다(2026-08-08 전환). 이걸
-    // 켜기 전에는 Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사
-    // 명의 유료 Gemini 키를 쓸 수 있었다(backlog 추가 82 신규-B).
+    // 유효한 App Check 토큰이 없는 호출을 원칙적으로 거부한다(2026-08-08 도입).
+    // 이 보호가 없으면 Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사
+    // 명의 유료 Gemini 키를 쓸 수 있다(backlog 추가 82 신규-B).
     //
-    // ⚠️ 이걸 켠 뒤로는 **토큰을 못 만드는 빌드는 AI 브리핑이 막힌다.**
-    // 스토어를 거치지 않는 빌드(테스터 APK, devicectl 직접 설치 iOS)는
-    // `tool/build_app.sh <타겟> release appcheck-debug`로 빌드하고 그 기기의
-    // 디버그 토큰을 Firebase에 등록해야 한다. 근거는
-    // lib/core/services/app_check_service.dart 주석, 절차는
-    // docs/planning/admin-manual.md의 App Check 절.
-    enforceAppCheck: true,
+    // ⚠️ 2026-08-09: 직원 테스트 기간 동안 App Check "강제"를 끄고 **아래 함수
+    // 본문에서 수동으로 검사**한다. 스토어(TestFlight/Play)를 거치지 않은 빌드는
+    // App Check 토큰을 못 만들어 AI가 막히는데, 매 기기 디버그 토큰을 등록하는
+    // 건 직원 배포에 비현실적이라(로그캣에만 뜸), 대신 관리자 콘솔에 등록한
+    // 테스터 이메일(config/testers)을 App Check 없이도 허용하는 방식으로 바꿨다.
+    // 정식 앱(유효 토큰)은 그대로 통과하고, 토큰도 없고 허용목록에도 없으면
+    // 거부하므로 외부 스크립트 남용 방어는 유지된다. 일일 한도도 그대로 적용.
+    // 근거·절차: docs/planning/backlog.md 추가 111, 관리자 콘솔 "테스터 관리" 탭.
+    // ⚠️ 테스트 종료 후 config/testers를 비우고 enforceAppCheck: true 복원 검토.
+    enforceAppCheck: false,
   },
   async (request): Promise<GenerateBriefingResponse> => {
     if (!request.auth) {
@@ -383,42 +472,188 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       );
     }
 
-    // 강제 전환 판단에 필요한 유일한 정보는 "유효한 토큰이 왔는가" 하나다.
-    // uid나 토큰 원문은 남기지 않는다(Cloud Logging 기본 30일 보관).
-    logger.info("generateBriefing 호출", {appCheckVerified: !!request.app});
-
-    const {
-      contactSummary,
-      myProfileSummary,
-      communicationLogs,
-      weatherSummary,
-      interests,
-      extraNote,
-    } = request.data;
-    if (!contactSummary || !myProfileSummary) {
+    // enforceAppCheck를 끈 대신 여기서 수동으로 검사한다(위 옵션 주석 참고).
+    // 유효한 App Check 토큰이 있거나(정식 스토어 앱), 관리자 콘솔에 등록된
+    // 테스터 이메일이면 통과. 둘 다 아니면 거부해 외부 스크립트 남용을 막는다.
+    const appCheckVerified = !!request.app;
+    if (!appCheckVerified &&
+        !(await isAllowlistedTester(request.auth.token.email))) {
       throw new HttpsError(
-        "invalid-argument",
-        "필수 정보가 누락됐어요."
+        "failed-precondition",
+        "앱 무결성 확인에 실패했어요. 최신 버전의 정식 앱에서 다시 시도해 주세요.",
       );
     }
 
-    await incrementAndCheckUsage(request.auth.uid);
+    // uid·토큰 원문은 Cloud Logging엔 남기지 않는다(기본 30일 보관). 계정
+    // 식별자와 함께 남기는 감사 로그는 아래 writeAiAuditLog가 aiAuditLogs에
+    // 따로 기록한다(불만 처리·비용 추적용).
+    logger.info("generateBriefing 호출", {appCheckVerified});
 
-    const prompt = buildPrompt({
-      contactSummary,
-      myProfileSummary,
-      communicationLogs: communicationLogs ?? [],
-      weatherSummary,
-      interests,
-      extraNote,
-    });
-    const rawText = await callGemini(prompt, geminiApiKey.value());
-    const talkingPoints = parseTalkingPoints(rawText);
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? null;
+    // App Check 토큰이 없는데 통과했다면 테스터 허용목록으로 들어온 것이다.
+    const viaAllowlist = !appCheckVerified;
+    const startedAt = Date.now();
 
-    if (talkingPoints.length === 0) {
-      throw new HttpsError("internal", "AI가 빈 응답을 반환했습니다.");
+    try {
+      const {
+        contactSummary,
+        myProfileSummary,
+        communicationLogs,
+        weatherSummary,
+        interests,
+        extraNote,
+      } = request.data;
+      if (!contactSummary || !myProfileSummary) {
+        throw new HttpsError(
+          "invalid-argument",
+          "필수 정보가 누락됐어요."
+        );
+      }
+
+      await incrementAndCheckUsage(uid);
+
+      const prompt = buildPrompt({
+        contactSummary,
+        myProfileSummary,
+        communicationLogs: communicationLogs ?? [],
+        weatherSummary,
+        interests,
+        extraNote,
+      });
+      const {text: rawText, usage} = await callGemini(
+        prompt,
+        geminiApiKey.value(),
+      );
+      const talkingPoints = parseTalkingPoints(rawText);
+
+      if (talkingPoints.length === 0) {
+        throw new HttpsError("internal", "AI가 빈 응답을 반환했습니다.");
+      }
+
+      await writeAiAuditLog({
+        uid,
+        email,
+        ok: true,
+        errorCode: null,
+        appCheckVerified,
+        viaAllowlist,
+        usage,
+        latencyMs: Date.now() - startedAt,
+      });
+      return {talkingPoints};
+    } catch (e) {
+      const errorCode = e instanceof HttpsError ? e.code : "internal";
+      await writeAiAuditLog({
+        uid,
+        email,
+        ok: false,
+        errorCode,
+        appCheckVerified,
+        viaAllowlist,
+        latencyMs: Date.now() - startedAt,
+      });
+      throw e;
+    }
+  }
+);
+
+/**
+ * 회원 탈퇴(설정 → 계정 삭제) 시 그 사용자의 AI 호출 로그를 함께 파기한다.
+ *
+ * 왜 트리거인가: 클라이언트는 users/{uid}·contacts를 직접 지우지만,
+ * aiAuditLogs는 보안 규칙상 클라이언트가 못 지운다(관리자 읽기 전용, 서버만
+ * 기록). 탈퇴 흐름은 users/{uid} 문서를 삭제하는데, 그때 이 트리거가 그 uid의
+ * 감사 로그를 batch로 삭제한다. 개인정보처리방침 "회원 탈퇴 시 파기"와 일치
+ * (backlog 추가 112).
+ *
+ * v1 auth onDelete는 firebase-functions/v1이 database provider를 끌어와
+ * (@firebase/app 미설치) 배포 분석이 깨져서 못 쓴다. 대신 v2 Firestore 트리거를
+ * 쓴다 — DB·함수 리전이 모두 asia-northeast3라 리전을 맞춘다.
+ */
+export const onUserDeletedCleanup = onDocumentDeleted(
+  {document: "users/{uid}", region: "asia-northeast3"},
+  async (event) => {
+    const uid = event.params.uid;
+    const db = getFirestore();
+    const snap = await db
+      .collection("aiAuditLogs")
+      .where("uid", "==", uid)
+      .get();
+    if (snap.empty) return;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = db.batch();
+      docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  },
+);
+
+interface GetUserUsageRequest {
+  email: string;
+}
+
+interface GetUserUsageResponse {
+  uid: string;
+  email: string | null;
+  dailyCount: number;
+  dailyLimit: number;
+  monthlyCount: number;
+  monthlyLimit: number;
+  dailyResetAt: string | null;
+  monthlyResetAt: string | null;
+}
+
+/**
+ * 관리자 콘솔용 — 이메일로 사용자의 AI 사용량을 조회한다. 관리자만 호출할 수
+ * 있고, 반환하는 것은 사용량 카운터뿐이다(암호화 키·프로필·명함은 절대 반환
+ * 안 함). users/{uid} 문서엔 민감정보가 함께 있어 Firestore 규칙으로 관리자에게
+ * 통째로 열 수 없으므로, 이 함수가 Admin SDK로 필요한 필드만 뽑아 준다.
+ */
+export const getUserUsage = onCall<GetUserUsageRequest>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  async (request): Promise<GetUserUsageResponse> => {
+    if (!isAdminRequest(request.auth)) {
+      throw new HttpsError("permission-denied", "관리자만 조회할 수 있어요.");
+    }
+    const email = (request.data?.email ?? "").trim().toLowerCase();
+    if (!email) {
+      throw new HttpsError("invalid-argument", "이메일을 입력해 주세요.");
     }
 
-    return {talkingPoints};
+    let userRecord;
+    try {
+      userRecord = await getAuth().getUserByEmail(email);
+    } catch {
+      throw new HttpsError("not-found", "그 이메일의 계정을 찾을 수 없어요.");
+    }
+
+    const db = getFirestore();
+    const snap = await db.collection("users").doc(userRecord.uid).get();
+    const usage = (snap.data()?.aiUsage ?? {}) as {
+      dailyCount?: number;
+      dailyResetAt?: FirebaseFirestore.Timestamp;
+      monthlyCount?: number;
+      monthlyResetAt?: FirebaseFirestore.Timestamp;
+    };
+
+    // 리셋 시각이 지났으면 카운트는 사실상 0이다(다음 호출 때 초기화됨).
+    const now = Date.now();
+    const dailyReset = usage.dailyResetAt?.toDate() ?? null;
+    const monthlyReset = usage.monthlyResetAt?.toDate() ?? null;
+    const dailyExpired = !dailyReset || dailyReset.getTime() <= now;
+    const monthlyExpired = !monthlyReset || monthlyReset.getTime() <= now;
+
+    return {
+      uid: userRecord.uid,
+      email: userRecord.email ?? null,
+      dailyCount: dailyExpired ? 0 : (usage.dailyCount ?? 0),
+      dailyLimit: DAILY_LIMIT,
+      monthlyCount: monthlyExpired ? 0 : (usage.monthlyCount ?? 0),
+      monthlyLimit: MONTHLY_LIMIT,
+      dailyResetAt: dailyReset ? dailyReset.toISOString() : null,
+      monthlyResetAt: monthlyReset ? monthlyReset.toISOString() : null,
+    };
   }
 );

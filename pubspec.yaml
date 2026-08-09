@@ -21,7 +21,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 같은 빌드 번호를 두 번 받지 않고 "Redundant Binary Upload"(code 90189)로
 # 거부한다(2026-08-08 실제로 겪음). 앱 버전(1.0.0)은 그대로 두고 뒤 숫자만
 # 올리면 된다.
-version: 1.0.0+4
+version: 1.0.0+5
 
 environment:
   sdk: ^3.12.2
