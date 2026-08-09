@@ -2,6 +2,33 @@
 
 ## 작업 로그
 
+### 2026-08-10 (추가 135) — 스캔 명함을 인맥 시각으로 사용(C안) 구현 + 이미지 암호화(P1-9)
+
+추가 133 제안을 C안으로 구현(사용자 결정: 목록은 이니셜 기본, 상세에 명함
+이미지 + "대표 이미지로 사용" 선택 시 목록 아바타도 명함). **PR #70.**
+
+- `ContactModel`: `cardImagePath`(암호화 파일 경로, **로컬 전용·서버 백업 제외**) +
+  `useCardAsAvatar` 추가.
+- `DataCryptoService.encryptBytes/decryptBytes`(AES-256-GCM, nonce+cipher+mac) 추가 —
+  이미지 등 임의 바이트 암호화.
+- `ContactImageService` 신설: 스캔 이미지를 uid 키로 암호화해 앱 문서 디렉터리
+  (`contact_card_<id>.enc`)에 보관, 복호화 캐시. **P1-9(명함 이미지 로컬 암호화)를
+  이 경로에 대해 충족** — 단, OCR 스캔 중간 임시 캐시(systemTemp)는 별개라 P1-9
+  전체 완료는 아님(그 부분은 잔여).
+- `add_card`: 스캔 시 `OcrScanResult.imagePath` 캡처 → 저장 시 암호화 보관. 편집
+  화면에 명함 이미지 미리보기(방금 스캔=평문 파일, 저장본=복호화) + 토글 +
+  "이 기기에 암호화 저장" 고지.
+- `ContactAvatar`: StatefulWidget으로 확장, `cardImagePath`+`uid`를 주면 복호화해
+  아바타로 표시(로딩/실패 시 사진→이니셜 폴백). wallet/radar 호출부는
+  `useCardAsAvatar`일 때만 전달.
+- `deleteContact` 시 암호화 이미지 파일도 정리.
+- 테스트: 바이트 암호화 왕복/잘못된 키 2건(총 103). analyze 19(baseline).
+- 두 기기(갤럭시 R3CY90SHN4F, iPhone 16 Pro) release 재빌드·설치(커밋 e322db0).
+
+부기(이미 완료였는데 HANDOFF가 낡았던 것 확인): **P1-16**(로그인 약관 고지 —
+`_LegalNotice`), **P2-6**(카메라 권한 → "설정 열기"), **P1-11 아바타 터치영역**
+(`HitTestBehavior.opaque`)은 이미 구현돼 있었음.
+
 ### 2026-08-09 (추가 134) — P1-41 ①③ 이행(Gmail 입구 차단 + 방침 정리), ② 잔여
 
 추가 128의 결정-2를 실제로 이행했다. **PR #68**(`616d005`, `24999cf`).
