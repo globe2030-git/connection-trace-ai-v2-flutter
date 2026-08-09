@@ -22,7 +22,7 @@
  */
 
 import {HttpsError, onCall} from "firebase-functions/v2/https";
-import * as functionsV1 from "firebase-functions/v1";
+import {onDocumentDeleted} from "firebase-functions/v2/firestore";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
@@ -563,20 +563,22 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
  *
  * 왜 트리거인가: 클라이언트는 users/{uid}·contacts를 직접 지우지만,
  * aiAuditLogs는 보안 규칙상 클라이언트가 못 지운다(관리자 읽기 전용, 서버만
- * 기록). Firebase Auth 계정이 삭제되면(탈퇴 흐름의 마지막 단계) 이 트리거가
- * 그 uid의 감사 로그를 batch로 삭제한다. 개인정보처리방침 "회원 탈퇴 시 파기"와
- * 일치시키기 위함(backlog 추가 112). 어떤 경로로 계정이 삭제돼도 확실히 지운다.
+ * 기록). 탈퇴 흐름은 users/{uid} 문서를 삭제하는데, 그때 이 트리거가 그 uid의
+ * 감사 로그를 batch로 삭제한다. 개인정보처리방침 "회원 탈퇴 시 파기"와 일치
+ * (backlog 추가 112).
  *
- * v2에는 auth onDelete 트리거가 없어 v1(gen1)로 둔다 — 이름이 겹치지 않으므로
- * 같은 코드베이스의 v2 함수들과 함께 배포된다.
+ * v1 auth onDelete는 firebase-functions/v1이 database provider를 끌어와
+ * (@firebase/app 미설치) 배포 분석이 깨져서 못 쓴다. 대신 v2 Firestore 트리거를
+ * 쓴다 — DB·함수 리전이 모두 asia-northeast3라 리전을 맞춘다.
  */
-export const onUserDeletedCleanup = functionsV1.auth
-  .user()
-  .onDelete(async (user) => {
+export const onUserDeletedCleanup = onDocumentDeleted(
+  {document: "users/{uid}", region: "asia-northeast3"},
+  async (event) => {
+    const uid = event.params.uid;
     const db = getFirestore();
     const snap = await db
       .collection("aiAuditLogs")
-      .where("uid", "==", user.uid)
+      .where("uid", "==", uid)
       .get();
     if (snap.empty) return;
     const docs = snap.docs;
@@ -585,7 +587,8 @@ export const onUserDeletedCleanup = functionsV1.auth
       docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
       await batch.commit();
     }
-  });
+  },
+);
 
 interface GetUserUsageRequest {
   email: string;
