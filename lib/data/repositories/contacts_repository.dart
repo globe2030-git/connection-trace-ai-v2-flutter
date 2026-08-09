@@ -413,6 +413,11 @@ class ContactsRepository extends ChangeNotifier {
 
   static String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
 
+  /// 이 명함이 주소 지오코딩을 모두 실패해 좌표를 못 얻은 상태인지(P1-25).
+  /// 화면에서 "주소로 위치를 못 찾아 주변 목록에 안 뜬다"는 안내에 쓴다.
+  Future<bool> hasAddressGeocodingFailed(ContactModel c) =>
+      _geoBackfillService.hasGivenUpGeo(c);
+
   void addContact(ContactModel newContact) {
     // 다기기 병합의 최신본 판정(LWW) 기준을 지금 시각으로 찍는다(P1-39 A안).
     final stamped = newContact.updatedAt == null

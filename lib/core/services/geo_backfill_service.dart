@@ -74,6 +74,18 @@ class GeoBackfillService {
     return contacts.where((c) => _needsGeo(c) && !_isGivenUp(c, attempts)).toList();
   }
 
+  /// 이 명함이 **주소 지오코딩을 [maxAttemptsPerContact]회 모두 실패해 포기된**
+  /// 상태인지. true면 주소로 위치를 찾지 못해 주변 인맥 목록(레이더)에 안 뜬다
+  /// — 화면에서 "주소를 확인해 주세요" 안내를 띄우는 근거로 쓴다(P1-25).
+  ///
+  /// 좌표가 이미 있거나 주소가 비어 있으면(=계산 대상이 아님) false. 주소가
+  /// 바뀌면 이전 실패 기록은 무효라 false(다시 시도 대상).
+  Future<bool> hasGivenUpGeo(ContactModel c) async {
+    if (!_needsGeo(c)) return false;
+    final attempts = await _loadAttempts();
+    return _isGivenUp(c, attempts);
+  }
+
   /// 좌표가 비어 있는 명함들의 좌표를 채운다.
   ///
   /// 반환값은 `명함 id -> 새로 얻은 좌표` 맵이다. 호출자가 이 값으로
