@@ -23,6 +23,7 @@
 
 import {HttpsError, onCall} from "firebase-functions/v2/https";
 import {onDocumentDeleted} from "firebase-functions/v2/firestore";
+import {sign as cryptoSign} from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
@@ -32,6 +33,16 @@ import {getAuth} from "firebase-admin/auth";
 initializeApp();
 
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
+
+// Sign in with Apple 토큰 폐기(P1-38)에 쓰는 Apple 개인키(.p8) 원문.
+// `firebase functions:secrets:set APPLE_SIGNIN_KEY`로 .p8 파일 내용을 넣는다
+// (-----BEGIN PRIVATE KEY----- 부터 END 까지 통째로). 이 비밀이 없으면 아래
+// 두 함수는 배포되지 않는다.
+const appleSignInKey = defineSecret("APPLE_SIGNIN_KEY");
+const APPLE_TEAM_ID = "77L7BH2M2W";
+const APPLE_KEY_ID = "UUYAKPD4S7";
+// 네이티브 iOS Sign in with Apple의 client_id는 앱 번들 ID다(웹 Services ID 아님).
+const APPLE_CLIENT_ID = "com.creamhouse.connectionsense";
 
 // 정상 사용 범위와 명백한 어뷰징 사이의 안전한 상한선(14.4절 근거).
 // 실사용 데이터가 쌓이면 재조정 가능 — 사용자 확인 후 조정.
@@ -571,11 +582,154 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
  * (@firebase/app 미설치) 배포 분석이 깨져서 못 쓴다. 대신 v2 Firestore 트리거를
  * 쓴다 — DB·함수 리전이 모두 asia-northeast3라 리전을 맞춘다.
  */
+function base64url(input: Buffer | string): string {
+  return Buffer.from(input).toString("base64url");
+}
+
+/**
+ * Apple `/auth/token`·`/auth/revoke` 호출에 쓰는 client_secret(ES256 JWT)을
+ * .p8(EC P-256 개인키)로 서명해 만든다. JWT 라이브러리 없이 Node crypto로
+ * 직접 만든다 — ES256 JWT 서명은 JOSE 형식(R‖S)이라야 하므로 dsaEncoding을
+ * ieee-p1363으로 준다(기본 DER은 JWT에서 거부된다).
+ */
+function makeAppleClientSecret(privateKeyP8: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64url(JSON.stringify({alg: "ES256", kid: APPLE_KEY_ID}));
+  const payload = base64url(
+    JSON.stringify({
+      iss: APPLE_TEAM_ID,
+      iat: now,
+      exp: now + 300,
+      aud: "https://appleid.apple.com",
+      sub: APPLE_CLIENT_ID,
+    }),
+  );
+  const signingInput = `${header}.${payload}`;
+  const signature = cryptoSign("sha256", Buffer.from(signingInput), {
+    key: privateKeyP8,
+    dsaEncoding: "ieee-p1363",
+  });
+  return `${signingInput}.${base64url(signature)}`;
+}
+
+/** authorization_code를 refresh_token으로 교환한다. 실패 시 null. */
+async function exchangeAppleAuthCode(
+  code: string,
+  privateKeyP8: string,
+): Promise<string | null> {
+  const body = new URLSearchParams({
+    client_id: APPLE_CLIENT_ID,
+    client_secret: makeAppleClientSecret(privateKeyP8),
+    code,
+    grant_type: "authorization_code",
+  });
+  const res = await fetch("https://appleid.apple.com/auth/token", {
+    method: "POST",
+    headers: {"content-type": "application/x-www-form-urlencoded"},
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    logger.warn("Apple 토큰 교환 실패", {status: res.status, body: t.slice(0, 300)});
+    return null;
+  }
+  const json = (await res.json()) as {refresh_token?: string};
+  return json.refresh_token ?? null;
+}
+
+/** refresh_token을 Apple에 폐기 요청한다. 실패해도 예외를 던지지 않는다. */
+async function revokeAppleRefreshToken(
+  refreshToken: string,
+  privateKeyP8: string,
+): Promise<boolean> {
+  const body = new URLSearchParams({
+    client_id: APPLE_CLIENT_ID,
+    client_secret: makeAppleClientSecret(privateKeyP8),
+    token: refreshToken,
+    token_type_hint: "refresh_token",
+  });
+  const res = await fetch("https://appleid.apple.com/auth/revoke", {
+    method: "POST",
+    headers: {"content-type": "application/x-www-form-urlencoded"},
+    body: body.toString(),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    logger.warn("Apple 토큰 폐기 실패", {status: res.status, body: t.slice(0, 300)});
+    return false;
+  }
+  return true;
+}
+
+interface StoreAppleRefreshTokenRequest {
+  authorizationCode: string;
+}
+
+/**
+ * Apple 로그인 시 클라이언트가 받은 authorization_code를 보내면, 서버가
+ * refresh_token으로 교환해 `appleAuth/{uid}`에 보관한다. 회원 탈퇴 시
+ * onUserDeletedCleanup이 이 토큰을 Apple에 폐기 요청한다(App Store 가이드라인
+ * 요구, P1-38). refresh_token은 민감하므로 클라이언트가 못 읽는 컬렉션에 둔다
+ * (규칙 read/write false, 서버 Admin SDK만 접근).
+ *
+ * 교환이 실패해도 로그인 자체는 이미 됐으므로 조용히 넘어간다(다음 로그인
+ * 재시도). authorization_code는 발급 후 5분 안에 교환해야 하므로 로그인 직후
+ * 호출하는 것을 전제로 한다.
+ */
+export const storeAppleRefreshToken = onCall<StoreAppleRefreshTokenRequest>(
+  {
+    secrets: [appleSignInKey],
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+  },
+  async (request): Promise<{stored: boolean}> => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
+    }
+    const code = (request.data?.authorizationCode ?? "").trim();
+    if (!code) {
+      throw new HttpsError("invalid-argument", "authorization code가 필요해요.");
+    }
+    const refreshToken = await exchangeAppleAuthCode(
+      code,
+      appleSignInKey.value(),
+    );
+    if (!refreshToken) return {stored: false};
+
+    const db = getFirestore();
+    await db.collection("appleAuth").doc(request.auth.uid).set({
+      refreshToken,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return {stored: true};
+  },
+);
+
 export const onUserDeletedCleanup = onDocumentDeleted(
-  {document: "users/{uid}", region: "asia-northeast3"},
+  {
+    document: "users/{uid}",
+    region: "asia-northeast3",
+    secrets: [appleSignInKey],
+  },
   async (event) => {
     const uid = event.params.uid;
     const db = getFirestore();
+
+    // Apple 로그인 사용자라면 보관해 둔 refresh_token을 Apple에 폐기 요청한다
+    // (App Store 요구, P1-38). 실패해도 나머지 정리는 계속한다.
+    try {
+      const appleRef = db.collection("appleAuth").doc(uid);
+      const appleSnap = await appleRef.get();
+      const refreshToken = appleSnap.data()?.refreshToken as string | undefined;
+      if (refreshToken) {
+        await revokeAppleRefreshToken(refreshToken, appleSignInKey.value());
+      }
+      if (appleSnap.exists) await appleRef.delete();
+    } catch (e) {
+      logger.warn("Apple 토큰 폐기/정리 실패", {errorType: (e as Error)?.name});
+    }
+
+    // AI 호출 감사 로그 삭제(추가 112).
     const snap = await db
       .collection("aiAuditLogs")
       .where("uid", "==", uid)
