@@ -92,6 +92,11 @@ class _AuthGateState extends State<AuthGate> {
 
     await contactsRepo.restoreFromServerIfEmpty(uid);
     await profileRepo.restoreFromServerIfEmpty(uid);
+    // 다기기 동기화(P1-39): 로컬이 이미 있어도 서버에만 있는 명함을 더한다.
+    // 같은 계정으로 다른 기기에서 등록한 명함이 이 기기에 뜨지 않던 문제 해결.
+    // 계정 전환("유지") 경로(위 return)에는 넣지 않는다 — 다른 계정 데이터가
+    // 섞일 수 있어서다. 여기는 같은 계정(또는 최초/로컬없음)만 도달한다.
+    await contactsRepo.mergeFromServer(uid);
     await prefs.setString(kLastSignedInUidPrefsKey, uid);
   }
 

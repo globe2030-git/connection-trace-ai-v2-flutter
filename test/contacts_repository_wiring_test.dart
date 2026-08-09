@@ -189,6 +189,28 @@ void main() {
     });
   });
 
+  group('다기기 추가형 병합(P1-39)', () {
+    test('⭐ 서버에만 있는 명함(id 기준)만 골라낸다', () {
+      final local = [contact(id: '1'), contact(id: '2')];
+      final server = [contact(id: '2'), contact(id: '3'), contact(id: '4')];
+      final add = ContactsRepository.computeServerAdditions(local, server);
+      expect(add.map((c) => c.id).toList(), ['3', '4'],
+          reason: '로컬에 이미 있는 2는 빼고 서버에만 있는 3·4만');
+    });
+
+    test('로컬이 서버를 다 포함하면 추가 없음', () {
+      final local = [contact(id: '1'), contact(id: '2'), contact(id: '3')];
+      final server = [contact(id: '1'), contact(id: '2')];
+      expect(ContactsRepository.computeServerAdditions(local, server), isEmpty);
+    });
+
+    test('로컬이 비면 서버 전체가 추가 대상', () {
+      final server = [contact(id: '1'), contact(id: '2')];
+      final add = ContactsRepository.computeServerAdditions([], server);
+      expect(add.map((c) => c.id).toList(), ['1', '2']);
+    });
+  });
+
   group('서버 백업 페이로드', () {
     test('⭐ 서버로 보내는 형태에는 좌표가 들어가지 않는다', () {
       // 추가 76의 핵심 계약. 이 테스트가 깨지면 좌표가 다시 서버로 나간다.

@@ -127,6 +127,46 @@ class ContactsRepository extends ChangeNotifier {
     unawaited(backfillMissingGeo());
   }
 
+  /// 로컬에 없는(id 기준) 서버 명함만 골라낸다. Firestore 접근과 분리한
+  /// 순수 함수라 단위 테스트가 쉽다.
+  static List<ContactModel> computeServerAdditions(
+    List<ContactModel> local,
+    List<ContactModel> server,
+  ) {
+    final localIds = local.map((c) => c.id).toSet();
+    return server.where((c) => !localIds.contains(c.id)).toList();
+  }
+
+  /// 다기기 동기화(P1-39) — **추가형 병합**. 로컬을 절대 지우지 않고, 서버
+  /// 백업에만 있는 명함을 로컬에 더한다. 기기 A에서 등록한 명함이 기기 B에
+  /// 나타나지 않던 문제(복원이 "로컬이 빌 때만" 일어나 백업이지 동기화가
+  /// 아니었음)를 해결한다.
+  ///
+  /// ⚠️ **한계(의도된 안전 선택)**: 다른 기기에서 **삭제**된 명함은 이 병합으로
+  /// 로컬에서 제거되지 않는다(삭제 전파는 tombstone이 필요 — 별도 작업).
+  /// 로컬을 지우지 않으므로 데이터 손실 위험이 없는 대신, "삭제가 즉시 모든
+  /// 기기에 반영"되지는 않는다. 또 두 기기에서 각각 등록한 같은 사람 명함은
+  /// id가 달라 둘 다 남는다(P1-40 크로스기기 중복은 여기서 안 잡음).
+  ///
+  /// [restoreFromServerIfEmpty] 다음에 부르면 된다 — 로컬이 비어 그쪽이 전량
+  /// 복원한 경우엔 더할 게 없어 조용히 반환한다(양쪽 모두 안전하게 중복 호출 가능).
+  Future<void> mergeFromServer(String uid) async {
+    final List<ContactModel> serverContacts;
+    try {
+      serverContacts = await DataBackupService.restoreContacts(uid);
+    } catch (_) {
+      // 네트워크 실패 등 — 로컬은 그대로 두고 다음 로그인에 다시 시도.
+      return;
+    }
+    final additions = computeServerAdditions(_contacts, serverContacts);
+    if (additions.isEmpty) return;
+    _contacts = [...additions, ..._contacts];
+    notifyListeners();
+    await _saveToDisk();
+    // 서버 백업엔 좌표가 없으므로(C안) 더해진 명함의 좌표를 주소로 다시 채운다.
+    unawaited(backfillMissingGeo());
+  }
+
   /// 주소는 있는데 좌표가 없는 명함들의 좌표를 주소로부터 다시 계산해 채운다.
   ///
   /// 좌표를 서버에 백업하지 않기로 했기 때문에(backlog 추가 75, C안) 기기를
