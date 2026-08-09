@@ -276,7 +276,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -293,7 +293,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: AppColors.borderDark,
+                        color: AppColors.borderSubtle,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -386,7 +386,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                             ),
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(
-                                color: AppColors.borderDark,
+                                color: AppColors.borderSubtle,
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 10),
                               shape: RoundedRectangleBorder(
@@ -678,7 +678,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
               fontSize: 13,
             ),
             filled: true,
-            fillColor: AppColors.bgDarkSlate,
+            fillColor: AppColors.bgBase,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,

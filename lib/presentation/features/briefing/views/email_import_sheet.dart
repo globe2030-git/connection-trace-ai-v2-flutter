@@ -84,7 +84,7 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
         maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
       decoration: const BoxDecoration(
-        color: AppColors.cardDark,
+        color: AppColors.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -218,7 +218,7 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppColors.bgDarkSlate,
+                          color: AppColors.bgBase,
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Text(
@@ -329,7 +329,7 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
                     onPressed: _selectedIds.isEmpty ? null : _import,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.accent,
-                      disabledBackgroundColor: AppColors.borderDark,
+                      disabledBackgroundColor: AppColors.borderSubtle,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),

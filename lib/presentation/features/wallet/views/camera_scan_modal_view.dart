@@ -453,7 +453,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
             // Camera Viewfinder — 실제 후면 카메라 실시간 프리뷰.
             Positioned.fill(
               child: Container(
-                color: AppColors.bgDarkSlate,
+                color: AppColors.bgBase,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -616,7 +616,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
                         color: _isFrameStable
-                            ? Colors.greenAccent
+                            ? AppColors.accent
                             : Colors.white,
                         width: _isFrameStable ? 3 : 1.5,
                       ),
@@ -678,7 +678,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                           : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
                       style: TextStyle(
                         color: _isFrameStable
-                            ? Colors.greenAccent
+                            ? AppColors.accent
                             : AppColors.textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

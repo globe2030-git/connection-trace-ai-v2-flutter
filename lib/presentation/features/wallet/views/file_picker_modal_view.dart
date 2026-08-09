@@ -63,7 +63,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
       height: MediaQuery.of(context).size.height * 0.75,
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
-        color: AppColors.cardDark,
+        color: AppColors.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -75,7 +75,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.borderDark,
+                  color: AppColors.borderSubtle,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -200,9 +200,9 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: AppColors.bgDarkSlate,
+                  color: AppColors.bgBase,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderDark),
+                  border: Border.all(color: AppColors.borderSubtle),
                 ),
                 child: _pickedImageBytes != null
                     ? ClipRRect(

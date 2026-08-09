@@ -172,7 +172,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -188,7 +188,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: AppColors.borderDark,
+                        color: AppColors.borderSubtle,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -257,7 +257,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                           fontSize: 12.5,
                         ),
                         selectedColor: color,
-                        backgroundColor: AppColors.bgDarkSlate,
+                        backgroundColor: AppColors.bgBase,
                         side: BorderSide(color: color.withValues(alpha: 0.4)),
                       );
                     }).toList(),
@@ -283,7 +283,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                         vertical: 12,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.bgDarkSlate,
+                        color: AppColors.bgBase,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: AppColors.borderFunctional),
                       ),
@@ -353,7 +353,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                         fontSize: 13,
                       ),
                       filled: true,
-                      fillColor: AppColors.bgDarkSlate,
+                      fillColor: AppColors.bgBase,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14,
                         vertical: 12,

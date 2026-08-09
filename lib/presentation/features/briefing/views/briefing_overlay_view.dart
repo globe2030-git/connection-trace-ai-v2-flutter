@@ -17,7 +17,7 @@ import 'email_import_sheet.dart';
 import 'manual_comm_log_modal_view.dart';
 
 // 이 오버레이의 페이지 배경 위에 "직접" 놓이는(=GlassCard 안이 아닌) 에러 텍스트/아이콘
-// 전용 색상. AppColors.destructive(#EF4444)는 AppColors.bgDarkSlate 위에서
+// 전용 색상. AppColors.destructive(#EF4444)는 AppColors.bgBase 위에서
 // 대비비 3.54:1로 본문 텍스트 WCAG AA 기준(4.5:1)에 못 미쳐 여기서는 쓰지 않는다.
 // (GlassCard 흰 배경 안에서 쓰이는 AppColors.destructive는 이번 수정 범위 밖이라 그대로 둔다.)
 const Color _onPageErrorText = Color(0xFFB91C1C);
@@ -213,10 +213,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
     return Container(
       // 기존 검정 85% 스크림은 위에 직접 놓인 textPrimary(#171A21) 등 어두운 텍스트와
       // 대비비 ~1.2:1로 거의 보이지 않는 버그였다. 앱 전역이 이미 라이트 테마
-      // (scaffoldBackgroundColor = AppColors.bgDarkSlate)이므로 이 오버레이도 같은
+      // (scaffoldBackgroundColor = AppColors.bgBase)이므로 이 오버레이도 같은
       // 배경 토큰으로 통일해 기존 textPrimary/textSecondary/accentText 위젯 트리를
       // 그대로 두고 대비 문제를 해결한다.
-      color: AppColors.bgDarkSlate,
+      color: AppColors.bgBase,
       child: SafeArea(
         child: Column(
           children: [
@@ -787,8 +787,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: const BoxDecoration(
-                color: AppColors.cardDark,
-                border: Border(top: BorderSide(color: AppColors.borderDark)),
+                color: AppColors.cardSurface,
+                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
               ),
               child: SizedBox(
                 width: double.infinity,

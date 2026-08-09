@@ -67,7 +67,7 @@ class SettingsView extends StatelessWidget {
     );
 
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 32),
@@ -534,7 +534,7 @@ class _GroupedCard extends StatelessWidget {
           for (var index = 0; index < children.length; index++) ...[
             children[index],
             if (index < children.length - 1)
-              const Divider(height: 1, indent: 76, color: AppColors.borderDark),
+              const Divider(height: 1, indent: 76, color: AppColors.borderSubtle),
           ],
         ],
       ),

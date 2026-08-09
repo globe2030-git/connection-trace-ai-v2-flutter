@@ -195,7 +195,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         foregroundColor: Colors.white,
         title: const Row(
           children: [

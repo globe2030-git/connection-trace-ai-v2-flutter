@@ -19,7 +19,7 @@ class WalletView extends StatelessWidget {
     final contacts = viewModel.filteredContacts;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
@@ -124,7 +124,7 @@ class WalletView extends StatelessWidget {
                         side: BorderSide(
                           color: selected
                               ? AppColors.accent
-                              : AppColors.borderDark,
+                              : AppColors.borderSubtle,
                         ),
                         labelStyle: TextStyle(
                           color: selected
@@ -185,7 +185,7 @@ class WalletView extends StatelessWidget {
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (routeContext) => Scaffold(
-          backgroundColor: AppColors.bgDarkSlate,
+          backgroundColor: AppColors.bgBase,
           body: BriefingOverlayView(
             contact: contact,
             onClose: () => Navigator.of(routeContext).pop(),

@@ -19,10 +19,10 @@ class _NoticesViewState extends State<NoticesView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: const Text('공지사항'),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),
@@ -115,10 +115,10 @@ class NoticeDetailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: const Text('공지사항'),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),

@@ -15,7 +15,7 @@ Future<void> showLocationUsePolicy(BuildContext context) {
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      backgroundColor: AppColors.cardDark,
+      backgroundColor: AppColors.cardSurface,
       title: const Row(
         children: [
           AppIcon(AppIconId.locationInfo, color: AppColors.accentText),
@@ -71,7 +71,7 @@ class _LocationConsentSheet extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.fromLTRB(24, 12, 24, 20 + bottomInset),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           border: Border(top: BorderSide(color: AppColors.borderFunctional)),
         ),

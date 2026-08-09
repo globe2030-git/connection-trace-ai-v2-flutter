@@ -54,9 +54,9 @@ class _RadarViewState extends State<RadarView> {
     return Stack(
       children: [
         Scaffold(
-          backgroundColor: AppColors.bgDarkSlate,
+          backgroundColor: AppColors.bgBase,
           body: Container(
-            decoration: const BoxDecoration(color: AppColors.bgDarkSlate),
+            decoration: const BoxDecoration(color: AppColors.bgBase),
             child: Stack(
               children: [
                 const Positioned.fill(
@@ -269,7 +269,7 @@ class _RadarViewState extends State<RadarView> {
                           decoration: BoxDecoration(
                             color: AppColors.capsuleInputBg,
                             borderRadius: BorderRadius.circular(30),
-                            border: Border.all(color: AppColors.borderDark),
+                            border: Border.all(color: AppColors.borderSubtle),
                           ),
                           child: Row(
                             children: [

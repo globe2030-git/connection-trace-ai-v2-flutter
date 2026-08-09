@@ -63,7 +63,7 @@ class _SplashGateState extends State<SplashGate>
               child: Opacity(
                 opacity: 1 - _fadeOut.value,
                 child: Container(
-                  color: AppColors.bgDarkSlate,
+                  color: AppColors.bgBase,
                   alignment: Alignment.center,
                   child: Image.asset(
                     'assets/icons3d/radar_lavender_splash.png',

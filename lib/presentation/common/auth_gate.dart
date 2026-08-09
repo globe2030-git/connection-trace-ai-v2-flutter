@@ -127,7 +127,7 @@ class _AuthGateState extends State<AuthGate> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthRepository>();
     if (auth.isLoading) {
-      return const Scaffold(backgroundColor: AppColors.bgDarkSlate);
+      return const Scaffold(backgroundColor: AppColors.bgBase);
     }
     if (!auth.isSignedIn) {
       _syncUidAndRestore(context, null);

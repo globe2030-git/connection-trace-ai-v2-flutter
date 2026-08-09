@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 /// AppColors - 앱 전역 디자인 컬러 토큰
 ///
 /// 2026-08 확정 리디자인: 밝은 화이트 배경 + 브랜드 블루 + 둥근 카드 체계.
-/// 기존 이름(bgDark/cardDark)은 광범위한 화면 호환성을 위해 유지하지만 실제
-/// 값은 라이트 테마의 의미 토큰으로 바뀌었다.
+/// (2026-08-09, P2-8) 예전엔 다크 테마 시절 이름(bgDarkSlate/cardDark 등)을
+/// 값만 라이트로 바꿔 유지했는데, 이름과 실제 값(흰색 계열)이 반대라 오해를
+/// 낳아 의미 기반 이름으로 정리했다: bgBase(페이지 배경) / bgElevated(떠 있는
+/// 표면) / cardSurface(카드) / borderSubtle(옅은 경계).
 ///
 /// 2026-08-05: Claude Design 아이콘 시스템 핸드오프에 맞춰 액센트를
 /// 퍼플(#6C5CE7)에서 브랜드 블루(#2563EB)로 교체.
@@ -12,10 +14,10 @@ import 'package:flutter/material.dart';
 /// 향후 디자인이나 색상이 변경될 때 이 파일의 토큰만 수정하면 앱 전체에 즉시 반영됩니다.
 class AppColors {
   // 배경/서피스
-  static const Color bgDarkSlate = Color(0xFFF7F8FA);
-  static const Color bgDarkObsidian = Color(0xFFFFFFFF);
-  static const Color cardDark = Color(0xFFFFFFFF);
-  static const Color borderDark = Color(0xFFE8EBF0);
+  static const Color bgBase = Color(0xFFF7F8FA);
+  static const Color bgElevated = Color(0xFFFFFFFF);
+  static const Color cardSurface = Color(0xFFFFFFFF);
+  static const Color borderSubtle = Color(0xFFE8EBF0);
   static const Color borderFunctional = Color(0xFFDDE2EA);
 
   // 텍스트 — 같은 뉴트럴 스케일 안에서 명도 단계만 다름
