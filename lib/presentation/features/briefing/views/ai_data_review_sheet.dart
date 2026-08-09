@@ -128,7 +128,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
           maxHeight: MediaQuery.sizeOf(context).height * 0.9,
         ),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -310,7 +310,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                             fontSize: 12.5,
                           ),
                           filled: true,
-                          fillColor: AppColors.bgDarkSlate,
+                          fillColor: AppColors.bgBase,
                           contentPadding: const EdgeInsets.all(12),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
@@ -339,7 +339,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                       const SizedBox(height: 12),
                       DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppColors.bgDarkSlate,
+                          color: AppColors.bgBase,
                           borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: AppColors.borderFunctional),
                         ),
@@ -403,7 +403,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.accent,
-                          disabledBackgroundColor: AppColors.borderDark,
+                          disabledBackgroundColor: AppColors.borderSubtle,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
                           ),
@@ -474,7 +474,7 @@ class _InfoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.bgDarkSlate,
+        color: AppColors.bgBase,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.borderFunctional),
       ),

@@ -43,17 +43,17 @@ class ActionCircleButton extends StatelessWidget {
         children: [
           Material(
             color: onTap == null
-                ? AppColors.bgDarkSlate
+                ? AppColors.bgBase
                 : isActive
                 ? AppColors.accentSoft
-                : AppColors.cardDark,
+                : AppColors.cardSurface,
             shape: CircleBorder(
               side: BorderSide(
                 color: onTap == null
-                    ? AppColors.borderDark
+                    ? AppColors.borderSubtle
                     : isActive
                     ? AppColors.accent
-                    : AppColors.borderDark,
+                    : AppColors.borderSubtle,
               ),
             ),
             child: InkWell(

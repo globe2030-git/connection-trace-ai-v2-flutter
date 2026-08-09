@@ -24,10 +24,10 @@ class GlassCard extends StatelessWidget {
     return Container(
       margin: margin,
       decoration: BoxDecoration(
-        color: backgroundColor ?? AppColors.cardDark,
+        color: backgroundColor ?? AppColors.cardSurface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: borderColor ?? AppColors.borderDark,
+          color: borderColor ?? AppColors.borderSubtle,
           width: 1,
         ),
         boxShadow: const [

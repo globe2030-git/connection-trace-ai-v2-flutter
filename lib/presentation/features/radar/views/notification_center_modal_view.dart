@@ -15,7 +15,7 @@ class NotificationCenterModalView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
-        color: AppColors.cardDark,
+        color: AppColors.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -28,7 +28,7 @@ class NotificationCenterModalView extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.borderDark,
+                  color: AppColors.borderSubtle,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -70,7 +70,7 @@ class NotificationCenterModalView extends StatelessWidget {
                       radius: 18,
                       backgroundColor: (n['isNew'] as bool)
                           ? AppColors.accentText.withValues(alpha: 0.2)
-                          : AppColors.borderDark,
+                          : AppColors.borderSubtle,
                       child: AppIcon(
                         AppIconId.notification,
                         size: 18,

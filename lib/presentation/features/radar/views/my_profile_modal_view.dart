@@ -23,7 +23,7 @@ class MyProfileModalView extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
-        color: AppColors.cardDark,
+        color: AppColors.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -36,7 +36,7 @@ class MyProfileModalView extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: AppColors.borderDark,
+                  color: AppColors.borderSubtle,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -195,7 +195,7 @@ class MyProfileModalView extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    const Divider(color: AppColors.borderDark),
+                    const Divider(color: AppColors.borderSubtle),
                     const SizedBox(height: 12),
                     Row(
                       children: [

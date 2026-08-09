@@ -48,7 +48,7 @@ class _LoginViewState extends State<LoginView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(28, 40, 28, 32),
@@ -162,9 +162,9 @@ class _SnsButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: (!isAvailable || isDisabled) ? null : onPressed,
         style: OutlinedButton.styleFrom(
-          backgroundColor: AppColors.cardDark,
-          disabledBackgroundColor: AppColors.cardDark,
-          side: const BorderSide(color: AppColors.borderDark),
+          backgroundColor: AppColors.cardSurface,
+          disabledBackgroundColor: AppColors.cardSurface,
+          side: const BorderSide(color: AppColors.borderSubtle),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

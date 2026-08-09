@@ -15,7 +15,7 @@ class CommunicationSourceSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: AppColors.cardDark,
+        color: AppColors.cardSurface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SafeArea(
@@ -143,7 +143,7 @@ class _SourceTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Material(
-          color: AppColors.bgDarkSlate,
+          color: AppColors.bgBase,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             onTap: enabled ? onTap : null,

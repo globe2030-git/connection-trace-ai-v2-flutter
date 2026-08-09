@@ -57,7 +57,7 @@ class _LegalDocumentViewState extends State<LegalDocumentView> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.disabled)
-      ..setBackgroundColor(AppColors.bgDarkSlate)
+      ..setBackgroundColor(AppColors.bgBase)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageFinished: (_) {
@@ -90,10 +90,10 @@ class _LegalDocumentViewState extends State<LegalDocumentView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: Text(widget.document.title),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         actions: [

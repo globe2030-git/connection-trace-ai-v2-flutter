@@ -363,7 +363,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           '다른 명함을 스캔하셨나요?',
@@ -649,7 +649,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           '정확한 위치를 찾지 못했어요',
@@ -683,7 +683,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.bgDarkSlate,
+                  color: AppColors.bgBase,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -799,7 +799,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           '도로명 주소 자동 변환',
@@ -820,9 +820,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.bgDarkSlate,
+                color: AppColors.bgBase,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderDark),
+                border: Border.all(color: AppColors.borderSubtle),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1021,7 +1021,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           '이미 등록된 인맥입니다',
@@ -1042,7 +1042,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.bgDarkSlate,
+                color: AppColors.bgBase,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -1119,7 +1119,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           '기존 정보 처리',
@@ -1265,7 +1265,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     final shouldDiscard = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.cardDark,
+        backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           _isEditing ? '명함 수정을 취소할까요?' : '명함 등록을 취소할까요?',
@@ -1323,7 +1323,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           bottom: MediaQuery.of(context).viewInsets.bottom + 20,
         ),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -1340,7 +1340,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.borderDark,
+                      color: AppColors.borderSubtle,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -1446,7 +1446,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.borderDark),
+                          side: const BorderSide(color: AppColors.borderSubtle),
                           padding: const EdgeInsets.symmetric(vertical: 10),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -1465,8 +1465,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   child: Column(
                     children: [
                       GestureDetector(
+                        // deferToChild(기본)면 원형 아바타의 투명한 모서리에서
+                        // 탭이 새어나가 히트 영역이 좁다(P1-11). opaque로 72×72
+                        // 사각 전체를 탭 대상으로 만든다.
+                        behavior: HitTestBehavior.opaque,
                         onTap: _isPickingAvatar ? null : _pickContactAvatar,
-                        child: Stack(
+                        child: Semantics(
+                          button: true,
+                          label: '프로필 사진 선택',
+                          child: Stack(
                           alignment: Alignment.bottomRight,
                           children: [
                             ContactAvatar(
@@ -1496,6 +1503,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                 ),
                               ),
                           ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 6),
@@ -1574,9 +1582,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: AppColors.bgDarkSlate,
+                        color: AppColors.bgBase,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.borderDark),
+                        border: Border.all(color: AppColors.borderSubtle),
                       ),
                       child: Text(
                         _scannedRawText!,
@@ -1950,7 +1958,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               fontSize: 13,
             ),
             filled: true,
-            fillColor: AppColors.bgDarkSlate,
+            fillColor: AppColors.bgBase,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,

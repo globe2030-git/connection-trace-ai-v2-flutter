@@ -26,10 +26,10 @@ class OpenSourceNoticeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: const Text('오픈소스 라이선스'),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),

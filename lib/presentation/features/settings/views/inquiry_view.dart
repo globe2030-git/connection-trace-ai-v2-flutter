@@ -23,10 +23,10 @@ class _InquiryViewState extends State<InquiryView> {
     final uid = auth.firebaseUid;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: const Text('1:1 문의'),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),
@@ -204,7 +204,7 @@ class _InquiryComposeSheetState extends State<_InquiryComposeSheet> {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
-          color: AppColors.cardDark,
+          color: AppColors.cardSurface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
@@ -298,10 +298,10 @@ class _InquiryDetailViewState extends State<InquiryDetailView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDarkSlate,
+      backgroundColor: AppColors.bgBase,
       appBar: AppBar(
         title: Text(widget.inquiry.subject),
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
       ),
@@ -376,9 +376,9 @@ class _MessageBubble extends StatelessWidget {
         ),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: isMe ? AppColors.accentSoft : AppColors.cardDark,
+          color: isMe ? AppColors.accentSoft : AppColors.cardSurface,
           borderRadius: BorderRadius.circular(14),
-          border: isMe ? null : Border.all(color: AppColors.borderDark),
+          border: isMe ? null : Border.all(color: AppColors.borderSubtle),
         ),
         child: Text(
           message,

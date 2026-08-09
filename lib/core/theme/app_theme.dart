@@ -7,7 +7,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      scaffoldBackgroundColor: AppColors.bgDarkSlate,
+      scaffoldBackgroundColor: AppColors.bgBase,
       // 폰트는 Pretendard로 통일한다(assets/fonts, pubspec.yaml 참고).
       // 예전에는 GoogleFonts.notoSansKrTextTheme()로 런타임에 내려받았는데,
       // 네트워크가 없거나 첫 실행에서는 기본 폰트로 보였다가 뒤늦게 바뀌는
@@ -16,12 +16,12 @@ class AppTheme {
       fontFamily: 'Pretendard',
       colorScheme: const ColorScheme.light(
         primary: AppColors.accent,
-        surface: AppColors.cardDark,
+        surface: AppColors.cardSurface,
         onSurface: AppColors.textPrimary,
         error: AppColors.destructive,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.bgDarkSlate,
+        backgroundColor: AppColors.bgBase,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         systemOverlayStyle: SystemUiOverlayStyle.dark,
@@ -52,7 +52,7 @@ class AppTheme {
         ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
-        backgroundColor: AppColors.bgDarkObsidian,
+        backgroundColor: AppColors.bgElevated,
         indicatorColor: AppColors.accentSoft,
         elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
@@ -73,25 +73,25 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.cardDark,
+        fillColor: AppColors.cardSurface,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: AppColors.borderDark),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: AppColors.borderDark),
+          borderSide: const BorderSide(color: AppColors.borderSubtle),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
         ),
       ),
-      dividerColor: AppColors.borderDark,
+      dividerColor: AppColors.borderSubtle,
     );
   }
 }
