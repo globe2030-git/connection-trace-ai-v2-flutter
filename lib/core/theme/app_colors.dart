@@ -19,6 +19,9 @@ class AppColors {
   static const Color cardSurface = Color(0xFFFFFFFF);
   static const Color borderSubtle = Color(0xFFE8EBF0);
   static const Color borderFunctional = Color(0xFFDDE2EA);
+  // 카드에 얹는 옅은 그림자. 여러 카드가 각자 다른 값을 하드코딩하지 않도록
+  // 한 곳에 모은다(P1-11). ARGB의 앞 2자리(0A)가 불투명도(≈4%)다.
+  static const Color cardShadow = Color(0x0A111827);
 
   // 텍스트 — 같은 뉴트럴 스케일 안에서 명도 단계만 다름
   static const Color textPrimary = Color(0xFF171A21);
