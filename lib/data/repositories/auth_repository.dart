@@ -369,6 +369,34 @@ class AuthRepository extends ChangeNotifier {
   /// Auth 계정이 사라지면 더 이상 인증된 요청이 아니게 되어 Firestore 보안
   /// 규칙(본인 uid만 read/write 허용)에 막히기 때문이다.
   ///
+  /// 다른 기기에서 이미 이 계정을 삭제했는지 확인한다.
+  ///
+  /// **왜 필요한가(다기기 시나리오)**: 기기 A에서 계정을 삭제하면 서버의 계정
+  /// (uid)이 사라지지만, 기기 B는 그 사실을 모른 채 옛 로그인 세션을 들고 있다.
+  /// 이 상태에서 B가 계정 삭제를 시도하면 서버에 토큰을 갱신하려다 실패하는데,
+  /// 그 실패가 "네트워크 오류"처럼 보여 사용자를 혼란스럽게 한다(실제 원인은
+  /// "계정이 이미 없음"). 삭제 흐름을 타기 전에 이걸 먼저 판별해, 이미 없는
+  /// 계정이면 서버 요청 없이 로컬만 정리하고 로그아웃시킨다.
+  ///
+  /// 토큰을 **강제 갱신**해서, `user-not-found`/`user-token-expired`/
+  /// `user-disabled`로 실패하면 계정이 이미 없는 것으로 보고 true를 반환한다.
+  /// 네트워크 등 다른 이유의 실패는 그대로 던져(호출자가 진짜 오류로 처리).
+  Future<bool> isAccountAlreadyDeleted() async {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) return true; // 로컬 세션조차 없으면 이미 없는 것
+    try {
+      await user.getIdToken(true);
+      return false; // 갱신 성공 = 서버에 계정이 살아 있음
+    } on fb_auth.FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found' ||
+          e.code == 'user-token-expired' ||
+          e.code == 'user-disabled') {
+        return true;
+      }
+      rethrow; // 네트워크 등 진짜 실패는 호출자에게 넘긴다
+    }
+  }
+
   /// 최근 로그인 상태가 아니면 Firebase가 `requires-recent-login` 에러를
   /// 던지는데, 이 경우 [AuthException.requiresReauth]를 true로 세팅해
   /// 던진다 — 호출자(설정 화면)가 이를 보고 [reauthenticateCurrentProvider]로
@@ -385,7 +413,14 @@ class AuthRepository extends ChangeNotifier {
             requiresReauth: true,
           );
         }
-        throw AuthException('계정 삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+        // 다른 기기에서 이미 삭제된 계정이면 서버엔 지울 게 없다 — 삭제의
+        // 목표(계정 제거)는 이미 달성됐으므로 실패로 보지 않고 로컬 정리로
+        // 넘어간다(아래 signOut 흐름과 동일한 종착점).
+        if (e.code != 'user-not-found' &&
+            e.code != 'user-token-expired' &&
+            e.code != 'user-disabled') {
+          throw AuthException('계정 삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
+        }
       } catch (e) {
         throw AuthException('계정 삭제에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.');
       }
