@@ -5,6 +5,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../../core/services/phone_call_service.dart';
@@ -43,10 +44,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   bool _isGenerating = false;
   String? _errorMessage;
 
-  // 서버가 세는 잔여 횟수(uid 기준, 기기 간 공유). 상단 칩으로 상시 표시하고,
-  // AI를 한 번 생성하면 차감되므로 생성 직후 다시 읽어 값을 갱신한다.
-  AiUsage? _usage;
-
   // 이 화면(같은 상대방의 AI 브리핑을 보는 동안)을 여는 중에는 재동의 없이
   // "다시 시도"/새로고침이 되도록 최초 동의 결과를 들고 있는다. 화면을 닫았다
   // 다시 열면(= 새 State 인스턴스) 다시 물어본다 — 완전한 세션(앱 재시작 전까지)
@@ -58,13 +55,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   void initState() {
     super.initState();
     _points = widget.contact.talkingPoints;
-    _loadUsage();
-  }
-
-  Future<void> _loadUsage() async {
-    final usage = await AiUsageService.fetch();
-    if (!mounted) return;
-    setState(() => _usage = usage);
+    // 상단 잔여 칩(AiUsageChip)이 구독하는 최신값을 미리 읽어 둔다.
+    AiUsageService.fetch();
   }
 
   @override
@@ -129,7 +121,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
       });
     }
     // 성공·실패와 무관하게 잔여 횟수를 다시 읽는다(서버가 호출을 셌을 수 있음).
-    await _loadUsage();
+    // latest에 방송돼 상단 칩과 홈·설정 칩이 함께 갱신된다.
+    await AiUsageService.fetch();
   }
 
   Future<void> _addCommunicationRecord() async {
@@ -260,9 +253,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                   ),
                   Row(
                     children: [
-                      // 잔여 횟수 칩 — 서버 값이 있고 서비스가 켜져 있을 때만 노출.
-                      if (serviceDeployed && _usage != null)
-                        _RemainingChip(usage: _usage!),
+                      // 잔여 횟수 칩(탭하면 상세). 서비스 미배포/미조회 시 스스로 숨김.
+                      const AiUsageChip(),
                       IconButton(
                         icon: const Icon(
                           Icons.close,
@@ -862,50 +854,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     ),
                   ),
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 상단 바에 오늘 남은 AI 생성 횟수를 보여주는 작은 칩.
-///
-/// 남은 횟수가 0이면 경고색(destructive)으로, 아니면 강조색으로 표시한다.
-/// 값은 서버(users/{uid}.aiUsage) 기준이라 같은 계정이면 기기 간 공유된다.
-class _RemainingChip extends StatelessWidget {
-  final AiUsage usage;
-  const _RemainingChip({required this.usage});
-
-  @override
-  Widget build(BuildContext context) {
-    final exhausted = usage.dailyRemaining <= 0;
-    final fg = exhausted ? AppColors.destructive : AppColors.accentText;
-    final bg = fg.withValues(alpha: 0.12);
-    return Tooltip(
-      message:
-          '오늘 ${usage.dailyRemaining}/${AiBriefingService.dailyLimit}회 · '
-          '이번 달 ${usage.monthlyRemaining}/${AiBriefingService.monthlyLimit}회 남음\n'
-          '같은 계정이면 기기와 상관없이 함께 차감돼요.',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bolt, size: 14, color: fg),
-            const SizedBox(width: 3),
-            Text(
-              exhausted ? '오늘 소진' : '오늘 ${usage.dailyRemaining}회',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: fg,
               ),
             ),
           ],

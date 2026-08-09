@@ -6,6 +6,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
+import '../../../common/ai_usage_chip.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/radar_view_model.dart';
@@ -107,6 +108,10 @@ class _RadarViewState extends State<RadarView> {
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
+                                  // 남은 AI 생성 횟수(탭하면 상세). 서비스 미배포/
+                                  // 미조회 시 스스로 아무것도 그리지 않는다.
+                                  const SizedBox(height: 8),
+                                  const AiUsageChip(),
                                 ],
                               ),
                             ),
