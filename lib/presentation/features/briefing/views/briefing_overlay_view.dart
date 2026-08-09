@@ -229,32 +229,36 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
           children: [
             // Top Bar with Close button
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(
-                        Icons.bolt,
-                        color: AppColors.accentText,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '30초 AI 대화 브리핑',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                      const Expanded(
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.bolt,
+                              color: AppColors.accentText,
+                              size: 22,
+                            ),
+                            SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '30초 AI 대화 브리핑',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      // 잔여 횟수 칩(탭하면 상세). 서비스 미배포/미조회 시 스스로 숨김.
-                      const AiUsageChip(),
                       IconButton(
                         icon: const Icon(
                           Icons.close,
@@ -264,6 +268,12 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                         onPressed: widget.onClose,
                       ),
                     ],
+                  ),
+                  // 잔여 횟수 칩(탭하면 상세) — 닫기 버튼을 밀지 않도록 제목 줄
+                  // 아래에 따로 놓는다. 서비스 미배포/미조회 시 스스로 숨김.
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: AiUsageChip(),
                   ),
                 ],
               ),
