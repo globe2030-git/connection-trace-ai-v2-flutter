@@ -13,8 +13,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  setDoc, query, orderBy, serverTimestamp,
+  setDoc, query, orderBy, limit, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import {
+  getFunctions, httpsCallable,
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA71ZLPoz3YZR0X3-g2P_uBXM4rK41D3kU",
@@ -27,6 +30,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+// Cloud Functions는 서울 리전(asia-northeast3)에 배포돼 있다 — 리전을 안 맞추면
+// httpsCallable이 기본(us-central1)으로 호출해 not-found가 난다.
+const functions = getFunctions(app, "asia-northeast3");
+const getUserUsageFn = httpsCallable(functions, "getUserUsage");
 
 const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
@@ -142,6 +149,7 @@ onAuthStateChanged(auth, async (user) => {
   await loadLegalDocs();
   loadReports();
   await loadTesters();
+  await loadUsageLogs();
 });
 
 // ---------- 경영 리포트 ----------
@@ -286,6 +294,105 @@ function formatDate(ts) {
   if (!ts) return "";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, "0")}.${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+// ---------- 사용량 · AI 호출 로그 ----------
+// 불만 처리·비용(손익분기) 추적용. 사용자 본인은 로그인 계정(이메일/uid)으로
+// 찾을 수 있고(명함 등 제3자 정보만 암호화됨), AI 사용량과 호출 로그를 여기서
+// 본다. 로그에는 계정 식별자·성공여부·토큰만 남고 명함/프롬프트 내용은 없다.
+
+async function loadUsageLogs() {
+  const panel = $("#tab-usage");
+  panel.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">사용자 AI 사용량 조회</h3>
+      <label>사용자 로그인 이메일</label>
+      <div class="row">
+        <input type="email" id="usageEmail" placeholder="name@example.com" style="flex:1;">
+        <button class="btn-primary" id="usageLookupBtn">조회</button>
+      </div>
+      <div id="usageResult" style="margin-top:12px;"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">최근 AI 호출 로그 (최대 100건)</h3>
+      <p class="hint" style="margin-top:0;">
+        돈이 나가는 호출 기록입니다. 계정 식별자·성공여부·토큰만 남기며,
+        명함/프롬프트 내용은 저장하지 않습니다.
+      </p>
+      <div class="row" style="margin-bottom:10px;">
+        <input type="email" id="logFilterEmail" placeholder="이메일로 필터 (비우면 전체)" style="flex:1;">
+        <button class="btn-ghost" id="logRefreshBtn">새로고침</button>
+      </div>
+      <div id="auditLogList"></div>
+    </div>
+  `;
+
+  $("#usageLookupBtn").addEventListener("click", async () => {
+    const email = $("#usageEmail").value.trim().toLowerCase();
+    const box = $("#usageResult");
+    if (!email) return;
+    box.innerHTML = `<p class="hint">조회 중…</p>`;
+    try {
+      const res = await getUserUsageFn({ email });
+      const d = res.data;
+      box.innerHTML = `
+        <div class="list-item"><div class="title">오늘</div>
+          <div>${d.dailyCount} / ${d.dailyLimit} <span class="hint">(남은 ${Math.max(0, d.dailyLimit - d.dailyCount)}회)</span></div></div>
+        <div class="list-item"><div class="title">이번 달</div>
+          <div>${d.monthlyCount} / ${d.monthlyLimit} <span class="hint">(남은 ${Math.max(0, d.monthlyLimit - d.monthlyCount)}회)</span></div></div>
+        <div class="meta" style="margin-top:8px;">uid: ${escapeHtml(d.uid)}</div>
+      `;
+    } catch (e) {
+      box.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+    }
+  });
+  $("#usageEmail").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#usageLookupBtn").click();
+  });
+  $("#logRefreshBtn").addEventListener("click", () => renderAuditLogs());
+  $("#logFilterEmail").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") renderAuditLogs();
+  });
+
+  await renderAuditLogs();
+}
+
+async function renderAuditLogs() {
+  const list = $("#auditLogList");
+  if (!list) return;
+  const filter = ($("#logFilterEmail")?.value ?? "").trim().toLowerCase();
+  list.innerHTML = `<p class="hint">불러오는 중…</p>`;
+  let snap;
+  try {
+    // 복합 인덱스가 필요 없도록 최근 100건만 받아 이메일은 클라이언트에서 거른다.
+    snap = await getDocs(query(collection(db, "aiAuditLogs"), orderBy("at", "desc"), limit(100)));
+  } catch (e) {
+    list.innerHTML = `<div class="error">로그 조회 실패: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  let rows = [];
+  snap.forEach((d) => rows.push(d.data()));
+  if (filter) rows = rows.filter((l) => String(l.email ?? "").toLowerCase() === filter);
+  if (rows.length === 0) {
+    list.innerHTML = `<p class="hint">기록이 없습니다.</p>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const l of rows) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    const badge = l.ok
+      ? `<span class="badge good">성공</span>`
+      : `<span class="badge warn">실패: ${escapeHtml(l.errorCode ?? "")}</span>`;
+    const via = l.appCheckVerified ? "정식앱" : (l.viaAllowlist ? "테스터" : "-");
+    item.innerHTML = `
+      <div>
+        <div class="title">${escapeHtml(l.email ?? l.uid ?? "")} ${badge}</div>
+        <div class="meta">${formatDate(l.at)} · ${via} · 토큰 ${l.totalTokenCount ?? "-"} (사고 ${l.thoughtsTokenCount ?? "-"})</div>
+      </div>
+    `;
+    list.appendChild(item);
+  }
 }
 
 // ---------- 탭 ----------
