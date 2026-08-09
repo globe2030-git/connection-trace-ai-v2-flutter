@@ -35,6 +35,12 @@ class AiUsage {
 /// 읽기는 `firestore.rules`에서 본인 문서에 허용돼 있다(`allow read: if
 /// isOwner(uid)`). 쓰기는 막혀 있어 앱이 카운터를 조작할 수는 없다(P0-8).
 class AiUsageService {
+  /// 마지막으로 성공적으로 읽은 사용량. 여러 화면(홈·설정·AI 브리핑)의 잔여
+  /// 횟수 칩이 이걸 구독한다 — 한 곳에서 AI를 써서 [fetch]로 다시 읽으면 모든
+  /// 칩이 같이 갱신된다. 읽기 실패(null 반환) 시에는 마지막 값을 지우지 않고
+  /// 그대로 둔다(깜빡임 방지).
+  static final ValueNotifier<AiUsage?> latest = ValueNotifier<AiUsage?>(null);
+
   /// 실패하면 null. 사용량 표시는 부가 정보라, 못 읽었다고 해서 AI 사용
   /// 자체를 막지는 않는다 — 최종 판정은 어차피 서버가 한다.
   static Future<AiUsage?> fetch() async {
@@ -50,14 +56,16 @@ class AiUsageService {
           .doc(uid)
           .get();
       final usage = snap.data()?['aiUsage'] as Map<String, dynamic>?;
-      if (usage == null) {
-        // 아직 한 번도 안 썼으면 문서에 필드가 없다 — 0회로 본다.
-        return const AiUsage(dailyUsed: 0, monthlyUsed: 0);
-      }
-      return AiUsage(
-        dailyUsed: _countIfNotExpired(usage, 'dailyCount', 'dailyResetAt'),
-        monthlyUsed: _countIfNotExpired(usage, 'monthlyCount', 'monthlyResetAt'),
-      );
+      final result = usage == null
+          // 아직 한 번도 안 썼으면 문서에 필드가 없다 — 0회로 본다.
+          ? const AiUsage(dailyUsed: 0, monthlyUsed: 0)
+          : AiUsage(
+              dailyUsed: _countIfNotExpired(usage, 'dailyCount', 'dailyResetAt'),
+              monthlyUsed:
+                  _countIfNotExpired(usage, 'monthlyCount', 'monthlyResetAt'),
+            );
+      latest.value = result; // 구독 중인 칩들에 방송.
+      return result;
     } catch (e) {
       // 개인정보가 섞이지 않도록 예외 타입만 남긴다.
       debugPrint('AI 사용량 조회 실패: ${e.runtimeType}');
