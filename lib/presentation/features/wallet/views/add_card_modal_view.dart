@@ -13,6 +13,7 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/address_search_view.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
@@ -135,6 +136,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   bool get _isEditing => widget.contactToEdit != null;
 
+  // 이 명함의 주소가 지오코딩을 모두 실패해 좌표를 못 얻은 상태인지(P1-25).
+  // true면 주소 필드 아래에 "주변 목록에 안 뜬다" 안내를 띄운다.
+  bool _addressGeoFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -173,6 +178,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _memoFocusNode,
     ];
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
+
+    // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
+    // 주소 필드 아래 안내를 띄운다(P1-25). 신규 등록/OCR 프리필은 아직 저장·
+    // 재계산 전이라 대상이 아니다.
+    final editing = widget.contactToEdit;
+    if (editing != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        final failed = await context
+            .read<ContactsRepository>()
+            .hasAddressGeocodingFailed(editing);
+        if (mounted) setState(() => _addressGeoFailed = failed);
+      });
+    }
 
     _initialAvatarUrl = _selectedAvatarUrl;
     _initialValues = {
@@ -1665,6 +1684,45 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     onPressed: _openAddressSearch,
                   ),
                 ),
+                // P1-25: 주소로 위치를 못 찾으면 이 명함은 '주변' 목록에 안 뜬다.
+                // 사용자에게 이유와 조치(주소 수정)를 알려 준다.
+                if (_addressGeoFailed) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSoft,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.borderFunctional),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.location_off,
+                          size: 16,
+                          color: AppColors.textSecondary,
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '이 주소로 위치를 찾지 못해 ‘주변’ 목록에는 표시되지 않아요. '
+                            '도로명 주소가 맞는지 확인하거나 위 검색으로 다시 선택해 주세요.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              height: 1.4,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
 
                 // 4-1. 상세주소(선택) — 건물명/층/호수 등. 위치 정보에는 안 쓰이고

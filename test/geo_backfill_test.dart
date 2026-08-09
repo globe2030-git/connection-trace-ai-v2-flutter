@@ -149,6 +149,32 @@ void main() {
       expect(await service.pendingContacts(contacts), isEmpty);
     });
 
+    test('⭐ 포기한 명함은 hasGivenUpGeo가 true (P1-25 안내 근거)', () async {
+      final service = GeoBackfillService(
+        gapBetweenRequests: Duration.zero,
+        geocode: (address) async => _fail,
+      );
+      final c = _contact(id: 'c1', address: '못 찾는 주소');
+
+      // 아직 시도 전에는 포기 상태가 아니다.
+      expect(await service.hasGivenUpGeo(c), isFalse);
+
+      for (var i = 0; i < GeoBackfillService.maxAttemptsPerContact; i++) {
+        await service.backfill([c]);
+      }
+      // 3회 실패로 포기된 뒤에는 true → 화면에서 "주소 확인" 안내를 띄운다.
+      expect(await service.hasGivenUpGeo(c), isTrue);
+
+      // 좌표가 이미 있거나 주소가 없으면 애초에 판별 대상이 아니다.
+      expect(
+        await service.hasGivenUpGeo(
+          _contact(id: 'c1', address: '못 찾는 주소', geo: const GeoPosition(lat: 1, lng: 2)),
+        ),
+        isFalse,
+      );
+      expect(await service.hasGivenUpGeo(_contact(id: 'c1')), isFalse);
+    });
+
     test('주소가 바뀌면 포기했던 명함도 다시 시도한다', () async {
       var shouldFail = true;
       final service = GeoBackfillService(
