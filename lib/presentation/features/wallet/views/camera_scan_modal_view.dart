@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
@@ -471,13 +472,52 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                     if (_initError != null)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Text(
-                          _initError!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 13,
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _initError!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // 권한을 "다시 묻지 않음"으로 거부한 뒤에는 앱이
+                                // 다시 권한 팝업을 띄울 수 없어, OS 설정 화면으로
+                                // 직접 보내는 것이 유일한 복구 경로다(P2-6).
+                                // geolocator의 openAppSettings는 위치 전용이
+                                // 아니라 이 앱의 설정 페이지를 여는 범용 유틸이다.
+                                OutlinedButton.icon(
+                                  onPressed: () => Geolocator.openAppSettings(),
+                                  icon: const Icon(Icons.settings, size: 18),
+                                  label: const Text('설정 열기'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(color: Colors.white54),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _initError = null;
+                                      _isInitializing = true;
+                                    });
+                                    _initCamera();
+                                  },
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  child: const Text('다시 시도'),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     if (_isCapturing)

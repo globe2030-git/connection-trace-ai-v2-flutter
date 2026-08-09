@@ -224,7 +224,11 @@ class _ContactCard extends StatelessWidget {
           color: AppColors.destructive,
           borderRadius: BorderRadius.circular(22),
         ),
-        child: const Icon(Icons.delete_outline, color: Colors.white),
+        // 밀어서 삭제할 때만 잠깐 드러나는 장식 아이콘 — 스크린리더가 카드마다
+        // "삭제"를 중복해 읽지 않도록 접근성 트리에서 제외한다(P1-12).
+        child: const ExcludeSemantics(
+          child: Icon(Icons.delete_outline, color: Colors.white),
+        ),
       ),
       confirmDismiss: (_) => _confirmDelete(context),
       onDismissed: (_) => onDelete(),

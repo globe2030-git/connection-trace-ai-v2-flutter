@@ -294,6 +294,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                 const SizedBox(height: 6),
                                 Wrap(
                                   spacing: 4,
+                                  // 태그가 많아 여러 줄로 감기면 runSpacing이
+                                  // 없어 줄끼리 붙어 보였다(P1-11).
+                                  runSpacing: 4,
                                   children: contact.tags.map((tag) {
                                     return Container(
                                       padding: const EdgeInsets.symmetric(

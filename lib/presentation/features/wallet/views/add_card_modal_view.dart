@@ -1465,8 +1465,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   child: Column(
                     children: [
                       GestureDetector(
+                        // deferToChild(기본)면 원형 아바타의 투명한 모서리에서
+                        // 탭이 새어나가 히트 영역이 좁다(P1-11). opaque로 72×72
+                        // 사각 전체를 탭 대상으로 만든다.
+                        behavior: HitTestBehavior.opaque,
                         onTap: _isPickingAvatar ? null : _pickContactAvatar,
-                        child: Stack(
+                        child: Semantics(
+                          button: true,
+                          label: '프로필 사진 선택',
+                          child: Stack(
                           alignment: Alignment.bottomRight,
                           children: [
                             ContactAvatar(
@@ -1496,6 +1503,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                 ),
                               ),
                           ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 6),
