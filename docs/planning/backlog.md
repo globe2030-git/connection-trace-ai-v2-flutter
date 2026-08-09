@@ -2,6 +2,39 @@
 
 ## 작업 로그
 
+### 2026-08-09 (추가 109) — Android 릴리스 서명 키 설정 (P1-19 완료)
+
+**배경**: 그동안 Android 릴리스 빌드가 debug 키스토어로 서명돼 있어(`build.gradle.kts`
+에 `// TODO`) Play 스토어 업로드가 불가능했다(P1-19, iOS의 App Store Connect 블로커에
+대응하는 Android 쪽 배포 블로커).
+
+**한 일**:
+1. **업로드 키스토어 생성** — `keytool`로 `~/keys/connectionsense-upload.jks`(alias
+   `upload`, RSA 2048, 유효기간 10000일). 저장소 밖에 둔다(루트 `.gitignore`는
+   실수 방지용 안전망이지 보관 위치가 아니다).
+2. **`android/key.properties` 작성** — `storePassword`/`keyPassword`/`keyAlias`/
+   `storeFile` 4줄. gitignore로 무시됨(`git check-ignore`로 확인) — 비밀번호는
+   커밋되지 않는다.
+3. **`android/app/build.gradle.kts` 수정** — 상단에서 `key.properties`를 읽고,
+   `signingConfigs.release`를 만들어 릴리스 빌드에 연결. **파일이 없으면 debug 키로
+   폴백**하도록 해서 CI·다른 개발자 기기에서도 `flutter build`가 깨지지 않게 했다.
+
+**검증**: `flutter build apk --release`·`flutter build appbundle --release` 둘 다
+성공. **`apksigner`(APK)·`jarsigner`(AAB)로 서명자 인증서가 debug가 아닌 업로드
+키(`CN=…CreamHouse…, C=KR`)임을 확인**했다.
+
+**함정 2건(다음 사람 참고)**:
+- `key.properties`의 비밀번호는 **키스토어를 만들 때 입력한 그 비밀번호**여야 한다.
+  자리표시자(`CHANGE_ME`)를 보고 새 비밀번호를 지어내면 `keystore password was
+  incorrect`로 실패한다.
+- 키 생성 시 키 비밀번호 프롬프트에서 엔터를 치면 키 비밀번호 = 스토어 비밀번호가
+  된다. 이때 `keyPassword`가 다르면 `Get Key failed: Given final block not properly
+  padded`로 실패한다 — 스토어는 열리는데 키에서 막히는 별개 증상.
+
+**⚠️ 백업**: 키스토어 파일과 비밀번호를 사용자가 저장소 밖 2곳에 백업 완료 —
+① iCloud "커넥션센스(중요키)", ② 맥북 "커넥션센스 메모"에 복사. 이걸 잃으면 Play
+앱 업데이트를 영구히 못 올린다.
+
 ### 2026-08-08 세션 마무리 (추가 108) — 정정 1건 + 다음 순서
 
 #### ⚠️ 정정 — 수출 규정은 **빌드마다** 답해야 한다

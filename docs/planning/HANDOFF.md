@@ -597,15 +597,10 @@ Connect`로 실패했다. 계정 권한은 정상(Admin, Certificates·Identifie
    ⚠️ 기존 관리자 계정(`connectionsense@`, `apps@`) 재사용 금지
 4. **외부 테스트 그룹 생성 → 베타 심사 제출**(1~2일). 20명이면 내부 테스트로는
    불가(내부는 App Store Connect 팀 사용자만)
-5. **Android 업로드 키스토어 생성**(P1-19) — ⚠️ **이 세션이 아니라 macOS
-   터미널에서** 실행할 것. 여기서는 비밀번호 입력이 화면에 노출된다
-   (`[WARNING: Input may be visible on screen]` 실제로 확인)
-   ```bash
-   keytool -genkey -v -keystore ~/keys/connectionsense-upload.jks \
-     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-   ```
-   비밀번호는 6자 이상. 만든 뒤 `key.properties` 템플릿을 받아 값만 채우면
-   되고, 비밀번호를 대화에 남기지 않아도 설정·검증이 가능하다.
+5. ~~**Android 업로드 키스토어 생성**(P1-19)~~ → ✅ **완료(2026-08-09, 추가 109)**.
+   `~/keys/connectionsense-upload.jks` 생성, `key.properties` 작성, `build.gradle.kts`
+   서명 연결, APK·AAB 서명 검증까지 완료. 키스토어·비밀번호는 저장소 밖 2곳 백업 완료.
+   상세는 위 P1-19 표 행 참고.
 
 ### 테스터 배포 전에 처리를 권하는 것
 
@@ -977,7 +972,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P1-16 | 로그인 화면 약관 고지 문구 | `login_view.dart`에 약관 동의 체크박스도 고지 문구도 없음. v1은 체크박스 대신 "계속하기를 누르면 [이용약관]과 [개인정보처리방침]에 동의하는 것으로 봅니다" 형태 권장(결제·마케팅 도입 시 체크박스 게이트로 승격) | 소 | 개발 |
 | P1-17 | 약관 동의 기록(`TermsConsentService`) | 동의 사실 입증과 문서 개정 시 재동의를 위해 필요. **`location_consent_service.dart`의 `currentPolicyVersion` 불일치 시 재동의 패턴(L35·L44)을 그대로 복제**하고, 기기 변경 시 이력이 사라지지 않도록 `users/{uid}.consents`에도 기록 | 소~중 | 개발 |
 | ~~P1-18~~ | ~~오픈소스 라이선스 화면 + 앱 버전·사업자 정보 표시~~ → ✅ **완료** | 2026-08-05 구현(`main` 병합). `showLicensePage` 진입 전 "왜 영문인지" 설명하는 한글 안내 화면(`OpenSourceNoticeView`) + 사업자 정보 다이얼로그 + 앱 버전 표시 추가. ⚠️ 앱 버전은 여전히 하드코딩(`_appVersion = '1.0.0 (1)'`) — `package_info_plus` 전환은 아직 미착수 | 소(잔여: package_info_plus) | 개발 |
-| P1-19 | Android 릴리스 서명 키 설정 | `android/app/build.gradle.kts:38-40`이 `signingConfig = signingConfigs.getByName("debug")` + `// TODO: Add your own signing config` — **debug 키로 서명된 빌드는 Play에 업로드할 수 없다.** iOS의 App Store Connect 403(P0-1)에 대응하는 Android 쪽 배포 블로커 | 소 | 사용자(키스토어 생성·보관) + 개발 |
+| ~~P1-19~~ | ~~Android 릴리스 서명 키 설정~~ → ✅ **완료(2026-08-09, 추가 109)** | 업로드 키스토어 생성(`~/keys/connectionsense-upload.jks`, alias `upload`, RSA 2048, 유효기간 10000일) → `android/key.properties`(gitignore, 저장소 밖 키 참조) → `build.gradle.kts`가 key.properties 있으면 업로드 키로 서명, 없으면 debug로 폴백하도록 수정. **APK·AAB 둘 다 `apksigner`/`jarsigner`로 업로드 키 서명 검증 완료**(`CN=…CreamHouse…C=KR`, debug 아님). ⚠️ **키스토어·비밀번호는 사용자가 저장소 밖 2곳에 백업 완료** — 분실 시 Play 업데이트 영구 불가라 이 백업이 핵심 | — | 완료 |
 | P1-20 | Android `<queries>`에 전화 인텐트 추가 | `AndroidManifest.xml:57-62`에 PROCESS_TEXT만 있고 DIAL/`tel:` 인텐트가 없어, Android 11+에서 `canLaunchUrl(tel:)`이 false를 반환해 **전화 걸기가 조용히 실패**할 수 있음(`phone_call_service.dart:9-15`). 실기기 검증 기록 없음 | 소 | 개발 → QA |
 | P1-21 | iOS 수출규정 키 추가 | `ios/Runner/Info.plist`에 `ITSAppUsesNonExemptEncryption` 키가 없어 업로드마다 수출규정 질문에 수동 응답해야 함. 앱이 AES-256-GCM을 쓰므로 값 판단 후 명시 필요 | 소 | 개발 |
 | P1-31 | **Gmail 스코프 유지 시 CASA 보안평가 비용** | **신규(2026-08-06, 추가 82)**. ※ 관리자 콘솔 항목과 번호가 겹쳐 P1-26 → **P1-31**로 재부여(추가 92). `gmail.readonly`로 가져온 제목·미리보기가 소통기록에 담겨 AI 프록시로 서버에 나간다. Google은 restricted scope 데이터가 제3자 서버로 이동하면 **상위 티어 보안평가(사실상 모의해킹, 연 1회 갱신)** 대상으로 본다. **"2-0" 사용자 결정 2번(Gmail을 v1에 넣을지)이 사실상 "매년 수백만 원짜리 평가를 받을지"와 같은 질문**이라는 점이 이번에 드러났다. 정확한 티어 판정은 Google/평가기관이 하므로 **확인 필요** | 판정에 따라 대 | 사용자(결정) |
