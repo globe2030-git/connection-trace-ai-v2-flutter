@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
+import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
 /// AI 대화 브리핑 기능 안내 화면.
@@ -9,11 +10,32 @@ import '../../../../core/theme/app_colors.dart';
 /// BYOK 방식이었지만, 진입장벽이 너무 높다는 판단에 따라 커넥션센스가 자체
 /// 제공하는 AI(서버 프록시, [AiBriefingService] 참고)로 전환했다. 이제
 /// 사용자가 할 일은 없고, 이 화면은 기능 소개와 사용량 한도만 안내한다.
-class AiConnectionModalView extends StatelessWidget {
+class AiConnectionModalView extends StatefulWidget {
   const AiConnectionModalView({super.key});
 
   @override
+  State<AiConnectionModalView> createState() => _AiConnectionModalViewState();
+}
+
+class _AiConnectionModalViewState extends State<AiConnectionModalView> {
+  // 서버가 세는 잔여 횟수(uid 기준). 같은 계정이면 기기 간 공유된다.
+  AiUsage? _usage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsage();
+  }
+
+  Future<void> _loadUsage() async {
+    final usage = await AiUsageService.fetch();
+    if (!mounted) return;
+    setState(() => _usage = usage);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final usage = _usage;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
@@ -93,23 +115,37 @@ class AiConnectionModalView extends StatelessWidget {
               _StatusBanner(deployed: AiBriefingService.kAiServiceDeployed),
               const SizedBox(height: 16),
 
+              // 잔여 횟수를 서버에서 읽어 상시 표시한다(동의 화면 말고도 여기서
+              // 언제든 확인 가능). 아직 못 읽었으면(로딩/오프라인) 한도만 안내.
               Row(
                 children: [
                   Expanded(
                     child: _StatTile(
-                      label: '하루',
-                      value: '${AiBriefingService.dailyLimit}회',
+                      label: usage == null ? '하루 한도' : '오늘 남음',
+                      value: usage == null
+                          ? '${AiBriefingService.dailyLimit}회'
+                          : '${usage.dailyRemaining} / ${AiBriefingService.dailyLimit}회',
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _StatTile(
-                      label: '이번 달',
-                      value: '${AiBriefingService.monthlyLimit}회',
+                      label: usage == null ? '이번 달 한도' : '이번 달 남음',
+                      value: usage == null
+                          ? '${AiBriefingService.monthlyLimit}회'
+                          : '${usage.monthlyRemaining} / ${AiBriefingService.monthlyLimit}회',
                     ),
                   ),
                 ],
               ),
+              if (usage != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  '같은 계정이면 기기와 상관없이 함께 차감돼요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+                ),
+              ],
             ],
           ),
         ),
