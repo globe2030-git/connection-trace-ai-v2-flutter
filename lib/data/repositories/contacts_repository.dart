@@ -293,6 +293,23 @@ class ContactsRepository extends ChangeNotifier {
     }
   }
 
+  /// 같은 전화번호(숫자만 비교)로 이미 등록된 명함을 찾는다. 없으면 null.
+  ///
+  /// 같은 사람 명함을 두 번 스캔하면 그대로 두 건이 쌓이는 문제(P1-40)를 저장
+  /// 직전에 잡기 위한 것. 하이픈·공백·국가번호 표기 차이를 무시하려고 숫자만
+  /// 남겨 비교한다. [excludeId]를 주면 그 명함은 제외한다(편집 시 자기 자신).
+  ContactModel? findByPhone(String phone, {String? excludeId}) {
+    final target = _digitsOnly(phone);
+    if (target.isEmpty) return null;
+    for (final c in _contacts) {
+      if (c.id == excludeId) continue;
+      if (_digitsOnly(c.phone) == target) return c;
+    }
+    return null;
+  }
+
+  static String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+
   void addContact(ContactModel newContact) {
     _contacts = [newContact, ..._contacts];
     notifyListeners();
