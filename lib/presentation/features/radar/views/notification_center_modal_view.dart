@@ -54,7 +54,7 @@ class NotificationCenterModalView extends StatelessWidget {
             if (notifications.isEmpty)
               const GlassCard(
                 child: Text(
-                  '아직 알림이 없습니다. 주변 인맥이 감지되거나 새 명함이 등록되면 여기에 표시됩니다.',
+                  '아직 표시할 알림이 없습니다.',
                   style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
                 ),
               ),
