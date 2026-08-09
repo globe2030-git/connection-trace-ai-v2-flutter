@@ -1,4 +1,4 @@
-# 개발 인수인계 문서 (2026-08-07 기준 — 최신 상황은 "0-5" 섹션, 우선순위는 "3. 해야 할 일" 참고)
+# 개발 인수인계 문서 (2026-08-09 기준 — 최신 상황은 "0-8" 섹션, 우선순위는 "3. 해야 할 일" 참고)
 
 다음 개발자(또는 다음 대화창)가 이 프로젝트를 빠르게 이어받을 수 있도록 정리한
 문서. 시간순 상세 기록은 [`backlog.md`](./backlog.md)(추가 1~74)에 다 있으니,
@@ -597,15 +597,10 @@ Connect`로 실패했다. 계정 권한은 정상(Admin, Certificates·Identifie
    ⚠️ 기존 관리자 계정(`connectionsense@`, `apps@`) 재사용 금지
 4. **외부 테스트 그룹 생성 → 베타 심사 제출**(1~2일). 20명이면 내부 테스트로는
    불가(내부는 App Store Connect 팀 사용자만)
-5. **Android 업로드 키스토어 생성**(P1-19) — ⚠️ **이 세션이 아니라 macOS
-   터미널에서** 실행할 것. 여기서는 비밀번호 입력이 화면에 노출된다
-   (`[WARNING: Input may be visible on screen]` 실제로 확인)
-   ```bash
-   keytool -genkey -v -keystore ~/keys/connectionsense-upload.jks \
-     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-   ```
-   비밀번호는 6자 이상. 만든 뒤 `key.properties` 템플릿을 받아 값만 채우면
-   되고, 비밀번호를 대화에 남기지 않아도 설정·검증이 가능하다.
+5. ~~**Android 업로드 키스토어 생성**(P1-19)~~ → ✅ **완료(2026-08-09, 추가 109)**.
+   `~/keys/connectionsense-upload.jks` 생성, `key.properties` 작성, `build.gradle.kts`
+   서명 연결, APK·AAB 서명 검증까지 완료. 키스토어·비밀번호는 저장소 밖 2곳 백업 완료.
+   상세는 위 P1-19 표 행 참고.
 
 ### 테스터 배포 전에 처리를 권하는 것
 
@@ -636,6 +631,52 @@ Connect`로 실패했다. 계정 권한은 정상(Admin, Certificates·Identifie
 P1-26·P1-27·P0-2·P1-7). 완료 처리를 그때그때 하지 않으면 다음 세션이 이미
 끝난 일을 다시 검토한다 — 실제로 오늘 P0로 잡고 시작한 일 중 둘이 이미
 끝나 있었다.
+
+## 0-8. 2026-08-09 — Android 서명 키(P1-19) + iOS 빌드5 목적문자열 + TestFlight 외부배포 세팅 (가장 최신)
+
+상세는 backlog 추가 109·110. 이 세션은 "0-7 내일 순서"의 1·5번을 끝내고,
+2·3·4번(외부 그룹·심사용 계정·베타 심사)을 세팅 단계까지 진행했다.
+
+### 완료
+
+- **P1-19 Android 릴리스 서명(추가 109)** — 업로드 키스토어 생성
+  (`~/keys/connectionsense-upload.jks`), `android/key.properties`(gitignore),
+  `build.gradle.kts` 서명 연결. APK·AAB 둘 다 업로드 키 서명 검증 완료.
+  키스토어·비밀번호는 저장소 밖 2곳 백업(iCloud "커넥션센스(중요키)", 맥북
+  "커넥션센스 메모"). **PR #36.**
+- **iOS 빌드 `1.0.0 (5)` 업로드 완료** — "0-7 내일 순서" 1번(빌드4 업로드)은
+  Xcode 재로그인 없이 그냥 통과(어제 실패는 일시 장애였음)했고, 이어서
+  **경고 90683**(`NSLocationAlwaysAndWhenInUseUsageDescription` 누락)을 고친
+  빌드 5를 새로 올렸다. geolocator가 '항상 허용' 위치 API를 참조해 뜬 경고로,
+  Info.plist에 목적 문자열을 추가해 해결. 빌드 5는 App Store Connect에서
+  **경고 삼각형 없이** 처리 완료. **PR #37**(pubspec `1.0.0+5` + Info.plist).
+- **빌드 5 수출 규정 답변 완료** — "표준 암호화 알고리즘"(직접 구현한
+  AES-256-GCM) 선택, 프랑스 후속 질문은 "아니오". ⚠️ 회사 명의 신고이고
+  프랑스 부분은 정식 출시 전 법무 검토 대상(베타는 무관).
+- **TestFlight "테스트 정보" 입력·저장** — 베타 앱 설명, 피드백 이메일
+  (`connectionsense@creamhouse.net`), 개인정보처리방침 URL, 베타 앱 심사
+  정보(연락처 + 심사용 추가 정보/심사 노트). 문안 출처는 `store-review-notes.md`.
+
+### 다음(내일) — 외부 베타 배포 마무리
+
+1. **직원 중 아이폰 사용자 확인 → 테스터 이메일 수집** (사용자가 오늘
+   "내일 직원 확인 후 그룹 생성"으로 보류). 외부 그룹은 테스터 이메일이
+   있어야 초대·심사 제출이 되므로 이메일 수집이 선행.
+2. **외부 그룹 생성** — TestFlight 상단 파란 배너의 **"그룹 생성"** 링크로
+   만든다(사이드바 ➕는 "내부 그룹"이라 다름 — 오늘 실제로 헷갈렸다).
+   외부 그룹이 하나도 없으면 사이드바에 "외부 테스팅" 섹션이 안 보인다.
+3. **그룹에 빌드 5 추가 + "테스트할 내용" 입력**(문안은 store-review-notes.md 2절).
+4. **심사용 계정 생성**(새 Gmail, 2단계 인증 끄기, 테스트 명함 3~5건) →
+   "테스트 정보 → 베타 앱 심사 정보 → 로그인 필요"에 계정/비번 입력 +
+   심사 노트의 "(심사용 계정 입력)" 자리 채우기. ⚠️ 기존 관리자 계정 재사용 금지.
+5. **베타 심사 제출**(1~2일).
+
+### 열린 PR
+
+- **#36** Android 서명 키(P1-19) — docs(추가 109·110·0-8 포함)도 이 브랜치에 있음
+- **#37** iOS 목적 문자열(경고 90683) + 빌드번호 `+5`
+
+두 PR은 서로 독립적이라 병합 순서 무관(문서는 #36에만 있어 충돌 없음).
 
 ## 1. 한 일 (완료된 기능)
 
@@ -977,7 +1018,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P1-16 | 로그인 화면 약관 고지 문구 | `login_view.dart`에 약관 동의 체크박스도 고지 문구도 없음. v1은 체크박스 대신 "계속하기를 누르면 [이용약관]과 [개인정보처리방침]에 동의하는 것으로 봅니다" 형태 권장(결제·마케팅 도입 시 체크박스 게이트로 승격) | 소 | 개발 |
 | P1-17 | 약관 동의 기록(`TermsConsentService`) | 동의 사실 입증과 문서 개정 시 재동의를 위해 필요. **`location_consent_service.dart`의 `currentPolicyVersion` 불일치 시 재동의 패턴(L35·L44)을 그대로 복제**하고, 기기 변경 시 이력이 사라지지 않도록 `users/{uid}.consents`에도 기록 | 소~중 | 개발 |
 | ~~P1-18~~ | ~~오픈소스 라이선스 화면 + 앱 버전·사업자 정보 표시~~ → ✅ **완료** | 2026-08-05 구현(`main` 병합). `showLicensePage` 진입 전 "왜 영문인지" 설명하는 한글 안내 화면(`OpenSourceNoticeView`) + 사업자 정보 다이얼로그 + 앱 버전 표시 추가. ⚠️ 앱 버전은 여전히 하드코딩(`_appVersion = '1.0.0 (1)'`) — `package_info_plus` 전환은 아직 미착수 | 소(잔여: package_info_plus) | 개발 |
-| P1-19 | Android 릴리스 서명 키 설정 | `android/app/build.gradle.kts:38-40`이 `signingConfig = signingConfigs.getByName("debug")` + `// TODO: Add your own signing config` — **debug 키로 서명된 빌드는 Play에 업로드할 수 없다.** iOS의 App Store Connect 403(P0-1)에 대응하는 Android 쪽 배포 블로커 | 소 | 사용자(키스토어 생성·보관) + 개발 |
+| ~~P1-19~~ | ~~Android 릴리스 서명 키 설정~~ → ✅ **완료(2026-08-09, 추가 109)** | 업로드 키스토어 생성(`~/keys/connectionsense-upload.jks`, alias `upload`, RSA 2048, 유효기간 10000일) → `android/key.properties`(gitignore, 저장소 밖 키 참조) → `build.gradle.kts`가 key.properties 있으면 업로드 키로 서명, 없으면 debug로 폴백하도록 수정. **APK·AAB 둘 다 `apksigner`/`jarsigner`로 업로드 키 서명 검증 완료**(`CN=…CreamHouse…C=KR`, debug 아님). ⚠️ **키스토어·비밀번호는 사용자가 저장소 밖 2곳에 백업 완료** — 분실 시 Play 업데이트 영구 불가라 이 백업이 핵심 | — | 완료 |
 | P1-20 | Android `<queries>`에 전화 인텐트 추가 | `AndroidManifest.xml:57-62`에 PROCESS_TEXT만 있고 DIAL/`tel:` 인텐트가 없어, Android 11+에서 `canLaunchUrl(tel:)`이 false를 반환해 **전화 걸기가 조용히 실패**할 수 있음(`phone_call_service.dart:9-15`). 실기기 검증 기록 없음 | 소 | 개발 → QA |
 | P1-21 | iOS 수출규정 키 추가 | `ios/Runner/Info.plist`에 `ITSAppUsesNonExemptEncryption` 키가 없어 업로드마다 수출규정 질문에 수동 응답해야 함. 앱이 AES-256-GCM을 쓰므로 값 판단 후 명시 필요 | 소 | 개발 |
 | P1-31 | **Gmail 스코프 유지 시 CASA 보안평가 비용** | **신규(2026-08-06, 추가 82)**. ※ 관리자 콘솔 항목과 번호가 겹쳐 P1-26 → **P1-31**로 재부여(추가 92). `gmail.readonly`로 가져온 제목·미리보기가 소통기록에 담겨 AI 프록시로 서버에 나간다. Google은 restricted scope 데이터가 제3자 서버로 이동하면 **상위 티어 보안평가(사실상 모의해킹, 연 1회 갱신)** 대상으로 본다. **"2-0" 사용자 결정 2번(Gmail을 v1에 넣을지)이 사실상 "매년 수백만 원짜리 평가를 받을지"와 같은 질문**이라는 점이 이번에 드러났다. 정확한 티어 판정은 Google/평가기관이 하므로 **확인 필요** | 판정에 따라 대 | 사용자(결정) |
