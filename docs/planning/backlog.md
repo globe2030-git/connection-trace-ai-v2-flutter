@@ -2,6 +2,42 @@
 
 ## 작업 로그
 
+### 2026-08-09 (추가 115) — 품질·정리 배치: 죽은 코드(P2-7) + 색상 토큰 정리(P2-8·P1-11 색상)
+
+사용자가 세 결정("알아서 처리")을 맡겨 품질·UX 정지작업을 진행.
+- **P2-7** 죽은 코드 삭제 — 진입점 없는 통화/문자 자동수집 실험 잔재
+  (`communication_trace_test_modal_view.dart`, `comm_log_sync_service.dart`).
+  참조 0 확인, 되살릴 계획 없음(사용자 확인).
+- **P2-8** 색상 토큰 리네임 — 다크 시절 이름을 값만 라이트로 바꿔 유지하던
+  오해 토큰 4종을 의미 기반으로: `bgDarkSlate→bgBase`, `bgDarkObsidian→
+  bgElevated`, `cardDark→cardSurface`, `borderDark→borderSubtle`(약 30파일,
+  값 동일·기능 변화 0). zsh는 `$files`를 단어분리 안 해 `while read`로 치환.
+- **P1-11(색상 부분)** — 구 퍼플(#6C5CE7)은 코드에 없고 주석뿐임을 확인,
+  `camera_scan` 스캔 프레임의 하드코딩 `Colors.greenAccent`(2색 원칙 위반)를
+  `AppColors.accent`로 통일. **레이아웃 잔여**(아바타 터치영역·태그칩 클리핑·
+  카드 그림자 하드코딩)는 색상이 아니라 별도로 남김.
+
+검증: flutter analyze 에러·경고 0(info 19), flutter test 93건.
+
+### 2026-08-09 (추가 114) — Apple 토큰 폐기 (P1-38, 코드 완료·배포 대기)
+
+Apple은 Sign in with Apple + 계정 삭제가 있는 앱에 토큰 폐기를 요구한다(정식
+심사 반려 사유). 구현:
+- 로그인(auth_repository): Apple authorizationCode를 서버 callable
+  `storeAppleRefreshToken`에 전송(best-effort, 5분 내 교환 전제).
+- 서버: .p8로 ES256 client_secret JWT를 Node crypto로 직접 서명(JOSE
+  ieee-p1363), Apple `/auth/token`에서 refresh_token 교환 → 클라이언트가 못
+  읽는 `appleAuth/{uid}`(규칙 read/write false)에 보관. client_id는 네이티브
+  앱이라 번들 ID(웹 Services ID 불필요).
+- 탈퇴: `onUserDeletedCleanup`(users/{uid} 삭제 트리거)가 refresh_token을
+  Apple `/auth/revoke`로 폐기 + 문서 삭제.
+- 한계: 이 기능 이전 로그인한 Apple 사용자는 보관 토큰이 없어 폐기 대상 없음
+  (다음 로그인에 해소).
+
+**⚠️ 배포 전 사용자 작업**: `firebase functions:secrets:set APPLE_SIGNIN_KEY`
+(.p8 내용, Key ID UUYAKPD4S7) → `firebase deploy --only functions,firestore:rules`
+→ 실기기(Apple 로그인 → 계정 삭제 → Apple ID 설정에서 앱 제거) 검증. PR #44.
+
 ### 2026-08-09 (추가 113) — 테스터 배포 전 정지작업 2건: Crashlytics(P1-13) + 전화번호 중복(P1-40)
 
 곧 직원 테스트를 돌리므로, 그 전에 피드백 품질을 올리는 두 가지를 먼저 처리했다.
