@@ -70,6 +70,10 @@ class WalletViewModel extends ChangeNotifier {
     _safeNotify();
   }
 
+  /// 같은 전화번호로 이미 등록된 명함(있으면). 저장 전 중복 경고에 쓴다(P1-40).
+  ContactModel? findDuplicateByPhone(String phone, {String? excludeId}) =>
+      _contactsRepository.findByPhone(phone, excludeId: excludeId);
+
   void addContact(ContactModel contact) {
     _contactsRepository.addContact(contact);
   }

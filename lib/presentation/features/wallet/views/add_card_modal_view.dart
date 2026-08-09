@@ -561,6 +561,39 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
+    // 1-b. 전화번호 중복 확인(P1-40). 같은 번호가 이미 등록돼 있으면(같은 사람
+    // 명함을 두 번 스캔한 경우 등) 그냥 두 건으로 쌓이지 않도록 저장 전에
+    // 확인을 받는다. 편집 중에는 자기 자신과 부딪히므로 검사하지 않는다.
+    // 저장 상태(_isSavingCard)를 켜기 전에 두어, 사용자가 취소해도 되돌릴
+    // 상태가 없게 한다.
+    if (!_isEditing) {
+      final dup = context.read<WalletViewModel>().findDuplicateByPhone(phoneVal);
+      if (dup != null) {
+        final proceed = await showDialog<bool>(
+          context: context,
+          builder: (dialogCtx) => AlertDialog(
+            title: const Text('이미 등록된 번호예요'),
+            content: Text(
+              '같은 전화번호가 "${dup.name}" 님으로 이미 등록돼 있어요.\n'
+              '그래도 새 명함으로 추가할까요?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, false),
+                child: const Text('취소'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx, true),
+                child: const Text('그래도 추가'),
+              ),
+            ],
+          ),
+        );
+        if (proceed != true) return;
+        if (!mounted) return;
+      }
+    }
+
     // 2. Address Geocoding & Road Name Address Conversion Dialog
     setState(() => _isSavingCard = true);
     final addressResult = await AddressGeocodingService.validateAndConvert(

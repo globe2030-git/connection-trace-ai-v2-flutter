@@ -147,6 +147,48 @@ void main() {
     });
   });
 
+  group('전화번호 중복 검사(P1-40)', () {
+    ContactModel withPhone(String id, String phone) => ContactModel(
+          id: id,
+          name: '이름$id',
+          company: '회사',
+          title: '직함',
+          phone: phone,
+          email: 'a@b.c',
+          tags: const [],
+          talkingPoints: const [],
+        );
+
+    Future<ContactsRepository> repoWith(List<ContactModel> seed) async {
+      seedLocalContacts(seed);
+      final repo = ContactsRepository(geoBackfillService: fakeBackfill().service);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      return repo;
+    }
+
+    test('⭐ 하이픈·공백 표기가 달라도 같은 번호로 인식한다', () async {
+      final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
+      expect(repo.findByPhone('010 1234 5678')?.id, 'c1');
+      expect(repo.findByPhone('01012345678')?.id, 'c1');
+    });
+
+    test('없는 번호면 null', () async {
+      final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
+      expect(repo.findByPhone('010-9999-9999'), isNull);
+    });
+
+    test('빈 번호는 중복으로 보지 않는다', () async {
+      final repo = await repoWith([withPhone('c1', '')]);
+      expect(repo.findByPhone(''), isNull);
+      expect(repo.findByPhone('   '), isNull);
+    });
+
+    test('excludeId로 자기 자신은 제외한다(편집 시)', () async {
+      final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
+      expect(repo.findByPhone('010-1234-5678', excludeId: 'c1'), isNull);
+    });
+  });
+
   group('서버 백업 페이로드', () {
     test('⭐ 서버로 보내는 형태에는 좌표가 들어가지 않는다', () {
       // 추가 76의 핵심 계약. 이 테스트가 깨지면 좌표가 다시 서버로 나간다.
