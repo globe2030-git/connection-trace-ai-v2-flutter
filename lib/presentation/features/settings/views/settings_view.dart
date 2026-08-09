@@ -923,6 +923,31 @@ Future<void> _performAccountDeletion(
   _showLoadingDialog(context);
 
   try {
+    // 다른 기기에서 이미 삭제된 계정이면 서버엔 지울 게 없다. 이 경우 서버
+    // 요청(토큰 갱신 실패로 "네트워크 오류"처럼 보임)을 아예 건너뛰고, 이
+    // 기기의 로컬 데이터만 정리한 뒤 로그아웃시킨다.
+    if (await auth.isAccountAlreadyDeleted()) {
+      await contactsRepo.clearLocal();
+      await profileRepo.clearLocal();
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(kLastSignedInUidPrefsKey);
+      } catch (e) {
+        debugPrint('계정 삭제 후 마지막 로그인 uid 정리 실패: $e');
+      }
+      await auth.signOut();
+      if (context.mounted) _dismissLoadingDialog(context);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('이미 다른 기기에서 삭제된 계정이에요. 이 기기에서도 로그아웃했어요.'),
+            backgroundColor: AppColors.accent,
+          ),
+        );
+      }
+      return;
+    }
+
     if (uid != null) {
       await DataBackupService.deleteAllUserData(uid);
     }
