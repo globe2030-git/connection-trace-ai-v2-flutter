@@ -358,22 +358,43 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 // "잠시 후 다시 시도" 안내로 끝난다 — 요금이 새는 것보다 낫다.
 const MAX_INSTANCES = 3;
 
+/**
+ * 테스터 허용목록 검사. 스토어를 거치지 않은 빌드는 App Check 토큰을 못 만들어
+ * AI 호출이 막힌다. 관리자 콘솔에서 `config/testers.emails`에 등록한 이메일은
+ * 테스트 기간 동안 App Check 없이도 허용한다. Admin SDK로 읽어 보안 규칙을
+ * 우회한다. 대소문자 차이로 빠지지 않도록 소문자로 비교한다.
+ */
+async function isAllowlistedTester(
+  email: string | undefined | null,
+): Promise<boolean> {
+  if (!email) return false;
+  const db = getFirestore();
+  const snap = await db.collection("config").doc("testers").get();
+  if (!snap.exists) return false;
+  const emails = (snap.data()?.emails ?? []) as string[];
+  const target = email.toLowerCase();
+  return emails.some((e) => String(e).toLowerCase() === target);
+}
+
 export const generateBriefing = onCall<GenerateBriefingRequest>(
   {
     secrets: [geminiApiKey],
     region: "asia-northeast3",
     maxInstances: MAX_INSTANCES,
-    // 유효한 App Check 토큰이 없는 호출은 거부한다(2026-08-08 전환). 이걸
-    // 켜기 전에는 Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사
-    // 명의 유료 Gemini 키를 쓸 수 있었다(backlog 추가 82 신규-B).
+    // 유효한 App Check 토큰이 없는 호출을 원칙적으로 거부한다(2026-08-08 도입).
+    // 이 보호가 없으면 Google 로그인만 통과하면 우리 앱이 아닌 스크립트도 회사
+    // 명의 유료 Gemini 키를 쓸 수 있다(backlog 추가 82 신규-B).
     //
-    // ⚠️ 이걸 켠 뒤로는 **토큰을 못 만드는 빌드는 AI 브리핑이 막힌다.**
-    // 스토어를 거치지 않는 빌드(테스터 APK, devicectl 직접 설치 iOS)는
-    // `tool/build_app.sh <타겟> release appcheck-debug`로 빌드하고 그 기기의
-    // 디버그 토큰을 Firebase에 등록해야 한다. 근거는
-    // lib/core/services/app_check_service.dart 주석, 절차는
-    // docs/planning/admin-manual.md의 App Check 절.
-    enforceAppCheck: true,
+    // ⚠️ 2026-08-09: 직원 테스트 기간 동안 App Check "강제"를 끄고 **아래 함수
+    // 본문에서 수동으로 검사**한다. 스토어(TestFlight/Play)를 거치지 않은 빌드는
+    // App Check 토큰을 못 만들어 AI가 막히는데, 매 기기 디버그 토큰을 등록하는
+    // 건 직원 배포에 비현실적이라(로그캣에만 뜸), 대신 관리자 콘솔에 등록한
+    // 테스터 이메일(config/testers)을 App Check 없이도 허용하는 방식으로 바꿨다.
+    // 정식 앱(유효 토큰)은 그대로 통과하고, 토큰도 없고 허용목록에도 없으면
+    // 거부하므로 외부 스크립트 남용 방어는 유지된다. 일일 한도도 그대로 적용.
+    // 근거·절차: docs/planning/backlog.md 추가 111, 관리자 콘솔 "테스터 관리" 탭.
+    // ⚠️ 테스트 종료 후 config/testers를 비우고 enforceAppCheck: true 복원 검토.
+    enforceAppCheck: false,
   },
   async (request): Promise<GenerateBriefingResponse> => {
     if (!request.auth) {
@@ -383,9 +404,20 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       );
     }
 
-    // 강제 전환 판단에 필요한 유일한 정보는 "유효한 토큰이 왔는가" 하나다.
+    // enforceAppCheck를 끈 대신 여기서 수동으로 검사한다(위 옵션 주석 참고).
+    // 유효한 App Check 토큰이 있거나(정식 스토어 앱), 관리자 콘솔에 등록된
+    // 테스터 이메일이면 통과. 둘 다 아니면 거부해 외부 스크립트 남용을 막는다.
+    const appCheckVerified = !!request.app;
+    if (!appCheckVerified &&
+        !(await isAllowlistedTester(request.auth.token.email))) {
+      throw new HttpsError(
+        "failed-precondition",
+        "앱 무결성 확인에 실패했어요. 최신 버전의 정식 앱에서 다시 시도해 주세요.",
+      );
+    }
+
     // uid나 토큰 원문은 남기지 않는다(Cloud Logging 기본 30일 보관).
-    logger.info("generateBriefing 호출", {appCheckVerified: !!request.app});
+    logger.info("generateBriefing 호출", {appCheckVerified});
 
     const {
       contactSummary,

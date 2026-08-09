@@ -141,6 +141,7 @@ onAuthStateChanged(auth, async (user) => {
   await loadInquiries();
   await loadLegalDocs();
   loadReports();
+  await loadTesters();
 });
 
 // ---------- 경영 리포트 ----------
@@ -189,6 +190,96 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+// ---------- 테스터 관리 ----------
+// 스토어(TestFlight/Play)를 거치지 않은 테스트 빌드는 App Check 토큰을 못 만들어
+// AI 대화 가이드가 막힌다. 여기 등록한 이메일(직원 로그인 계정)은 서버
+// (generateBriefing)가 App Check 없이도 AI 호출을 허용한다. 일일 한도는 그대로
+// 적용되므로 비용은 상한이 있다. ⚠️ 테스트 종료 후 목록을 비울 것 — 등록된
+// 계정은 앱 무결성 검증을 우회하는 권한을 갖는다. 저장 위치: config/testers.emails.
+
+async function getTesterEmails() {
+  const snap = await getDoc(doc(db, "config", "testers"));
+  return snap.exists() ? (snap.data().emails ?? []) : [];
+}
+
+async function saveTesterEmails(emails) {
+  await setDoc(
+    doc(db, "config", "testers"),
+    { emails, updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+}
+
+async function loadTesters() {
+  const panel = $("#tab-testers");
+  panel.innerHTML = `
+    <div class="card">
+      <p class="hint" style="margin-top:0;">
+        여기 등록된 이메일(직원 로그인 계정)은 스토어를 거치지 않은 테스트
+        빌드에서도 <strong>AI 대화 가이드</strong>를 쓸 수 있습니다. 일일 사용
+        한도는 그대로 적용됩니다. <strong>테스트가 끝나면 목록을 비우세요</strong> —
+        등록된 계정은 앱 무결성 검증(App Check)을 우회합니다.
+      </p>
+      <label>테스터 이메일 추가 (로그인에 쓰는 Google 계정)</label>
+      <div class="row">
+        <input type="email" id="testerEmail" placeholder="name@example.com" style="flex:1;">
+        <button class="btn-primary" id="testerAddBtn">추가</button>
+      </div>
+      <div id="testerError"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">등록된 테스터 (<span id="testerCount">…</span>)</h3>
+      <div id="testerList"></div>
+    </div>
+  `;
+
+  $("#testerAddBtn").addEventListener("click", async () => {
+    const raw = $("#testerEmail").value.trim().toLowerCase();
+    $("#testerError").innerHTML = "";
+    if (!raw) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+      $("#testerError").innerHTML = `<div class="error">이메일 형식이 올바르지 않습니다.</div>`;
+      return;
+    }
+    const emails = await getTesterEmails();
+    if (emails.map((e) => String(e).toLowerCase()).includes(raw)) {
+      $("#testerError").innerHTML = `<div class="error">이미 등록된 이메일입니다.</div>`;
+      return;
+    }
+    await saveTesterEmails([...emails, raw]);
+    $("#testerEmail").value = "";
+    await loadTesters();
+  });
+
+  $("#testerEmail").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") $("#testerAddBtn").click();
+  });
+
+  const emails = await getTesterEmails();
+  $("#testerCount").textContent = emails.length;
+  const list = $("#testerList");
+  if (emails.length === 0) {
+    list.innerHTML = `<p class="hint">등록된 테스터가 없습니다.</p>`;
+    return;
+  }
+  list.innerHTML = "";
+  for (const email of emails) {
+    const item = document.createElement("div");
+    item.className = "list-item";
+    item.innerHTML = `
+      <div class="title">${escapeHtml(email)}</div>
+      <button class="btn-danger" data-action="remove">삭제</button>
+    `;
+    item.querySelector('[data-action="remove"]').addEventListener("click", async () => {
+      if (!confirm(`${email} 을(를) 테스터에서 제거할까요? 제거하면 이 계정은 테스트 빌드에서 AI를 쓸 수 없게 됩니다.`)) return;
+      const current = await getTesterEmails();
+      await saveTesterEmails(current.filter((e) => String(e).toLowerCase() !== String(email).toLowerCase()));
+      await loadTesters();
+    });
+    list.appendChild(item);
+  }
 }
 
 function formatDate(ts) {

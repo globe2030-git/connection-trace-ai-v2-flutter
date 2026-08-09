@@ -36,6 +36,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 테스터 허용목록(config/testers) — 스토어를 거치지 않은 테스트 빌드에서
+    // AI를 쓸 수 있게 관리자 콘솔에서 이메일을 등록/삭제하는 문서. 관리자만
+    // 읽고 쓴다. 서버(generateBriefing)는 Admin SDK로 읽어 규칙을 우회한다.
+    // config 아래 다른 문서는 명시 전까지 기본 거부(맨 아래 catch-all).
+    match /config/testers {
+      allow read, write: if isAdmin();
+    }
+
     // 공지사항 — published=true인 것만 일반 사용자에게 공개, 초안은 관리자만.
     match /notices/{noticeId} {
       allow read: if resource.data.published == true || isAdmin();
