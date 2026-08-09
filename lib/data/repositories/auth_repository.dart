@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_functions/cloud_functions.dart' as fb_functions;
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
@@ -205,6 +207,30 @@ class AuthRepository extends ChangeNotifier {
     _isSignedIn = true;
     notifyListeners();
     await _persist();
+
+    // App Store 요구(계정 삭제 시 Apple 토큰 폐기, P1-38): 서버가 나중에
+    // 폐기할 수 있도록 authorization_code를 보내 refresh_token으로 교환·보관
+    // 하게 한다. 로그인 흐름을 막지 않도록 기다리지 않고, 실패해도 무시한다
+    // (authorization_code는 발급 후 5분 내 교환해야 해 로그인 직후에 보낸다).
+    if (user != null && credential.authorizationCode.isNotEmpty) {
+      unawaited(_storeAppleRefreshTokenOnServer(credential.authorizationCode));
+    }
+  }
+
+  /// Apple authorization_code를 서버로 보내 refresh_token으로 교환·보관하게
+  /// 한다(탈퇴 시 폐기용, P1-38). 실패는 조용히 무시한다 — 로그인 자체는
+  /// 이미 성공했고, 다음 로그인에 다시 시도된다.
+  Future<void> _storeAppleRefreshTokenOnServer(String authorizationCode) async {
+    try {
+      await fb_functions.FirebaseFunctions.instanceFor(region: 'asia-northeast3')
+          .httpsCallable('storeAppleRefreshToken')
+          .call<Map<String, dynamic>>({
+        'authorizationCode': authorizationCode,
+      });
+    } catch (e) {
+      // 개인정보·토큰 원문이 섞이지 않도록 예외 타입만 남긴다.
+      debugPrint('Apple refresh token 서버 저장 실패: ${e.runtimeType}');
+    }
   }
 
   String _sha256(String input) {

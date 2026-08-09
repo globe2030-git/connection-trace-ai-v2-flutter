@@ -51,6 +51,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Apple refresh_token 보관(탈퇴 시 폐기용, P1-38). 민감 토큰이라 클라이언트는
+    // 읽지도 쓰지도 못한다 — 서버(storeAppleRefreshToken / onUserDeletedCleanup)만
+    // Admin SDK로 접근한다.
+    match /appleAuth/{uid} {
+      allow read, write: if false;
+    }
+
     // 공지사항 — published=true인 것만 일반 사용자에게 공개, 초안은 관리자만.
     match /notices/{noticeId} {
       allow read: if resource.data.published == true || isAdmin();
