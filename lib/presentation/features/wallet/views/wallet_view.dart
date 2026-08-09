@@ -4,6 +4,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../view_models/wallet_view_model.dart';
@@ -246,6 +247,13 @@ class _ContactCard extends StatelessWidget {
                   photoPath: contact.avatarUrl,
                   name: contact.name,
                   radius: 28,
+                  // "명함을 대표 이미지로" 켠 인맥은 암호화된 명함 이미지를
+                  // 아바타로 보여준다(추가 133).
+                  cardImagePath:
+                      contact.useCardAsAvatar ? contact.cardImagePath : null,
+                  uid: contact.useCardAsAvatar
+                      ? context.read<AuthRepository>().firebaseUid
+                      : null,
                 ),
                 const SizedBox(width: 14),
                 Expanded(

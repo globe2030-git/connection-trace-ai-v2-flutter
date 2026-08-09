@@ -60,6 +60,49 @@ class DataCryptoService {
     return base64Encode(combined);
   }
 
+  /// 임의의 바이트(예: 명함 이미지 JPG)를 AES-256-GCM으로 암호화한다.
+  /// 반환값은 `nonce(12B) + ciphertext + MAC(16B)`을 이어붙인 바이트 —
+  /// 그대로 파일로 저장하면 된다(P1-9: 명함 이미지 로컬 암호화).
+  static Future<Uint8List> encryptBytes(
+    List<int> plainBytes,
+    SecretKey key,
+  ) async {
+    final nonce = _algorithm.newNonce();
+    final secretBox = await _algorithm.encrypt(
+      plainBytes,
+      secretKey: key,
+      nonce: nonce,
+    );
+    return Uint8List.fromList([
+      ...secretBox.nonce,
+      ...secretBox.cipherText,
+      ...secretBox.mac.bytes,
+    ]);
+  }
+
+  /// [encryptBytes]로 만든 바이트를 원래 바이트로 복원한다. 인증 실패(MAC
+  /// 불일치)·형식 오류면 [DataDecryptionException].
+  static Future<Uint8List> decryptBytes(
+    Uint8List combined,
+    SecretKey key,
+  ) async {
+    const nonceLength = 12;
+    const macLength = 16;
+    if (combined.length < nonceLength + macLength) {
+      throw DataDecryptionException('암호문 길이가 너무 짧음');
+    }
+    final nonce = combined.sublist(0, nonceLength);
+    final mac = combined.sublist(combined.length - macLength);
+    final cipherText = combined.sublist(nonceLength, combined.length - macLength);
+    try {
+      final secretBox = SecretBox(cipherText, nonce: nonce, mac: Mac(mac));
+      final plain = await _algorithm.decrypt(secretBox, secretKey: key);
+      return Uint8List.fromList(plain);
+    } catch (e) {
+      throw DataDecryptionException('이미지 복호화 실패(위변조 또는 잘못된 키)', e);
+    }
+  }
+
   /// [encryptJson]으로 만든 base64 문자열을 원래의 JSON 맵으로 복원한다.
   ///
   /// 인증 실패(MAC 불일치 — 위변조되었거나 다른 키로 암호화된 데이터)나

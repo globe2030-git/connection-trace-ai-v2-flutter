@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/contact_image_service.dart';
 import '../../core/services/data_crypto_service.dart';
 import '../../core/services/encryption_key_service.dart';
 import '../../core/services/geo_backfill_service.dart';
@@ -445,6 +446,12 @@ class ContactsRepository extends ChangeNotifier {
   }
 
   void deleteContact(String id) {
+    // 삭제 전에 암호화된 명함 이미지 파일도 정리한다(추가 133).
+    final idx = _contacts.indexWhere((c) => c.id == id);
+    final cardImagePath = idx >= 0 ? _contacts[idx].cardImagePath : null;
+    if (cardImagePath != null) {
+      ContactImageService().deleteCardImage(cardImagePath);
+    }
     _contacts.removeWhere((c) => c.id == id);
     notifyListeners();
     _saveToDisk();

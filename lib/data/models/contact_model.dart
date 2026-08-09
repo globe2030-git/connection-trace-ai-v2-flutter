@@ -69,6 +69,14 @@ class ContactModel {
   final List<String> talkingPoints;
   final List<CommunicationLogModel> commLogs;
   final String? memo;
+  // 스캔한 명함 이미지의 **암호화 파일 경로**(P1-9, 추가 133). 별도 프로필
+  // 사진을 안 골라도 스캔한 명함을 그 인맥의 시각으로 쓸 수 있게 보관한다.
+  // 로컬 전용(서버 백업 안 함) — 다른 기기에선 파일이 없어 표시가 이니셜로
+  // 폴백된다. 실제 표시는 복호화가 필요하다([ContactImageService]).
+  final String? cardImagePath;
+  // 목록 아바타 자리에 이니셜 대신 위 명함 이미지를 쓸지(사용자 선택, C안).
+  // 기본은 false — 목록은 이니셜, 명함 이미지는 상세에서만 보여준다.
+  final bool useCardAsAvatar;
   // 명함을 등록했다는 것 자체가 이미 중요한 인맥이라는 뜻이라, 사용자가
   // 따로 "VIP"를 골라야 하는 별도 선택 단계는 의미가 없다는 판단으로
   // 기본값을 true로 바꿨다(이전엔 false였고 명함지갑에서 별표를 눌러야
@@ -98,6 +106,8 @@ class ContactModel {
     required this.talkingPoints,
     this.commLogs = const [],
     this.memo,
+    this.cardImagePath,
+    this.useCardAsAvatar = false,
     this.isPriority = true,
     this.updatedAt,
   });
@@ -137,6 +147,12 @@ class ContactModel {
       'talkingPoints': talkingPoints,
       'commLogs': commLogs.map((l) => l.toJson()).toList(),
       'memo': memo,
+      // 명함 이미지 경로는 로컬 전용이라 서버 백업(includeGeo=false)에는 안
+      // 넣는다 — 다른 기기에선 그 경로에 파일이 없어 의미가 없다. 좌표와
+      // 같은 이유(파생/기기 종속)라 같은 플래그를 재사용한다.
+      if (includeGeo) 'cardImagePath': cardImagePath,
+      // 이건 사용자 선택(선호도)이라 서버에도 남겨 기기 간 일관되게 한다.
+      'useCardAsAvatar': useCardAsAvatar,
       'isPriority': isPriority,
       // 서버 백업에도 포함한다 — 다기기 병합의 최신본 판정 기준이라 서버에
       // 남아야 다른 기기가 비교할 수 있다(좌표와 달리 파생값이 아니다).
@@ -175,6 +191,8 @@ class ContactModel {
               .toList() ??
           [],
       memo: json['memo'] as String?,
+      cardImagePath: json['cardImagePath'] as String?,
+      useCardAsAvatar: json['useCardAsAvatar'] as bool? ?? false,
       isPriority: json['isPriority'] as bool? ?? true,
       updatedAt: json['updatedAt'] != null
           ? DateTime.tryParse(json['updatedAt'] as String)
@@ -200,6 +218,8 @@ class ContactModel {
     List<String>? talkingPoints,
     List<CommunicationLogModel>? commLogs,
     String? memo,
+    String? cardImagePath,
+    bool? useCardAsAvatar,
     bool? isPriority,
     DateTime? updatedAt,
   }) {
@@ -221,6 +241,8 @@ class ContactModel {
       talkingPoints: talkingPoints ?? this.talkingPoints,
       commLogs: commLogs ?? this.commLogs,
       memo: memo ?? this.memo,
+      cardImagePath: cardImagePath ?? this.cardImagePath,
+      useCardAsAvatar: useCardAsAvatar ?? this.useCardAsAvatar,
       isPriority: isPriority ?? this.isPriority,
       updatedAt: updatedAt ?? this.updatedAt,
     );

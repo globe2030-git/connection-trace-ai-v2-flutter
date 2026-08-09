@@ -11,8 +11,10 @@ import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
+import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/address_search_view.dart';
 import '../../../common/contact_avatar.dart';
@@ -140,11 +142,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // true면 주소 필드 아래에 "주변 목록에 안 뜬다" 안내를 띄운다.
   bool _addressGeoFailed = false;
 
+  // 명함 이미지 관련(추가 133, C안):
+  // - _cardImagePath: 이미 저장된 암호화 명함 이미지 경로(편집 진입 시 로드).
+  // - _scannedCardImageSourcePath: 이번에 새로 스캔한 원본(임시) 경로 —
+  //   저장 시 암호화해 보관한다. null이면 새 스캔 없음.
+  // - _useCardAsAvatar: 목록 아바타로 명함 이미지를 쓸지(사용자 선택).
+  String? _cardImagePath;
+  String? _scannedCardImageSourcePath;
+  bool _useCardAsAvatar = false;
+
   @override
   void initState() {
     super.initState();
     final c = widget.contactToEdit ?? widget.prefillData;
     _selectedAvatarUrl = c?.avatarUrl;
+    _cardImagePath = c?.cardImagePath;
+    _useCardAsAvatar = c?.useCardAsAvatar ?? false;
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
@@ -308,6 +321,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
+      // 스캔한 명함 이미지를 저장 대상으로 잡아둔다(추가 133). 가장 최근
+      // 스캔 이미지를 쓴다 — 앞/뒷면을 이어 스캔하면 마지막 것.
+      if (result.imagePath != null && result.imagePath!.isNotEmpty) {
+        _scannedCardImageSourcePath = result.imagePath;
+      }
       if (overwrite) {
         _setTextFromStart(_nameController, result.name);
         _setTextFromStart(_companyController, result.company);
@@ -535,6 +553,97 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   void _removeContactAvatar() {
     setState(() => _selectedAvatarUrl = null);
+  }
+
+  /// 스캔한 명함 이미지 미리보기 + "대표 이미지로 사용" 토글(추가 133, C안).
+  /// 방금 스캔한 원본(임시 파일)은 평문이라 Image.file로, 이미 저장된 이미지는
+  /// 암호문이라 복호화([ContactImageService])해 Image.memory로 그린다.
+  Widget _buildCardImageSection() {
+    final hasFresh = _scannedCardImageSourcePath != null;
+    final hasSaved = _cardImagePath != null;
+    if (!hasFresh && !hasSaved) return const SizedBox.shrink();
+
+    final uid = context.read<AuthRepository>().firebaseUid;
+
+    Widget preview;
+    if (hasFresh) {
+      preview = Image.file(
+        File(_scannedCardImageSourcePath!),
+        fit: BoxFit.contain,
+      );
+    } else if (uid != null) {
+      preview = FutureBuilder<Uint8List?>(
+        future: ContactImageService()
+            .loadDecryptedCardImage(uid: uid, path: _cardImagePath!),
+        builder: (context, snap) {
+          if (snap.connectionState != ConnectionState.done) {
+            return const SizedBox(
+              height: 100,
+              child: Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          final bytes = snap.data;
+          if (bytes == null) return const SizedBox.shrink();
+          return Image.memory(bytes, fit: BoxFit.contain);
+        },
+      );
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.badge_outlined, size: 16, color: AppColors.textSecondary),
+            SizedBox(width: 6),
+            Text(
+              '스캔한 명함',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxHeight: 180),
+            color: AppColors.bgBase,
+            child: preview,
+          ),
+        ),
+        const SizedBox(height: 4),
+        // 이미지엔 개인정보가 인쇄돼 있어 로컬에 암호화 보관됨을 정직하게 안내.
+        const Text(
+          '이 기기에 암호화되어 저장돼요.',
+          style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: _useCardAsAvatar,
+          onChanged: (v) => setState(() => _useCardAsAvatar = v),
+          activeThumbColor: AppColors.accent,
+          title: const Text(
+            '이 명함을 대표 이미지로 사용',
+            style: TextStyle(fontSize: 13, color: AppColors.textPrimary),
+          ),
+          subtitle: const Text(
+            '켜면 명함 목록에서도 이니셜 대신 명함 이미지가 보여요.',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
   }
 
   Future<void> _saveCard() async {
@@ -958,10 +1067,27 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       }
     }
 
+    final contactId = _isEditing
+        ? widget.contactToEdit!.id
+        : DateTime.now().millisecondsSinceEpoch.toString();
+
+    // 명함 이미지(추가 133): 새로 스캔한 이미지가 있으면 암호화(P1-9)해서
+    // 보관하고 그 경로를 쓴다. 없으면 편집 중이던 기존 이미지를 유지한다.
+    // 로그인(uid) 없으면(게스트) 키가 없어 저장하지 않는다.
+    var cardImagePath = _isEditing ? widget.contactToEdit!.cardImagePath : null;
+    final uid = context.read<AuthRepository>().firebaseUid;
+    if (_scannedCardImageSourcePath != null && uid != null) {
+      final saved = await ContactImageService().saveEncryptedCardImage(
+        uid: uid,
+        contactId: contactId,
+        sourcePath: _scannedCardImageSourcePath!,
+      );
+      if (!mounted) return;
+      if (saved != null) cardImagePath = saved;
+    }
+
     final contact = ContactModel(
-      id: _isEditing
-          ? widget.contactToEdit!.id
-          : DateTime.now().millisecondsSinceEpoch.toString(),
+      id: contactId,
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
       title: _titleController.text.trim().isEmpty
@@ -995,6 +1121,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       memo: _memoController.text.trim().isEmpty
           ? null
           : _memoController.text.trim(),
+      cardImagePath: cardImagePath,
+      // 이미지가 실제로 있을 때만 "대표 이미지로 사용"이 의미가 있다.
+      useCardAsAvatar: _useCardAsAvatar && cardImagePath != null,
     );
 
     if (_isEditing) {
@@ -1556,6 +1685,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 ),
 
                 const SizedBox(height: 16),
+
+                // 📇 스캔한 명함 이미지 미리보기 + "대표 이미지로 사용" 토글(추가 133)
+                _buildCardImageSection(),
 
                 // Collapsible RAW Scanned Text Card
                 if (_scannedRawText != null) ...[
