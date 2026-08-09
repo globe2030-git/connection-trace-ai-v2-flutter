@@ -70,6 +70,12 @@
 		<false/>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>주변 인맥과의 거리를 계산하기 위해 현재 위치 정보가 필요합니다.</string>
+		<!-- 앱은 위치를 "사용 중에만" 요청하지만, geolocator 플러그인이 '항상 허용'
+		     위치 API를 코드에서 참조해 Apple 정적 검사(90683)가 이 목적 문자열까지
+		     요구한다. 실제로 '항상 허용' 권한을 요청하지 않으므로 사용자에게 해당
+		     팝업은 표시되지 않는다. -->
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>주변 인맥과의 거리를 계산하기 위해 현재 위치 정보가 필요합니다.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>명함을 촬영해 자동으로 인식하기 위해 카메라 접근 권한이 필요합니다.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
