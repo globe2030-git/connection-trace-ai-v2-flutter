@@ -291,7 +291,10 @@ class _RadarViewState extends State<RadarView> {
                           // 잡는 높이만 남긴다 — 글자 크기는 건드리지 않아
                           // 읽기 어려워지지 않는다.
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          constraints: const BoxConstraints(minHeight: 40),
+                          // 사용자 요청으로 10% 키운다(40 → 44, 2026-08-10).
+                          // 앞서 15% 줄였다가 조금 낮다는 판단이라 되돌리는
+                          // 셈이다. 44는 iOS 최소 터치 목표와도 맞는다.
+                          constraints: const BoxConstraints(minHeight: 44),
                           decoration: BoxDecoration(
                             color: AppColors.capsuleInputBg,
                             borderRadius: BorderRadius.circular(30),
@@ -313,7 +316,7 @@ class _RadarViewState extends State<RadarView> {
                                     // 낮춘다. 터치는 캡슐 전체가 받으므로
                                     // 목표 크기는 minHeight 40으로 지킨다.
                                     contentPadding: EdgeInsets.symmetric(
-                                      vertical: 4,
+                                      vertical: 6,
                                     ),
                                     border: InputBorder.none,
                                     hintText: '이름, 회사명, 키워드로 검색해 보세요',
