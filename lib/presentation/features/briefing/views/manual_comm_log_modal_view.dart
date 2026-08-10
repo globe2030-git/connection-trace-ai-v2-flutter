@@ -136,7 +136,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _description => switch (_selectedType) {
     'call' => '통화기록을 읽지 않습니다. 통화 후 기억할 내용만 직접 적어 주세요.',
     'sms' => '문자 앱에서 필요한 대화만 복사해 붙여넣어 주세요.',
-    'email' => '직접 기록할 이메일 내용을 입력해 주세요. Gmail은 별도 가져오기도 지원합니다.',
+    'email' => '직접 기록할 이메일 내용을 입력해 주세요.',
     'kakao' => '카카오톡에서 필요한 대화만 복사해 붙여넣어 주세요.',
     _ => '필요한 내용만 직접 입력해 주세요.',
   };
