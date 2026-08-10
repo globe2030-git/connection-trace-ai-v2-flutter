@@ -116,11 +116,18 @@ class _RadarViewState extends State<RadarView> {
                                       letterSpacing: -0.5,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  // 제목과 인사말이 붙어 있어 머리글이 한
+                                  // 덩어리로 뭉쳐 보였다. 줄 간격을 벌리고
+                                  // 인사말을 한 단계 키워 위쪽에 숨 쉴 자리를
+                                  // 만든다 — 그만큼 아래 카드가 내려가
+                                  // "가까운 인맥" 쪽으로 붙는다(사용자 요청,
+                                  // 2026-08-10).
+                                  const SizedBox(height: 6),
                                   Text(
                                     _greetingForNow(),
                                     style: const TextStyle(
-                                      fontSize: 13,
+                                      fontSize: 14,
+                                      height: 1.4,
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
@@ -272,7 +279,7 @@ class _RadarViewState extends State<RadarView> {
                             const AiUsageChip(),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
 
                         // 검색창을 반경·지도 줄 바로 아래로 옮겼다(사용자 요청,
                         // 2026-08-10). 예전에는 대표 카드 아래에 있어서, 찾고
@@ -377,7 +384,7 @@ class _RadarViewState extends State<RadarView> {
                           ],
                         ),
 
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
 
                         // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
                         // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
@@ -1317,7 +1324,9 @@ class _NearbyContactTile extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '${GeoUtils.formatDistanceLabel(distanceMeters)} 근접',
+                        // `formatDistanceLabel`이 이미 "근접"까지 붙여 준다.
+                        // 여기서 한 번 더 붙여 "823m 근접 근접"이 됐다.
+                        GeoUtils.formatDistanceLabel(distanceMeters),
                         style: const TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,
