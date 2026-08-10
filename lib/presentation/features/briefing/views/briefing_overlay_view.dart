@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -900,12 +902,24 @@ class _SendChannelRow extends StatelessWidget {
   Future<void> _sms(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final number = contact.phone.replaceAll(RegExp(r'[^\d+]'), '');
+    final point = selectedPoint;
+
     // 본문을 쿼리로 실어 보내면 문자 앱이 내용을 미리 채운 채로 열린다.
     // 사용자가 보내기 전에 고칠 수 있으므로 앱이 대신 발송하는 것은 아니다.
-    final uri = Uri(
-      scheme: 'sms',
-      path: number,
-      queryParameters: selectedPoint == null ? null : {'body': selectedPoint!},
+    //
+    // ⚠️ `Uri(queryParameters: ...)`를 쓰면 안 된다. 그 생성자는 웹 폼 규칙
+    // (application/x-www-form-urlencoded)으로 인코딩해서 **공백을 `+`로**
+    // 바꾸는데, 문자 앱은 그것을 되돌리지 않고 글자 그대로 보여 준다 —
+    // 사용자가 "문자에 + 기호가 들어간다"고 보고한 증상이다(2026-08-10).
+    // `Uri.encodeComponent`는 공백을 `%20`으로 넣어 이 문제가 없다.
+    //
+    // 구분자도 플랫폼마다 다르다. Android는 `?body=`, iOS는 `&body=`를
+    // 인식한다 — 반대로 쓰면 본문이 통째로 무시되고 빈 문자 화면만 열린다.
+    final separator = Platform.isIOS ? '&' : '?';
+    final uri = Uri.parse(
+      point == null
+          ? 'sms:$number'
+          : 'sms:$number${separator}body=${Uri.encodeComponent(point)}',
     );
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       _toast(messenger, '문자 앱을 열지 못했어요.');
