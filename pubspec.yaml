@@ -136,11 +136,18 @@ flutter_native_splash:
   image: assets/icons3d/pin_card_blue_splash.png
   color_dark: "#F7F8FA"
   image_dark: assets/icons3d/pin_card_blue_splash.png
+  # Android 12(API 31)부터 스플래시는 OS가 그린다. 이 블록이 없거나 값이
+  # 비면 OS가 **런처 아이콘의 적응형 전경**을 대신 쓰는데, 그 전경은 안전
+  # 영역(66%)에 맞춰 축소돼 런처에서 보던 것과 크기·여백이 달라진다 —
+  # "로딩 아이콘이 앱 아이콘과 다르다"는 지적의 원인이다(2026-08-10).
+  # 아이콘 뒷배경 색까지 지정해 원형 안쪽이 스플래시 배경과 이어지게 한다.
   android_12:
     color: "#F7F8FA"
     image: assets/icons3d/pin_card_blue_splash.png
+    icon_background_color: "#F7F8FA"
     color_dark: "#F7F8FA"
     image_dark: assets/icons3d/pin_card_blue_splash.png
+    icon_background_color_dark: "#F7F8FA"
   web: true
 
 # 앱 아이콘(커넥션센스) 설정. 2026-08-05, Claude Design 아이콘 시스템 핸드오프의
