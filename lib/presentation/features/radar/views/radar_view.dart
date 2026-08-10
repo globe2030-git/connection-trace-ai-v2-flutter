@@ -674,15 +674,18 @@ class _NearbyCountCard extends StatelessWidget {
                 // 대표 카드를 없앤 자리를 이 카드가 대신한다(사용자 요청,
                 // 2026-08-10). 여백과 아이콘·숫자를 키워 예전 대표 카드와
                 // 비슷한 덩치를 갖게 했다 — 화면 위쪽이 허전해지지 않도록.
+                // 카드를 "가까운 인맥" 목록 바로 앞까지 키운다(사용자 요청,
+                // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
+                // 채워지도록 세로 여백을 크게 잡았다.
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 22,
-                  vertical: 31,
+                  horizontal: 24,
+                  vertical: 52,
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 62,
-                      height: 62,
+                      width: 72,
+                      height: 72,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
