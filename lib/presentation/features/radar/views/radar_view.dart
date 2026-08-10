@@ -221,24 +221,47 @@ class _RadarViewState extends State<RadarView> {
                         // 감지 반경 선택. 원래 설정 화면에만 있었는데, 반경을
                         // 바꾸면 바로 이 목록이 달라지므로 결과를 보면서 고를
                         // 수 있는 이 화면이 제자리다(사용자 요청, 추가 139).
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              _RadiusSelector(
-                                radiusMeters: viewModel.settings.radiusMeters,
-                                onChanged: viewModel.updateRadius,
+                        // 반경 선택과 지도 열기를 한 줄에 나란히 둔다(사용자
+                        // 요청, 2026-08-10). 둘은 "주변을 어디까지, 어떻게 볼
+                        // 것인가"라는 같은 결정에 속하는데 각각 한 줄씩 차지해
+                        // 화면 위쪽을 두 줄이나 먹고 있었다.
+                        //
+                        // `Row`가 아니라 `Wrap`인 이유: 반경이 "제한 없음"일
+                        // 때 라벨이 가장 길어지는데, 화면이 좁거나 시스템 글자
+                        // 크기를 키운 기기에서는 두 버튼이 한 줄에 안 들어갈 수
+                        // 있다. `Row`면 그 상황에서 오버플로 줄무늬가 뜨지만
+                        // `Wrap`은 조용히 아랫줄로 내려 준다.
+                        Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // 위치 갱신. 예전에는 "위치는 사용 중에만
+                            // 확인해요" 안내 줄 오른쪽에 붙어 화면 한 줄을
+                            // 통째로 쓰고 있었다. 안내 문구를 빼고 아이콘만
+                            // 이 줄 맨 앞으로 옮겼다(사용자 결정, 2026-08-10).
+                            //
+                            // 위치를 계속 추적하지 않는다는 사실은 설정 →
+                            // 위치 서비스와 개인정보처리방침 10-1에 그대로
+                            // 남아 있다.
+                            _RefreshLocationButton(
+                              isRefreshing: viewModel.isRefreshingLocation,
+                              usingRealGps: viewModel.usingRealGps,
+                              onTap: () => handleLocationAccessAction(
+                                context,
+                                viewModel,
                               ),
-                              const SizedBox(height: 6),
-                              // 반경 선택 바로 아래 — 반경을 정하고 그 결과를
-                              // 지도에서 확인하는 순서가 자연스럽다.
-                              _ExpandToMapButton(
-                                enabled: viewModel.usingRealGps,
-                                onTap: () => NearbyMapView.show(context),
-                              ),
-                            ],
-                          ),
+                            ),
+                            _RadiusSelector(
+                              radiusMeters: viewModel.settings.radiusMeters,
+                              onChanged: viewModel.updateRadius,
+                            ),
+                            _ExpandToMapButton(
+                              enabled: viewModel.usingRealGps,
+                              onTap: () => NearbyMapView.show(context),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
 
@@ -328,80 +351,6 @@ class _RadarViewState extends State<RadarView> {
                                 Icons.search,
                                 color: AppColors.capsuleInputText,
                                 size: 22,
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // 위치를 계속 추적하지 않는 실제 동작을 명확하게 안내한다.
-                        GlassCard(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.privacy_tip_outlined,
-                                color: AppColors.accentText,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '위치는 사용 중에만 확인해요.',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ),
-                              Tooltip(
-                                message: viewModel.isRefreshingLocation
-                                    ? 'GPS 확인 중...'
-                                    : viewModel.usingRealGps
-                                    ? '내 위치 갱신'
-                                    : '위치 설정',
-                                child: InkWell(
-                                  onTap: viewModel.isRefreshingLocation
-                                      ? null
-                                      : () => handleLocationAccessAction(
-                                          context,
-                                          viewModel,
-                                        ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(7),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.accentText.withValues(
-                                        alpha: 0.2,
-                                      ),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: AppColors.accentText.withValues(
-                                          alpha: 0.5,
-                                        ),
-                                      ),
-                                    ),
-                                    child: viewModel.isRefreshingLocation
-                                        ? const SizedBox(
-                                            width: 14,
-                                            height: 14,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: AppColors.accentText,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.my_location,
-                                            color: AppColors.accentText,
-                                            size: 14,
-                                          ),
-                                  ),
-                                ),
                               ),
                             ],
                           ),
@@ -1222,8 +1171,10 @@ class _ExpandToMapButton extends StatelessWidget {
               children: [
                 Icon(Icons.zoom_out_map, size: 16, color: foreground),
                 const SizedBox(width: 6),
+                // 반경 칩과 한 줄에 들어가야 해서 "지도에서 크게 보기"를
+                // 줄였다. 아이콘이 함께 있어 뜻은 그대로 읽힌다.
                 Text(
-                  '지도에서 크게 보기',
+                  '지도 보기',
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
@@ -1231,6 +1182,72 @@ class _ExpandToMapButton extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 내 위치 갱신 버튼. 반경·지도 버튼과 같은 줄 맨 앞에 놓는다.
+///
+/// 예전에는 "위치는 사용 중에만 확인해요" 안내 줄 오른쪽에 붙어 있었고, 그
+/// 줄이 화면 하나를 통째로 차지했다. 안내 문구를 빼고 아이콘만 남긴다
+/// (사용자 결정, 2026-08-10).
+class _RefreshLocationButton extends StatelessWidget {
+  final bool isRefreshing;
+  final bool usingRealGps;
+  final VoidCallback onTap;
+
+  const _RefreshLocationButton({
+    required this.isRefreshing,
+    required this.usingRealGps,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 위치를 못 잡은 상태에서는 "설정하러 가기"가 되므로 문구를 나눈다 —
+    // 같은 아이콘이라도 무엇이 일어날지는 상태마다 다르다.
+    final tooltip = isRefreshing
+        ? 'GPS 확인 중...'
+        : usingRealGps
+        ? '내 위치 갱신'
+        : '위치 설정';
+    return Tooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        label: tooltip,
+        child: Material(
+          color: AppColors.cardSurface,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: isRefreshing ? null : onTap,
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.borderFunctional),
+              ),
+              child: isRefreshing
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.accentText,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.my_location,
+                      color: AppColors.accentText,
+                      size: 17,
+                    ),
             ),
           ),
         ),

@@ -2098,35 +2098,32 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 옆으로 옮겨 붙이기 위한 파라미터.
     String? trailingLegend,
   }) {
+    // 라벨을 입력란 위 별도 줄에 두지 않고 **입력란 안쪽 플로팅 라벨**로
+    // 넣는다(사용자 요청, 2026-08-10). 필드마다 라벨 줄 하나와 그 아래 여백이
+    // 사라져 한 화면에 항목이 서너 개 더 들어온다.
+    //
+    // 입력란 자체의 높이는 줄이지 않았다 — 터치 목표가 작아지면 오타를 고치기
+    // 어려워진다. 줄인 것은 라벨이 차지하던 자리뿐이다.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: label.contains('*')
-                    ? AppColors.accentText
-                    : AppColors.textSecondary,
+        // "* 필수 입력 항목" 범례는 라벨 줄에 붙어 있었는데, 그 줄이 없어졌으니
+        // 필드 위에 오른쪽 정렬로 따로 놓는다. 이 범례를 쓰는 필드는 첫 번째
+        // (이름) 하나뿐이라 화면 전체로 보면 한 줄만 늘어난다.
+        if (trailingLegend != null) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              trailingLegend,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.destructive,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            if (trailingLegend != null) ...[
-              const Spacer(),
-              Text(
-                trailingLegend,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.destructive,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 3),
+          ),
+          const SizedBox(height: 4),
+        ],
         TextFormField(
           controller: controller,
           focusNode: focusNode,
@@ -2152,6 +2149,26 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           validator: validator,
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
           decoration: InputDecoration(
+            labelText: label,
+            // 비어 있을 때는 라벨이 입력란 안에 앉아 있다가, 입력을 시작하면
+            // 위로 떠올라 테두리에 걸린다. 떠오른 뒤에도 무슨 항목인지 계속
+            // 보이므로 별도 라벨 줄이 필요 없다.
+            labelStyle: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: label.contains('*')
+                  ? AppColors.accentText
+                  : AppColors.textSecondary,
+            ),
+            floatingLabelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: label.contains('*')
+                  ? AppColors.accentText
+                  : AppColors.textSecondary,
+            ),
+            // 라벨이 떠 있는 동안에만 예시 문구를 보여 준다. 둘을 동시에
+            // 띄우면 한 칸에 글자가 두 줄로 겹쳐 읽기 어렵다.
             hintText: hint,
             hintStyle: const TextStyle(
               color: AppColors.textMuted,
