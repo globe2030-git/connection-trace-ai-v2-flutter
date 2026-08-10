@@ -18,6 +18,7 @@ import '../../wallet/views/add_card_modal_view.dart';
 import '../../../common/connection_sense_background_painter.dart';
 import 'location_consent_sheet.dart';
 import 'location_access_flow.dart';
+import 'nearby_map_view.dart';
 
 class RadarView extends StatefulWidget {
   const RadarView({super.key});
@@ -222,9 +223,21 @@ class _RadarViewState extends State<RadarView> {
                         // 수 있는 이 화면이 제자리다(사용자 요청, 추가 139).
                         Align(
                           alignment: Alignment.centerRight,
-                          child: _RadiusSelector(
-                            radiusMeters: viewModel.settings.radiusMeters,
-                            onChanged: viewModel.updateRadius,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              _RadiusSelector(
+                                radiusMeters: viewModel.settings.radiusMeters,
+                                onChanged: viewModel.updateRadius,
+                              ),
+                              const SizedBox(height: 6),
+                              // 반경 선택 바로 아래 — 반경을 정하고 그 결과를
+                              // 지도에서 확인하는 순서가 자연스럽다.
+                              _ExpandToMapButton(
+                                enabled: viewModel.usingRealGps,
+                                onTap: () => NearbyMapView.show(context),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -783,8 +796,9 @@ class _FeaturedContactCard extends StatelessWidget {
                 photoPath: contact.avatarUrl,
                 name: contact.name,
                 radius: 30,
-                cardImagePath:
-                    contact.useCardAsAvatar ? contact.cardImagePath : null,
+                cardImagePath: contact.useCardAsAvatar
+                    ? contact.cardImagePath
+                    : null,
                 uid: contact.useCardAsAvatar
                     ? context.read<AuthRepository>().firebaseUid
                     : null,
@@ -1167,5 +1181,60 @@ class _RadiusSelector extends StatelessWidget {
       ),
     );
     if (selected != null) onChanged(selected);
+  }
+}
+
+/// 지도를 여는 "확대" 버튼.
+///
+/// 목록만으로는 "어느 방향으로 얼마나 떨어져 있는지"를 알 수 없다 — 거리
+/// 숫자는 방향을 담지 못한다. 지도는 그 한 가지를 위해 있다.
+class _ExpandToMapButton extends StatelessWidget {
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ExpandToMapButton({required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = enabled ? AppColors.accentText : AppColors.textMuted;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      child: Material(
+        color: enabled ? AppColors.accentSoft : AppColors.bgBase,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          // 위치를 아직 못 잡았으면 지도를 열어도 보여 줄 기준점이 없다.
+          onTap: enabled ? onTap : null,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: enabled
+                    ? AppColors.accentSoftStrong
+                    : AppColors.borderFunctional,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.zoom_out_map, size: 16, color: foreground),
+                const SizedBox(width: 6),
+                Text(
+                  '지도에서 크게 보기',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

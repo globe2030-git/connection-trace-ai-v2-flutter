@@ -226,17 +226,25 @@ class _ContactCard extends StatelessWidget {
       key: ValueKey(contact.id),
       direction: DismissDirection.endToStart,
       background: Container(
-        margin: const EdgeInsets.only(bottom: 10),
+        // 목록이 카드에서 구분선 방식으로 바뀌면서 바깥 여백과 둥근 모서리를
+        // 뺐다 — 남겨 두면 미는 동안 행 아래에 흰 틈이 보인다.
         padding: const EdgeInsets.symmetric(horizontal: 22),
         alignment: Alignment.centerRight,
-        decoration: BoxDecoration(
-          color: AppColors.destructive,
-          borderRadius: BorderRadius.circular(22),
-        ),
-        // 밀어서 삭제할 때만 잠깐 드러나는 장식 아이콘 — 스크린리더가 카드마다
-        // "삭제"를 중복해 읽지 않도록 접근성 트리에서 제외한다(P1-12).
+        color: AppColors.destructive,
+        // 휴지통 아이콘 대신 "삭제" 글자를 쓴다(사용자 결정, 2026-08-10).
+        // 아이콘은 무슨 동작인지 한 번 더 해석해야 하지만 글자는 바로 읽힌다.
+        // 스크린리더가 행마다 "삭제"를 중복해 읽지 않도록 접근성 트리에서는
+        // 제외한다(P1-12) — 미는 동작 자체는 스크린리더 사용자에게 보이지
+        // 않으므로 이 글자도 읽힐 필요가 없다.
         child: const ExcludeSemantics(
-          child: Icon(Icons.delete_outline, color: Colors.white),
+          child: Text(
+            '삭제',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ),
       ),
       confirmDismiss: (_) => _confirmDelete(context),
@@ -369,50 +377,12 @@ class _ContactCard extends StatelessWidget {
                               color: AppColors.accentText,
                             ),
                           ),
-                          // 삭제는 더보기 메뉴 안에 둔다(사용자 결정,
-                          // 2026-08-10). 빨간 휴지통이 줄마다 노출되면 목록이
-                          // 산만하고 실수로 누르기도 쉽다. 그렇다고 "밀어서
-                          // 삭제"만 남기면 그 동작을 모르는 사용자는 지우는
-                          // 방법을 아예 못 찾으므로, 메뉴로 옮겨 눈에 보이는
-                          // 경로는 유지한다.
-                          PopupMenuButton<String>(
-                            tooltip: '${contact.name} 더보기',
-                            icon: const Icon(
-                              Icons.more_vert,
-                              size: 20,
-                              color: AppColors.textMuted,
-                            ),
-                            iconSize: 20,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints.tightFor(
-                              width: 40,
-                            ),
-                            onSelected: (value) async {
-                              if (value != 'delete') return;
-                              if (await _confirmDelete(context)) onDelete();
-                            },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem<String>(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.delete_outline,
-                                      size: 18,
-                                      color: AppColors.destructive,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      '명함 삭제',
-                                      style: TextStyle(
-                                        color: AppColors.destructive,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
+                          // 삭제 버튼은 목록에 두지 않는다(사용자 결정,
+                          // 2026-08-10). 빨간 휴지통은 줄마다 노출돼 산만했고,
+                          // 더보기 메뉴(⋮)로 옮겨도 보기 좋지 않다는 판단이라
+                          // **왼쪽으로 밀어서 삭제**만 남긴다. 미는 동작은
+                          // 위 Dismissible이 처리하며, 밀면 빨간 배경과 휴지통
+                          // 아이콘이 드러나 무엇을 하는 동작인지 보인다.
                         ],
                       ),
                     ],

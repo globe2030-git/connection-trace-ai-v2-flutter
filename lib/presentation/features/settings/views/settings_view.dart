@@ -272,20 +272,11 @@ class SettingsView extends StatelessWidget {
                                   radarViewModel,
                                 ),
                   ),
-                  // 감지 반경은 "주변" 화면으로 옮겼다(사용자 요청, 추가 139).
-                  // 반경을 바꾸면 바로 달라지는 것이 주변 인맥 목록인데, 설정
-                  // 화면에서는 그 결과를 볼 수 없어 몇 km가 맞는지 가늠할 수
-                  // 없었다. 여기서는 현재 값만 알려주고 그 화면으로 안내한다.
-                  _SettingsRow(
-                    icon: const AppIcon(
-                      AppIconId.detectRadius,
-                      size: 22,
-                      color: AppColors.accentText,
-                    ),
-                    title: '감지 반경',
-                    subtitle: '"주변" 화면 위쪽에서 바꿀 수 있습니다',
-                    value: _radiusLabel(radarViewModel.settings.radiusMeters),
-                  ),
+                  // 감지 반경 행은 여기 없다. "주변" 화면 위쪽에 선택 버튼이
+                  // 있고, 그 화면이 바로 결과(주변 인맥 목록)를 보여 준다.
+                  // 처음에는 현재 값만 알려주는 행을 남겼는데, 바꾸지도 못하는
+                  // 항목이 설정에 앉아 있으면 오히려 "여기서 바꾸는 것"으로
+                  // 오해하게 만든다는 판단으로 아예 뺐다(추가 140).
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.locationInfo,
@@ -1056,12 +1047,6 @@ String _locationActionLabel(LocationAccessState state) {
     LocationAccessState.loading || LocationAccessState.locating => '확인 중',
     LocationAccessState.unavailable => '다시 확인',
   };
-}
-
-String _radiusLabel(double meters) {
-  if (meters.isInfinite) return '제한 없음';
-  if (meters < 1000) return '${meters.round()} m';
-  return '${(meters / 1000).toStringAsFixed(0)} km';
 }
 
 String _consentRecordedAt(RadarViewModel viewModel) {

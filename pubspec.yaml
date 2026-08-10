@@ -95,6 +95,8 @@ dependencies:
   # 테스터 피드백이 "가끔 죽어요"에서 멈춘다. Dart 레벨 예외를 Crashlytics로
   # 모아 원인 스택을 본다. 같은 Firebase 프로젝트에 얹어 별도 계정 설정 불필요.
   firebase_crashlytics: ^5.0.0
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:
