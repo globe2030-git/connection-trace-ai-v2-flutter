@@ -137,6 +137,94 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
   </div>
 
   <section>
+    <h2><span class="num">0</span>상품 구성안 — 후보 정리와 권고</h2>
+    <p class="section-desc">이 문서는 2026-08-06부터 분석을 <b>덧붙이는 방식</b>으로 자라 시간순으로 읽히고, 정작 "무엇을 팔 것인가"는 여러 섹션에 흩어져 있었다. 이 절은 <b>상품 구성안만 모아</b> 살아 있는 안과 접은 안을 가른다(2026-08-10 재정리). 각 안의 계산 근거는 원래 섹션에 그대로 두었다.</p>
+
+    <div class="callout good" style="margin-bottom:16px;">
+      <b>권고: v1 무료 출시(무료 5회 포함) → v1.1 충전형(E2) → 실사용 데이터 확보 후 회차 구독(F) 검토.</b>
+      <br><br>지금 병목은 가격이 아니라 <b>출시 자체</b>다. 실사용 데이터가 없는 상태에서 충전형은 가격을 틀려도 손실이 아니라 <b>기회비용</b>에 그치지만, 구독은 해지·환불로 되돌아온다. 회차 티어를 확정하기 전에 <code>aiAuditLogs</code>로 실제 사용 분포를 먼저 볼 것.
+    </div>
+
+    <h3>살아 있는 안 — 실제로 팔 수 있는 세 가지</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>안</th><th>구성</th><th>월 이익(평균)</th><th>월 이익(최악)</th><th>왜 후보인가</th><th>약점</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>E2. 충전형</b><br><span class="sub">권고 · 13·14번</span></td>
+            <td>앱 무료 + <b>가입 시 1회</b> 무료 5회<br>충전 ₩1,000/3,000/5,000/10,000<br>= 10 / 33 / 60 / 130회</td>
+            <td class="tabular profit-pos">+$3,349</td>
+            <td class="tabular profit-pos">+$6,017</td>
+            <td><b>다운사이드가 없는 유일한 구조</b> — 사용이 곧 매출이라 많이 쓸수록 이익이 는다. 개발·법무 부담도 구독의 절반 이하(소비형 결제라 갱신·해지 동기화와 사전 고지가 통째로 빠진다)</td>
+            <td>매출 예측이 어렵다</td>
+          </tr>
+          <tr>
+            <td><b>F. 회차 구독</b><br><span class="sub">13·14번</span></td>
+            <td>같은 사다리를 <b>월 구독</b>으로<br>티어별 월 회차 부여</td>
+            <td class="tabular profit-pos">+$5,136</td>
+            <td class="tabular profit-pos">+$3,286</td>
+            <td>평균 사용 기준 <b>이익이 가장 크다</b>. 매출이 예측 가능하다</td>
+            <td><b>해지율 미반영</b> — 월 10%만 잡아도 우위가 상당 부분 사라진다. 개발·법무 부담 최대</td>
+          </tr>
+          <tr>
+            <td><b>C. 유료 전용</b><br><span class="sub">9번</span></td>
+            <td>월 ₩1,000, 무료 등급 없음</td>
+            <td class="tabular profit-pos">+$2,790</td>
+            <td class="tabular profit-pos">+$1,812</td>
+            <td>가입자 1명부터 흑자. <b>가장 안전</b></td>
+            <td>무료 체험이 없어 <b>유입이 막힌다</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>접은 안 — 왜 접었는지</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>안</th><th>구성</th><th>접은 이유</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>A. 기본 프리미엄<br><span class="sub">5~7번</span></td>
+            <td>$5.99/월 + 무료 등급</td>
+            <td>이익 규모는 가장 크지만(+$23,625) <b>국내 명함앱 시장에서 월 $5.99는 가격 저항이 크다</b>. 회차제로 같은 금액을 나눠 받는 편이 현실적</td>
+          </tr>
+          <tr>
+            <td>B. 저가 프리미엄<br><span class="sub">8번</span></td>
+            <td>₩1,000/월 + 무료 등급</td>
+            <td><b>이 문서에서 유일하게 최악 시나리오가 적자</b>(-$1,563). 원인은 가격이 아니라 <b>유료가 무료를 보조하는 구조</b>다. 무료 상한을 조이면 살릴 수 있지만, 그러면 E2와 사실상 같은 것을 더 복잡하게 하는 셈</td>
+          </tr>
+          <tr>
+            <td>E1. 충전형(무료 매월)</td>
+            <td>무료 5회를 <b>매월</b> 리셋 + 충전</td>
+            <td><b>무료가 유료를 잠식한다.</b> 유료 사용자도 매달 5회를 공짜로 받아 ₩1,000(10회) 상품이 스스로 무너진다 — 순이익 3.2배 차이(+$1,061 vs +$3,349), 손익분기 인원 609명 vs 161명</td>
+          </tr>
+          <tr>
+            <td>주 단위 한도<br><span class="sub">13-5</span></td>
+            <td>월 한도를 주 4분할</td>
+            <td>사용량을 18% 눌러도 <b>1인당 이득이 월 ₩10</b>인데 해지율 0.5%p면 상쇄된다. 게다가 이 앱의 핵심 사용 장면은 <b>행사 다음 날 명함을 몰아 등록하는 것</b>인데, 주 한도는 정확히 그 순간에만 걸린다</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>가격을 정하기 전에 알아야 할 것</h3>
+    <div class="callout" style="margin-bottom:16px;">
+      <b>① 회차를 얹는 건 거의 공짜고, 가격을 깎는 건 그대로 손실이다.</b> 공헌이익률이 네 티어 모두 80~81%로 사실상 같다 — AI 원가는 판매가의 3~5%뿐이고 실질 원가는 스토어 수수료 15% 하나다. <b>프로모션은 할인이 아니라 회차 증정으로</b> 설계할 것.
+      <br><br><b>② 무료 회차는 "가입 시 1회"로.</b> 매월 리셋은 유료 상품을 스스로 잠식한다(위 E1).
+      <br><br><b>③ 사다리는 단계마다 회당 단가가 내려가야 한다.</b> 10 / 33 / 60 / 130회 = 회당 ₩100 → 90.9 → 83.3 → 76.9. 처음 제안값(₩10,000·110회)은 회당 ₩90.9라 <b>₩5,000 티어보다 비쌌다</b> — 같은 돈으로 ₩5,000을 두 번 사면 120회다.
+    </div>
+
+    <div class="callout" style="margin-bottom:16px;">
+      <b>⚠️ 이 문서 전체가 미실측 가정 위에 있다.</b> 티어 구성비(60/25/10/5), 실사용률(상한의 60%), 사용 집중도(월 사용량의 60%가 한 주에 몰림) — 셋 다 추정치이고 <b>해지율은 아예 반영하지 않았다</b>(F안 우위는 상한값이다). 이 값들은 2026-08-09에 배포한 <code>aiAuditLogs</code>로 실측할 수 있다.
+      <br><br><b>지금 진행 중인 직원 테스트가 첫 실측 기회다.</b> 확정 전에 반드시 볼 것.
+    </div>
+
+    <div class="callout" style="margin-bottom:16px;">
+      <b>⚠️ 구현 시 보안 주의.</b> 충전 잔여 회차는 <code>firestore.rules</code>의 <code>clientWritableUserFields()</code>에 <b>넣으면 안 된다</b>. 회차는 곧 현금이라 사용자가 자기 잔액을 직접 채워 넣게 된다. <code>aiUsage</code>와 같은 <b>서버 전용</b> 취급이 필요하다.
+    </div>
+  </section>
+
+  <section>
     <h2><span class="num">1</span>핵심 요약</h2>
     <p class="section-desc">무료로 명함관리·근접알림·서버백업을 제공하고, AI 대화 브리핑 사용량으로 유료 전환을 유도하는 구조. 무료:유료 비율 50:1(전환율 2%)을 기준선으로 잡았다.</p>
     <div class="callout good" style="margin-bottom:16px;">
