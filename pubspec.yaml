@@ -184,6 +184,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icons3d/
+    - assets/map/
     - assets/icons/
     - assets/CI.png
     - assets/web/address_search.html

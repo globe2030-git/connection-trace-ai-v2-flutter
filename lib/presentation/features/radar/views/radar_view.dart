@@ -663,10 +663,31 @@ class _NearbyCountCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           child: Stack(
             children: [
+              // 사용자가 준 지도 일러스트를 배경으로 깐다(2026-08-10).
+              // **실제 지도 타일이 아니라 앱에 번들한 그림**이다 — 홈 화면에
+              // 진짜 지도를 깔면 앱을 켤 때마다 지도 사업자에게 요청이 나가는데,
+              // 개인정보처리방침 10-3이 "지도 화면을 열지 않으면 어떤 요청도
+              // 발생하지 않는다"고 적고 있다. 그림이면 요청이 아예 없다.
               const Positioned.fill(
                 child: ExcludeSemantics(
-                  child: RepaintBoundary(
-                    child: CustomPaint(painter: _MapStyleCardPainter()),
+                  child: Image(
+                    image: AssetImage('assets/map/nearby_card_map.jpg'),
+                    fit: BoxFit.cover,
+                    // 카드가 가로로 길어 정사각형 원본의 가운데 위쪽을 쓴다 —
+                    // 그림 한가운데의 파란 현위치 점이 살아 있어야 "지금 내
+                    // 주변"이라는 뜻이 전달된다.
+                    alignment: Alignment.center,
+                  ),
+                ),
+              ),
+              // 지도 위에 라벨과 큰 숫자가 얹히므로 흰 막을 한 겹 덮어 대비를
+              // 지킨다. 막이 없으면 도로·건물 위에서 글자가 읽히지 않는다.
+              Positioned.fill(
+                child: ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.55),
+                    ),
                   ),
                 ),
               ),
@@ -737,91 +758,6 @@ class _NearbyCountCard extends StatelessWidget {
       ),
     );
   }
-}
-
-/// "지금 가까운 사람" 카드의 지도풍 배경.
-///
-/// **실제 지도가 아니다.** 도로 격자와 블록, 그리고 현위치를 뜻하는 동심원을
-/// 옅게 그린 장식이다. 진짜 타일을 쓰면 홈 화면을 열 때마다 지도 사업자에게
-/// 요청이 나가고, 그러면 개인정보처리방침 10-3("지도 화면을 열지 않으면 어떤
-/// 요청도 발생하지 않습니다")과 어긋난다(사용자 결정, 2026-08-10).
-///
-/// 카드 위에는 라벨과 큰 숫자가 얹히므로 대비를 해치지 않도록 아주 옅게만
-/// 그린다.
-class _MapStyleCardPainter extends CustomPainter {
-  const _MapStyleCardPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final blockPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = AppColors.accent.withValues(alpha: 0.05);
-    final roadPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.height * 0.06
-      ..color = Colors.white.withValues(alpha: 0.55);
-    final thinRoadPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.height * 0.03
-      ..color = Colors.white.withValues(alpha: 0.4);
-
-    // 블록(건물 덩어리) — 도로 사이를 채워 지도처럼 보이게 한다.
-    for (final rect in [
-      Rect.fromLTWH(0, 0, size.width * 0.34, size.height * 0.42),
-      Rect.fromLTWH(size.width * 0.44, 0, size.width * 0.28, size.height * 0.3),
-      Rect.fromLTWH(
-        size.width * 0.08,
-        size.height * 0.58,
-        size.width * 0.3,
-        size.height * 0.42,
-      ),
-      Rect.fromLTWH(
-        size.width * 0.62,
-        size.height * 0.46,
-        size.width * 0.3,
-        size.height * 0.54,
-      ),
-    ]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(rect, const Radius.circular(6)),
-        blockPaint,
-      );
-    }
-
-    // 도로 — 가로세로로 가로지르는 흰 선.
-    canvas.drawLine(
-      Offset(0, size.height * 0.5),
-      Offset(size.width, size.height * 0.5),
-      roadPaint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.4, 0),
-      Offset(size.width * 0.4, size.height),
-      roadPaint,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.78, 0),
-      Offset(size.width * 0.78, size.height),
-      thinRoadPaint,
-    );
-
-    // 현위치 표시 — 도로 교차점에 동심원.
-    final center = Offset(size.width * 0.4, size.height * 0.5);
-    final ringPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = AppColors.accent.withValues(alpha: 0.28);
-    canvas.drawCircle(center, size.height * 0.34, ringPaint);
-    canvas.drawCircle(center, size.height * 0.2, ringPaint);
-    canvas.drawCircle(
-      center,
-      size.height * 0.07,
-      Paint()..color = AppColors.accent.withValues(alpha: 0.35),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _LocationStatusCard extends StatelessWidget {
