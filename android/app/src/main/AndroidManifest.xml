@@ -67,5 +67,12 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="kakaotalk"/>
         </intent>
+        <!-- 전화 걸기(PhoneCallService)가 launchUrl 전에 canLaunchUrl(tel:)로
+             확인한다. 위 카카오톡과 같은 이유로, 이 선언이 없으면 Android 11+
+             에서 조회가 false가 되어 전화 걸기가 조용히 실패한다(P1-20). -->
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
     </queries>
 </manifest>
