@@ -283,28 +283,39 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: AppColors.borderFunctional),
                       ),
+                      // 날짜 글자를 박스 가로 한가운데에 둔다(사용자 요청,
+                      // 2026-08-10). 양옆 아이콘 슬롯 너비를 24로 똑같이 잡아야
+                      // 실제로 가운데에 온다 — 아이콘 크기가 18과 16으로 달라
+                      // 그냥 Spacer로 밀면 한쪽으로 치우친다.
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.event,
-                            size: 18,
-                            color: AppColors.accentText,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${_selectedDateTime.year}.${_selectedDateTime.month.toString().padLeft(2, '0')}.${_selectedDateTime.day.toString().padLeft(2, '0')} '
-                            '${_selectedDateTime.hour.toString().padLeft(2, '0')}:${_selectedDateTime.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                          const SizedBox(
+                            width: 24,
+                            child: Icon(
+                              Icons.event,
+                              size: 18,
+                              color: AppColors.accentText,
                             ),
                           ),
-                          const Spacer(),
-                          const Icon(
-                            Icons.edit_calendar_outlined,
-                            size: 16,
-                            color: AppColors.textMuted,
+                          Expanded(
+                            child: Text(
+                              '${_selectedDateTime.year}.${_selectedDateTime.month.toString().padLeft(2, '0')}.${_selectedDateTime.day.toString().padLeft(2, '0')} '
+                              '${_selectedDateTime.hour.toString().padLeft(2, '0')}:${_selectedDateTime.minute.toString().padLeft(2, '0')}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(
+                            width: 24,
+                            child: Icon(
+                              Icons.edit_calendar_outlined,
+                              size: 16,
+                              color: AppColors.textMuted,
+                            ),
                           ),
                         ],
                       ),
