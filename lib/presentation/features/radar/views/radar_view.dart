@@ -262,6 +262,14 @@ class _RadarViewState extends State<RadarView> {
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
+                            // 남은 AI 생성 횟수(탭하면 상세). 제목 아래 →
+                            // 위치 줄을 거쳐 반경 칩 옆으로 옮겼다(사용자
+                            // 요청, 2026-08-10). 셋 다 "이 화면을 어떻게 쓸
+                            // 것인가"를 정하는 칩이라 한 줄에 모인다.
+                            //
+                            // 서비스 미배포·미조회 시에는 스스로 아무것도
+                            // 그리지 않으므로 줄이 비어 보이지 않는다.
+                            const AiUsageChip(),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -366,13 +374,6 @@ class _RadarViewState extends State<RadarView> {
                                 ),
                               ),
                             ),
-                            // 남은 AI 생성 횟수(탭하면 상세). 제목 아래에
-                            // 있던 것을 이 줄로 옮겼다(사용자 요청,
-                            // 2026-08-10) — 제목 영역이 세 줄로 길어져
-                            // 화면 위쪽을 많이 먹고 있었다. 서비스 미배포·
-                            // 미조회 시에는 스스로 아무것도 그리지 않으므로
-                            // 이 줄이 비어 보이지 않는다.
-                            const AiUsageChip(),
                           ],
                         ),
 
