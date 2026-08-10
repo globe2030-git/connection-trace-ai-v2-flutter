@@ -2,6 +2,33 @@
 
 ## 작업 로그
 
+### 2026-08-10 (추가 136) — Gmail 가져오기 항목·문구를 UI에서 완전 제거(P1-41 ① 강화)
+
+추가 134에서 P1-41 ①을 "회색 + 준비 중 배지"로 이행했는데, 사용자 요청으로
+**항목 자체와 관련 문구를 전부 뺐다.** 제공 시점이 정해지지 않은 기능을
+"준비 중"으로 계속 노출하면 곧 나온다는 기대만 만들고, 소통 기록 추가
+목록에서 누를 수 없는 줄이 맨 위를 차지한다.
+
+- `communication_source_sheet.dart`: `CommunicationSourceAction.gmail` 값과
+  Gmail 타일 삭제, `kGmailImportEnabled` 플래그 삭제. 배지 전용이던
+  `_SourceTile.badge`/`enabled` 파라미터도 함께 제거(쓰는 곳이 Gmail뿐이었다).
+- `briefing_overlay_view.dart`: gmail case와 `EmailImportSheet` import 삭제,
+  캡션 "Gmail에서 선택해 가져오거나 직접 작성한 기록만 표시합니다" →
+  "직접 작성하거나 붙여넣은 기록만 표시합니다", 빈 상태 안내문에서 Gmail 제거,
+  기록 행의 `source == 'gmail'` → "Gmail에서 선택" 배지 제거.
+- `manual_comm_log_modal_view.dart`: 이메일 설명에서 "Gmail은 별도 가져오기도
+  지원합니다" 삭제.
+- **코드는 지우지 않았다.** `EmailSyncService`(테스트 존재)와
+  `email_import_sheet.dart`는 그대로 두고, 후자 상단에 "현재 어디에서도 열리지
+  않는 화면"이라는 경고 주석을 달았다. 되살리는 절차는
+  `CommunicationSourceAction` 주석에 적어 뒀다.
+- 방침 문서는 손댈 게 없다 — `privacy-policy.html`은 추가 134에서 이미
+  "Gmail 연동 현재 미제공"으로 정리됐다.
+- ⚠️ **P1-41 ②(Google Cloud Console 동의 화면에서 `gmail.readonly` 범위 제거)는
+  여전히 미완료다.** UI에서 지웠다고 범위가 사라지지 않는다.
+
+`flutter analyze` info 19건(증가 없음), `flutter test` 103건 통과.
+
 ### 2026-08-10 (추가 135) — 스캔 명함을 인맥 시각으로 사용(C안) 구현 + 이미지 암호화(P1-9)
 
 추가 133 제안을 C안으로 구현(사용자 결정: 목록은 이니셜 기본, 상세에 명함

@@ -867,7 +867,9 @@ P1-26·P1-27·P0-2·P1-7). 완료 처리를 그때그때 하지 않으면 다음
    0인 상태에서 CASA 연 단위 고정비를 미리 확정할 근거가 없고, ② 앱 검증 +
    CASA 기간이 우리 통제 밖이라 출시일이 Google 심사 큐에 묶이며, ③ 지금
    막는 건 버튼 하나지만 넣었다가 반려되면 기능을 빼고 재심사를 받아야 한다.
-   **실제 차단 작업은 P1-41**(미착수). ⚠️ **잃는 것**: Gmail은 4개 경로 중
+   **실제 차단 작업은 P1-41** — 앱 UI에서는 항목·문구까지 완전히 제거됐고
+   (추가 136), 남은 것은 Google Cloud Console 동의 화면의 `gmail.readonly`
+   범위 제거뿐이다. ⚠️ **잃는 것**: Gmail은 4개 경로 중
    유일하게 iOS에서도 자동 동작하는 경로라(통화·문자는 Android 전용) 아이폰
    사용자는 사실상 전부 수동 입력이 된다 — 베타 피드백에서 주의해서 볼 것.
 3. ~~**"근처 인맥에 갔을 때 알림을 준다" 컨셉 문구와 실제 구현 간 정합성**~~
@@ -1069,7 +1071,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P1-4 | 서버측 구독 영수증 검증 + Firestore 구독상태 동기화 | App Store Server Notifications V2 / Google Play RTDN 수신용 Cloud Function 필요 | 대 | 개발 |
 | P1-5 | AI 호출 한도를 구독 등급별로 차등 적용 | 지금 `functions/src/index.ts`의 `DAILY_LIMIT`/`MONTHLY_LIMIT`은 고정값, 구독 상태 반영 안 됨 | 중 | 개발 |
 | ~~P1-6~~ → **P2** | Gmail 가져오기 프로덕션 OAuth 등록·동의화면 검증(CASA) | **2026-08-09 결정-2로 v1 범위에서 빠졌다(추가 128)** — Gmail을 다시 켜기로 할 때 착수한다. `gmail.readonly`는 Google이 제한된 범위로 분류해 별도 보안 심사가 필요한 스코프이고, 코드는 완성돼 있으나 등록은 안 된 상태다. 소통기록 4개 입력 경로 중 1개일 뿐이라 핵심 플로우를 막지 않는다 | 중~대(Google 심사 기간 변수) | 보류 |
-| **P1-41** | **Gmail 기능 차단 3종(결정-2 이행) — ①③ 완료, ② 잔여** | **신규(2026-08-09, 추가 128) / 갱신(추가 134)**. ① ✅ `communication_source_sheet.dart`에 `kGmailImportEnabled=false` 플래그를 두고 Gmail 항목을 회색 + "준비 중" 배지로 잠금(`EmailSyncService`·`email_import_sheet.dart`는 **보존** — 플래그만 되돌리면 열린다). ② ⬜ ⚠️ **Google Cloud Console 동의 화면에서 `gmail.readonly` 범위 제거 — 사용자 작업, 미완료.** 버튼만 숨기고 범위를 남기면 "쓰지도 않는 제한된 범위를 요구한다"는 이유로 검증에서 반려될 수 있다(**이 항목이 빠지면 차단의 의미가 없다**). ③ ✅ `privacy-policy.html` 2-2 표에서 Gmail 행 삭제 + "현재 미제공" 명시, `account-deletion.html` 삭제항목 문구 정정(시행 전이라 2.0 변경이력에 덧붙임). ①③은 **PR #68**(`616d005`, `24999cf`). **베타 배포 전에 ②를 끝낼 것** | 사용자 콘솔 작업(②) | 사용자 |
+| **P1-41** | **Gmail 기능 차단 3종(결정-2 이행) — ①③ 완료, ② 잔여** | **신규(2026-08-09, 추가 128) / 갱신(추가 134, 136)**. ① ✅ 소통 기록 추가 목록에서 **Gmail 항목과 관련 문구를 전부 제거**(추가 136). 처음에는 `kGmailImportEnabled=false` 플래그로 "준비 중" 배지를 단 비활성 항목으로 뒀으나, 제공 시점이 없는 기능을 계속 노출할 이유가 없어 플래그째 삭제했다(`EmailSyncService`·`email_import_sheet.dart` 코드는 **보존** — 되살리는 절차는 `CommunicationSourceAction` 주석에 있다). ② ⬜ ⚠️ **Google Cloud Console 동의 화면에서 `gmail.readonly` 범위 제거 — 사용자 작업, 미완료.** 버튼만 숨기고 범위를 남기면 "쓰지도 않는 제한된 범위를 요구한다"는 이유로 검증에서 반려될 수 있다(**이 항목이 빠지면 차단의 의미가 없다**). ③ ✅ `privacy-policy.html` 2-2 표에서 Gmail 행 삭제 + "현재 미제공" 명시, `account-deletion.html` 삭제항목 문구 정정(시행 전이라 2.0 변경이력에 덧붙임). ①③은 **PR #68**(`616d005`, `24999cf`). **베타 배포 전에 ②를 끝낼 것** | 사용자 콘솔 작업(②) | 사용자 |
 | **P1-42** | **법적 고지 hosting 재배포**(P1-41 ③ 반영) | **신규(2026-08-09, 추가 134)**. 앱은 개인정보처리방침을 **hosted URL로 WebView 표시**하므로 파일만 고쳐서는 앱에 반영되지 않는다. **PR #68 병합 후** `firebase deploy --only hosting`을 돌려야 Gmail 서술 제거가 실제로 보인다(Spark 무료 요금제로 가능, `public: docs/legal`). 안 돌리면 **앱이 보여 주는 방침과 실제 구현이 어긋난 상태로 베타에 나간다** | 소 | 개발 |
 | ~~P1-7~~ | ~~Firebase Blaze 요금제 카드 등록~~ → ✅ **완료(2026-08-07, 추가 94)** | Blaze 전환 후 Cloud Functions 배포까지 마쳤다. 이 항목이 선행조건이던 AI 프록시(P1-8)·App Check(P0-9)는 모두 진행됐다 | — | 완료 |
 | ~~P1-8~~ | ~~AI 연동 BYOK→서버 프록시 전환 구현~~ → ✅ **완료(코드) / 배포는 P1-7 대기** | 2026-08-05 구현(커밋 `ed6b4b7`, 0-3 섹션). `ai_provider.dart`/`ai_credentials_repository.dart` 삭제, `ai_connection_modal_view.dart` 전면 재작성, `kAiServiceDeployed=false`로 "서비스 준비 중" 정직하게 표시. Android+iOS 실기기 확인 완료. Cloud Functions 배포(P1-7 선행)만 되면 플래그 하나로 실제 AI 응답 켜짐 | — | 완료(배포 대기) |

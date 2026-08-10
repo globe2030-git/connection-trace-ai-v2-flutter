@@ -5,6 +5,10 @@ import '../../../../core/services/email_sync_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 
+/// ⚠️ **현재 앱 어디에서도 열리지 않는 화면이다.** Gmail 가져오기 항목을 소통
+/// 기록 추가 목록에서 뺐기 때문이다(2026-08-10, `CommunicationSourceAction`
+/// 주석 참고). 나중에 되살릴 때를 위해 코드만 남겨 둔 것이므로, 이 파일을
+/// 고쳐도 실행 화면에는 아무 변화가 없다.
 class EmailImportSheet extends StatefulWidget {
   final ContactModel contact;
 

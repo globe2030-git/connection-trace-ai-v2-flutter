@@ -4,21 +4,23 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 
-enum CommunicationSourceAction { gmail, callNote, smsPaste, kakaoPaste }
-
-/// Gmail 가져오기 노출 여부. **v1에서는 꺼 둔다**(2026-08-09 결정-2, backlog
-/// 추가 128 / HANDOFF P1-41).
+/// 소통 기록을 추가할 수 있는 경로.
 ///
-/// 기능을 지우는 게 아니라 입구만 막는 것이다 — `EmailSyncService`와
-/// `email_import_sheet.dart`는 그대로 두고 이 플래그만 `true`로 되돌리면
-/// 다시 열린다. 끄는 이유는 `gmail.readonly`가 Google의 "제한된 범위"라
-/// 보안평가(CASA)를 받아야 하는데, 그 비용과 심사 기간을 v1 일정에 걸
-/// 근거가 아직 없기 때문이다.
+/// v1에는 Gmail 가져오기가 없다. 2026-08-09 결정-2(backlog 추가 128 /
+/// HANDOFF P1-41)로 "준비 중" 배지를 단 비활성 항목으로 남겨 뒀었는데,
+/// 제공 계획이 서지 않은 기능을 목록에 계속 보여 주는 것이 오히려 혼란을
+/// 준다고 판단해 항목과 관련 문구를 전부 뺐다(2026-08-10).
 ///
-/// ⚠️ 이 플래그만으로는 부족하다. **Google Cloud Console 동의 화면에서
-/// `gmail.readonly` 범위도 함께 빼야 한다** — 쓰지도 않는 제한된 범위를
-/// 요구하는 상태로 두면 검증에서 반려될 수 있다.
-const bool kGmailImportEnabled = false;
+/// 코드까지 지운 것은 아니다 — `EmailSyncService`와 `email_import_sheet.dart`는
+/// 남아 있으므로, 되살릴 때는 이 enum에 `gmail`을 되돌리고 아래 목록에 타일을
+/// 다시 넣은 뒤 `BriefingOverlayView._addCommunicationRecord`에서
+/// `EmailImportSheet`를 열면 된다.
+///
+/// ⚠️ 되살릴 때 코드만으로는 부족하다. `gmail.readonly`는 Google의 "제한된
+/// 범위"라 보안평가(CASA)를 통과해야 하고, **Google Cloud Console 동의
+/// 화면에도 범위를 다시 넣어야 한다**. 반대로 지금처럼 쓰지 않는 동안에는
+/// 동의 화면에서 `gmail.readonly`를 빼 두어야 검증에서 반려되지 않는다.
+enum CommunicationSourceAction { callNote, smsPaste, kakaoPaste }
 
 class CommunicationSourceSheet extends StatelessWidget {
   final ContactModel contact;
@@ -71,19 +73,6 @@ class CommunicationSourceSheet extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              _SourceTile(
-                icon: AppIconId.emailLink,
-                title: 'Gmail에서 가져오기',
-                subtitle: !kGmailImportEnabled
-                    ? '다음 업데이트에서 제공할 예정입니다.'
-                    : contact.email.trim().isEmpty
-                    ? '먼저 명함에 이메일 주소를 등록해 주세요.'
-                    : '${contact.email}과 주고받은 메일을 직접 선택',
-                enabled: kGmailImportEnabled && contact.email.trim().isNotEmpty,
-                badge: kGmailImportEnabled ? null : '준비 중',
-                onTap: () =>
-                    Navigator.pop(context, CommunicationSourceAction.gmail),
-              ),
               _SourceTile(
                 icon: AppIconId.call,
                 title: '통화 후 메모',
@@ -142,32 +131,25 @@ class _SourceTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool enabled;
-
-  /// 오른쪽 화살표 대신 보여 줄 상태 배지(예: '준비 중'). null이면 화살표.
-  final String? badge;
 
   const _SourceTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.enabled = true,
-    this.badge,
   });
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      enabled: enabled,
       child: Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: Material(
           color: AppColors.bgBase,
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
-            onTap: enabled ? onTap : null,
+            onTap: onTap,
             borderRadius: BorderRadius.circular(14),
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 64),
@@ -178,12 +160,7 @@ class _SourceTile extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    AppIcon(
-                      icon,
-                      color: enabled
-                          ? AppColors.accentText
-                          : AppColors.textMuted,
-                    ),
+                    AppIcon(icon, color: AppColors.accentText),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -191,10 +168,8 @@ class _SourceTile extends StatelessWidget {
                         children: [
                           Text(
                             title,
-                            style: TextStyle(
-                              color: enabled
-                                  ? AppColors.textPrimary
-                                  : AppColors.textMuted,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
@@ -211,31 +186,10 @@ class _SourceTile extends StatelessWidget {
                         ],
                       ),
                     ),
-                    if (badge == null)
-                      const Icon(
-                        Icons.chevron_right,
-                        color: AppColors.textMuted,
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 9,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.bgElevated,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: AppColors.borderFunctional),
-                        ),
-                        child: Text(
-                          badge!,
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
+                    const Icon(
+                      Icons.chevron_right,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
               ),

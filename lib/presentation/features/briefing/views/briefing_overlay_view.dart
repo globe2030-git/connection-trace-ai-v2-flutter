@@ -15,7 +15,6 @@ import '../../wallet/view_models/wallet_view_model.dart';
 import '../../radar/view_models/radar_view_model.dart';
 import 'ai_data_review_sheet.dart';
 import 'communication_source_sheet.dart';
-import 'email_import_sheet.dart';
 import 'manual_comm_log_modal_view.dart';
 
 // 이 오버레이의 페이지 배경 위에 "직접" 놓이는(=GlassCard 안이 아닌) 에러 텍스트/아이콘
@@ -134,33 +133,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
     if (action == null || !mounted) return;
 
     switch (action) {
-      case CommunicationSourceAction.gmail:
-        final imported =
-            await showModalBottomSheet<List<CommunicationLogModel>>(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => EmailImportSheet(contact: widget.contact),
-            );
-        if (imported == null || imported.isEmpty || !mounted) return;
-        final byId = <String, CommunicationLogModel>{
-          for (final log in widget.contact.commLogs) log.id: log,
-          for (final log in imported) log.id: log,
-        };
-        final merged = byId.values.toList()
-          ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        final updated = widget.contact.copyWith(commLogs: merged);
-        final radar = context.read<RadarViewModel>();
-        radar.updateContact(updated);
-        radar.openBriefing(updated);
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('선택한 이메일 ${imported.length}개를 저장했습니다.'),
-            backgroundColor: AppColors.accent,
-          ),
-        );
-        return;
       case CommunicationSourceAction.callNote:
         return _openManualRecord('call');
       case CommunicationSourceAction.smsPaste:
@@ -633,7 +605,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Gmail에서 선택해 가져오거나 직접 작성한 기록만 표시합니다.',
+                      '직접 작성하거나 붙여넣은 기록만 표시합니다.',
                       style: TextStyle(
                         fontSize: 11,
                         // 페이지 배경에 직접 놓이는 캡션 — textMuted(대비 3.59:1)는
@@ -646,7 +618,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                     if (contact.commLogs.isEmpty)
                       GlassCard(
                         child: const Text(
-                          '최근 소통 기록이 없습니다. 위 "추가" 버튼에서 Gmail을 선택하거나 통화·문자·카카오톡 내용을 직접 기록해 보세요.',
+                          '최근 소통 기록이 없습니다. 위 "추가" 버튼에서 통화·문자·카카오톡 내용을 직접 기록해 보세요.',
                           style: TextStyle(
                             fontSize: 12.5,
                             color: AppColors.textMuted,
@@ -734,17 +706,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                             color: AppColors.textMuted,
                                           ),
                                         ),
-                                        if (log.source == 'gmail') ...[
-                                          const SizedBox(width: 6),
-                                          const Text(
-                                            'Gmail에서 선택',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: AppColors.textMuted,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
                                       ],
                                     ),
                                     const SizedBox(height: 3),
