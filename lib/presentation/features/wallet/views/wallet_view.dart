@@ -369,18 +369,49 @@ class _ContactCard extends StatelessWidget {
                               color: AppColors.accentText,
                             ),
                           ),
-                          // 왼쪽으로 밀어서 삭제(Dismissible)만 있으면 알아채기
-                          // 어려워서, 눈에 보이는 삭제 버튼도 같이 둔다.
-                          _CompactAction(
-                            tooltip: '${contact.name} 명함 삭제',
-                            onPressed: () async {
+                          // 삭제는 더보기 메뉴 안에 둔다(사용자 결정,
+                          // 2026-08-10). 빨간 휴지통이 줄마다 노출되면 목록이
+                          // 산만하고 실수로 누르기도 쉽다. 그렇다고 "밀어서
+                          // 삭제"만 남기면 그 동작을 모르는 사용자는 지우는
+                          // 방법을 아예 못 찾으므로, 메뉴로 옮겨 눈에 보이는
+                          // 경로는 유지한다.
+                          PopupMenuButton<String>(
+                            tooltip: '${contact.name} 더보기',
+                            icon: const Icon(
+                              Icons.more_vert,
+                              size: 20,
+                              color: AppColors.textMuted,
+                            ),
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                            ),
+                            onSelected: (value) async {
+                              if (value != 'delete') return;
                               if (await _confirmDelete(context)) onDelete();
                             },
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              size: 20,
-                              color: AppColors.destructive,
-                            ),
+                            itemBuilder: (_) => const [
+                              PopupMenuItem<String>(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.delete_outline,
+                                      size: 18,
+                                      color: AppColors.destructive,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      '명함 삭제',
+                                      style: TextStyle(
+                                        color: AppColors.destructive,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
