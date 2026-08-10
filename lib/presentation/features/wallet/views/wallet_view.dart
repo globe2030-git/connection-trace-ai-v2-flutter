@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/services/geo_backfill_service.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
@@ -137,6 +138,10 @@ class WalletView extends StatelessWidget {
                   ),
                 ),
               ],
+              // 위치 진단 배너. **필터가 아닌 전체 명함**(`viewModel.contacts`)을
+              // 기준으로 센다 — 태그·검색으로 걸러진 화면 목록이 아니라 "내
+              // 명함 전체 중 몇 개가 주변 인맥에 안 뜨는가"가 알고 싶은 값이다.
+              _LocationDiagnosticBanner(contacts: viewModel.contacts),
               const SizedBox(height: 14),
               Expanded(
                 child: contacts.isEmpty
@@ -479,6 +484,145 @@ class _NoAddressBadge extends StatelessWidget {
               fontWeight: FontWeight.w700,
               color: AppColors.warningText,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 명함첩 상단에 뜨는 위치 진단 배너 — 주변 인맥에 안 뜨는 명함 수를 알린다.
+///
+/// 두 원인을 나눠 센다(사용자 요청 B, 2026-08-10):
+/// - **주소 없음**: 사용자가 주소를 안 넣음 → 명함을 눌러 채우면 된다.
+/// - **위치 못 찾음**: 주소는 있는데 지오코딩이 좌표를 못 만듦 → 주소 형태
+///   문제일 수 있다. 탭하면 실패 형태 집계(C안)를 보여 준다.
+///
+/// 좌표(geo)는 서버에 없고 기기에서 주소로 계산하는 파생값이라, 이 수는
+/// **이 기기의 현재 명함 목록**에서만 셀 수 있다 — 그래서 서버 조회가 아니라
+/// 화면에서 실시간으로 센다.
+class _LocationDiagnosticBanner extends StatelessWidget {
+  final List<ContactModel> contacts;
+
+  const _LocationDiagnosticBanner({required this.contacts});
+
+  @override
+  Widget build(BuildContext context) {
+    var noAddress = 0;
+    var noGeo = 0;
+    for (final c in contacts) {
+      final hasAddress = (c.address ?? '').trim().isNotEmpty;
+      if (!hasAddress) {
+        noAddress++;
+      } else if (c.geo == null) {
+        // 주소는 있는데 좌표가 아직/영영 없음. 로그인 직후 backfill 중이면
+        // 잠깐 잡힐 수 있으나, 배너는 "확인해 보라"는 안내라 과잉 경보는 아니다.
+        noGeo++;
+      }
+    }
+    if (noAddress == 0 && noGeo == 0) return const SizedBox.shrink();
+
+    final parts = <String>[
+      if (noAddress > 0) '주소 없는 명함 $noAddress개',
+      if (noGeo > 0) '위치를 못 찾은 명함 $noGeo개',
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Material(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _showDetail(context, noAddress, noGeo),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.location_off_outlined,
+                  size: 17,
+                  color: AppColors.warningText,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${parts.join(' · ')} — 주변 인맥에 표시되지 않아요',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.warningText,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: AppColors.warningText,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDetail(
+    BuildContext context,
+    int noAddress,
+    int noGeo,
+  ) async {
+    // 지오코딩 실패 형태 집계(C안)를 함께 보여 준다 — "왜 위치를 못 찾는가"의
+    // 실마리. 주소 원문은 담기지 않은, 형태 코드별 건수다.
+    final shapes = await GeoBackfillService.readFailureShapeStats();
+    if (!context.mounted) return;
+    final sorted = shapes.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('위치를 못 찾는 명함'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (noAddress > 0)
+              Text('· 주소가 없는 명함: $noAddress개\n  명함을 열어 주소를 넣으면 주변 인맥에 표시됩니다.'),
+            if (noAddress > 0 && noGeo > 0) const SizedBox(height: 8),
+            if (noGeo > 0)
+              Text(
+                '· 주소는 있지만 위치를 못 찾은 명함: $noGeo개\n  주소가 정확한지 확인해 주세요(건물명만 있으면 못 찾을 수 있어요).',
+              ),
+            if (sorted.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              const Text(
+                '실패한 주소 형태(개발 참고)',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              for (final e in sorted.take(6))
+                Text(
+                  '${e.value}건  ${e.key}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textMuted,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('확인'),
           ),
         ],
       ),
