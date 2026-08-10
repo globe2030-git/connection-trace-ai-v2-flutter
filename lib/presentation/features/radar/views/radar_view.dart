@@ -722,15 +722,20 @@ class _NearbyCountCard extends StatelessWidget {
                 // 카드를 "가까운 인맥" 목록 바로 앞까지 키운다(사용자 요청,
                 // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
                 // 채워지도록 세로 여백을 크게 잡았다.
+                // ⚠️ 가로 여백을 31까지 키웠더니 iPhone(논리 폭 393)에서
+                // "지금 가까운 사람"이 두 줄로 깨졌다(사용자 캡처, 2026-08-10).
+                // 세로는 그대로 두고 **가로만** 줄여 라벨 폭을 되찾는다.
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 31,
+                  horizontal: 20,
                   vertical: 68,
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 94,
-                      height: 94,
+                      // 원도 함께 줄인다 — 94는 좁은 화면에서 라벨 자리를
+                      // 너무 많이 가져갔다.
+                      width: 76,
+                      height: 76,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -748,15 +753,21 @@ class _NearbyCountCard extends StatelessWidget {
                           : const AppIcon(
                               AppIconId.radarDetect,
                               color: AppColors.accent,
-                              size: 47,
+                              size: 38,
                             ),
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: 12),
                     // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
                     // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
                     const Expanded(
                       child: Text(
                         '지금 가까운 사람',
+                        // 폭이 모자라도 **두 줄로 깨지지 않게** 한 줄로 못박고,
+                        // 정 안 들어가면 줄여서 그린다. 두 줄로 접히면 카드
+                        // 높이까지 흔들려 아래 요소가 밀린다.
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.fade,
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
