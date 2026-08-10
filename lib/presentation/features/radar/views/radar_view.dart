@@ -713,14 +713,14 @@ class _NearbyCountCard extends StatelessWidget {
                 // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
                 // 채워지도록 세로 여백을 크게 잡았다.
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 52,
+                  horizontal: 31,
+                  vertical: 68,
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 72,
-                      height: 72,
+                      width: 94,
+                      height: 94,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -728,8 +728,8 @@ class _NearbyCountCard extends StatelessWidget {
                       ),
                       child: isRefreshing
                           ? const SizedBox(
-                              width: 18,
-                              height: 18,
+                              width: 26,
+                              height: 26,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: AppColors.accent,
@@ -738,7 +738,7 @@ class _NearbyCountCard extends StatelessWidget {
                           : const AppIcon(
                               AppIconId.radarDetect,
                               color: AppColors.accent,
-                              size: 22,
+                              size: 47,
                             ),
                     ),
                     const SizedBox(width: 14),
@@ -748,7 +748,7 @@ class _NearbyCountCard extends StatelessWidget {
                       child: Text(
                         '지금 가까운 사람',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
                         ),
@@ -757,7 +757,7 @@ class _NearbyCountCard extends StatelessWidget {
                     Text(
                       count != null ? '$count명' : '--',
                       style: const TextStyle(
-                        fontSize: 26,
+                        fontSize: 34,
                         fontWeight: FontWeight.w900,
                         color: AppColors.accentText,
                         letterSpacing: -0.5,
