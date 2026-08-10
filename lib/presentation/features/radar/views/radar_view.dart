@@ -124,10 +124,6 @@ class _RadarViewState extends State<RadarView> {
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
-                                  // 남은 AI 생성 횟수(탭하면 상세). 서비스 미배포/
-                                  // 미조회 시 스스로 아무것도 그리지 않는다.
-                                  const SizedBox(height: 8),
-                                  const AiUsageChip(),
                                 ],
                               ),
                             ),
@@ -266,36 +262,7 @@ class _RadarViewState extends State<RadarView> {
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
-                            // 위치 아이콘은 줄 맨 오른쪽(사용자 요청,
-                            // 2026-08-10). 위치를 계속 추적하지 않는다는
-                            // 사실은 설정 → 위치 서비스와 개인정보처리방침
-                            // 10-1에 그대로 남아 있다.
-                            _RefreshLocationButton(
-                              isRefreshing: viewModel.isRefreshingLocation,
-                              usingRealGps: viewModel.usingRealGps,
-                              isDetecting: viewModel.hasLocationConsent,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
-                              ),
-                              onToggleDetect: () =>
-                                  _toggleNearbyDetect(context, viewModel),
-                            ),
                           ],
-                        ),
-                        // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
-                        // 한 줄로 밝힌다(사용자 요청). 툴팁만으로는 길게 눌러야
-                        // 뜨는데, 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
-                        const SizedBox(height: 4),
-                        const Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            '위치 아이콘 — 짧게: 갱신 · 길게: 감지 켜기/끄기',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
                         ),
                         const SizedBox(height: 10),
 
@@ -364,6 +331,49 @@ class _RadarViewState extends State<RadarView> {
                                   context,
                                   viewModel,
                                 ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // 위치 아이콘과 조작 안내를 "지금 가까운 사람" 카드
+                        // 바로 아래 한 줄에 둔다(사용자 요청, 2026-08-10).
+                        // 아이콘이 무엇을 켜고 끄는지가 그 카드의 숫자이므로,
+                        // 상단 버튼 줄보다 여기가 가깝다.
+                        //
+                        // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
+                        // 설명을 옆에 붙인다. 툴팁만으로는 길게 눌러야 뜨는데,
+                        // 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
+                        Row(
+                          children: [
+                            _RefreshLocationButton(
+                              isRefreshing: viewModel.isRefreshingLocation,
+                              usingRealGps: viewModel.usingRealGps,
+                              isDetecting: viewModel.hasLocationConsent,
+                              onTap: () => handleLocationAccessAction(
+                                context,
+                                viewModel,
+                              ),
+                              onToggleDetect: () =>
+                                  _toggleNearbyDetect(context, viewModel),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                            // 남은 AI 생성 횟수(탭하면 상세). 제목 아래에
+                            // 있던 것을 이 줄로 옮겼다(사용자 요청,
+                            // 2026-08-10) — 제목 영역이 세 줄로 길어져
+                            // 화면 위쪽을 많이 먹고 있었다. 서비스 미배포·
+                            // 미조회 시에는 스스로 아무것도 그리지 않으므로
+                            // 이 줄이 비어 보이지 않는다.
+                            const AiUsageChip(),
+                          ],
                         ),
 
                         const SizedBox(height: 14),
@@ -664,14 +674,14 @@ class _NearbyCountCard extends StatelessWidget {
                 // 2026-08-10). 여백과 아이콘·숫자를 키워 예전 대표 카드와
                 // 비슷한 덩치를 갖게 했다 — 화면 위쪽이 허전해지지 않도록.
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 28,
+                  horizontal: 22,
+                  vertical: 31,
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 56,
-                      height: 56,
+                      width: 62,
+                      height: 62,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
