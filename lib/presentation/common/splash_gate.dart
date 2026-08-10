@@ -65,8 +65,16 @@ class _SplashGateState extends State<SplashGate>
                 child: Container(
                   color: AppColors.bgBase,
                   alignment: Alignment.center,
+                  // ⚠️ 여기가 **옛 라벤더 레이더 마크**를 쓰고 있었다
+                  // (사용자 보고, 2026-08-10). 2026-08-05 리브랜딩에서 네이티브
+                  // 스플래시와 런처 아이콘은 위치핀+명함 마크로 바꿨는데,
+                  // 앱 안에서 한 번 더 덮어 그리는 이 화면만 남았다.
+                  //
+                  // 네이티브 스플래시가 사라진 직후 이 화면이 이어서 뜨므로,
+                  // 사용자 눈에는 "로딩 중에 옛 아이콘이 보인다"로 나타난다 —
+                  // 리소스를 아무리 다시 생성해도 고쳐지지 않던 이유다.
                   child: Image.asset(
-                    'assets/icons3d/radar_lavender_splash.png',
+                    'assets/icons3d/pin_card_blue_splash.png',
                     width: 220,
                   ),
                 ),
