@@ -15,16 +15,28 @@ class PhoneCallService {
     return false;
   }
 
+  /// 번호가 둘이면 어느 쪽으로 걸지 고르게 하고, 하나뿐이면 바로 건다.
+  ///
+  /// 예전에는 휴대폰 번호가 반드시 있다고 보고 "사무실 번호가 있으면 시트,
+  /// 없으면 휴대폰으로 바로 걸기"로만 나눴다. 그래서 **사무실 번호만 있는
+  /// 인맥은 전화를 걸 수 없었다** — 빈 번호로 `tel:`을 열어 아무 일도
+  /// 일어나지 않았다. 두 번호를 대칭으로 다룬다(2026-08-10).
   static Future<void> showCallPicker(
     BuildContext context,
     ContactModel contact,
   ) async {
-    final hasOfficePhone =
-        contact.officePhone != null && contact.officePhone!.trim().isNotEmpty;
+    final mobile = contact.phone.trim();
+    final office = contact.officePhone?.trim() ?? '';
+    final hasMobile = mobile.isNotEmpty;
+    final hasOfficePhone = office.isNotEmpty;
 
+    if (!hasMobile && !hasOfficePhone) return;
     if (!hasOfficePhone) {
-      // Direct call if only mobile phone is available
-      await makeCall(contact.phone);
+      await makeCall(mobile);
+      return;
+    }
+    if (!hasMobile) {
+      await makeCall(office);
       return;
     }
 

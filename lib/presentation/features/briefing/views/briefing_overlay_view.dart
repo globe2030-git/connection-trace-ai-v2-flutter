@@ -579,7 +579,6 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                 _selectedIndex < _points.length
                             ? _points[_selectedIndex]
                             : null,
-                        onBeforeLeaveApp: widget.onClose,
                       ),
                     ],
 
@@ -809,17 +808,15 @@ class _SendChannelRow extends StatelessWidget {
   final ContactModel contact;
   final String? selectedPoint;
 
-  /// 다른 앱으로 넘어가기 직전에 브리핑 화면을 닫기 위한 콜백. 통화처럼 화면이
-  /// 가려지는 경로에서만 쓴다.
-  final VoidCallback onBeforeLeaveApp;
+  const _SendChannelRow({required this.contact, required this.selectedPoint});
 
-  const _SendChannelRow({
-    required this.contact,
-    required this.selectedPoint,
-    required this.onBeforeLeaveApp,
-  });
+  /// 문자는 휴대폰 번호로만 보낸다 — 사무실 유선번호로 문자를 보낼 수는 없다.
+  bool get _hasMobile => contact.phone.trim().isNotEmpty;
 
-  bool get _hasPhone => contact.phone.trim().isNotEmpty;
+  /// 통화는 둘 중 하나만 있어도 걸 수 있다. 어느 번호로 걸지는 선택 시트가
+  /// 정한다(사용자 요청, 2026-08-10).
+  bool get _hasAnyPhone =>
+      _hasMobile || (contact.officePhone?.trim().isNotEmpty ?? false);
 
   @override
   Widget build(BuildContext context) {
@@ -829,7 +826,7 @@ class _SendChannelRow extends StatelessWidget {
           child: _ChannelButton(
             icon: AppIconId.call,
             label: '통화',
-            enabled: _hasPhone,
+            enabled: _hasAnyPhone,
             onTap: () => _call(context),
           ),
         ),
@@ -838,7 +835,7 @@ class _SendChannelRow extends StatelessWidget {
           child: _ChannelButton(
             icon: AppIconId.message,
             label: '문자',
-            enabled: _hasPhone,
+            enabled: _hasMobile,
             onTap: () => _sms(context),
           ),
         ),
@@ -883,14 +880,20 @@ class _SendChannelRow extends StatelessWidget {
     final messenger = ScaffoldMessenger.of(context);
     // 2026-08-07: 통화를 누르면 전화 앱으로 넘어가면서 대화 포인트 화면이
     // 그대로 사라져 "외워서 말해야 하는" 문제가 있었다(사용자 피드백). 제3자
-    // 앱이 전화 화면 위에 계속 떠 있는 건 OS가 막아서(iOS/Android 공통) 화면을
-    // 유지할 수는 없지만, 복사해 두면 통화 중 메모 앱에 붙여넣어 볼 수 있다.
+    // 앱이 전화 화면 위에 계속 떠 있는 건 OS가 막아서(iOS/Android 공통) 통화
+    // 중에는 화면을 볼 수 없지만, 복사해 두면 메모 앱에 붙여넣어 볼 수 있다.
     await _copyPoint();
     if (selectedPoint != null) {
       _toast(messenger, '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.');
     }
-    onBeforeLeaveApp();
     if (!context.mounted) return;
+    // ⚠️ 브리핑 화면을 먼저 닫으면 안 된다. 예전 코드는 닫은 뒤 번호 선택
+    // 시트를 열었는데, 그 시점에는 이 위젯이 이미 사라져 `context.mounted`가
+    // false가 되고 **시트가 조용히 안 뜬다** — 사무실 번호까지 있는 인맥은
+    // 통화를 눌러도 아무 일이 없었다. 시트를 먼저 띄운다.
+    //
+    // 통화가 끝나고 돌아오면 브리핑이 그대로 있어, 고른 대화 포인트를 다시
+    // 볼 수 있다는 이점도 있다.
     await PhoneCallService.showCallPicker(context, contact);
   }
 
