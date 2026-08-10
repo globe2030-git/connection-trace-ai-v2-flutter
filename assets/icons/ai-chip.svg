@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
   <rect fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x="6" y="6" width="12" height="12" rx="2.2"/>
-  <text fill="#2563EB" stroke="none" x="12" y="14" font-size="7" font-weight="700" text-anchor="middle" font-family="monospace">AI</text>
+  <text fill="currentColor" stroke="none" x="12" y="14" font-size="7" font-weight="700" text-anchor="middle" font-family="monospace">AI</text>
   <line fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x1="9.2" y1="6" x2="9.2" y2="3.4"/>
   <line fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x1="14.8" y1="6" x2="14.8" y2="3.4"/>
   <line fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" x1="9.2" y1="18" x2="9.2" y2="20.6"/>
