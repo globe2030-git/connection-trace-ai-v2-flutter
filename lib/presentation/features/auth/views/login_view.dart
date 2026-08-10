@@ -1,10 +1,15 @@
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/legal_document_view.dart';
 
 /// 앱 진입을 막는 SNS 로그인 화면. Google은 기존 Gmail 연동에서 이미 쓰던
@@ -33,6 +38,11 @@ class _LoginViewState extends State<LoginView> {
       switch (provider) {
         case SnsAuthProvider.google:
           await auth.signInWithGoogle();
+          // Apple은 프로필 사진을 아예 안 주지만 Google 계정에는 있는 경우가
+          // 많다 — 최초 로그인이라 내 명함이 아직 비어 있으면 그 사진을
+          // 기본값으로 채워 넣는다(사용자 제안, 2026-08-08). 실패해도
+          // 로그인 자체를 막지 않는다.
+          if (mounted) await _prefillAvatarFromGoogle(auth.photoUrl);
         case SnsAuthProvider.apple:
           await auth.signInWithApple();
       }
@@ -42,6 +52,36 @@ class _LoginViewState extends State<LoginView> {
       if (mounted) setState(() => _errorMessage = '로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       if (mounted) setState(() => _loadingProvider = null);
+    }
+  }
+
+  /// 최초 로그인이라 내 명함이 아직 비어 있고 프로필 사진도 없으면, Google
+  /// 계정 사진을 내려받아 기본값으로 채운다. 이름/직함 등 나머지 필드는
+  /// 그대로 비워 둬(가짜 정보 금지 원칙) 사용자가 "내 프로필" 화면에서
+  /// 직접 채우게 한다 — 사진 하나만 미리 채워 넣는 것뿐이라 `isSetUp`
+  /// 판정(이름 기준)에는 영향이 없다.
+  Future<void> _prefillAvatarFromGoogle(String? photoUrl) async {
+    if (photoUrl == null || photoUrl.isEmpty || !mounted) return;
+    final profileRepo = context.read<MyProfileRepository>();
+    final profile = profileRepo.profile;
+    if (profile.isSetUp || profile.avatarPath != null) return;
+
+    try {
+      final response = await http
+          .get(Uri.parse(photoUrl))
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return;
+
+      final docsDir = await getApplicationDocumentsDirectory();
+      final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
+      await File(savedPath).writeAsBytes(response.bodyBytes);
+
+      await profileRepo.updateProfile(
+        profile.copyWith(avatarPath: savedPath),
+      );
+    } catch (e) {
+      // 프로필 사진은 부가 편의 기능이라 실패해도 로그인 흐름을 막지 않는다.
+      debugPrint('Google 프로필 사진 미리 채우기 실패: $e');
     }
   }
 
