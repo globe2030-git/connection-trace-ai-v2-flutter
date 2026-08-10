@@ -247,7 +247,7 @@ class _RadarViewState extends State<RadarView> {
                           // 위에 얹혀 있어, 오른쪽으로 몰아 두면 왼쪽이 크게
                           // 비어 균형이 맞지 않았다.
                           alignment: WrapAlignment.center,
-                          spacing: 8,
+                          spacing: 6,
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
@@ -972,7 +972,17 @@ class _RadiusSelector extends StatelessWidget {
   /// (1km) 사이만으로는 "차로 잠깐 가는 거리"를 담을 수 없었다.
   static const options = <double>[500, 1000, 3000, 5000, double.infinity];
 
+  /// 칩에 넣을 짧은 라벨. "제한 없음"은 이 줄에서 가장 긴 문구라 **전체**로
+  /// 줄였다 — 지도·반경·잔여 횟수 세 칩이 한 줄에 안 들어가 잔여 칩이 아랫줄로
+  /// 밀렸다(사용자 보고, 2026-08-10). 선택 시트 안에서는 뜻이 분명해야 하므로
+  /// [sheetLabel]로 원래 문구를 그대로 쓴다.
   static String label(double meters) {
+    if (meters.isInfinite) return '전체';
+    if (meters < 1000) return '${meters.round()}m';
+    return '${(meters / 1000).toStringAsFixed(0)}km';
+  }
+
+  static String sheetLabel(double meters) {
     if (meters.isInfinite) return '제한 없음';
     if (meters < 1000) return '${meters.round()}m';
     return '${(meters / 1000).toStringAsFixed(0)}km';
@@ -987,7 +997,7 @@ class _RadiusSelector extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         onTap: () => _openPicker(context),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: AppColors.borderFunctional),
@@ -1004,7 +1014,7 @@ class _RadiusSelector extends StatelessWidget {
               Text(
                 '반경 ${label(radiusMeters)}',
                 style: const TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
@@ -1012,7 +1022,7 @@ class _RadiusSelector extends StatelessWidget {
               const SizedBox(width: 2),
               const Icon(
                 Icons.expand_more,
-                size: 18,
+                size: 16,
                 color: AppColors.textMuted,
               ),
             ],
@@ -1047,7 +1057,7 @@ class _RadiusSelector extends StatelessWidget {
               for (final option in options)
                 ListTile(
                   minTileHeight: 52,
-                  title: Text(label(option)),
+                  title: Text(sheetLabel(option)),
                   trailing: radiusMeters == option
                       ? const Icon(Icons.check_circle, color: AppColors.accent)
                       : const Icon(
@@ -1089,7 +1099,7 @@ class _ExpandToMapButton extends StatelessWidget {
           // 위치를 아직 못 잡았으면 지도를 열어도 보여 줄 기준점이 없다.
           onTap: enabled ? onTap : null,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
@@ -1103,12 +1113,12 @@ class _ExpandToMapButton extends StatelessWidget {
               children: [
                 Icon(Icons.zoom_out_map, size: 16, color: foreground),
                 const SizedBox(width: 6),
-                // 반경 칩과 한 줄에 들어가야 해서 "지도에서 크게 보기"를
-                // 줄였다. 아이콘이 함께 있어 뜻은 그대로 읽힌다.
+                // 반경·잔여 칩과 한 줄에 들어가야 해서 "지도에서 크게 보기"를
+                // 두 번에 걸쳐 줄였다. 아이콘이 함께 있어 뜻은 읽힌다.
                 Text(
-                  '지도 보기',
+                  '지도',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: foreground,
                   ),
