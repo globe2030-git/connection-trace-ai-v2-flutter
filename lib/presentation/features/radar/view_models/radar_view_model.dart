@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_consent_service.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/services/proximity_settings_service.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/proximity_settings.dart';
@@ -22,6 +23,7 @@ class RadarViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
   final LocationGateway _locationService;
   final LocationConsentStore _locationConsentService;
+  final ProximitySettingsStore _proximitySettingsService;
 
   ProximitySettings _settings = const ProximitySettings();
   GeoPosition? _currentPosition;
@@ -39,14 +41,27 @@ class RadarViewModel extends ChangeNotifier {
     required ContactsRepository contactsRepository,
     LocationGateway? locationService,
     LocationConsentStore? locationConsentService,
+    ProximitySettingsStore? proximitySettingsService,
   }) : _contactsRepository = contactsRepository,
        _locationService = locationService ?? LocationService(),
        _locationConsentService =
-           locationConsentService ?? LocationConsentService() {
+           locationConsentService ?? LocationConsentService(),
+       _proximitySettingsService =
+           proximitySettingsService ?? ProximitySettingsService() {
     _contactsRepository.addListener(_onContactsChanged);
+    // 저장해 둔 감지 반경을 먼저 되살린다. 이게 없으면 앱을 다시 켤 때마다
+    // 기본값(1km)으로 돌아가 사용자가 고른 기준이 사라진다(추가 139).
+    _restoreRadius();
     // 앱 실행 직후에는 OS 권한을 요청하지 않는다. 저장된 앱 자체 동의를 먼저
     // 확인하고, 동의가 있는 경우에만 현재 OS 권한 상태로 위치를 읽는다.
     initialization = _initializeLocation();
+  }
+
+  Future<void> _restoreRadius() async {
+    final saved = await _proximitySettingsService.load();
+    if (_isDisposed) return;
+    _settings = saved;
+    _safeNotify();
   }
 
   @override
@@ -230,9 +245,13 @@ class RadarViewModel extends ChangeNotifier {
     return candidatePool.first;
   }
 
+  /// 감지 반경을 바꾸고 **기기에 저장한다.** 저장하지 않으면 다음 실행에서
+  /// 기본값으로 돌아가 사용자가 고른 기준이 사라진다(추가 139).
   void updateRadius(double newRadiusMeters) {
     _settings = _settings.copyWith(radiusMeters: newRadiusMeters);
     _safeNotify();
+    // 저장 실패가 화면을 막을 이유는 없다 — 이번 세션 동안은 이미 적용됐다.
+    _proximitySettingsService.saveRadius(newRadiusMeters);
   }
 
   void setPreviewContact(ContactModel? contact) {

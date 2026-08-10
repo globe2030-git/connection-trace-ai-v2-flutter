@@ -21,8 +21,6 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 
-
-
 /// 전자상거래법 제10조에 따른 사업자 정보 표시. 웹(법적 고지 인덱스)에도
 /// 같은 내용이 있고, 여기서는 앱 안에서 바로 볼 수 있게 한다.
 Future<void> _showBusinessInfo(BuildContext context) {
@@ -274,6 +272,10 @@ class SettingsView extends StatelessWidget {
                                   radarViewModel,
                                 ),
                   ),
+                  // 감지 반경은 "주변" 화면으로 옮겼다(사용자 요청, 추가 139).
+                  // 반경을 바꾸면 바로 달라지는 것이 주변 인맥 목록인데, 설정
+                  // 화면에서는 그 결과를 볼 수 없어 몇 km가 맞는지 가늠할 수
+                  // 없었다. 여기서는 현재 값만 알려주고 그 화면으로 안내한다.
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.detectRadius,
@@ -281,9 +283,8 @@ class SettingsView extends StatelessWidget {
                       color: AppColors.accentText,
                     ),
                     title: '감지 반경',
-                    subtitle: '가까운 인맥 목록에 표시할 거리',
+                    subtitle: '"주변" 화면 위쪽에서 바꿀 수 있습니다',
                     value: _radiusLabel(radarViewModel.settings.radiusMeters),
-                    onTap: () => _showRadiusPicker(context, radarViewModel),
                   ),
                   _SettingsRow(
                     icon: const AppIcon(
@@ -335,7 +336,9 @@ class SettingsView extends StatelessWidget {
                     subtitle: AiBriefingService.kAiServiceDeployed
                         ? '커넥션센스 AI가 대화 포인트를 만들어드려요'
                         : '서비스 준비 중이에요',
-                    value: AiBriefingService.kAiServiceDeployed ? '이용 가능' : '준비 중',
+                    value: AiBriefingService.kAiServiceDeployed
+                        ? '이용 가능'
+                        : '준비 중',
                     onTap: () {
                       showModalBottomSheet(
                         context: context,
@@ -352,8 +355,7 @@ class SettingsView extends StatelessWidget {
                       color: AppColors.accentText,
                     ),
                     title: 'AI 데이터 안내',
-                    subtitle:
-                        'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
+                    subtitle: 'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
                   ),
                 ],
               ),
@@ -534,7 +536,11 @@ class _GroupedCard extends StatelessWidget {
           for (var index = 0; index < children.length; index++) ...[
             children[index],
             if (index < children.length - 1)
-              const Divider(height: 1, indent: 76, color: AppColors.borderSubtle),
+              const Divider(
+                height: 1,
+                indent: 76,
+                color: AppColors.borderSubtle,
+              ),
           ],
         ],
       ),
@@ -711,50 +717,6 @@ class _SettingsSwitchRow extends StatelessWidget {
   }
 }
 
-Future<void> _showRadiusPicker(
-  BuildContext context,
-  RadarViewModel viewModel,
-) async {
-  final selected = await showModalBottomSheet<double>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '감지 반경',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '가까운 인맥 목록에 표시할 최대 거리를 선택하세요.',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 12),
-            for (final option in const [500.0, 1000.0, double.infinity])
-              ListTile(
-                minTileHeight: 52,
-                title: Text(_radiusLabel(option)),
-                trailing: viewModel.settings.radiusMeters == option
-                    ? const Icon(Icons.check_circle, color: AppColors.accent)
-                    : const Icon(
-                        Icons.circle_outlined,
-                        color: AppColors.textMuted,
-                      ),
-                onTap: () => Navigator.of(context).pop(option),
-              ),
-          ],
-        ),
-      ),
-    ),
-  );
-  if (selected != null) viewModel.updateRadius(selected);
-}
-
 Future<void> _confirmConsentWithdrawal(
   BuildContext context,
   RadarViewModel viewModel,
@@ -848,7 +810,10 @@ Future<void> _confirmDeleteAccount(
               children: [
                 const Text(
                   '삭제할 계정',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(

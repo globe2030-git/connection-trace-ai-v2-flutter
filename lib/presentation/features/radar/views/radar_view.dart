@@ -217,6 +217,18 @@ class _RadarViewState extends State<RadarView> {
                           const SizedBox(height: 16),
                         ],
 
+                        // 감지 반경 선택. 원래 설정 화면에만 있었는데, 반경을
+                        // 바꾸면 바로 이 목록이 달라지므로 결과를 보면서 고를
+                        // 수 있는 이 화면이 제자리다(사용자 요청, 추가 139).
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: _RadiusSelector(
+                            radiusMeters: viewModel.settings.radiusMeters,
+                            onChanged: viewModel.updateRadius,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
                         // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
                         _NearbyCountCard(
                           count: nearbyCount,
@@ -1048,4 +1060,112 @@ String _greetingForNow() {
   if (hour < 12) return '좋은 오전이에요!';
   if (hour < 18) return '좋은 오후예요!';
   return '편안한 저녁이에요!';
+}
+
+/// 감지 반경 선택 버튼. 현재 반경을 보여주고, 누르면 선택 시트를 연다.
+///
+/// 설정 화면에도 같은 항목이 있었지만 그쪽에서는 결과를 볼 수 없었다 —
+/// 반경을 바꾸면 바로 달라지는 것이 "주변 인맥" 목록이라 여기가 제자리다
+/// (사용자 요청, 추가 139).
+class _RadiusSelector extends StatelessWidget {
+  final double radiusMeters;
+  final ValueChanged<double> onChanged;
+
+  const _RadiusSelector({required this.radiusMeters, required this.onChanged});
+
+  /// 3km·5km는 사용자 요청으로 추가했다(추가 139). 도보권(500m)과 같은 동네
+  /// (1km) 사이만으로는 "차로 잠깐 가는 거리"를 담을 수 없었다.
+  static const options = <double>[500, 1000, 3000, 5000, double.infinity];
+
+  static String label(double meters) {
+    if (meters.isInfinite) return '제한 없음';
+    if (meters < 1000) return '${meters.round()}m';
+    return '${(meters / 1000).toStringAsFixed(0)}km';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.cardSurface,
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () => _openPicker(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppColors.borderFunctional),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppIcon(
+                AppIconId.detectRadius,
+                size: 16,
+                color: AppColors.accentText,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '반경 ${label(radiusMeters)}',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.expand_more,
+                size: 18,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPicker(BuildContext context) async {
+    final selected = await showModalBottomSheet<double>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.cardSurface,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '감지 반경',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '주변 인맥 목록에 표시할 최대 거리를 선택하세요. 고른 값은 기기에 저장돼 다음에 열어도 그대로 유지됩니다.',
+                style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              for (final option in options)
+                ListTile(
+                  minTileHeight: 52,
+                  title: Text(label(option)),
+                  trailing: radiusMeters == option
+                      ? const Icon(Icons.check_circle, color: AppColors.accent)
+                      : const Icon(
+                          Icons.circle_outlined,
+                          color: AppColors.textMuted,
+                        ),
+                  onTap: () => Navigator.of(sheetContext).pop(option),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (selected != null) onChanged(selected);
+  }
 }
