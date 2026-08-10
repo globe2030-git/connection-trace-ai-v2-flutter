@@ -46,6 +46,26 @@ class EncryptionKeyService {
 
   static String _secureStorageKeyFor(String uid) => 'enc_key_v1_$uid';
 
+  /// 계정 삭제(회원 탈퇴) 시 **이 기기에 남은 키**를 지운다.
+  ///
+  /// 서버 쪽 키(`users/{uid}`의 `encryptionKeyB64`)는 사용자 문서와 함께
+  /// 삭제되지만, 기기 보안 저장소의 사본은 지우는 코드가 없었다(2026-08-10
+  /// 점검에서 발견). **iOS Keychain은 앱을 삭제해도 남는다** — 이 프로젝트가
+  /// 이미 겪은 문제다(앱 삭제 후 로그인 정보 잔존).
+  ///
+  /// ⚠️ **반드시 다른 정리가 모두 끝난 뒤 마지막에 부를 것.** 키가 먼저
+  /// 사라지면 남은 암호문 파일을 열 수도, 무엇인지 확인할 수도 없게 된다.
+  Future<bool> deleteLocalKey(String uid) async {
+    _memoryCache.remove(uid);
+    try {
+      await _secureStorage.delete(key: _secureStorageKeyFor(uid));
+      return true;
+    } catch (e) {
+      debugPrint('암호화 키 삭제 실패: ${e.runtimeType}');
+      return false;
+    }
+  }
+
   static const String _firestoreFieldName = 'encryptionKeyB64';
 
   DocumentReference<Map<String, dynamic>>? _userDoc(String uid) {
