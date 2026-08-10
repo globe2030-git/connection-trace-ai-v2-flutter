@@ -6,6 +6,7 @@ import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/my_profile_model.dart';
+import '../../../common/legal_document_view.dart';
 
 class AiBriefingSelection {
   final List<CommunicationLogModel> communicationLogs;
@@ -45,6 +46,14 @@ class AiDataReviewSheet extends StatefulWidget {
 }
 
 class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
+  /// 인맥별 **직전에 고른 소통 기록**. 매번 처음부터 다시 고르지 않도록
+  /// 기억한다(사용자 요청, 2026-08-10).
+  ///
+  /// 기기에 저장하지 않고 앱이 켜져 있는 동안만 들고 있는다 — 남는 것은
+  /// 기록 식별자뿐이지만, 굳이 디스크에 늘릴 이유가 없다. 앱을 다시 켜면
+  /// 기본값(최근 5건)으로 돌아간다.
+  static final Map<String, Set<String>> _lastSelectionByContact = {};
+
   late final List<CommunicationLogModel> _availableLogs;
   final Set<String> _selectedIds = {};
   final _extraNoteController = TextEditingController();
@@ -71,7 +80,16 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
       _availableLogs.length > 10 ? 10 : _availableLogs.length,
       _availableLogs.length,
     );
-    _selectedIds.addAll(_availableLogs.take(5).map((log) => log.id));
+    // 직전 선택이 있으면 그것을, 없으면 최근 5건을 기본으로 고른다. 직전
+    // 선택 중 이미 삭제된 기록은 걸러낸다 — 없는 항목이 선택된 것처럼 보이면
+    // "무엇이 전송되는가"가 어긋난다.
+    final remembered = _lastSelectionByContact[widget.contact.id];
+    final availableIds = _availableLogs.map((log) => log.id).toSet();
+    if (remembered != null && remembered.any(availableIds.contains)) {
+      _selectedIds.addAll(remembered.where(availableIds.contains));
+    } else {
+      _selectedIds.addAll(_availableLogs.take(5).map((log) => log.id));
+    }
 
     // 남은 횟수는 서버 카운터가 유일한 진실이라 매번 새로 읽는다.
     AiUsageService.fetch().then((usage) {
@@ -106,6 +124,10 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
 
   void _submit() {
     if (!_consented) return;
+    // 이번에 고른 것을 기억해 다음에 기본값으로 쓴다(사용자 요청, 2026-08-10).
+    // 동의까지 마친 선택만 기억한다 — 화면을 그냥 닫은 경우는 "고른 것"이
+    // 아니므로 다음번 기본값이 되어서는 안 된다.
+    _lastSelectionByContact[widget.contact.id] = {..._selectedIds};
     final note = _extraNoteController.text.trim();
     Navigator.pop(
       context,
@@ -172,13 +194,45 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '선택한 정보만 회사 서버를 거쳐 AI로 전송합니다. 앱이 백그라운드에서 자동 전송하지 않습니다.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          height: 1.45,
-                        ),
+                      // 설명은 한 줄로 줄이고 상세는 방침으로 넘긴다(사용자
+                      // 요청, 2026-08-10). 이 화면의 본체는 설명이 아니라
+                      // **무엇이 나가는지 보여 주고 고르게 하는 것**이라,
+                      // 긴 문단이 목록을 밀어내면 오히려 확인을 방해한다.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              '아래 항목만 전송됩니다. 자동 전송은 없습니다.',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 13,
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => showLegalDocument(
+                              context,
+                              LegalDocument.privacy,
+                            ),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              minimumSize: const Size(0, 32),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            child: const Text(
+                              '자세히',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.accentText,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 18),
                       const Text(

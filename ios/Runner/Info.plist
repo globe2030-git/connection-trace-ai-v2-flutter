@@ -8,11 +8,11 @@
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<!-- iOS는 여기에 적은 스킴만 canOpenURL로 조회할 수 있다. 없으면 카카오톡이
        깔려 있어도 "설치돼 있지 않다"로 판정된다(사용자 보고, 2026-08-10). -->
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>kakaotalk</string>
-	</array>
-	<key>CFBundleDisplayName</key>
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>kakaotalk</string>
+		</array>
+		<key>CFBundleDisplayName</key>
 		<string>커넥션센스</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>

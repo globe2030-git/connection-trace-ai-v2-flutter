@@ -11,6 +11,7 @@ import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../common/contact_avatar.dart';
@@ -127,10 +128,11 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   }
 
   Future<void> _addCommunicationRecord() async {
+    final contact = _resolveContact(context.read<ContactsRepository>());
     final action = await showModalBottomSheet<CommunicationSourceAction>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => CommunicationSourceSheet(contact: widget.contact),
+      builder: (_) => CommunicationSourceSheet(contact: contact),
     );
     if (action == null || !mounted) return;
 
@@ -149,8 +151,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          ManualCommLogModalView(contact: widget.contact, initialType: type),
+      builder: (_) => ManualCommLogModalView(
+        contact: _resolveContact(context.read<ContactsRepository>()),
+        initialType: type,
+      ),
     );
   }
 
@@ -176,19 +180,35 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    final updated = widget.contact.copyWith(
-      commLogs: widget.contact.commLogs
-          .where((log) => log.id != target.id)
-          .toList(),
+    final current = _resolveContact(context.read<ContactsRepository>());
+    final updated = current.copyWith(
+      commLogs: current.commLogs.where((log) => log.id != target.id).toList(),
     );
     final radar = context.read<RadarViewModel>();
     radar.updateContact(updated);
     radar.openBriefing(updated);
   }
 
+  /// 화면에 그릴 **최신** 인맥 정보.
+  ///
+  /// 생성자로 받은 `widget.contact`는 화면을 연 순간의 스냅숏이다. 소통 기록을
+  /// 추가해도 그 스냅숏은 바뀌지 않아, 명함 지갑에서 열었을 때는 방금 남긴
+  /// 기록이 보이지 않았다 — 다른 메뉴에 갔다 와야 나타났다(사용자 보고,
+  /// 2026-08-10). 주변 화면에서 열었을 때만 우연히 동작했는데,
+  /// `RadarViewModel.openBriefing`이 새 스냅숏을 다시 밀어 넣었기 때문이다.
+  ///
+  /// 저장소에서 id로 매번 다시 찾아 그 문제를 없앤다. 삭제된 직후처럼 저장소에
+  /// 없으면 마지막 스냅숏으로 되돌아간다(화면이 갑자기 비지 않도록).
+  ContactModel _resolveContact(ContactsRepository repo) {
+    for (final c in repo.contacts) {
+      if (c.id == widget.contact.id) return c;
+    }
+    return widget.contact;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final contact = widget.contact;
+    final contact = _resolveContact(context.watch<ContactsRepository>());
     const serviceDeployed = AiBriefingService.kAiServiceDeployed;
 
     return Container(

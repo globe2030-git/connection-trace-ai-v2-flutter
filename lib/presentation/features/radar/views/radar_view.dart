@@ -15,7 +15,6 @@ import 'my_profile_edit_modal_view.dart';
 import 'qr_code_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
-import '../../../common/connection_sense_background_painter.dart';
 import 'location_consent_sheet.dart';
 import 'location_access_flow.dart';
 import 'nearby_map_view.dart';
@@ -33,6 +32,7 @@ class _RadarViewState extends State<RadarView> {
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
     final viewModel = context.watch<RadarViewModel>();
     if (viewModel.shouldShowLocationConsent &&
         !_initialConsentPromptScheduled &&
@@ -43,16 +43,12 @@ class _RadarViewState extends State<RadarView> {
       });
     }
 
-    final nearby = viewModel.nearbyAlertContact;
-    final nearbyDistance = nearby != null
-        ? GeoUtils.getDistanceMeters(viewModel.currentPosition, nearby.geo)
-        : null;
     final nearbyCount = viewModel.usingRealGps
         ? viewModel.filteredContacts.length
         : null;
-    final restOfList = viewModel.filteredContacts
-        .where((c) => c.id != nearby?.id)
-        .toList();
+    // 가장 가까운 한 명도 목록에 포함한다 — 대표 카드를 없앴으므로 빼면
+    // 그 사람만 어디에도 안 나온다(사용자 요청, 2026-08-10).
+    final nearbyList = viewModel.filteredContacts;
 
     return Stack(
       children: [
@@ -62,10 +58,28 @@ class _RadarViewState extends State<RadarView> {
             decoration: const BoxDecoration(color: AppColors.bgBase),
             child: Stack(
               children: [
-                const Positioned.fill(
-                  child: RepaintBoundary(
-                    child: CustomPaint(
-                      painter: ConnectionSenseBackgroundPainter(),
+                // 배경을 손으로 그린 레이더 링 대신 **앱 아이콘 마크**로
+                // 바꿨다(사용자 요청, 2026-08-10). 앱을 켰을 때 보이는 첫
+                // 화면이 스플래시·런처 아이콘과 같은 그림이라 브랜드가 이어진다.
+                //
+                // 아주 옅게(6%) 깔고 오른쪽 위로 밀어 둔다 — 본문 글자와
+                // 겹치는 자리라 진하면 읽기를 방해한다. `ExcludeSemantics`로
+                // 스크린리더에서는 아예 없는 것으로 다룬다(장식용이다).
+                Positioned(
+                  top: -size.width * 0.18,
+                  right: -size.width * 0.22,
+                  width: size.width * 0.95,
+                  child: const ExcludeSemantics(
+                    child: Opacity(
+                      opacity: 0.06,
+                      child: RepaintBoundary(
+                        child: Image(
+                          image: AssetImage(
+                            'assets/icons3d/pin_card_blue_splash.png',
+                          ),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -110,10 +124,6 @@ class _RadarViewState extends State<RadarView> {
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
-                                  // 남은 AI 생성 횟수(탭하면 상세). 서비스 미배포/
-                                  // 미조회 시 스스로 아무것도 그리지 않는다.
-                                  const SizedBox(height: 8),
-                                  const AiUsageChip(),
                                 ],
                               ),
                             ),
@@ -232,94 +242,49 @@ class _RadarViewState extends State<RadarView> {
                         // 있다. `Row`면 그 상황에서 오버플로 줄무늬가 뜨지만
                         // `Wrap`은 조용히 아랫줄로 내려 준다.
                         Wrap(
-                          alignment: WrapAlignment.end,
-                          spacing: 8,
+                          // 오른쪽 정렬에서 가운데 정렬로(사용자 요청,
+                          // 2026-08-10). 이 줄은 화면 폭을 거의 다 쓰는 카드
+                          // 위에 얹혀 있어, 오른쪽으로 몰아 두면 왼쪽이 크게
+                          // 비어 균형이 맞지 않았다.
+                          alignment: WrapAlignment.center,
+                          spacing: 6,
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // 위치 갱신. 예전에는 "위치는 사용 중에만
-                            // 확인해요" 안내 줄 오른쪽에 붙어 화면 한 줄을
-                            // 통째로 쓰고 있었다. 안내 문구를 빼고 아이콘만
-                            // 이 줄 맨 앞으로 옮겼다(사용자 결정, 2026-08-10).
-                            //
-                            // 위치를 계속 추적하지 않는다는 사실은 설정 →
-                            // 위치 서비스와 개인정보처리방침 10-1에 그대로
-                            // 남아 있다.
-                            _RefreshLocationButton(
-                              isRefreshing: viewModel.isRefreshingLocation,
-                              usingRealGps: viewModel.usingRealGps,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
-                              ),
+                            // 지도 → 반경 순서(사용자 요청, 2026-08-10).
+                            // 지도를 먼저 열고 그 안에서 범위를 가늠하는
+                            // 흐름을 앞세운다.
+                            _ExpandToMapButton(
+                              enabled: viewModel.usingRealGps,
+                              onTap: () => NearbyMapView.show(context),
                             ),
                             _RadiusSelector(
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
-                            _ExpandToMapButton(
-                              enabled: viewModel.usingRealGps,
-                              onTap: () => NearbyMapView.show(context),
-                            ),
+                            // 남은 AI 생성 횟수(탭하면 상세). 제목 아래 →
+                            // 위치 줄을 거쳐 반경 칩 옆으로 옮겼다(사용자
+                            // 요청, 2026-08-10). 셋 다 "이 화면을 어떻게 쓸
+                            // 것인가"를 정하는 칩이라 한 줄에 모인다.
+                            //
+                            // 서비스 미배포·미조회 시에는 스스로 아무것도
+                            // 그리지 않으므로 줄이 비어 보이지 않는다.
+                            const AiUsageChip(),
                           ],
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
 
-                        // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
-                        _NearbyCountCard(
-                          count: nearbyCount,
-                          isRefreshing: viewModel.isRefreshingLocation,
-                          onTap: viewModel.isRefreshingLocation
-                              ? null
-                              : () => handleLocationAccessAction(
-                                  context,
-                                  viewModel,
-                                ),
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        // 가장 가까운 인맥을 대표 카드로 크게 보여준다.
-                        if (nearby != null)
-                          _FeaturedContactCard(
-                            contact: nearby,
-                            distanceMeters: nearbyDistance,
-                            onCall: nearby.phone.trim().isEmpty
-                                ? null
-                                : () => PhoneCallService.showCallPicker(
-                                    context,
-                                    nearby,
-                                  ),
-                            // "가까운 인맥" 리스트 항목을 눌렀을 때와 똑같이 AI
-                            // 브리핑 화면(연락처 정보 + AI 연동 + 전화)으로 간다.
-                            // 예전엔 명함 수정 폼(카메라 스캔 버튼까지 있는)이
-                            // 열려서 그냥 보려는 건데 수정 화면처럼 보이는
-                            // 문제가 있었다.
-                            onDetail: () => viewModel.openBriefing(nearby),
-                          )
-                        else
-                          GlassCard(
-                            padding: const EdgeInsets.all(20),
-                            child: Center(
-                              child: Text(
-                                viewModel.usingRealGps
-                                    ? '주변에 감지된 인맥이 없습니다'
-                                    : '위치 권한이 없어 거리를 표시할 수 없습니다',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        const SizedBox(height: 16),
-
+                        // 검색창을 반경·지도 줄 바로 아래로 옮겼다(사용자 요청,
+                        // 2026-08-10). 예전에는 대표 카드 아래에 있어서, 찾고
+                        // 싶은 사람이 있을 때 화면을 한참 내려야 보였다.
                         // Rounded Capsule Search Bar — 근접 인맥 리스트를 이름/회사/직함으로 필터링
                         Container(
+                          // 높이를 약 15% 줄인다(사용자 요청, 2026-08-10).
+                          // 캡슐 자체의 세로 여백을 없애고 TextField가 스스로
+                          // 잡는 높이만 남긴다 — 글자 크기는 건드리지 않아
+                          // 읽기 어려워지지 않는다.
                           padding: const EdgeInsets.symmetric(horizontal: 16),
+                          constraints: const BoxConstraints(minHeight: 40),
                           decoration: BoxDecoration(
                             color: AppColors.capsuleInputBg,
                             borderRadius: BorderRadius.circular(30),
@@ -337,6 +302,12 @@ class _RadarViewState extends State<RadarView> {
                                   ),
                                   decoration: const InputDecoration(
                                     isDense: true,
+                                    // 기본 세로 여백(약 8)을 줄여 캡슐 높이를
+                                    // 낮춘다. 터치는 캡슐 전체가 받으므로
+                                    // 목표 크기는 minHeight 40으로 지킨다.
+                                    contentPadding: EdgeInsets.symmetric(
+                                      vertical: 4,
+                                    ),
                                     border: InputBorder.none,
                                     hintText: '이름, 회사명, 키워드로 검색해 보세요',
                                     hintStyle: TextStyle(
@@ -356,11 +327,89 @@ class _RadarViewState extends State<RadarView> {
                           ),
                         ),
 
+                        const SizedBox(height: 12),
+
+                        // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
+                        _NearbyCountCard(
+                          count: nearbyCount,
+                          isRefreshing: viewModel.isRefreshingLocation,
+                          onTap: viewModel.isRefreshingLocation
+                              ? null
+                              : () => handleLocationAccessAction(
+                                  context,
+                                  viewModel,
+                                ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        // 위치 아이콘과 조작 안내를 "지금 가까운 사람" 카드
+                        // 바로 아래 한 줄에 둔다(사용자 요청, 2026-08-10).
+                        // 아이콘이 무엇을 켜고 끄는지가 그 카드의 숫자이므로,
+                        // 상단 버튼 줄보다 여기가 가깝다.
+                        //
+                        // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
+                        // 설명을 옆에 붙인다. 툴팁만으로는 길게 눌러야 뜨는데,
+                        // 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
+                        Row(
+                          children: [
+                            _RefreshLocationButton(
+                              isRefreshing: viewModel.isRefreshingLocation,
+                              usingRealGps: viewModel.usingRealGps,
+                              isDetecting: viewModel.hasLocationConsent,
+                              onTap: () => handleLocationAccessAction(
+                                context,
+                                viewModel,
+                              ),
+                              onToggleDetect: () =>
+                                  _toggleNearbyDetect(context, viewModel),
+                            ),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
+                        // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
+                        // 카드와 목록 두 곳에 다른 모양으로 나타나 "왜 저
+                        // 사람만 다른가"를 설명해야 했고, 대표 카드가 화면
+                        // 절반을 먹어 정작 목록은 스크롤해야 보였다.
+                        // 이제 **가장 가까운 사람도 목록의 첫 줄**로 들어간다.
+                        if (viewModel.filteredContacts.isEmpty)
+                          GlassCard(
+                            padding: const EdgeInsets.all(20),
+                            child: Center(
+                              child: Text(
+                                viewModel.usingRealGps
+                                    ? '주변에 감지된 인맥이 없습니다'
+                                    : '위치 권한이 없어 거리를 표시할 수 없습니다',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                        const SizedBox(height: 16),
+
                         const SizedBox(height: 16),
 
                         // 가까운 인맥 리스트 (대표 카드에 나온 사람은 제외)
                         Text(
-                          '가까운 인맥 (${restOfList.length}명)',
+                          '가까운 인맥 (${nearbyList.length}명)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -369,79 +418,26 @@ class _RadarViewState extends State<RadarView> {
                         ),
                         const SizedBox(height: 8),
 
-                        ...restOfList.map((contact) {
+                        // 명함 지갑 목록과 같은 형태로 맞춘다(사용자 요청,
+                        // 2026-08-10) — 이름/직함/회사명 세 줄, 아바타 왼쪽,
+                        // 오른쪽에 동작 버튼. 같은 인맥을 두 화면에서 다른
+                        // 모양으로 보여 줄 이유가 없다.
+                        //
+                        // 다른 점 하나: 여기에는 **근접 거리**가 함께 붙는다.
+                        // 이 화면의 존재 이유가 "지금 얼마나 가까운가"이므로
+                        // 목록에서도 그 값이 보여야 한다.
+                        ...nearbyList.map((contact) {
                           final distance = GeoUtils.getDistanceMeters(
                             viewModel.currentPosition,
                             contact.geo,
                           );
-                          return GlassCard(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.all(12),
-                            onTap: () => viewModel.openBriefing(contact),
-                            child: Row(
-                              children: [
-                                ContactAvatar(
-                                  photoPath: contact.avatarUrl,
-                                  name: contact.name,
-                                  radius: 20,
-                                  cardImagePath: contact.useCardAsAvatar
-                                      ? contact.cardImagePath
-                                      : null,
-                                  uid: contact.useCardAsAvatar
-                                      ? context
-                                            .read<AuthRepository>()
-                                            .firebaseUid
-                                      : null,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${contact.name} ${contact.title}',
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                      Text(
-                                        [contact.company, contact.phone]
-                                            .where((s) => s.trim().isNotEmpty)
-                                            .join(' · '),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.accentText.withValues(
-                                      alpha: 0.15,
-                                    ),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    GeoUtils.formatDistanceLabel(distance),
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.accentText,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                          return _NearbyContactTile(
+                            contact: contact,
+                            distanceMeters: distance,
+                            onOpen: () => viewModel.openBriefing(contact),
+                            onCall: () => PhoneCallService.showCallPicker(
+                              context,
+                              contact,
                             ),
                           );
                         }),
@@ -652,241 +648,130 @@ class _NearbyCountCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.accentSoft,
           borderRadius: BorderRadius.circular(20),
+          // 배경이 사진처럼 바뀌면서 카드 경계가 페이지 배경에 묻혀 흐릿해
+          // 보였다(사용자 보고). 또렷한 테두리로 경계를 세운다.
+          border: Border.all(color: AppColors.borderFunctional),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: isRefreshing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.accent,
-                      ),
-                    )
-                  : const AppIcon(
-                      AppIconId.radarDetect,
-                      color: AppColors.accent,
-                      size: 22,
-                    ),
-            ),
-            const SizedBox(width: 14),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '지금 가까운 사람',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  count != null ? '$count명' : '--',
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.accentText,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 가장 가까운 인맥을 크게 보여주는 대표 카드.
-class _FeaturedContactCard extends StatelessWidget {
-  final ContactModel contact;
-  final double? distanceMeters;
-  final VoidCallback? onCall;
-  final VoidCallback onDetail;
-
-  const _FeaturedContactCard({
-    required this.contact,
-    required this.distanceMeters,
-    required this.onCall,
-    required this.onDetail,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitle = [
-      contact.company,
-      contact.title,
-    ].where((s) => s.trim().isNotEmpty).join(' · ');
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        // 배경을 지도 느낌으로 깐다(사용자 결정, 2026-08-10).
+        //
+        // **실제 지도 타일이 아니라 앱이 그린 그래픽이다.** 홈 화면에 진짜
+        // 지도를 깔면 앱을 켜기만 해도 지도 사업자에게 타일 요청이 나가는데,
+        // 오늘 배포한 개인정보처리방침 10-3은 "지도 화면을 열지 않으면 어떤
+        // 요청도 발생하지 않는다"고 적고 있다. 방침을 고치는 대신 요청이 아예
+        // 없는 방식을 택했다 — 방침과 구현이 어긋나는 것 자체가 리스크다.
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
             children: [
-              ContactAvatar(
-                photoPath: contact.avatarUrl,
-                name: contact.name,
-                radius: 30,
-                cardImagePath: contact.useCardAsAvatar
-                    ? contact.cardImagePath
-                    : null,
-                uid: contact.useCardAsAvatar
-                    ? context.read<AuthRepository>().firebaseUid
-                    : null,
+              // 사용자가 준 지도 일러스트를 배경으로 깐다(2026-08-10).
+              // **실제 지도 타일이 아니라 앱에 번들한 그림**이다 — 홈 화면에
+              // 진짜 지도를 깔면 앱을 켤 때마다 지도 사업자에게 요청이 나가는데,
+              // 개인정보처리방침 10-3이 "지도 화면을 열지 않으면 어떤 요청도
+              // 발생하지 않는다"고 적고 있다. 그림이면 요청이 아예 없다.
+              const Positioned.fill(
+                child: ExcludeSemantics(
+                  child: Image(
+                    image: AssetImage('assets/map/nearby_card_map.jpg'),
+                    fit: BoxFit.cover,
+                    // 카드가 가로로 길어 정사각형 원본의 가운데 위쪽을 쓴다 —
+                    // 그림 한가운데의 파란 현위치 점이 살아 있어야 "지금 내
+                    // 주변"이라는 뜻이 전달된다.
+                    alignment: Alignment.center,
+                  ),
+                ),
               ),
-
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      contact.name,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+              // 글자가 얹히는 자리만 흰 막으로 덮어 대비를 지킨다.
+              //
+              // 처음에는 카드 전체에 55% 막을 씌웠는데 지도가 통째로 흐려
+              // 보였다(사용자 보고, 2026-08-10). 막을 옅게(22%) 하되, 글자가
+              // 실제로 놓이는 **아래쪽에만** 흰색이 짙어지는 그라데이션을
+              // 얹는다 — 지도는 선명하게 남고 글자 대비는 지켜진다.
+              Positioned.fill(
+                child: ExcludeSemantics(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.22),
+                          Colors.white.withValues(alpha: 0.62),
+                        ],
                       ),
                     ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 12.5,
+                  ),
+                ),
+              ),
+              Padding(
+                // 대표 카드를 없앤 자리를 이 카드가 대신한다(사용자 요청,
+                // 2026-08-10). 여백과 아이콘·숫자를 키워 예전 대표 카드와
+                // 비슷한 덩치를 갖게 했다 — 화면 위쪽이 허전해지지 않도록.
+                // 카드를 "가까운 인맥" 목록 바로 앞까지 키운다(사용자 요청,
+                // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
+                // 채워지도록 세로 여백을 크게 잡았다.
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 52,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 72,
+                      height: 72,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: isRefreshing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.accent,
+                              ),
+                            )
+                          : const AppIcon(
+                              AppIconId.radarDetect,
+                              color: AppColors.accent,
+                              size: 22,
+                            ),
+                    ),
+                    const SizedBox(width: 14),
+                    // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
+                    // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
+                    const Expanded(
+                      child: Text(
+                        '지금 가까운 사람',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.accentSoft,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.location_on,
-                                size: 12,
-                                color: AppColors.accentText,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                GeoUtils.formatDistanceLabel(distanceMeters),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentText,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          _lastContactLabel(contact),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
+                    ),
+                    Text(
+                      count != null ? '$count명' : '--',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.accentText,
+                        letterSpacing: -0.5,
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onCall,
-                  icon: const AppIcon(
-                    AppIconId.callCheck,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    '연락하기',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    minimumSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              TextButton.icon(
-                onPressed: onDetail,
-                icon: const Text(
-                  'AI 대화 가이드',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.accentText,
-                  ),
-                ),
-                label: const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: AppColors.accentText,
-                ),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
-}
-
-/// 최근 소통 기록 중 가장 최신 항목을 기준으로 "N일 전" 형태로 보여준다.
-/// 소통 기록이 없으면 가짜로 채우지 않고 "소통 기록 없음"으로 표시한다.
-String _lastContactLabel(ContactModel contact) {
-  if (contact.commLogs.isEmpty) return '소통 기록 없음';
-  final latest = contact.commLogs
-      .map((l) => l.timestamp)
-      .reduce((a, b) => a.isAfter(b) ? a : b);
-  final days = DateTime.now().difference(latest).inDays;
-  if (days <= 0) return '오늘 연락';
-  if (days == 1) return '최근 연락 어제';
-  return '최근 연락 $days일 전';
 }
 
 class _LocationStatusCard extends StatelessWidget {
@@ -1040,7 +925,17 @@ class _RadiusSelector extends StatelessWidget {
   /// (1km) 사이만으로는 "차로 잠깐 가는 거리"를 담을 수 없었다.
   static const options = <double>[500, 1000, 3000, 5000, double.infinity];
 
+  /// 칩에 넣을 짧은 라벨. "제한 없음"은 이 줄에서 가장 긴 문구라 **전체**로
+  /// 줄였다 — 지도·반경·잔여 횟수 세 칩이 한 줄에 안 들어가 잔여 칩이 아랫줄로
+  /// 밀렸다(사용자 보고, 2026-08-10). 선택 시트 안에서는 뜻이 분명해야 하므로
+  /// [sheetLabel]로 원래 문구를 그대로 쓴다.
   static String label(double meters) {
+    if (meters.isInfinite) return '전체';
+    if (meters < 1000) return '${meters.round()}m';
+    return '${(meters / 1000).toStringAsFixed(0)}km';
+  }
+
+  static String sheetLabel(double meters) {
     if (meters.isInfinite) return '제한 없음';
     if (meters < 1000) return '${meters.round()}m';
     return '${(meters / 1000).toStringAsFixed(0)}km';
@@ -1055,7 +950,7 @@ class _RadiusSelector extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
         onTap: () => _openPicker(context),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(color: AppColors.borderFunctional),
@@ -1072,7 +967,7 @@ class _RadiusSelector extends StatelessWidget {
               Text(
                 '반경 ${label(radiusMeters)}',
                 style: const TextStyle(
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: AppColors.textPrimary,
                 ),
@@ -1080,7 +975,7 @@ class _RadiusSelector extends StatelessWidget {
               const SizedBox(width: 2),
               const Icon(
                 Icons.expand_more,
-                size: 18,
+                size: 16,
                 color: AppColors.textMuted,
               ),
             ],
@@ -1115,7 +1010,7 @@ class _RadiusSelector extends StatelessWidget {
               for (final option in options)
                 ListTile(
                   minTileHeight: 52,
-                  title: Text(label(option)),
+                  title: Text(sheetLabel(option)),
                   trailing: radiusMeters == option
                       ? const Icon(Icons.check_circle, color: AppColors.accent)
                       : const Icon(
@@ -1157,7 +1052,7 @@ class _ExpandToMapButton extends StatelessWidget {
           // 위치를 아직 못 잡았으면 지도를 열어도 보여 줄 기준점이 없다.
           onTap: enabled ? onTap : null,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
@@ -1171,12 +1066,12 @@ class _ExpandToMapButton extends StatelessWidget {
               children: [
                 Icon(Icons.zoom_out_map, size: 16, color: foreground),
                 const SizedBox(width: 6),
-                // 반경 칩과 한 줄에 들어가야 해서 "지도에서 크게 보기"를
-                // 줄였다. 아이콘이 함께 있어 뜻은 그대로 읽힌다.
+                // 반경·잔여 칩과 한 줄에 들어가야 해서 "지도에서 크게 보기"를
+                // 두 번에 걸쳐 줄였다. 아이콘이 함께 있어 뜻은 읽힌다.
                 Text(
-                  '지도 보기',
+                  '지도',
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: foreground,
                   ),
@@ -1190,6 +1085,57 @@ class _ExpandToMapButton extends StatelessWidget {
   }
 }
 
+/// 주변 인맥 감지를 켜고 끈다. 설정 화면에 있던 스위치를 여기로 옮겼다
+/// (사용자 결정, 2026-08-10) — 켜고 끈 결과가 곧바로 나타나는 화면이 여기다.
+///
+/// 끄는 것은 위치 이용 동의 철회라 되돌리는 데 다시 동의가 필요하므로,
+/// 설정 화면과 똑같이 확인 절차를 거친다.
+Future<void> _toggleNearbyDetect(
+  BuildContext context,
+  RadarViewModel viewModel,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  if (!viewModel.hasLocationConsent) {
+    await viewModel.acceptLocationConsent();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('주변 인맥 감지를 켰습니다.'),
+        backgroundColor: AppColors.accent,
+      ),
+    );
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('주변 인맥 감지를 끌까요?'),
+      content: const Text('위치 이용 동의를 철회합니다. 끄면 주변 인맥과의 거리를 볼 수 없습니다.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text(
+            '끄기',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await viewModel.withdrawLocationConsent();
+  messenger.showSnackBar(
+    const SnackBar(
+      content: Text('주변 인맥 감지를 중지했습니다.'),
+      backgroundColor: AppColors.accent,
+    ),
+  );
+}
+
 /// 내 위치 갱신 버튼. 반경·지도 버튼과 같은 줄 맨 앞에 놓는다.
 ///
 /// 예전에는 "위치는 사용 중에만 확인해요" 안내 줄 오른쪽에 붙어 있었고, 그
@@ -1198,12 +1144,20 @@ class _ExpandToMapButton extends StatelessWidget {
 class _RefreshLocationButton extends StatelessWidget {
   final bool isRefreshing;
   final bool usingRealGps;
+
+  /// 주변 인맥 감지(위치 이용 동의)가 켜져 있는가.
+  final bool isDetecting;
   final VoidCallback onTap;
+
+  /// 길게 눌렀을 때 감지를 켜고 끈다.
+  final VoidCallback onToggleDetect;
 
   const _RefreshLocationButton({
     required this.isRefreshing,
     required this.usingRealGps,
+    required this.isDetecting,
     required this.onTap,
+    required this.onToggleDetect,
   });
 
   @override
@@ -1213,8 +1167,10 @@ class _RefreshLocationButton extends StatelessWidget {
     final tooltip = isRefreshing
         ? 'GPS 확인 중...'
         : usingRealGps
-        ? '내 위치 갱신'
-        : '위치 설정';
+        ? '내 위치 갱신 · 길게 누르면 감지 끄기'
+        : isDetecting
+        ? '위치 설정 · 길게 누르면 감지 끄기'
+        : '길게 눌러 주변 인맥 감지 켜기';
     return Tooltip(
       message: tooltip,
       child: Semantics(
@@ -1225,6 +1181,10 @@ class _RefreshLocationButton extends StatelessWidget {
           shape: const CircleBorder(),
           child: InkWell(
             onTap: isRefreshing ? null : onTap,
+            // 짧게 누르면 갱신, 길게 누르면 감지 켜기/끄기(사용자 결정,
+            // 2026-08-10). 아이콘 하나에 두 동작을 얹는 대신 갱신 경로를
+            // 없애는 안도 있었으나, 갱신은 자주 쓰는 동작이라 남겼다.
+            onLongPress: isRefreshing ? null : onToggleDetect,
             customBorder: const CircleBorder(),
             child: Container(
               width: 36,
@@ -1243,14 +1203,162 @@ class _RefreshLocationButton extends StatelessWidget {
                         color: AppColors.accentText,
                       ),
                     )
-                  : const Icon(
-                      Icons.my_location,
-                      color: AppColors.accentText,
+                  : Icon(
+                      // 감지가 꺼져 있으면 회색으로 — 눌러도 주변 인맥이 안
+                      // 뜨는 이유를 아이콘만 보고 알 수 있어야 한다.
+                      isDetecting ? Icons.my_location : Icons.location_disabled,
+                      color: isDetecting
+                          ? AppColors.accentText
+                          : AppColors.textMuted,
                       size: 17,
                     ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// "가까운 인맥" 목록의 한 줄. 명함 지갑 목록과 같은 구성을 쓴다.
+///
+/// 같은 인맥을 두 화면에서 다른 모양으로 보여 줄 이유가 없어 형태를 맞췄다
+/// (사용자 요청, 2026-08-10). 다만 이 화면에는 **근접 거리**가 더 붙는다 —
+/// "지금 얼마나 가까운가"가 이 화면의 존재 이유다.
+class _NearbyContactTile extends StatelessWidget {
+  final ContactModel contact;
+  final double distanceMeters;
+  final VoidCallback onOpen;
+  final VoidCallback onCall;
+
+  const _NearbyContactTile({
+    required this.contact,
+    required this.distanceMeters,
+    required this.onOpen,
+    required this.onCall,
+  });
+
+  bool get _hasAnyPhone =>
+      contact.phone.trim().isNotEmpty ||
+      (contact.officePhone?.trim().isNotEmpty ?? false);
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 6, 10),
+      onTap: onOpen,
+      child: Row(
+        children: [
+          ContactAvatar(
+            photoPath: contact.avatarUrl,
+            name: contact.name,
+            radius: 22,
+            cardImagePath: contact.useCardAsAvatar
+                ? contact.cardImagePath
+                : null,
+            uid: contact.useCardAsAvatar
+                ? context.read<AuthRepository>().firebaseUid
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  contact.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                if (contact.title.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    contact.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        contact.company.trim().isEmpty
+                            ? '회사 정보 없음'
+                            : contact.company,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // 근접 거리 배지. 회사명 옆에 붙여 이름 줄을 밀지 않는다.
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentSoft,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${GeoUtils.formatDistanceLabel(distanceMeters)} 근접',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.accentText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // 명함 지갑과 같은 촘촘한 동작 버튼. 전화번호가 없으면 통화는
+          // 비활성 — 눌러도 아무 일이 없는 것보다 낫다.
+          IconButton(
+            tooltip: '${contact.name}에게 전화',
+            onPressed: _hasAnyPhone ? onCall : null,
+            icon: AppIcon(
+              AppIconId.call,
+              size: 20,
+              color: _hasAnyPhone ? AppColors.accentText : AppColors.textMuted,
+            ),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          ),
+          IconButton(
+            tooltip: '${contact.name} AI 대화 가이드',
+            onPressed: onOpen,
+            icon: const Icon(
+              Icons.auto_awesome,
+              size: 20,
+              color: AppColors.accentText,
+            ),
+            iconSize: 20,
+            padding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          ),
+        ],
       ),
     );
   }
