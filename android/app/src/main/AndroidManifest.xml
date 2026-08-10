@@ -59,5 +59,13 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Android 11(API 30)부터는 여기에 선언한 것만 "설치돼 있는지" 조회할
+             수 있다. 이 선언이 없으면 카카오톡이 깔려 있어도 canLaunchUrl이
+             false를 돌려줘 "설치돼 있지 않아요"로 잘못 안내한다
+             (사용자 보고, 2026-08-10). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="kakaotalk"/>
+        </intent>
     </queries>
 </manifest>
