@@ -731,32 +731,24 @@ class _NearbyCountCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      // 원도 함께 줄인다 — 94는 좁은 화면에서 라벨 자리를
-                      // 너무 많이 가져갔다.
-                      width: 76,
-                      height: 76,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
+                    // 흰 원 안의 레이더 아이콘은 뺐다(사용자 요청,
+                    // 2026-08-10). 배경 지도 그림 한가운데에 이미 파란 현위치
+                    // 점이 있어 같은 뜻을 두 번 그리고 있었고, 흰 원이 지도를
+                    // 가려 배경을 넣은 의미도 반감됐다.
+                    //
+                    // 위치를 새로 읽는 중일 때만 진행 표시기를 띄운다 —
+                    // 이건 상태를 알리는 것이라 지도 그림이 대신할 수 없다.
+                    if (isRefreshing) ...[
+                      const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: AppColors.accent,
+                        ),
                       ),
-                      child: isRefreshing
-                          ? const SizedBox(
-                              width: 26,
-                              height: 26,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.accent,
-                              ),
-                            )
-                          : const AppIcon(
-                              AppIconId.radarDetect,
-                              color: AppColors.accent,
-                              size: 38,
-                            ),
-                    ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
                     // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
                     const Expanded(
@@ -1313,7 +1305,7 @@ class _NearbyContactTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Row(
                   children: [
-                    Flexible(
+                    Expanded(
                       child: Text(
                         contact.company.trim().isEmpty
                             ? '회사 정보 없음'
@@ -1327,7 +1319,10 @@ class _NearbyContactTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    // 근접 거리 배지. 회사명 옆에 붙여 이름 줄을 밀지 않는다.
+                    // 근접 거리 배지는 줄 오른쪽 끝에 붙인다(사용자 요청,
+                    // 2026-08-10). 회사명 바로 옆에 두면 회사명 길이에 따라
+                    // 배지 위치가 줄마다 달라져 눈으로 훑기 어렵다 —
+                    // 회사명을 `Expanded`로 늘려 배지를 끝으로 민다.
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 7,
