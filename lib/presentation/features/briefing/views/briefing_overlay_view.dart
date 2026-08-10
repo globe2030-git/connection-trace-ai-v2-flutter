@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
@@ -78,10 +80,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => AiDataReviewSheet(
-          contact: widget.contact,
-          myProfile: myProfile,
-        ),
+        builder: (_) =>
+            AiDataReviewSheet(contact: widget.contact, myProfile: myProfile),
       );
       if (selection == null || !mounted) return;
       _consentedSelection = selection;
@@ -565,6 +565,22 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                           ),
                         );
                       }),
+
+                      // 고른 대화 포인트를 어떤 경로로 전할지 바로 여기서
+                      // 정한다(사용자 요청, 2026-08-10). 예전에는 화면 맨 아래
+                      // "안부 전화 걸기" 버튼 하나뿐이라 통화 말고는 길이
+                      // 없었고, 고른 문장과 버튼이 화면 양 끝으로 떨어져 있어
+                      // 무엇이 전달되는지도 잘 보이지 않았다.
+                      const SizedBox(height: 4),
+                      _SendChannelRow(
+                        contact: contact,
+                        selectedPoint:
+                            _points.isNotEmpty &&
+                                _selectedIndex < _points.length
+                            ? _points[_selectedIndex]
+                            : null,
+                        onBeforeLeaveApp: widget.onClose,
+                      ),
                     ],
 
                     // Recent Communication History Integration Trace
@@ -769,65 +785,219 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-            // Bottom Sticky Phone Call Button
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                color: AppColors.cardSurface,
-                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: () async {
-                    // 2026-08-07: 통화를 누르면 전화 앱으로 넘어가면서 대화
-                    // 포인트 화면이 그대로 사라져 "외워서 말해야 하는" 문제가
-                    // 있었다(사용자 피드백). 제3자 앱이 전화 화면 위에 계속
-                    // 떠 있는 건 OS가 막아서(iOS/Android 공통) 화면 자체를
-                    // 유지할 수는 없지만, 선택된 대화 포인트를 클립보드에
-                    // 복사해 통화 중에도 메모 앱 등에 붙여넣어 참고할 수
-                    // 있게 한다.
-                    if (_points.isNotEmpty && _selectedIndex < _points.length) {
-                      final selectedPoint = _points[_selectedIndex];
-                      await Clipboard.setData(
-                        ClipboardData(text: selectedPoint),
-                      );
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.',
-                            ),
-                            backgroundColor: AppColors.accent,
-                          ),
-                        );
-                      }
-                    }
-                    widget.onClose();
-                    if (!context.mounted) return;
-                    await PhoneCallService.showCallPicker(context, contact);
-                  },
-                  icon: const AppIcon(AppIconId.callCheck, color: Colors.white),
-                  label: const Text(
-                    '안부 전화 걸기',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(26),
-                    ),
-                  ),
-                ),
+/// 고른 대화 포인트를 어떤 경로로 전할지 고르는 줄 — 통화 / 문자 / 카톡 / 더보기.
+///
+/// 예전에는 화면 맨 아래 "안부 전화 걸기" 버튼 하나뿐이었다. 통화 말고는 길이
+/// 없었고, 고른 문장과 버튼이 화면 양 끝으로 떨어져 있어 무엇이 전달되는지도
+/// 잘 보이지 않았다(사용자 요청, 2026-08-10).
+///
+/// **네 경로의 성격이 서로 다르다.**
+/// - 통화: 문장을 보낼 수 없으므로 클립보드에 복사해 두고 전화를 건다.
+/// - 문자: `sms:` URL에 본문을 실어 문자 앱이 미리 채운 채로 열린다.
+/// - 카톡: 카카오톡에는 "특정 상대에게 미리 채운 메시지"를 여는 공개 경로가
+///   없다. 그래서 복사 후 앱만 열어 주고, 사용자가 붙여넣게 안내한다.
+///   있는 척하지 않고 실제 동작을 그대로 알린다.
+/// - 더보기: OS 공유 시트. 위 셋에 없는 앱(메일·슬랙 등)은 여기로 간다.
+class _SendChannelRow extends StatelessWidget {
+  final ContactModel contact;
+  final String? selectedPoint;
+
+  /// 다른 앱으로 넘어가기 직전에 브리핑 화면을 닫기 위한 콜백. 통화처럼 화면이
+  /// 가려지는 경로에서만 쓴다.
+  final VoidCallback onBeforeLeaveApp;
+
+  const _SendChannelRow({
+    required this.contact,
+    required this.selectedPoint,
+    required this.onBeforeLeaveApp,
+  });
+
+  bool get _hasPhone => contact.phone.trim().isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _ChannelButton(
+            icon: AppIconId.call,
+            label: '통화',
+            enabled: _hasPhone,
+            onTap: () => _call(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ChannelButton(
+            icon: AppIconId.message,
+            label: '문자',
+            enabled: _hasPhone,
+            onTap: () => _sms(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ChannelButton(
+            icon: AppIconId.chatSend,
+            label: '카톡',
+            enabled: true,
+            onTap: () => _kakao(context),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _ChannelButton(
+            icon: AppIconId.chatSend,
+            label: '더보기',
+            useMaterialIcon: Icons.ios_share,
+            enabled: true,
+            onTap: () => _share(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _copyPoint() async {
+    final point = selectedPoint;
+    if (point == null) return;
+    await Clipboard.setData(ClipboardData(text: point));
+  }
+
+  // await 뒤에 BuildContext를 다시 쓰면 위젯이 이미 사라졌을 수 있다. 그래서
+  // 각 동작 시작 시점에 messenger를 미리 잡아 두고 그것만 넘긴다.
+  void _toast(ScaffoldMessengerState messenger, String message) {
+    messenger.showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.accent),
+    );
+  }
+
+  Future<void> _call(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // 2026-08-07: 통화를 누르면 전화 앱으로 넘어가면서 대화 포인트 화면이
+    // 그대로 사라져 "외워서 말해야 하는" 문제가 있었다(사용자 피드백). 제3자
+    // 앱이 전화 화면 위에 계속 떠 있는 건 OS가 막아서(iOS/Android 공통) 화면을
+    // 유지할 수는 없지만, 복사해 두면 통화 중 메모 앱에 붙여넣어 볼 수 있다.
+    await _copyPoint();
+    if (selectedPoint != null) {
+      _toast(messenger, '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.');
+    }
+    onBeforeLeaveApp();
+    if (!context.mounted) return;
+    await PhoneCallService.showCallPicker(context, contact);
+  }
+
+  Future<void> _sms(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final number = contact.phone.replaceAll(RegExp(r'[^\d+]'), '');
+    // 본문을 쿼리로 실어 보내면 문자 앱이 내용을 미리 채운 채로 열린다.
+    // 사용자가 보내기 전에 고칠 수 있으므로 앱이 대신 발송하는 것은 아니다.
+    final uri = Uri(
+      scheme: 'sms',
+      path: number,
+      queryParameters: selectedPoint == null ? null : {'body': selectedPoint!},
+    );
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      _toast(messenger, '문자 앱을 열지 못했어요.');
+    }
+  }
+
+  Future<void> _kakao(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // 카카오톡에는 "특정 상대에게 미리 채운 메시지"를 여는 공개 경로가 없다.
+    // 링크 공유용 스킴은 있지만 이 화면이 보내려는 것은 링크가 아니라 문장이다.
+    // 그래서 복사 후 앱만 열어 주고 붙여넣도록 안내한다 — 되는 척하는 것보다
+    // 실제 동작을 그대로 알리는 편이 낫다.
+    await _copyPoint();
+    final uri = Uri.parse('kakaotalk://');
+    if (await canLaunchUrl(uri)) {
+      _toast(messenger, '대화 포인트를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.');
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      _toast(messenger, '카카오톡이 설치돼 있지 않아요. 대화 포인트는 복사해 뒀습니다.');
+    }
+  }
+
+  Future<void> _share(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final point = selectedPoint;
+    if (point == null) {
+      _toast(messenger, '먼저 전할 대화 포인트를 선택해 주세요.');
+      return;
+    }
+    await SharePlus.instance.share(ShareParams(text: point));
+  }
+}
+
+class _ChannelButton extends StatelessWidget {
+  final AppIconId icon;
+
+  /// 앱 아이콘 세트에 마땅한 것이 없을 때만 쓰는 대체 아이콘(예: 공유).
+  final IconData? useMaterialIcon;
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _ChannelButton({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+    this.useMaterialIcon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = enabled ? AppColors.accentText : AppColors.textMuted;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: '$label(으)로 전달',
+      child: Material(
+        color: enabled ? AppColors.accentSoft : AppColors.bgBase,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          // 전화번호가 없으면 통화·문자는 열 수 없다. 눌리기는 하는데 아무
+          // 일도 안 일어나는 것보다 비활성으로 보이는 편이 낫다.
+          onTap: enabled ? onTap : null,
+          child: Container(
+            height: 62,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: enabled
+                    ? AppColors.accentSoftStrong
+                    : AppColors.borderFunctional,
               ),
             ),
-          ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (useMaterialIcon != null)
+                  Icon(useMaterialIcon, size: 20, color: foreground)
+                else
+                  AppIcon(icon, size: 20, color: foreground),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: foreground,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
