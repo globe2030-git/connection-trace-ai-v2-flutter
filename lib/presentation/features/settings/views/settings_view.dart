@@ -135,7 +135,11 @@ class SettingsView extends StatelessWidget {
                       size: 22,
                       color: AppColors.accentText,
                     ),
-                    title: '계정 삭제',
+                    // "회원 탈퇴"를 함께 적는다(사용자 요청, 2026-08-10).
+                    // 스토어 심사와 이용약관은 "탈퇴"라는 말을 쓰고, 사용자도
+                    // 그 말로 찾는다. 반면 실제로 일어나는 일은 계정과 서버
+                    // 데이터 삭제라 두 표현을 한 줄에 붙여 둔다.
+                    title: '계정 삭제 (회원 탈퇴)',
                     subtitle: '계정과 서버에 백업된 명함·프로필 데이터를 영구 삭제합니다',
                     titleColor: AppColors.destructive,
                     onTap: () => _confirmDeleteAccount(context, auth),
