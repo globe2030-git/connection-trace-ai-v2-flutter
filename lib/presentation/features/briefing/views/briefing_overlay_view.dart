@@ -934,11 +934,25 @@ class _SendChannelRow extends StatelessWidget {
     // 실제 동작을 그대로 알리는 편이 낫다.
     await _copyPoint();
     final uri = Uri.parse('kakaotalk://');
-    if (await canLaunchUrl(uri)) {
+
+    // ⚠️ `canLaunchUrl`로 먼저 확인하지 않는다. 이 조회는 Android 11+의
+    // `<queries>` 선언과 iOS의 `LSApplicationQueriesSchemes`에 의존하는데,
+    // 그 선언이 빠져 있으면 **카카오톡이 깔려 있어도 false**를 돌려준다.
+    // 실제로 그 상태로 나가서 "설치돼 있지 않아요"라는 잘못된 안내를 했다
+    // (사용자 보고, 2026-08-10). 두 선언을 추가했지만, 여는 것 자체는 조회
+    // 권한과 무관하게 되므로 **바로 시도하고 실패했을 때만** 안내한다.
+    // 조회에 기대지 않는 편이 선언이 또 빠져도 안전하다.
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // 앱이 없으면 플랫폼에 따라 예외가 나기도 하고 false가 오기도 한다.
+      opened = false;
+    }
+    if (opened) {
       _toast(messenger, '대화 포인트를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.');
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      _toast(messenger, '카카오톡이 설치돼 있지 않아요. 대화 포인트는 복사해 뒀습니다.');
+      _toast(messenger, '카카오톡을 열지 못했어요. 대화 포인트는 복사해 뒀으니 붙여넣어 주세요.');
     }
   }
 
