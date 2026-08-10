@@ -144,12 +144,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   // 명함 이미지 관련(추가 133, C안):
   // - _cardImagePath: 이미 저장된 암호화 명함 이미지 경로(편집 진입 시 로드).
-  // - _scannedCardImageSourcePath: 이번에 새로 스캔한 원본(임시) 경로 —
-  //   저장 시 암호화해 보관한다. null이면 새 스캔 없음.
+  // - _scannedCardImages: 이번에 새로 스캔한 원본(임시) 경로들. 앞/뒷면을
+  //   이어 스캔하면 2장 이상 쌓인다. hadName은 그 스캔에서 이름이 읽혔는지 —
+  //   대표 이미지 기본 선택에 쓴다(보통 이름이 있는 면이 앞면).
+  // - _selectedScanIndex: 위 목록에서 대표(저장 대상)로 고른 이미지.
+  //   예전에는 마지막 스캔 한 장만 기억해서, 앞면→뒷면 순서로 스캔하면
+  //   뒷면이 대표가 되고 바꿀 방법이 없었다(사용자 제보, 2026-08-10).
   // - _useCardAsAvatar: 목록 아바타로 명함 이미지를 쓸지(사용자 선택).
   String? _cardImagePath;
-  String? _scannedCardImageSourcePath;
+  final List<({String path, bool hadName})> _scannedCardImages = [];
+  int _selectedScanIndex = -1;
   bool _useCardAsAvatar = false;
+
+  /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
+  String? get _scannedCardImageSourcePath =>
+      (_selectedScanIndex >= 0 && _selectedScanIndex < _scannedCardImages.length)
+      ? _scannedCardImages[_selectedScanIndex].path
+      : null;
 
   @override
   void initState() {
@@ -321,10 +332,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
-      // 스캔한 명함 이미지를 저장 대상으로 잡아둔다(추가 133). 가장 최근
-      // 스캔 이미지를 쓴다 — 앞/뒷면을 이어 스캔하면 마지막 것.
+      if (overwrite) {
+        // 다른 명함으로 새로 시작하는 것이므로 이전 명함의 스캔 이미지는
+        // 대표 후보에서 제거한다.
+        _scannedCardImages.clear();
+        _selectedScanIndex = -1;
+      }
+      // 스캔한 명함 이미지를 대표 후보 목록에 쌓는다(추가 133). 기본 대표는
+      // "이름이 읽힌 면"(보통 앞면) — 예전에는 무조건 마지막 스캔이 대표가
+      // 돼서 앞면→뒷면 순서로 스캔하면 뒷면이 대표가 되고 바꿀 수도 없었다.
+      // 두 장 이상이면 미리보기 아래 썸네일로 직접 바꿀 수 있다.
       if (result.imagePath != null && result.imagePath!.isNotEmpty) {
-        _scannedCardImageSourcePath = result.imagePath;
+        final hadName = scannedName.isNotEmpty;
+        _scannedCardImages.add((path: result.imagePath!, hadName: hadName));
+        final currentHadName =
+            _selectedScanIndex >= 0 &&
+            _scannedCardImages[_selectedScanIndex].hadName;
+        if (_selectedScanIndex < 0 || (hadName && !currentHadName)) {
+          _selectedScanIndex = _scannedCardImages.length - 1;
+        }
       }
       if (overwrite) {
         _setTextFromStart(_nameController, result.name);
@@ -626,6 +652,49 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             child: preview,
           ),
         ),
+        // 앞/뒷면처럼 여러 장을 스캔한 경우 — 어느 면을 대표로 저장할지
+        // 고를 수 있게 썸네일을 보여준다. 기본은 이름이 읽힌 면.
+        if (_scannedCardImages.length > 1) ...[
+          const SizedBox(height: 8),
+          const Text(
+            '여러 면을 스캔했어요 — 대표로 쓸 면을 선택하세요.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 56,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _scannedCardImages.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final isSelected = i == _selectedScanIndex;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedScanIndex = i),
+                  child: Container(
+                    width: 92,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.accent
+                            : AppColors.borderSubtle,
+                        width: isSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(7),
+                      child: Image.file(
+                        File(_scannedCardImages[i].path),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
         const SizedBox(height: 4),
         // 이미지엔 개인정보가 인쇄돼 있어 로컬에 암호화 보관됨을 정직하게 안내.
         const Text(
