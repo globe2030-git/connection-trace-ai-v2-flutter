@@ -305,16 +305,33 @@ class _ContactCard extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 3),
-                        Text(
-                          contact.company.trim().isEmpty
-                              ? '회사 정보 없음'
-                              : contact.company,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                          ),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                contact.company.trim().isEmpty
+                                    ? '회사 정보 없음'
+                                    : contact.company,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                            // 주소가 없으면 주변 인맥에 뜨지 않는다 — 그런데
+                            // 사용자는 왜 안 뜨는지 알 수 없었다. 명함 목록에서
+                            // 미리 알려 채워 넣게 한다(사용자 요청, 2026-08-10).
+                            // 판단 기준은 좌표(geo)가 아니라 **주소 문자열**이다
+                            // — 좌표는 지오코딩이 끝나기 전 잠깐 비어 있을 수
+                            // 있어, 주소를 제대로 넣었는데도 배지가 깜빡일 수
+                            // 있다. 주소는 사용자가 직접 넣고 지우는 안정된 값.
+                            if ((contact.address ?? '').trim().isEmpty) ...[
+                              const SizedBox(width: 6),
+                              const _NoAddressBadge(),
+                            ],
+                          ],
                         ),
                       ],
                     ),
@@ -427,6 +444,45 @@ class _ContactCard extends StatelessWidget {
           ),
         ) ??
         false;
+  }
+}
+
+/// 명함에 주소가 없을 때 회사명 옆에 붙는 작은 배지.
+///
+/// 주소가 없으면 그 인맥은 "주변 인맥" 목록·지도에 뜨지 않는다. 기능이
+/// 조용히 빠지는 대신 이 자리에서 이유를 알리고, 명함을 눌러 주소를 채우도록
+/// 유도한다(사용자 요청, 2026-08-10).
+class _NoAddressBadge extends StatelessWidget {
+  const _NoAddressBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.location_off_outlined,
+            size: 11,
+            color: AppColors.warningText,
+          ),
+          SizedBox(width: 3),
+          Text(
+            '주소 없음',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.warningText,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
