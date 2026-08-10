@@ -43,16 +43,12 @@ class _RadarViewState extends State<RadarView> {
       });
     }
 
-    final nearby = viewModel.nearbyAlertContact;
-    final nearbyDistance = nearby != null
-        ? GeoUtils.getDistanceMeters(viewModel.currentPosition, nearby.geo)
-        : null;
     final nearbyCount = viewModel.usingRealGps
         ? viewModel.filteredContacts.length
         : null;
-    final restOfList = viewModel.filteredContacts
-        .where((c) => c.id != nearby?.id)
-        .toList();
+    // 가장 가까운 한 명도 목록에 포함한다 — 대표 카드를 없앴으므로 빼면
+    // 그 사람만 어디에도 안 나온다(사용자 요청, 2026-08-10).
+    final nearbyList = viewModel.filteredContacts;
 
     return Stack(
       children: [
@@ -372,25 +368,13 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 14),
 
-                        // 가장 가까운 인맥을 대표 카드로 크게 보여준다.
-                        if (nearby != null)
-                          _FeaturedContactCard(
-                            contact: nearby,
-                            distanceMeters: nearbyDistance,
-                            onCall: nearby.phone.trim().isEmpty
-                                ? null
-                                : () => PhoneCallService.showCallPicker(
-                                    context,
-                                    nearby,
-                                  ),
-                            // "가까운 인맥" 리스트 항목을 눌렀을 때와 똑같이 AI
-                            // 브리핑 화면(연락처 정보 + AI 연동 + 전화)으로 간다.
-                            // 예전엔 명함 수정 폼(카메라 스캔 버튼까지 있는)이
-                            // 열려서 그냥 보려는 건데 수정 화면처럼 보이는
-                            // 문제가 있었다.
-                            onDetail: () => viewModel.openBriefing(nearby),
-                          )
-                        else
+                        // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
+                        // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
+                        // 카드와 목록 두 곳에 다른 모양으로 나타나 "왜 저
+                        // 사람만 다른가"를 설명해야 했고, 대표 카드가 화면
+                        // 절반을 먹어 정작 목록은 스크롤해야 보였다.
+                        // 이제 **가장 가까운 사람도 목록의 첫 줄**로 들어간다.
+                        if (viewModel.filteredContacts.isEmpty)
                           GlassCard(
                             padding: const EdgeInsets.all(20),
                             child: Center(
@@ -414,7 +398,7 @@ class _RadarViewState extends State<RadarView> {
 
                         // 가까운 인맥 리스트 (대표 카드에 나온 사람은 제외)
                         Text(
-                          '가까운 인맥 (${restOfList.length}명)',
+                          '가까운 인맥 (${nearbyList.length}명)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -431,7 +415,7 @@ class _RadarViewState extends State<RadarView> {
                         // 다른 점 하나: 여기에는 **근접 거리**가 함께 붙는다.
                         // 이 화면의 존재 이유가 "지금 얼마나 가까운가"이므로
                         // 목록에서도 그 값이 보여야 한다.
-                        ...restOfList.map((contact) {
+                        ...nearbyList.map((contact) {
                           final distance = GeoUtils.getDistanceMeters(
                             viewModel.currentPosition,
                             contact.geo,
@@ -676,12 +660,18 @@ class _NearbyCountCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.all(16),
+                // 대표 카드를 없앤 자리를 이 카드가 대신한다(사용자 요청,
+                // 2026-08-10). 여백과 아이콘·숫자를 키워 예전 대표 카드와
+                // 비슷한 덩치를 갖게 했다 — 화면 위쪽이 허전해지지 않도록.
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 28,
+                ),
                 child: Row(
                   children: [
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: 56,
+                      height: 56,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -818,182 +808,6 @@ class _MapStyleCardPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// 가장 가까운 인맥을 크게 보여주는 대표 카드.
-class _FeaturedContactCard extends StatelessWidget {
-  final ContactModel contact;
-  final double? distanceMeters;
-  final VoidCallback? onCall;
-  final VoidCallback onDetail;
-
-  const _FeaturedContactCard({
-    required this.contact,
-    required this.distanceMeters,
-    required this.onCall,
-    required this.onDetail,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final subtitle = [
-      contact.company,
-      contact.title,
-    ].where((s) => s.trim().isNotEmpty).join(' · ');
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ContactAvatar(
-                photoPath: contact.avatarUrl,
-                name: contact.name,
-                radius: 30,
-                cardImagePath: contact.useCardAsAvatar
-                    ? contact.cardImagePath
-                    : null,
-                uid: contact.useCardAsAvatar
-                    ? context.read<AuthRepository>().firebaseUid
-                    : null,
-              ),
-
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      contact.name,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    if (subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.accentSoft,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.location_on,
-                                size: 12,
-                                color: AppColors.accentText,
-                              ),
-                              const SizedBox(width: 2),
-                              Text(
-                                GeoUtils.formatDistanceLabel(distanceMeters),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.accentText,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Text(
-                          _lastContactLabel(contact),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onCall,
-                  icon: const AppIcon(
-                    AppIconId.callCheck,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  label: const Text(
-                    '연락하기',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.accent,
-                    minimumSize: const Size.fromHeight(44),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              TextButton.icon(
-                onPressed: onDetail,
-                icon: const Text(
-                  'AI 대화 가이드',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.accentText,
-                  ),
-                ),
-                label: const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: AppColors.accentText,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 최근 소통 기록 중 가장 최신 항목을 기준으로 "N일 전" 형태로 보여준다.
-/// 소통 기록이 없으면 가짜로 채우지 않고 "소통 기록 없음"으로 표시한다.
-String _lastContactLabel(ContactModel contact) {
-  if (contact.commLogs.isEmpty) return '소통 기록 없음';
-  final latest = contact.commLogs
-      .map((l) => l.timestamp)
-      .reduce((a, b) => a.isAfter(b) ? a : b);
-  final days = DateTime.now().difference(latest).inDays;
-  if (days <= 0) return '오늘 연락';
-  if (days == 1) return '최근 연락 어제';
-  return '최근 연락 $days일 전';
 }
 
 class _LocationStatusCard extends StatelessWidget {
