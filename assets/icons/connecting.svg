@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <circle fill="#2563EB" stroke="none" cx="12" cy="5.4" r="1.5"/>
-  <circle fill="#2563EB" stroke="none" cx="16.7" cy="7.3" r="1.35"/>
-  <circle fill="#2563EB" stroke="none" cx="18.6" cy="12" r="1.2"/>
-  <circle fill="#2563EB" stroke="none" cx="16.7" cy="16.7" r="1.05"/>
-  <circle fill="#2563EB" stroke="none" cx="12" cy="18.6" r="0.95"/>
-  <circle fill="#2563EB" stroke="none" cx="7.3" cy="16.7" r="0.85"/>
-  <circle fill="#2563EB" stroke="none" cx="5.4" cy="12" r="0.8"/>
-  <circle fill="#2563EB" stroke="none" cx="7.3" cy="7.3" r="0.75"/>
+  <circle fill="currentColor" stroke="none" cx="12" cy="5.4" r="1.5"/>
+  <circle fill="currentColor" stroke="none" cx="16.7" cy="7.3" r="1.35"/>
+  <circle fill="currentColor" stroke="none" cx="18.6" cy="12" r="1.2"/>
+  <circle fill="currentColor" stroke="none" cx="16.7" cy="16.7" r="1.05"/>
+  <circle fill="currentColor" stroke="none" cx="12" cy="18.6" r="0.95"/>
+  <circle fill="currentColor" stroke="none" cx="7.3" cy="16.7" r="0.85"/>
+  <circle fill="currentColor" stroke="none" cx="5.4" cy="12" r="0.8"/>
+  <circle fill="currentColor" stroke="none" cx="7.3" cy="7.3" r="0.75"/>
 </svg>

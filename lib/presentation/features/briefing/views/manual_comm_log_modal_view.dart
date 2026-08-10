@@ -467,15 +467,7 @@ class _ChannelChip extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ⚠️ `AppIcon(color:)`만으로는 색이 바뀌지 않는다. 이 SVG들은
-                // `currentColor`가 아니라 stroke/fill에 #2563EB를 하드코딩하고
-                // 있어서 `SvgTheme(currentColor:)`가 먹히지 않는다. 선택 상태의
-                // 칩 배경도 같은 #2563EB라, 강제 틴트를 씌우지 않으면 아이콘이
-                // 배경에 묻혀 사라진다(사용자 보고, 2026-08-10).
-                ColorFiltered(
-                  colorFilter: ColorFilter.mode(foreground, BlendMode.srcIn),
-                  child: AppIcon(icon, size: 16, color: foreground),
-                ),
+                AppIcon(icon, size: 16, color: foreground),
                 const SizedBox(width: 6),
                 Flexible(
                   child: Text(
