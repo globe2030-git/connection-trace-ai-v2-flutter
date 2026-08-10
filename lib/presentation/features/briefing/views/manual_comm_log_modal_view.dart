@@ -6,10 +6,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../radar/view_models/radar_view_model.dart';
 
-/// 통화/문자/이메일/카카오톡 등 소통 기록을 사용자가 직접 입력하는 화면.
-/// 실제 기기 자동 연동이 안 되는 상황(iOS 전체, 안드로이드의 카카오톡/이메일,
-/// 또는 그냥 사용자가 직접 요약해서 남기고 싶은 경우) 어디서나 쓸 수 있는
-/// 기본 입력 경로 — 소통 이력 연동 기능의 "항상 되는" 기반이 되는 화면이다.
+/// 통화/문자/카카오톡 소통 기록을 사용자가 직접 입력하는 화면.
+/// 기기 자동 연동이 안 되는 상황(iOS 전체, 안드로이드의 카카오톡, 또는 그냥
+/// 사용자가 직접 요약해서 남기고 싶은 경우) 어디서나 쓸 수 있는 기본 입력
+/// 경로 — 소통 이력 기능의 "항상 되는" 기반이 되는 화면이다. v1에서는 이것이
+/// 유일한 입력 경로다(Gmail 가져오기 제거, 추가 136).
 class ManualCommLogModalView extends StatefulWidget {
   final ContactModel contact;
   final String initialType;
@@ -36,31 +37,18 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     _selectedType = widget.initialType;
   }
 
+  /// 선택 가능한 채널. **소통 기록 추가 시트의 항목과 1:1로 맞춘다** —
+  /// 시트에 없는 채널을 여기서만 고를 수 있으면 두 화면이 어긋난다.
+  /// 이메일은 추가 136에서 시트의 Gmail 항목을 뺄 때 함께 제거했다(추가 138).
+  ///
+  /// 채널별 색(`AppColors.channelCall` 등)은 여기서 쓰지 않는다. 칩 4개가
+  /// 각각 파랑·초록·주황·노랑이라 화면이 산만했고, 특히 카카오 브랜드
+  /// 옐로우(#FEE500) 위의 흰 글자는 대비가 1.3:1로 읽히지 않았다. 선택 상태를
+  /// 색 종류가 아니라 **채움 여부**로 구분한다(추가 138).
   static const _channelOptions = [
-    {
-      'type': 'call',
-      'label': '통화',
-      'icon': AppIconId.call,
-      'color': AppColors.channelCall,
-    },
-    {
-      'type': 'sms',
-      'label': '문자',
-      'icon': AppIconId.message,
-      'color': AppColors.channelSms,
-    },
-    {
-      'type': 'email',
-      'label': '이메일',
-      'icon': AppIconId.mailSend,
-      'color': AppColors.channelEmail,
-    },
-    {
-      'type': 'kakao',
-      'label': '카카오톡',
-      'icon': AppIconId.chatSend,
-      'color': AppColors.channelKakao,
-    },
+    {'type': 'call', 'label': '통화', 'icon': AppIconId.call},
+    {'type': 'sms', 'label': '문자', 'icon': AppIconId.message},
+    {'type': 'kakao', 'label': '카카오톡', 'icon': AppIconId.chatSend},
   ];
 
   @override
@@ -128,7 +116,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _title => switch (_selectedType) {
     'call' => '통화 후 메모',
     'sms' => '문자 내용 추가',
-    'email' => '이메일 내용 추가',
     'kakao' => '카카오톡 내용 추가',
     _ => '소통 기록 추가',
   };
@@ -136,7 +123,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _description => switch (_selectedType) {
     'call' => '통화기록을 읽지 않습니다. 통화 후 기억할 내용만 직접 적어 주세요.',
     'sms' => '문자 앱에서 필요한 대화만 복사해 붙여넣어 주세요.',
-    'email' => '직접 기록할 이메일 내용을 입력해 주세요.',
     'kakao' => '카카오톡에서 필요한 대화만 복사해 붙여넣어 주세요.',
     _ => '필요한 내용만 직접 입력해 주세요.',
   };
@@ -144,7 +130,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _hint => switch (_selectedType) {
     'call' => '예: 신규 프로젝트를 다음 주에 다시 논의하기로 함',
     'sms' => '문자 앱에서 복사한 필요한 대화를 붙여넣으세요.',
-    'email' => '예: 견적서 검토 후 금요일까지 회신 예정',
     'kakao' => '카카오톡에서 복사한 필요한 대화를 붙여넣으세요.',
     _ => '기억할 내용을 입력하세요.',
   };
@@ -240,25 +225,36 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     runSpacing: 8,
                     children: _channelOptions.map((opt) {
                       final type = opt['type'] as String;
-                      final color = opt['color'] as Color;
                       final isSelected = _selectedType == type;
+                      // 선택 시 accent(#2563EB) 채움 + 흰 글자 = 대비 5.17:1로
+                      // WCAG AA 통과. 미선택은 페이지 배경 + 중립 테두리.
+                      final foreground = isSelected
+                          ? Colors.white
+                          : AppColors.textSecondary;
                       return ChoiceChip(
                         selected: isSelected,
+                        // 기본 체크 표시를 끈다 — 켜 두면 채널 아이콘 위에
+                        // 겹쳐 그려져 무슨 채널인지 알아볼 수 없다.
+                        showCheckmark: false,
                         onSelected: (_) => setState(() => _selectedType = type),
                         avatar: AppIcon(
                           opt['icon'] as AppIconId,
                           size: 16,
-                          color: isSelected ? Colors.white : color,
+                          color: foreground,
                         ),
                         label: Text(opt['label'] as String),
                         labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : color,
+                          color: foreground,
                           fontWeight: FontWeight.bold,
                           fontSize: 12.5,
                         ),
-                        selectedColor: color,
+                        selectedColor: AppColors.accent,
                         backgroundColor: AppColors.bgBase,
-                        side: BorderSide(color: color.withValues(alpha: 0.4)),
+                        side: BorderSide(
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.borderFunctional,
+                        ),
                       );
                     }).toList(),
                   ),
