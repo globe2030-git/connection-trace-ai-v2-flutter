@@ -1303,78 +1303,93 @@ class _NearbyContactTile extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        contact.company.trim().isEmpty
-                            ? '회사 정보 없음'
-                            : contact.company,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // 근접 거리 배지는 줄 오른쪽 끝에 붙인다(사용자 요청,
-                    // 2026-08-10). 회사명 바로 옆에 두면 회사명 길이에 따라
-                    // 배지 위치가 줄마다 달라져 눈으로 훑기 어렵다 —
-                    // 회사명을 `Expanded`로 늘려 배지를 끝으로 민다.
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.accentSoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        // `formatDistanceLabel`이 이미 "근접"까지 붙여 준다.
-                        // 여기서 한 번 더 붙여 "823m 근접 근접"이 됐다.
-                        GeoUtils.formatDistanceLabel(distanceMeters),
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.accentText,
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  contact.company.trim().isEmpty ? '회사 정보 없음' : contact.company,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
           ),
-          // 명함 지갑과 같은 촘촘한 동작 버튼. 전화번호가 없으면 통화는
-          // 비활성 — 눌러도 아무 일이 없는 것보다 낫다.
-          IconButton(
-            tooltip: '${contact.name}에게 전화',
-            onPressed: _hasAnyPhone ? onCall : null,
-            icon: AppIcon(
-              AppIconId.call,
-              size: 20,
-              color: _hasAnyPhone ? AppColors.accentText : AppColors.textMuted,
-            ),
-            iconSize: 20,
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-          ),
-          IconButton(
-            tooltip: '${contact.name} AI 대화 가이드',
-            onPressed: onOpen,
-            icon: const Icon(
-              Icons.auto_awesome,
-              size: 20,
-              color: AppColors.accentText,
-            ),
-            iconSize: 20,
-            padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+          // 오른쪽 묶음: 위에 동작 버튼, 아래에 근접 거리.
+          //
+          // 거리 배지를 본문 칼럼(회사명 줄) 안에 두었더니 **동작 버튼 폭만큼
+          // 안쪽에서 끝났다.** 사용자가 "위줄 AI 가이드 아이콘처럼 우측부터
+          // 채워 달라"고 한 지점이다(2026-08-10). 버튼과 같은 묶음으로 옮겨
+          // 두 줄의 오른쪽 끝이 맞는다.
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 명함 지갑과 같은 촘촘한 동작 버튼. 전화번호가 없으면
+                  // 통화는 비활성 — 눌러도 아무 일이 없는 것보다 낫다.
+                  IconButton(
+                    tooltip: '${contact.name}에게 전화',
+                    onPressed: _hasAnyPhone ? onCall : null,
+                    icon: AppIcon(
+                      AppIconId.call,
+                      size: 20,
+                      color: _hasAnyPhone
+                          ? AppColors.accentText
+                          : AppColors.textMuted,
+                    ),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 36,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '${contact.name} AI 대화 가이드',
+                    onPressed: onOpen,
+                    icon: const Icon(
+                      Icons.auto_awesome,
+                      size: 20,
+                      color: AppColors.accentText,
+                    ),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 40,
+                      height: 36,
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 4, top: 2),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentSoft,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    // `formatDistanceLabel`이 이미 "근접"까지 붙여 준다.
+                    // 여기서 한 번 더 붙여 "823m 근접 근접"이 됐었다.
+                    GeoUtils.formatDistanceLabel(distanceMeters),
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.accentText,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
