@@ -606,8 +606,9 @@ Connect`로 실패했다. 계정 권한은 정상(Admin, Certificates·Identifie
 
 ### 테스터 배포 전에 처리를 권하는 것
 
-- **P0-11** `DAILY_LIMIT` 20 → 10 (**두 파일**: `functions/src/index.ts`,
-  `lib/core/services/ai_briefing_service.dart`)
+- ~~**P0-11** `DAILY_LIMIT` 20 → 10~~ → ✅ 2026-08-10 완료(추가 147). 두 파일
+  (`functions/src/index.ts`, `lib/core/services/ai_briefing_service.dart`)을
+  함께 고쳤고 Functions 재배포까지 마쳤다.
 - **P1-40** 전화번호 중복 검사 — 테스터가 늘면 바로 겪는데 작업량이 작다
 - **P1-13** Crashlytics — 없으면 테스터 피드백이 "가끔 죽어요"에서 멈춘다
 
@@ -725,7 +726,7 @@ P1-26·P1-27·P0-2·P1-7). 완료 처리를 그때그때 하지 않으면 다음
 
 - **`enforceAppCheck: true` 복원** + `config/testers` 비우기(허용목록은 App Check
   우회 권한이라 테스트 끝나면 닫아야 함).
-- **P0-11**: `DAILY_LIMIT` 20 → 10 (테스트 기간엔 20 유지하기로 함).
+- ~~**P0-11**: `DAILY_LIMIT` 20 → 10~~ → ✅ 2026-08-10 완료(추가 147).
 
 ### 미결정 / 다음 확인 필요
 
@@ -1062,7 +1063,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | P0-6 | 계정 삭제 안내 웹페이지 게시 → 🟡 **게시 완료, Play 콘솔 등록만 남음** | **2026-08-08 실물 확인**: `https://connection-sense.web.app/account-deletion` HTTP 200으로 서비스 중. Google Play는 앱 내 삭제 기능과 별개로 이 URL을 "앱 콘텐츠"에 요구하므로, **남은 것은 Play Console에 이 주소를 입력하는 것뿐**이다 | 소 | 사용자(콘솔 입력) |
 | ~~P0-8~~ | ~~Firestore 규칙 필드 단위 강화~~ → ✅ **완료** | 2026-08-06 강화·배포 완료(추가 83). 클라이언트 쓰기를 `encryptionKeyB64`/`profile`/`updatedAt`로 한정하고 이미 발급된 암호화 키는 변경 불가로 막았다. **검증 15건 통과**(`test/firestore_rules/verify_rules.py` — 로컬 에뮬레이터가 이 환경의 JDK에서 뜨지 않아 Firebase 규칙 테스트 API로 서버 평가). 배포 후 실기기에서 명함 저장이 정상 동작하는 것까지 확인. ⚠️ **프로필 쓰기는 아직 실기기 미확인**(서버에 `profile` 필드가 아직 없음) | — | 완료 |
 | P0-9 | **App Check 도입 + 예산 상한** → 🟡 **절반 완료(2026-08-08, 추가 99)** | 강제(`enforceAppCheck: true`) 전환·배포 완료, `maxInstances`를 코드에 명시, App Check API 활성화·iOS 팀 ID 등록까지 끝냈고 **아이폰 실기기에서 강제 상태 호출 성공을 확인**했다. **남은 절반**: 지금 통과하는 건 디버그 토큰 경로뿐이고, 실사용자가 쓸 정식 경로(Play Integrity / App Attest)는 **스토어 배포 전까지 검증 자체가 불가능**하다 — 즉 P0-1·P1-19에 묶여 있다. 상세·주의사항은 "0-6" 섹션 | 잔여: 스토어 배포 후 재확인 | 개발 |
-| P0-11 | 🚧 **AI 하루 호출 한도를 20 → 10으로 되돌리기** | **신규(2026-08-08, 추가 100)**. `functions/src/index.ts`의 `DAILY_LIMIT`이 원래 10이었는데, 사고 토큰 단가를 단계별로 재려면 하루에 여러 번 호출해야 해서 사용자 확인 후 **테스트용으로 20으로 올려 뒀다.** App Check 강제 이후라 외부 유출 위험은 없지만, **출시 전에 반드시 10으로 되돌릴 것** — 안 되돌리면 1인당 비용 상한이 설계의 2배가 된 채로 나간다. 코드에도 🚧 주석으로 표시해 뒀다 | 소 | 개발 |
+| ~~P0-11~~ | ~~AI 하루 호출 한도를 20 → 10으로 되돌리기~~ → ✅ **완료(2026-08-10, 추가 147)** — 직원 테스트 시작 전에 되돌렸다. 20으로 올린 목적(사고 토큰 단가 측정)은 개발자 혼자 쓰는 동안 끝났다. | **신규(2026-08-08, 추가 100)**. `functions/src/index.ts`의 `DAILY_LIMIT`이 원래 10이었는데, 사고 토큰 단가를 단계별로 재려면 하루에 여러 번 호출해야 해서 사용자 확인 후 **테스트용으로 20으로 올려 뒀다.** App Check 강제 이후라 외부 유출 위험은 없지만, **출시 전에 반드시 10으로 되돌릴 것** — 안 되돌리면 1인당 비용 상한이 설계의 2배가 된 채로 나간다. 코드에도 🚧 주석으로 표시해 뒀다 | 소 | 개발 |
 | ~~P0-10~~ | ~~**Cloud Functions Node.js 20 런타임 업그레이드**~~ → ✅ **완료(2026-08-08)** | Node.js 22로 전환·배포 완료(`buildConfig.runtime: nodejs22` 서버 조회로 확인). 배포 시 폐기 경고가 사라졌고, **실기기에서 AI 브리핑 3회 호출로 App Check 검증·토큰 로깅·Gemini 호출이 전부 정상 동작하는 것까지 확인**했다. Node 22를 고른 이유: 24와 최종 폐기일이 같은데(2028-10-31) 로컬 개발 환경(v22)과 런타임이 일치해 "코드는 맞는데 실물이 다름" 위험이 줄어든다. **남은 것**: `firebase-functions` 6.6.0 → 7.3.2, `firebase-admin` 13 → 14 업그레이드(breaking change 예고, `npm audit` moderate 8건도 여기서 해소됨) — 아래 P1-36 | — | 완료 |
 | ~~P1-36~~ | ~~Functions SDK 업그레이드~~ → ✅ **완료(2026-08-08)** | `firebase-functions` 6.6.0 → 7.3.2, `firebase-admin` 13.10.0 → 14.2.0. v7의 breaking change(제거된 `functions.config()`)는 우리 코드 표면에 닿지 않았다 — 이미 `params`(`defineSecret`)를 쓰고 있었기 때문. `firebase-admin` 14가 **Node 22 이상을 요구**해서 P0-10이 선행조건이었다. 배포 시 "outdated firebase-functions" 경고가 사라졌고 실기기 호출로 검증했다. ⚠️ **`npm audit` 8건은 이 업그레이드로 해소되지 않았다**(7건 잔존) — 아래 P2-10 참고. 이전에 "여기서 해소된다"고 적었던 것은 틀린 예상이었다 | — | 완료 |
 | P2-10 | `npm audit` moderate 7건(`uuid`) — **상류 한 곳만 기다리면 됨** | **신규(2026-08-08, 추가 102)**. 7건 전부 `uuid@9.0.1` 하나에서 파생된다. **병목은 정확히 한 곳**: `@google-cloud/storage@7.21.0`(최신인데도)이 `gaxios: "^6.0.2"`에 묶여 있고, `gaxios@6.7.1`이 `uuid ^9.0.1`을 딸고 온다. **수정은 이미 상류에 나와 있다** — `gaxios@7.3.0`에는 `uuid` 의존이 아예 없다. 즉 `@google-cloud/storage`가 `gaxios`를 `^7`로 올리기만 하면 끝나며, 이건 Google 저장소(`googleapis/nodejs-storage`) 일이라 우리가 손댈 수 없다. **확인 명령**: `npm view @google-cloud/storage dependencies.gaxios` → 값이 `^7`이 되면 `functions/`에서 `npm update` 후 `npm audit`가 0건이 된다. **그때까지 위험이 낮은 이유**: `@google-cloud/storage`는 `firebase-admin`의 **optionalDependencies**이고 우리 함수는 `firebase-admin/app`과 `firebase-admin/firestore`만 import한다 — 취약 코드가 설치만 되고 **로드되지 않는다**. **`overrides`로 지금 없앨 수도 있지만 권하지 않는다**: 쓰지도 않는 패키지를 위해 상류와 어긋난 트리를 유지하게 되고, 상류가 정식으로 올린 뒤엔 그 `overrides`가 오히려 버전을 붙잡는 족쇄가 된다(지우는 걸 잊으면 다음 사람이 원인을 못 찾는다). 감사 건수 0이 외부 요구로 필요해지면 그때 넣어도 몇 분이면 된다 | 소(대기) | 개발 |
