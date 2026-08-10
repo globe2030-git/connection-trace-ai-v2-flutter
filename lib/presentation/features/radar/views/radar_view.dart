@@ -116,11 +116,18 @@ class _RadarViewState extends State<RadarView> {
                                       letterSpacing: -0.5,
                                     ),
                                   ),
-                                  const SizedBox(height: 2),
+                                  // 제목과 인사말이 붙어 있어 머리글이 한
+                                  // 덩어리로 뭉쳐 보였다. 줄 간격을 벌리고
+                                  // 인사말을 한 단계 키워 위쪽에 숨 쉴 자리를
+                                  // 만든다 — 그만큼 아래 카드가 내려가
+                                  // "가까운 인맥" 쪽으로 붙는다(사용자 요청,
+                                  // 2026-08-10).
+                                  const SizedBox(height: 6),
                                   Text(
                                     _greetingForNow(),
                                     style: const TextStyle(
-                                      fontSize: 13,
+                                      fontSize: 14,
+                                      height: 1.4,
                                       color: AppColors.textSecondary,
                                     ),
                                   ),
@@ -272,7 +279,7 @@ class _RadarViewState extends State<RadarView> {
                             const AiUsageChip(),
                           ],
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
 
                         // 검색창을 반경·지도 줄 바로 아래로 옮겼다(사용자 요청,
                         // 2026-08-10). 예전에는 대표 카드 아래에 있어서, 찾고
@@ -284,7 +291,10 @@ class _RadarViewState extends State<RadarView> {
                           // 잡는 높이만 남긴다 — 글자 크기는 건드리지 않아
                           // 읽기 어려워지지 않는다.
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          constraints: const BoxConstraints(minHeight: 40),
+                          // 사용자 요청으로 10% 키운다(40 → 44, 2026-08-10).
+                          // 앞서 15% 줄였다가 조금 낮다는 판단이라 되돌리는
+                          // 셈이다. 44는 iOS 최소 터치 목표와도 맞는다.
+                          constraints: const BoxConstraints(minHeight: 44),
                           decoration: BoxDecoration(
                             color: AppColors.capsuleInputBg,
                             borderRadius: BorderRadius.circular(30),
@@ -306,7 +316,7 @@ class _RadarViewState extends State<RadarView> {
                                     // 낮춘다. 터치는 캡슐 전체가 받으므로
                                     // 목표 크기는 minHeight 40으로 지킨다.
                                     contentPadding: EdgeInsets.symmetric(
-                                      vertical: 4,
+                                      vertical: 6,
                                     ),
                                     border: InputBorder.none,
                                     hintText: '이름, 회사명, 키워드로 검색해 보세요',
@@ -377,7 +387,7 @@ class _RadarViewState extends State<RadarView> {
                           ],
                         ),
 
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 10),
 
                         // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
                         // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
@@ -713,14 +723,14 @@ class _NearbyCountCard extends StatelessWidget {
                 // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
                 // 채워지도록 세로 여백을 크게 잡았다.
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 52,
+                  horizontal: 31,
+                  vertical: 68,
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 72,
-                      height: 72,
+                      width: 94,
+                      height: 94,
                       alignment: Alignment.center,
                       decoration: const BoxDecoration(
                         color: Colors.white,
@@ -728,8 +738,8 @@ class _NearbyCountCard extends StatelessWidget {
                       ),
                       child: isRefreshing
                           ? const SizedBox(
-                              width: 18,
-                              height: 18,
+                              width: 26,
+                              height: 26,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: AppColors.accent,
@@ -738,7 +748,7 @@ class _NearbyCountCard extends StatelessWidget {
                           : const AppIcon(
                               AppIconId.radarDetect,
                               color: AppColors.accent,
-                              size: 22,
+                              size: 47,
                             ),
                     ),
                     const SizedBox(width: 14),
@@ -748,7 +758,7 @@ class _NearbyCountCard extends StatelessWidget {
                       child: Text(
                         '지금 가까운 사람',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: AppColors.textSecondary,
                         ),
@@ -757,7 +767,7 @@ class _NearbyCountCard extends StatelessWidget {
                     Text(
                       count != null ? '$count명' : '--',
                       style: const TextStyle(
-                        fontSize: 26,
+                        fontSize: 34,
                         fontWeight: FontWeight.w900,
                         color: AppColors.accentText,
                         letterSpacing: -0.5,
@@ -1317,7 +1327,9 @@ class _NearbyContactTile extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        '${GeoUtils.formatDistanceLabel(distanceMeters)} 근접',
+                        // `formatDistanceLabel`이 이미 "근접"까지 붙여 준다.
+                        // 여기서 한 번 더 붙여 "823m 근접 근접"이 됐다.
+                        GeoUtils.formatDistanceLabel(distanceMeters),
                         style: const TextStyle(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w700,

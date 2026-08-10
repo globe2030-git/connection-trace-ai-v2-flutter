@@ -21,37 +21,6 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 
-/// 전자상거래법 제10조에 따른 사업자 정보 표시. 웹(법적 고지 인덱스)에도
-/// 같은 내용이 있고, 여기서는 앱 안에서 바로 볼 수 있게 한다.
-Future<void> _showBusinessInfo(BuildContext context) {
-  return showDialog<void>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('사업자 정보'),
-      content: const Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('크림하우스주식회사', style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text('대표자  최우진'),
-          Text('사업자등록번호  220-86-89511'),
-          SizedBox(height: 8),
-          Text('서울특별시 영등포구 양평로21가길 19,\n208·209호(양평동5가)'),
-          SizedBox(height: 8),
-          Text('문의  connectionsense@creamhouse.net'),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('확인'),
-        ),
-      ],
-    ),
-  );
-}
-
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
 
@@ -135,7 +104,11 @@ class SettingsView extends StatelessWidget {
                       size: 22,
                       color: AppColors.accentText,
                     ),
-                    title: '계정 삭제',
+                    // "회원 탈퇴"를 함께 적는다(사용자 요청, 2026-08-10).
+                    // 스토어 심사와 이용약관은 "탈퇴"라는 말을 쓰고, 사용자도
+                    // 그 말로 찾는다. 반면 실제로 일어나는 일은 계정과 서버
+                    // 데이터 삭제라 두 표현을 한 줄에 붙여 둔다.
+                    title: '계정 삭제 (회원 탈퇴)',
                     subtitle: '계정과 서버에 백업된 명함·프로필 데이터를 영구 삭제합니다',
                     titleColor: AppColors.destructive,
                     onTap: () => _confirmDeleteAccount(context, auth),
@@ -325,15 +298,15 @@ class SettingsView extends StatelessWidget {
                       );
                     },
                   ),
-                  const _SettingsRow(
-                    icon: AppIcon(
-                      AppIconId.aiDataInfo,
-                      size: 22,
-                      color: AppColors.accentText,
-                    ),
-                    title: 'AI 데이터 안내',
-                    subtitle: 'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
-                  ),
+                  // "AI 데이터 안내" 행은 뺐다(사용자 요청, 2026-08-10).
+                  // 같은 내용이 **개인정보처리방침 11조**에 더 정확하게 들어
+                  // 있다 — 전달 경로(기기 → 회사 서버 → Gemini), 요청마다
+                  // 동의를 받는다는 것, 전송 항목의 한정, 서버가 내용을
+                  // 저장하지 않는다는 것까지. 설정의 한 줄은 그 일부를 요약한
+                  // 것이라 두 벌을 관리하면 개정할 때 어긋난다.
+                  //
+                  // 방침으로 가는 경로는 바로 아래 "약관 및 정책"에 있고,
+                  // AI 전송 동의 화면에도 "자세히" 버튼이 있다.
                 ],
               ),
               const SizedBox(height: 26),
@@ -404,7 +377,13 @@ class SettingsView extends StatelessWidget {
                     ),
                     title: '사업자 정보',
                     subtitle: '상호·대표자·사업자등록번호·문의처',
-                    onTap: () => _showBusinessInfo(context),
+                    // 앱에 값을 복사해 두지 않고 법적 고지 페이지를 연다
+                    // (2026-08-10). 예전에는 여기서 하드코딩한 다이얼로그를
+                    // 띄웠는데, 주소나 대표자가 바뀌면 **앱을 고쳐 다시
+                    // 배포해야** 값이 맞았다. 약관·방침 본문을 앱에 복사하지
+                    // 않는 것과 같은 이유다.
+                    onTap: () =>
+                        showLegalDocument(context, LegalDocument.legalIndex),
                   ),
                   _SettingsRow(
                     icon: const Icon(
