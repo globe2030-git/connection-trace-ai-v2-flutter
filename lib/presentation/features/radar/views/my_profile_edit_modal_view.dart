@@ -652,26 +652,34 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     String? Function(String?)? validator,
     Widget? suffixIcon,
   }) {
+    // 명함 등록·수정 화면과 같은 방식으로, 라벨을 별도 줄에 두지 않고
+    // **입력란 안쪽 플로팅 라벨**로 넣는다(사용자 요청, 2026-08-10).
+    // 필드마다 라벨 줄과 여백이 사라져 한 화면에 항목이 더 들어온다.
+    // 입력란 높이는 그대로 둔다 — 줄인 것은 라벨이 차지하던 자리뿐이다.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: label.contains('*')
-                ? AppColors.accentText
-                : AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 4),
         TextFormField(
           controller: controller,
           keyboardType: keyboardType,
           inputFormatters: inputFormatters,
           style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
           decoration: InputDecoration(
+            labelText: label,
+            labelStyle: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: label.contains('*')
+                  ? AppColors.accentText
+                  : AppColors.textSecondary,
+            ),
+            floatingLabelStyle: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: label.contains('*')
+                  ? AppColors.accentText
+                  : AppColors.textSecondary,
+            ),
             hintText: hint,
             hintStyle: const TextStyle(
               color: AppColors.textMuted,
