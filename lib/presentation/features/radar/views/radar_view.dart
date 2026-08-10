@@ -259,22 +259,6 @@ class _RadarViewState extends State<RadarView> {
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            // 위치 갱신. 예전에는 "위치는 사용 중에만
-                            // 확인해요" 안내 줄 오른쪽에 붙어 화면 한 줄을
-                            // 통째로 쓰고 있었다. 안내 문구를 빼고 아이콘만
-                            // 이 줄 맨 앞으로 옮겼다(사용자 결정, 2026-08-10).
-                            //
-                            // 위치를 계속 추적하지 않는다는 사실은 설정 →
-                            // 위치 서비스와 개인정보처리방침 10-1에 그대로
-                            // 남아 있다.
-                            _RefreshLocationButton(
-                              isRefreshing: viewModel.isRefreshingLocation,
-                              usingRealGps: viewModel.usingRealGps,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
-                              ),
-                            ),
                             // 지도 → 반경 순서(사용자 요청, 2026-08-10).
                             // 지도를 먼저 열고 그 안에서 범위를 가늠하는
                             // 흐름을 앞세운다.
@@ -286,7 +270,36 @@ class _RadarViewState extends State<RadarView> {
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
+                            // 위치 아이콘은 줄 맨 오른쪽(사용자 요청,
+                            // 2026-08-10). 위치를 계속 추적하지 않는다는
+                            // 사실은 설정 → 위치 서비스와 개인정보처리방침
+                            // 10-1에 그대로 남아 있다.
+                            _RefreshLocationButton(
+                              isRefreshing: viewModel.isRefreshingLocation,
+                              usingRealGps: viewModel.usingRealGps,
+                              isDetecting: viewModel.hasLocationConsent,
+                              onTap: () => handleLocationAccessAction(
+                                context,
+                                viewModel,
+                              ),
+                              onToggleDetect: () =>
+                                  _toggleNearbyDetect(context, viewModel),
+                            ),
                           ],
+                        ),
+                        // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
+                        // 한 줄로 밝힌다(사용자 요청). 툴팁만으로는 길게 눌러야
+                        // 뜨는데, 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
+                        const SizedBox(height: 4),
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '위치 아이콘 — 짧게: 갱신 · 길게: 감지 켜기/끄기',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: AppColors.textMuted,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 10),
 
@@ -640,63 +653,171 @@ class _NearbyCountCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.accentSoft,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: isRefreshing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.accent,
-                      ),
-                    )
-                  : const AppIcon(
-                      AppIconId.radarDetect,
-                      color: AppColors.accent,
-                      size: 22,
-                    ),
-            ),
-            const SizedBox(width: 14),
-            // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
-            // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
-            const Expanded(
-              child: Text(
-                '지금 가까운 사람',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
+        // 배경을 지도 느낌으로 깐다(사용자 결정, 2026-08-10).
+        //
+        // **실제 지도 타일이 아니라 앱이 그린 그래픽이다.** 홈 화면에 진짜
+        // 지도를 깔면 앱을 켜기만 해도 지도 사업자에게 타일 요청이 나가는데,
+        // 오늘 배포한 개인정보처리방침 10-3은 "지도 화면을 열지 않으면 어떤
+        // 요청도 발생하지 않는다"고 적고 있다. 방침을 고치는 대신 요청이 아예
+        // 없는 방식을 택했다 — 방침과 구현이 어긋나는 것 자체가 리스크다.
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            children: [
+              const Positioned.fill(
+                child: ExcludeSemantics(
+                  child: RepaintBoundary(
+                    child: CustomPaint(painter: _MapStyleCardPainter()),
+                  ),
                 ),
               ),
-            ),
-            Text(
-              count != null ? '$count명' : '--',
-              style: const TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w900,
-                color: AppColors.accentText,
-                letterSpacing: -0.5,
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: isRefreshing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.accent,
+                              ),
+                            )
+                          : const AppIcon(
+                              AppIconId.radarDetect,
+                              color: AppColors.accent,
+                              size: 22,
+                            ),
+                    ),
+                    const SizedBox(width: 14),
+                    // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
+                    // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
+                    const Expanded(
+                      child: Text(
+                        '지금 가까운 사람',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      count != null ? '$count명' : '--',
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: AppColors.accentText,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// "지금 가까운 사람" 카드의 지도풍 배경.
+///
+/// **실제 지도가 아니다.** 도로 격자와 블록, 그리고 현위치를 뜻하는 동심원을
+/// 옅게 그린 장식이다. 진짜 타일을 쓰면 홈 화면을 열 때마다 지도 사업자에게
+/// 요청이 나가고, 그러면 개인정보처리방침 10-3("지도 화면을 열지 않으면 어떤
+/// 요청도 발생하지 않습니다")과 어긋난다(사용자 결정, 2026-08-10).
+///
+/// 카드 위에는 라벨과 큰 숫자가 얹히므로 대비를 해치지 않도록 아주 옅게만
+/// 그린다.
+class _MapStyleCardPainter extends CustomPainter {
+  const _MapStyleCardPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final blockPaint = Paint()
+      ..style = PaintingStyle.fill
+      ..color = AppColors.accent.withValues(alpha: 0.05);
+    final roadPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.height * 0.06
+      ..color = Colors.white.withValues(alpha: 0.55);
+    final thinRoadPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.height * 0.03
+      ..color = Colors.white.withValues(alpha: 0.4);
+
+    // 블록(건물 덩어리) — 도로 사이를 채워 지도처럼 보이게 한다.
+    for (final rect in [
+      Rect.fromLTWH(0, 0, size.width * 0.34, size.height * 0.42),
+      Rect.fromLTWH(size.width * 0.44, 0, size.width * 0.28, size.height * 0.3),
+      Rect.fromLTWH(
+        size.width * 0.08,
+        size.height * 0.58,
+        size.width * 0.3,
+        size.height * 0.42,
+      ),
+      Rect.fromLTWH(
+        size.width * 0.62,
+        size.height * 0.46,
+        size.width * 0.3,
+        size.height * 0.54,
+      ),
+    ]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect, const Radius.circular(6)),
+        blockPaint,
+      );
+    }
+
+    // 도로 — 가로세로로 가로지르는 흰 선.
+    canvas.drawLine(
+      Offset(0, size.height * 0.5),
+      Offset(size.width, size.height * 0.5),
+      roadPaint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.4, 0),
+      Offset(size.width * 0.4, size.height),
+      roadPaint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.78, 0),
+      Offset(size.width * 0.78, size.height),
+      thinRoadPaint,
+    );
+
+    // 현위치 표시 — 도로 교차점에 동심원.
+    final center = Offset(size.width * 0.4, size.height * 0.5);
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = AppColors.accent.withValues(alpha: 0.28);
+    canvas.drawCircle(center, size.height * 0.34, ringPaint);
+    canvas.drawCircle(center, size.height * 0.2, ringPaint);
+    canvas.drawCircle(
+      center,
+      size.height * 0.07,
+      Paint()..color = AppColors.accent.withValues(alpha: 0.35),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 가장 가까운 인맥을 크게 보여주는 대표 카드.
@@ -1176,6 +1297,57 @@ class _ExpandToMapButton extends StatelessWidget {
   }
 }
 
+/// 주변 인맥 감지를 켜고 끈다. 설정 화면에 있던 스위치를 여기로 옮겼다
+/// (사용자 결정, 2026-08-10) — 켜고 끈 결과가 곧바로 나타나는 화면이 여기다.
+///
+/// 끄는 것은 위치 이용 동의 철회라 되돌리는 데 다시 동의가 필요하므로,
+/// 설정 화면과 똑같이 확인 절차를 거친다.
+Future<void> _toggleNearbyDetect(
+  BuildContext context,
+  RadarViewModel viewModel,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  if (!viewModel.hasLocationConsent) {
+    await viewModel.acceptLocationConsent();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('주변 인맥 감지를 켰습니다.'),
+        backgroundColor: AppColors.accent,
+      ),
+    );
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('주변 인맥 감지를 끌까요?'),
+      content: const Text('위치 이용 동의를 철회합니다. 끄면 주변 인맥과의 거리를 볼 수 없습니다.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text(
+            '끄기',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await viewModel.withdrawLocationConsent();
+  messenger.showSnackBar(
+    const SnackBar(
+      content: Text('주변 인맥 감지를 중지했습니다.'),
+      backgroundColor: AppColors.accent,
+    ),
+  );
+}
+
 /// 내 위치 갱신 버튼. 반경·지도 버튼과 같은 줄 맨 앞에 놓는다.
 ///
 /// 예전에는 "위치는 사용 중에만 확인해요" 안내 줄 오른쪽에 붙어 있었고, 그
@@ -1184,12 +1356,20 @@ class _ExpandToMapButton extends StatelessWidget {
 class _RefreshLocationButton extends StatelessWidget {
   final bool isRefreshing;
   final bool usingRealGps;
+
+  /// 주변 인맥 감지(위치 이용 동의)가 켜져 있는가.
+  final bool isDetecting;
   final VoidCallback onTap;
+
+  /// 길게 눌렀을 때 감지를 켜고 끈다.
+  final VoidCallback onToggleDetect;
 
   const _RefreshLocationButton({
     required this.isRefreshing,
     required this.usingRealGps,
+    required this.isDetecting,
     required this.onTap,
+    required this.onToggleDetect,
   });
 
   @override
@@ -1199,8 +1379,10 @@ class _RefreshLocationButton extends StatelessWidget {
     final tooltip = isRefreshing
         ? 'GPS 확인 중...'
         : usingRealGps
-        ? '내 위치 갱신'
-        : '위치 설정';
+        ? '내 위치 갱신 · 길게 누르면 감지 끄기'
+        : isDetecting
+        ? '위치 설정 · 길게 누르면 감지 끄기'
+        : '길게 눌러 주변 인맥 감지 켜기';
     return Tooltip(
       message: tooltip,
       child: Semantics(
@@ -1211,6 +1393,10 @@ class _RefreshLocationButton extends StatelessWidget {
           shape: const CircleBorder(),
           child: InkWell(
             onTap: isRefreshing ? null : onTap,
+            // 짧게 누르면 갱신, 길게 누르면 감지 켜기/끄기(사용자 결정,
+            // 2026-08-10). 아이콘 하나에 두 동작을 얹는 대신 갱신 경로를
+            // 없애는 안도 있었으나, 갱신은 자주 쓰는 동작이라 남겼다.
+            onLongPress: isRefreshing ? null : onToggleDetect,
             customBorder: const CircleBorder(),
             child: Container(
               width: 36,
@@ -1229,9 +1415,13 @@ class _RefreshLocationButton extends StatelessWidget {
                         color: AppColors.accentText,
                       ),
                     )
-                  : const Icon(
-                      Icons.my_location,
-                      color: AppColors.accentText,
+                  : Icon(
+                      // 감지가 꺼져 있으면 회색으로 — 눌러도 주변 인맥이 안
+                      // 뜨는 이유를 아이콘만 보고 알 수 있어야 한다.
+                      isDetecting ? Icons.my_location : Icons.location_disabled,
+                      color: isDetecting
+                          ? AppColors.accentText
+                          : AppColors.textMuted,
                       size: 17,
                     ),
             ),

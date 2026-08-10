@@ -252,26 +252,10 @@ class SettingsView extends StatelessWidget {
               const SizedBox(height: 10),
               _GroupedCard(
                 children: [
-                  _SettingsSwitchRow(
-                    icon: const AppIcon(
-                      AppIconId.radarDetect,
-                      size: 22,
-                      color: AppColors.accentText,
-                    ),
-                    title: '주변 인맥 감지',
-                    subtitle: radarViewModel.hasLocationConsent
-                        ? '위치 사용에 동의했습니다'
-                        : '꺼져 있으면 주변 거리 기능을 쓸 수 없습니다',
-                    value: radarViewModel.hasLocationConsent,
-                    onChanged: radarViewModel.isRefreshingLocation
-                        ? null
-                        : (turnOn) => turnOn
-                              ? radarViewModel.acceptLocationConsent()
-                              : _confirmConsentWithdrawal(
-                                  context,
-                                  radarViewModel,
-                                ),
-                  ),
+                  // "주변 인맥 감지" 스위치는 여기 없다. "주변" 화면의 위치
+                  // 아이콘을 **길게 눌러** 켜고 끈다(사용자 결정, 2026-08-10).
+                  // 켜고 끈 결과가 곧바로 나타나는 화면이 그쪽이라, 설정에서
+                  // 켜 놓고 다른 화면으로 옮겨 확인할 이유가 없었다.
                   // 감지 반경 행은 여기 없다. "주변" 화면 위쪽에 선택 버튼이
                   // 있고, 그 화면이 바로 결과(주변 인맥 목록)를 보여 준다.
                   // 처음에는 현재 값만 알려주는 행을 남겼는데, 바꾸지도 못하는
@@ -638,76 +622,6 @@ class _SettingsRow extends StatelessWidget {
 /// `_SettingsRow`와 같은 시각적 스타일이지만 끝에 스위치가 붙는 행. 실제
 /// 상태(예: 위치 이용 동의 여부)와 연결해서만 쓸 것 — 아무 상태도 바꾸지
 /// 않는 장식용 토글은 절대 추가하지 않는다.
-class _SettingsSwitchRow extends StatelessWidget {
-  final Widget icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool>? onChanged;
-
-  const _SettingsSwitchRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 76),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.accentSoft,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: icon,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      height: 1.4,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              activeTrackColor: AppColors.accent,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 Future<void> _confirmConsentWithdrawal(
   BuildContext context,
   RadarViewModel viewModel,
