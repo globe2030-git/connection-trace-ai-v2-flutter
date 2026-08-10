@@ -956,6 +956,17 @@ class _SendChannelRow extends StatelessWidget {
     }
   }
 
+  /// "더보기" — 이메일 경로를 먼저 보여 주고, 그 밖의 앱은 공유 시트로 넘긴다.
+  ///
+  /// **왜 공유 시트를 바로 열지 않는가.** 공유 시트로 메일 앱을 고르면 본문만
+  /// 넘어가고 **받는 사람이 비어 있다**(사용자 보고, 2026-08-10). 공유 시트는
+  /// "내용"만 전달하는 통로라 수신인을 실을 자리가 없고, 메일 앱은 받은
+  /// 텍스트만 보고 누구에게 보낼지 알 수 없다. OS가 그렇게 설계돼 있어 우회할
+  /// 방법이 없다.
+  ///
+  /// 그래서 이메일만은 `mailto:`로 직접 열어 **명함에 적힌 주소를 수신인으로
+  /// 채운다.** 버튼을 다섯 개로 늘리는 대신 더보기 안에 넣어, 자주 쓰는 네
+  /// 경로가 한 줄에 유지되게 했다(사용자 결정).
   Future<void> _share(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final point = selectedPoint;
@@ -963,7 +974,72 @@ class _SendChannelRow extends StatelessWidget {
       _toast(messenger, '먼저 전할 대화 포인트를 선택해 주세요.');
       return;
     }
-    await SharePlus.instance.share(ShareParams(text: point));
+    final email = contact.email.trim();
+
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.cardSurface,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (email.isNotEmpty)
+              ListTile(
+                leading: const AppIcon(
+                  AppIconId.mailSend,
+                  size: 22,
+                  color: AppColors.accentText,
+                ),
+                title: const Text('이메일로 보내기'),
+                // 어디로 가는지 미리 보여 준다 — 명함에 오래된 주소가 적혀
+                // 있으면 보내기 전에 알아챌 수 있다.
+                subtitle: Text(email),
+                onTap: () => Navigator.pop(sheetContext, 'email'),
+              ),
+            ListTile(
+              leading: const Icon(
+                Icons.ios_share,
+                size: 22,
+                color: AppColors.accentText,
+              ),
+              title: const Text('다른 앱으로 공유'),
+              subtitle: const Text('메모·메신저 등 — 받는 사람은 앱에서 직접 고릅니다'),
+              onTap: () => Navigator.pop(sheetContext, 'share'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (choice == 'email') {
+      await _email(messenger, point, email);
+    } else if (choice == 'share') {
+      await SharePlus.instance.share(ShareParams(text: point));
+    }
+  }
+
+  /// 메일 앱을 **수신인까지 채운 채로** 연다. 수신인은 명함에 적힌 이메일이다.
+  Future<void> _email(
+    ScaffoldMessengerState messenger,
+    String point,
+    String email,
+  ) async {
+    // 문자와 같은 이유로 `Uri(queryParameters:)`를 쓰지 않는다 — 공백이 `+`로
+    // 바뀌어 본문에 그대로 찍힌다.
+    final subject = Uri.encodeComponent('${contact.name}님, 안녕하세요');
+    final body = Uri.encodeComponent(point);
+    final uri = Uri.parse('mailto:$email?subject=$subject&body=$body');
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened) {
+      _toast(messenger, '메일 앱을 열지 못했어요.');
+    }
   }
 }
 
