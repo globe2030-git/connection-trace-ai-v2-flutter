@@ -651,6 +651,9 @@ class _NearbyCountCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.accentSoft,
           borderRadius: BorderRadius.circular(20),
+          // 배경이 사진처럼 바뀌면서 카드 경계가 페이지 배경에 묻혀 흐릿해
+          // 보였다(사용자 보고). 또렷한 테두리로 경계를 세운다.
+          border: Border.all(color: AppColors.borderFunctional),
         ),
         // 배경을 지도 느낌으로 깐다(사용자 결정, 2026-08-10).
         //
@@ -680,13 +683,24 @@ class _NearbyCountCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // 지도 위에 라벨과 큰 숫자가 얹히므로 흰 막을 한 겹 덮어 대비를
-              // 지킨다. 막이 없으면 도로·건물 위에서 글자가 읽히지 않는다.
+              // 글자가 얹히는 자리만 흰 막으로 덮어 대비를 지킨다.
+              //
+              // 처음에는 카드 전체에 55% 막을 씌웠는데 지도가 통째로 흐려
+              // 보였다(사용자 보고, 2026-08-10). 막을 옅게(22%) 하되, 글자가
+              // 실제로 놓이는 **아래쪽에만** 흰색이 짙어지는 그라데이션을
+              // 얹는다 — 지도는 선명하게 남고 글자 대비는 지켜진다.
               Positioned.fill(
                 child: ExcludeSemantics(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.22),
+                          Colors.white.withValues(alpha: 0.62),
+                        ],
+                      ),
                     ),
                   ),
                 ),
