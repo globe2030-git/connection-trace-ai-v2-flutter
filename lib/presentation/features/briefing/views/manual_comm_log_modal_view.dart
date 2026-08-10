@@ -201,12 +201,20 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '${widget.contact.name} 님 · $_description',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: AppColors.textSecondary,
-                      height: 1.4,
+                  // 채널을 바꾸면 안내문 길이가 달라져 모달 전체 높이가 출렁인다
+                  // (사용자 보고, 2026-08-10). 두 줄 자리를 미리 잡아 두면
+                  // 한 줄짜리 안내문에서도 높이가 그대로다. 최소 높이라서
+                  // 시스템 글자 크기를 키운 기기에서는 자연히 늘어난다 —
+                  // 고정 높이로 잡으면 그런 기기에서 글자가 잘린다.
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 36),
+                    child: Text(
+                      '${widget.contact.name} 님 · $_description',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -308,25 +316,33 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                   ),
                   const SizedBox(height: 18),
 
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '내용 *',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.accentText,
+                  // 이 줄이 모달 높이가 출렁이던 가장 큰 원인이었다. "붙여넣기"
+                  // 버튼은 문자·카카오톡에서만 나오는데, 버튼이 있는 줄과 글자만
+                  // 있는 줄은 높이가 20px 넘게 차이 난다. 채널을 바꿀 때마다
+                  // 화면이 튀어 보였다 — 버튼 유무와 무관하게 줄 높이를 40으로
+                  // 고정한다(사용자 보고, 2026-08-10).
+                  SizedBox(
+                    height: 40,
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '내용 *',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.accentText,
+                            ),
                           ),
                         ),
-                      ),
-                      if (_selectedType == 'sms' || _selectedType == 'kakao')
-                        TextButton.icon(
-                          onPressed: _pasteFromClipboard,
-                          icon: const Icon(Icons.content_paste, size: 16),
-                          label: const Text('붙여넣기'),
-                        ),
-                    ],
+                        if (_selectedType == 'sms' || _selectedType == 'kakao')
+                          TextButton.icon(
+                            onPressed: _pasteFromClipboard,
+                            icon: const Icon(Icons.content_paste, size: 16),
+                            label: const Text('붙여넣기'),
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextFormField(

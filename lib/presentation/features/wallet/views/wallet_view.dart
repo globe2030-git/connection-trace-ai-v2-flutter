@@ -297,87 +297,125 @@ class _ContactCard extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 3),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                contact.company.trim().isEmpty
-                                    ? '회사 정보 없음'
-                                    : contact.company,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ),
-                            // 날짜는 회사명 줄 오른쪽 끝에 둔다. 이름 줄에
-                            // 붙이면 긴 이름이 날짜에 밀려 잘리는데, 회사명은
-                            // 이름보다 짧은 경우가 많아 여유가 생긴다.
-                            if (_savedOn != null) ...[
-                              const SizedBox(width: 8),
-                              // ⚠️ 이 날짜는 "등록일"이 아니라 마지막으로
-                              // 저장한 시각(updatedAt)이다 — 모델에 등록일이
-                              // 없다. 화면에는 날짜만 뜨므로 등록일로 오해할
-                              // 수 있어, 스크린리더에는 무엇인지 밝혀 준다.
-                              Semantics(
-                                label: '마지막 저장 $_savedOn',
-                                child: ExcludeSemantics(
-                                  child: Text(
-                                    _savedOn!,
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      color: AppColors.textMuted,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                        Text(
+                          contact.company.trim().isEmpty
+                              ? '회사 정보 없음'
+                              : contact.company,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  // 동작 버튼은 촘촘하게 — 세 줄짜리 본문이 들어오면서 예전
-                  // 크기로는 이름이 들어갈 자리가 남지 않는다.
-                  if (contact.phone.trim().isNotEmpty)
-                    _CompactAction(
-                      tooltip: '${contact.name}에게 전화',
-                      onPressed: onCall,
-                      icon: const AppIcon(
-                        AppIconId.call,
-                        size: 20,
-                        color: AppColors.accentText,
+                  // 날짜와 동작 버튼을 오른쪽 세로 묶음으로 둔다. 날짜를 본문
+                  // 칼럼 안(회사명 줄)에 두면 버튼 폭만큼 안쪽으로 들어가 앉아
+                  // 정작 오른쪽 끝에 붙지 않는다 — 사용자가 "우측 정렬"을
+                  // 요청한 지점이다(2026-08-10).
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_savedOn != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6, bottom: 2),
+                          // ⚠️ 등록일이 아니라 마지막 저장 시각(updatedAt)이다 —
+                          // 모델에 등록일이 없다. 날짜만 보이면 등록일로 오해할
+                          // 수 있어 스크린리더에는 무엇인지 밝혀 준다.
+                          child: Semantics(
+                            label: '마지막 저장 $_savedOn',
+                            child: ExcludeSemantics(
+                              child: Text(
+                                _savedOn!,
+                                textAlign: TextAlign.right,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 동작 버튼은 촘촘하게 — 세 줄짜리 본문이 들어오면서
+                          // 예전 크기로는 이름이 들어갈 자리가 남지 않는다.
+                          if (contact.phone.trim().isNotEmpty)
+                            _CompactAction(
+                              tooltip: '${contact.name}에게 전화',
+                              onPressed: onCall,
+                              icon: const AppIcon(
+                                AppIconId.call,
+                                size: 20,
+                                color: AppColors.accentText,
+                              ),
+                            ),
+                          // AI 대화 가이드는 원래 "주변" 화면에서만 열 수
+                          // 있었다. 그런데 주변 화면은 지금 근처에 있는 인맥만
+                          // 보여주므로, 평소에 "이 사람에게 연락해 볼까" 하는
+                          // 순간에는 진입할 길이 없었다(실사용 피드백 — 쓸 수
+                          // 있는 곳이 한 곳뿐이라 잘 안 쓰게 된다). 명함 지갑은
+                          // 인맥 전체가 있는 곳이라 여기서 바로 열려야 한다.
+                          _CompactAction(
+                            tooltip: '${contact.name} AI 대화 가이드',
+                            onPressed: onBriefing,
+                            icon: const Icon(
+                              Icons.auto_awesome,
+                              size: 20,
+                              color: AppColors.accentText,
+                            ),
+                          ),
+                          // 삭제는 더보기 메뉴 안에 둔다(사용자 결정,
+                          // 2026-08-10). 빨간 휴지통이 줄마다 노출되면 목록이
+                          // 산만하고 실수로 누르기도 쉽다. 그렇다고 "밀어서
+                          // 삭제"만 남기면 그 동작을 모르는 사용자는 지우는
+                          // 방법을 아예 못 찾으므로, 메뉴로 옮겨 눈에 보이는
+                          // 경로는 유지한다.
+                          PopupMenuButton<String>(
+                            tooltip: '${contact.name} 더보기',
+                            icon: const Icon(
+                              Icons.more_vert,
+                              size: 20,
+                              color: AppColors.textMuted,
+                            ),
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                            ),
+                            onSelected: (value) async {
+                              if (value != 'delete') return;
+                              if (await _confirmDelete(context)) onDelete();
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem<String>(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.delete_outline,
+                                      size: 18,
+                                      color: AppColors.destructive,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      '명함 삭제',
+                                      style: TextStyle(
+                                        color: AppColors.destructive,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    ),
-                  // AI 대화 가이드는 원래 "주변" 화면에서만 열 수 있었다. 그런데
-                  // 주변 화면은 지금 근처에 있는 인맥만 보여주므로, 평소에 "이
-                  // 사람에게 연락해 볼까" 하는 순간에는 진입할 길이 없었다
-                  // (실사용 피드백 — 쓸 수 있는 곳이 한 곳뿐이라 잘 안 쓰게 된다).
-                  // 명함 지갑은 인맥 전체가 있는 곳이라 여기서 바로 열 수 있어야 한다.
-                  _CompactAction(
-                    tooltip: '${contact.name} AI 대화 가이드',
-                    onPressed: onBriefing,
-                    icon: const Icon(
-                      Icons.auto_awesome,
-                      size: 20,
-                      color: AppColors.accentText,
-                    ),
-                  ),
-                  // 왼쪽으로 밀어서 삭제(Dismissible)만 있으면 알아채기 어려워서,
-                  // 눈에 보이는 삭제 버튼도 같이 둔다.
-                  _CompactAction(
-                    tooltip: '${contact.name} 명함 삭제',
-                    onPressed: () async {
-                      if (await _confirmDelete(context)) onDelete();
-                    },
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      size: 20,
-                      color: AppColors.destructive,
-                    ),
+                    ],
                   ),
                 ],
               ),
