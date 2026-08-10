@@ -329,15 +329,15 @@ class SettingsView extends StatelessWidget {
                       );
                     },
                   ),
-                  const _SettingsRow(
-                    icon: AppIcon(
-                      AppIconId.aiDataInfo,
-                      size: 22,
-                      color: AppColors.accentText,
-                    ),
-                    title: 'AI 데이터 안내',
-                    subtitle: 'AI 기능 실행 시 선택된 인맥 정보가 회사 서버를 거쳐 AI로 전송될 수 있습니다.',
-                  ),
+                  // "AI 데이터 안내" 행은 뺐다(사용자 요청, 2026-08-10).
+                  // 같은 내용이 **개인정보처리방침 11조**에 더 정확하게 들어
+                  // 있다 — 전달 경로(기기 → 회사 서버 → Gemini), 요청마다
+                  // 동의를 받는다는 것, 전송 항목의 한정, 서버가 내용을
+                  // 저장하지 않는다는 것까지. 설정의 한 줄은 그 일부를 요약한
+                  // 것이라 두 벌을 관리하면 개정할 때 어긋난다.
+                  //
+                  // 방침으로 가는 경로는 바로 아래 "약관 및 정책"에 있고,
+                  // AI 전송 동의 화면에도 "자세히" 버튼이 있다.
                 ],
               ),
               const SizedBox(height: 26),
