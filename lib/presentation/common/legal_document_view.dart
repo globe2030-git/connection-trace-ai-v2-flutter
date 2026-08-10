@@ -11,6 +11,12 @@ import '../../core/theme/app_colors.dart';
 /// **문서 불일치 자체가 법적 리스크**가 되기 때문이다. 웹에 올려 두면 앱을
 /// 업데이트하지 않아도 개정 내용이 곧바로 반영된다.
 enum LegalDocument {
+  /// 약관·정책 목록 페이지. **사업자 정보 표(전자상거래법 제10조)가 여기
+  /// 있다** — 앱에 같은 값을 복사해 두지 않기 위해 이 페이지로 보낸다
+  /// (2026-08-10). 예전에는 설정에 사업자 정보를 하드코딩한 다이얼로그가
+  /// 있었는데, 주소나 대표자가 바뀌면 앱까지 고쳐 배포해야 했다.
+  // `index`는 enum이 이미 쓰는 이름이라(순번 getter) 그대로 못 쓴다.
+  legalIndex('법적 고지', 'index'),
   terms('서비스 이용약관', 'terms-of-service'),
   privacy('개인정보처리방침', 'privacy-policy'),
   permissions('앱 접근권한 안내', 'app-permissions'),
@@ -27,9 +33,9 @@ enum LegalDocument {
 }
 
 Future<void> showLegalDocument(BuildContext context, LegalDocument doc) {
-  return Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => LegalDocumentView(document: doc)),
-  );
+  return Navigator.of(
+    context,
+  ).push(MaterialPageRoute(builder: (_) => LegalDocumentView(document: doc)));
 }
 
 /// 법적 고지 문서를 앱 안 웹뷰로 보여준다.

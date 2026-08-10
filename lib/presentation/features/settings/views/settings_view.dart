@@ -21,37 +21,6 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 
-/// 전자상거래법 제10조에 따른 사업자 정보 표시. 웹(법적 고지 인덱스)에도
-/// 같은 내용이 있고, 여기서는 앱 안에서 바로 볼 수 있게 한다.
-Future<void> _showBusinessInfo(BuildContext context) {
-  return showDialog<void>(
-    context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('사업자 정보'),
-      content: const Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('크림하우스주식회사', style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Text('대표자  최우진'),
-          Text('사업자등록번호  220-86-89511'),
-          SizedBox(height: 8),
-          Text('서울특별시 영등포구 양평로21가길 19,\n208·209호(양평동5가)'),
-          SizedBox(height: 8),
-          Text('문의  connectionsense@creamhouse.net'),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('확인'),
-        ),
-      ],
-    ),
-  );
-}
-
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
 
@@ -408,7 +377,13 @@ class SettingsView extends StatelessWidget {
                     ),
                     title: '사업자 정보',
                     subtitle: '상호·대표자·사업자등록번호·문의처',
-                    onTap: () => _showBusinessInfo(context),
+                    // 앱에 값을 복사해 두지 않고 법적 고지 페이지를 연다
+                    // (2026-08-10). 예전에는 여기서 하드코딩한 다이얼로그를
+                    // 띄웠는데, 주소나 대표자가 바뀌면 **앱을 고쳐 다시
+                    // 배포해야** 값이 맞았다. 약관·방침 본문을 앱에 복사하지
+                    // 않는 것과 같은 이유다.
+                    onTap: () =>
+                        showLegalDocument(context, LegalDocument.legalIndex),
                   ),
                   _SettingsRow(
                     icon: const Icon(
