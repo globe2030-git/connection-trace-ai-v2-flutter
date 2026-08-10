@@ -220,43 +220,28 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _channelOptions.map((opt) {
-                      final type = opt['type'] as String;
-                      final isSelected = _selectedType == type;
-                      // 선택 시 accent(#2563EB) 채움 + 흰 글자 = 대비 5.17:1로
-                      // WCAG AA 통과. 미선택은 페이지 배경 + 중립 테두리.
-                      final foreground = isSelected
-                          ? Colors.white
-                          : AppColors.textSecondary;
-                      return ChoiceChip(
-                        selected: isSelected,
-                        // 기본 체크 표시를 끈다 — 켜 두면 채널 아이콘 위에
-                        // 겹쳐 그려져 무슨 채널인지 알아볼 수 없다.
-                        showCheckmark: false,
-                        onSelected: (_) => setState(() => _selectedType = type),
-                        avatar: AppIcon(
-                          opt['icon'] as AppIconId,
-                          size: 16,
-                          color: foreground,
+                  // 칩을 균등 폭(Expanded)으로 깔고 내용은 각 칩의 가운데에
+                  // 둔다(사용자 요청, 2026-08-10). `Wrap` + `ChoiceChip`은 칩
+                  // 폭이 글자 수를 따라가서 "통화"와 "카카오톡"의 폭이 두 배
+                  // 넘게 차이 났고, 그 상태에서는 안쪽 글자를 가운데로 옮겨도
+                  // 줄 전체가 들쭉날쭉해 보인다. 폭을 먼저 맞춰야 정렬이 산다.
+                  Row(
+                    children: [
+                      for (final opt in _channelOptions) ...[
+                        if (opt != _channelOptions.first)
+                          const SizedBox(width: 8),
+                        Expanded(
+                          child: _ChannelChip(
+                            icon: opt['icon'] as AppIconId,
+                            label: opt['label'] as String,
+                            isSelected: _selectedType == opt['type'],
+                            onTap: () => setState(
+                              () => _selectedType = opt['type'] as String,
+                            ),
+                          ),
                         ),
-                        label: Text(opt['label'] as String),
-                        labelStyle: TextStyle(
-                          color: foreground,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12.5,
-                        ),
-                        selectedColor: AppColors.accent,
-                        backgroundColor: AppColors.bgBase,
-                        side: BorderSide(
-                          color: isSelected
-                              ? AppColors.accent
-                              : AppColors.borderFunctional,
-                        ),
-                      );
-                    }).toList(),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 18),
 
@@ -425,6 +410,87 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 채널 선택 칩 하나. `Expanded`로 감싸 쓰는 것을 전제로 하며, 안쪽 내용을
+/// 가운데 정렬한다.
+///
+/// `ChoiceChip`을 쓰지 않는 이유는 두 가지다.
+/// 1. 칩 폭이 글자 수를 따라가 "통화"와 "카카오톡"이 두 배 넘게 차이 났다.
+///    균등 폭으로 깔아야 줄이 정돈돼 보인다.
+/// 2. 선택 시 기본 체크 표시가 채널 아이콘 위에 겹쳐 그려져 무슨 채널인지
+///    알아볼 수 없었다.
+class _ChannelChip extends StatelessWidget {
+  final AppIconId icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ChannelChip({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 선택 시 accent(#2563EB) 채움 + 흰 글자 = 대비 5.17:1로 WCAG AA 통과.
+    final foreground = isSelected ? Colors.white : AppColors.textSecondary;
+
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      child: Material(
+        color: isSelected ? AppColors.accent : AppColors.bgBase,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.accent
+                    : AppColors.borderFunctional,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ⚠️ `AppIcon(color:)`만으로는 색이 바뀌지 않는다. 이 SVG들은
+                // `currentColor`가 아니라 stroke/fill에 #2563EB를 하드코딩하고
+                // 있어서 `SvgTheme(currentColor:)`가 먹히지 않는다. 선택 상태의
+                // 칩 배경도 같은 #2563EB라, 강제 틴트를 씌우지 않으면 아이콘이
+                // 배경에 묻혀 사라진다(사용자 보고, 2026-08-10).
+                ColorFiltered(
+                  colorFilter: ColorFilter.mode(foreground, BlendMode.srcIn),
+                  child: AppIcon(icon, size: 16, color: foreground),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
