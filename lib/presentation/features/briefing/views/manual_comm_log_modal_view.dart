@@ -6,10 +6,11 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../radar/view_models/radar_view_model.dart';
 
-/// 통화/문자/이메일/카카오톡 등 소통 기록을 사용자가 직접 입력하는 화면.
-/// 실제 기기 자동 연동이 안 되는 상황(iOS 전체, 안드로이드의 카카오톡/이메일,
-/// 또는 그냥 사용자가 직접 요약해서 남기고 싶은 경우) 어디서나 쓸 수 있는
-/// 기본 입력 경로 — 소통 이력 연동 기능의 "항상 되는" 기반이 되는 화면이다.
+/// 통화/문자/카카오톡 소통 기록을 사용자가 직접 입력하는 화면.
+/// 기기 자동 연동이 안 되는 상황(iOS 전체, 안드로이드의 카카오톡, 또는 그냥
+/// 사용자가 직접 요약해서 남기고 싶은 경우) 어디서나 쓸 수 있는 기본 입력
+/// 경로 — 소통 이력 기능의 "항상 되는" 기반이 되는 화면이다. v1에서는 이것이
+/// 유일한 입력 경로다(Gmail 가져오기 제거, 추가 136).
 class ManualCommLogModalView extends StatefulWidget {
   final ContactModel contact;
   final String initialType;
@@ -36,31 +37,18 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     _selectedType = widget.initialType;
   }
 
+  /// 선택 가능한 채널. **소통 기록 추가 시트의 항목과 1:1로 맞춘다** —
+  /// 시트에 없는 채널을 여기서만 고를 수 있으면 두 화면이 어긋난다.
+  /// 이메일은 추가 136에서 시트의 Gmail 항목을 뺄 때 함께 제거했다(추가 138).
+  ///
+  /// 채널별 색(`AppColors.channelCall` 등)은 여기서 쓰지 않는다. 칩 4개가
+  /// 각각 파랑·초록·주황·노랑이라 화면이 산만했고, 특히 카카오 브랜드
+  /// 옐로우(#FEE500) 위의 흰 글자는 대비가 1.3:1로 읽히지 않았다. 선택 상태를
+  /// 색 종류가 아니라 **채움 여부**로 구분한다(추가 138).
   static const _channelOptions = [
-    {
-      'type': 'call',
-      'label': '통화',
-      'icon': AppIconId.call,
-      'color': AppColors.channelCall,
-    },
-    {
-      'type': 'sms',
-      'label': '문자',
-      'icon': AppIconId.message,
-      'color': AppColors.channelSms,
-    },
-    {
-      'type': 'email',
-      'label': '이메일',
-      'icon': AppIconId.mailSend,
-      'color': AppColors.channelEmail,
-    },
-    {
-      'type': 'kakao',
-      'label': '카카오톡',
-      'icon': AppIconId.chatSend,
-      'color': AppColors.channelKakao,
-    },
+    {'type': 'call', 'label': '통화', 'icon': AppIconId.call},
+    {'type': 'sms', 'label': '문자', 'icon': AppIconId.message},
+    {'type': 'kakao', 'label': '카카오톡', 'icon': AppIconId.chatSend},
   ];
 
   @override
@@ -128,7 +116,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _title => switch (_selectedType) {
     'call' => '통화 후 메모',
     'sms' => '문자 내용 추가',
-    'email' => '이메일 내용 추가',
     'kakao' => '카카오톡 내용 추가',
     _ => '소통 기록 추가',
   };
@@ -136,7 +123,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _description => switch (_selectedType) {
     'call' => '통화기록을 읽지 않습니다. 통화 후 기억할 내용만 직접 적어 주세요.',
     'sms' => '문자 앱에서 필요한 대화만 복사해 붙여넣어 주세요.',
-    'email' => '직접 기록할 이메일 내용을 입력해 주세요.',
     'kakao' => '카카오톡에서 필요한 대화만 복사해 붙여넣어 주세요.',
     _ => '필요한 내용만 직접 입력해 주세요.',
   };
@@ -144,7 +130,6 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   String get _hint => switch (_selectedType) {
     'call' => '예: 신규 프로젝트를 다음 주에 다시 논의하기로 함',
     'sms' => '문자 앱에서 복사한 필요한 대화를 붙여넣으세요.',
-    'email' => '예: 견적서 검토 후 금요일까지 회신 예정',
     'kakao' => '카카오톡에서 복사한 필요한 대화를 붙여넣으세요.',
     _ => '기억할 내용을 입력하세요.',
   };
@@ -235,32 +220,28 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _channelOptions.map((opt) {
-                      final type = opt['type'] as String;
-                      final color = opt['color'] as Color;
-                      final isSelected = _selectedType == type;
-                      return ChoiceChip(
-                        selected: isSelected,
-                        onSelected: (_) => setState(() => _selectedType = type),
-                        avatar: AppIcon(
-                          opt['icon'] as AppIconId,
-                          size: 16,
-                          color: isSelected ? Colors.white : color,
+                  // 칩을 균등 폭(Expanded)으로 깔고 내용은 각 칩의 가운데에
+                  // 둔다(사용자 요청, 2026-08-10). `Wrap` + `ChoiceChip`은 칩
+                  // 폭이 글자 수를 따라가서 "통화"와 "카카오톡"의 폭이 두 배
+                  // 넘게 차이 났고, 그 상태에서는 안쪽 글자를 가운데로 옮겨도
+                  // 줄 전체가 들쭉날쭉해 보인다. 폭을 먼저 맞춰야 정렬이 산다.
+                  Row(
+                    children: [
+                      for (final opt in _channelOptions) ...[
+                        if (opt != _channelOptions.first)
+                          const SizedBox(width: 8),
+                        Expanded(
+                          child: _ChannelChip(
+                            icon: opt['icon'] as AppIconId,
+                            label: opt['label'] as String,
+                            isSelected: _selectedType == opt['type'],
+                            onTap: () => setState(
+                              () => _selectedType = opt['type'] as String,
+                            ),
+                          ),
                         ),
-                        label: Text(opt['label'] as String),
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : color,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12.5,
-                        ),
-                        selectedColor: color,
-                        backgroundColor: AppColors.bgBase,
-                        side: BorderSide(color: color.withValues(alpha: 0.4)),
-                      );
-                    }).toList(),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 18),
 
@@ -287,28 +268,39 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: AppColors.borderFunctional),
                       ),
+                      // 날짜 글자를 박스 가로 한가운데에 둔다(사용자 요청,
+                      // 2026-08-10). 양옆 아이콘 슬롯 너비를 24로 똑같이 잡아야
+                      // 실제로 가운데에 온다 — 아이콘 크기가 18과 16으로 달라
+                      // 그냥 Spacer로 밀면 한쪽으로 치우친다.
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.event,
-                            size: 18,
-                            color: AppColors.accentText,
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            '${_selectedDateTime.year}.${_selectedDateTime.month.toString().padLeft(2, '0')}.${_selectedDateTime.day.toString().padLeft(2, '0')} '
-                            '${_selectedDateTime.hour.toString().padLeft(2, '0')}:${_selectedDateTime.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                          const SizedBox(
+                            width: 24,
+                            child: Icon(
+                              Icons.event,
+                              size: 18,
+                              color: AppColors.accentText,
                             ),
                           ),
-                          const Spacer(),
-                          const Icon(
-                            Icons.edit_calendar_outlined,
-                            size: 16,
-                            color: AppColors.textMuted,
+                          Expanded(
+                            child: Text(
+                              '${_selectedDateTime.year}.${_selectedDateTime.month.toString().padLeft(2, '0')}.${_selectedDateTime.day.toString().padLeft(2, '0')} '
+                              '${_selectedDateTime.hour.toString().padLeft(2, '0')}:${_selectedDateTime.minute.toString().padLeft(2, '0')}',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(
+                            width: 24,
+                            child: Icon(
+                              Icons.edit_calendar_outlined,
+                              size: 16,
+                              color: AppColors.textMuted,
+                            ),
                           ),
                         ],
                       ),
@@ -418,6 +410,79 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 채널 선택 칩 하나. `Expanded`로 감싸 쓰는 것을 전제로 하며, 안쪽 내용을
+/// 가운데 정렬한다.
+///
+/// `ChoiceChip`을 쓰지 않는 이유는 두 가지다.
+/// 1. 칩 폭이 글자 수를 따라가 "통화"와 "카카오톡"이 두 배 넘게 차이 났다.
+///    균등 폭으로 깔아야 줄이 정돈돼 보인다.
+/// 2. 선택 시 기본 체크 표시가 채널 아이콘 위에 겹쳐 그려져 무슨 채널인지
+///    알아볼 수 없었다.
+class _ChannelChip extends StatelessWidget {
+  final AppIconId icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ChannelChip({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 선택 시 accent(#2563EB) 채움 + 흰 글자 = 대비 5.17:1로 WCAG AA 통과.
+    final foreground = isSelected ? Colors.white : AppColors.textSecondary;
+
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: label,
+      child: Material(
+        color: isSelected ? AppColors.accent : AppColors.bgBase,
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: isSelected
+                    ? AppColors.accent
+                    : AppColors.borderFunctional,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AppIcon(icon, size: 16, color: foreground),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
