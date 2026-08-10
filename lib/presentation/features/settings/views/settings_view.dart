@@ -307,7 +307,9 @@ class SettingsView extends StatelessWidget {
                       size: 22,
                       color: AppColors.accentText,
                     ),
-                    title: 'AI 연결',
+                    // "AI 연결"은 개발자 용어였다 — 사용자가 이 항목에서 실제로
+                    // 확인하는 것은 남은 생성 횟수다(사용자 요청, 2026-08-10).
+                    title: 'AI 잔여 횟수',
                     subtitle: AiBriefingService.kAiServiceDeployed
                         ? '커넥션센스 AI가 대화 포인트를 만들어드려요'
                         : '서비스 준비 중이에요',
