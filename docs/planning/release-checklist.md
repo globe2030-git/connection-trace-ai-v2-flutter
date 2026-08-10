@@ -96,6 +96,10 @@ tool/build_app.sh ios release     # iOS
 
 ## 6. 배포
 
+테스터에게 보낼 안내문은 [`tester-guide.md`](./tester-guide.md)에 있다.
+**매번 새로 쓰지 말고 그 문서를 고쳐 쓸 것** — 새로 쓰면 "지금 안 되는 기능"
+목록이 빠져 정상 동작을 결함으로 제보받는다.
+
 ```bash
 firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk \
   --app 1:79345379389:android:24e13cbaadaf82ac182254 \
