@@ -2,6 +2,31 @@
 
 ## 작업 로그
 
+### 2026-08-10 (추가 149) — iOS 빌드 6 TestFlight 외부 베타 심사 제출 + Android/iOS 직원 테스터 등록
+
+**Android**: `config/testers`(관리자 콘솔 "테스터 관리" 탭)에 직원 6명 등록
+(`neoin9@gmail.com`, `globe2030@gmail.com`, `ykiki95@gmail.com`,
+`hkchoi1049@creamhouse.net`, `dakis1@naver.com`, `kimyk5527@creamhouse.net`) —
+전부 로그인 계정 이메일임을 확인. 기존에 있던 3건(`yennii3001@creamhouse.net`,
+`yeaseal9026@gmail.com`, `leeyena9026@naver.com`)은 신규 아이폰 테스터라 그대로
+유지.
+
+**iOS**: TestFlight 빌드 `1.0.0 (5)`(2026-08-09 업로드)가 그 이후 main에 쌓인
+166개 커밋(주변 화면 재정리, 소통 기록 미갱신 버그 수정, Google 프로필 사진
+자동 채우기 등)을 못 담고 있어서, 외부 그룹을 만들기 전에 `pubspec.yaml`을
+`1.0.0+6`으로 올려 새로 빌드(PR #88)했다. `tool/build_app.sh ios release`로
+빌드 → Xcode Archive → App Store Connect 업로드 → 처리 완료 확인 → 기존 외부
+그룹 "커넥션센스_테스터(외부)"(아이폰 테스터 3명 포함)에 빌드 연결 → **베타
+심사 제출 완료(심사 대기중)**.
+
+**심사용 계정 관련 주의사항 재확인**: 사용자가 처음에 `connectionsense@creamhouse.net`
+(앱 공식 문의 메일)을 심사용 계정으로 쓰려 했으나, 로그인 방식이 Google
+OAuth라 그 계정 비밀번호를 그대로 Apple에 넘기는 셈이고, 이 계정은
+`functions/src/index.ts`의 `ADMIN_EMAILS`에 들어있어 **관리자 콘솔 전권**까지
+함께 넘어간다는 점을 짚어 별도 신규 Gmail 계정으로 바꿔 진행했다. 관리자
+계정 재사용 금지 원칙(`docs/planning/store-review-notes.md` 6절)이 실제로
+작동한 사례.
+
 ### 2026-08-10 (추가 148) — 직원 테스트 기간 동안 AI 하루 한도를 20으로 통일(P0-11 재오픈)
 
 추가 147에서 설계값 10으로 되돌렸는데, **직원 테스트 기간 동안은 20으로
