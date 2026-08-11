@@ -27,10 +27,33 @@ class _WalletViewState extends State<WalletView> {
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
 
+  // "위치값 없음"(주소는 있는데 지오코딩 포기) 명함 id 집합. 시도 기록을
+  // 비동기로 읽어 채우고, 확정된 명함에만 아이콘을 붙여 깜빡임을 막는다.
+  final GeoBackfillService _geoService = GeoBackfillService();
+  Set<String> _givenUpGeoIds = {};
+  // 마지막으로 판정에 쓴 명함 목록의 서명 — 바뀔 때만 다시 계산한다.
+  String _givenUpSig = '';
+
+  /// 명함 목록이 바뀌었을 때만 지오코딩 포기 집합을 다시 구한다. 결과가
+  /// 오면 setState로 아이콘을 반영한다(서명은 목록 기준이라 setState가
+  /// 루프를 돌지 않는다).
+  void _maybeRefreshGivenUp(List<ContactModel> contacts) {
+    final sig = contacts
+        .map((c) => '${c.id}|${c.address ?? ''}|${c.geo == null}')
+        .join(';');
+    if (sig == _givenUpSig) return;
+    _givenUpSig = sig;
+    _geoService.resolveGivenUpIds(contacts).then((ids) {
+      if (!mounted) return;
+      setState(() => _givenUpGeoIds = ids);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<WalletViewModel>();
     final contacts = viewModel.filteredContacts;
+    _maybeRefreshGivenUp(viewModel.contacts);
 
     return Scaffold(
       backgroundColor: AppColors.bgBase,
@@ -157,7 +180,10 @@ class _WalletViewState extends State<WalletView> {
               // 위치 진단 배너. **필터가 아닌 전체 명함**(`viewModel.contacts`)을
               // 기준으로 센다 — 태그·검색으로 걸러진 화면 목록이 아니라 "내
               // 명함 전체 중 몇 개가 주변 인맥에 안 뜨는가"가 알고 싶은 값이다.
-              _LocationDiagnosticBanner(contacts: viewModel.contacts),
+              _LocationDiagnosticBanner(
+                contacts: viewModel.contacts,
+                givenUpGeoIds: _givenUpGeoIds,
+              ),
               const SizedBox(height: 14),
               Expanded(
                 child: contacts.isEmpty
@@ -231,6 +257,7 @@ class _WalletViewState extends State<WalletView> {
           children: [
             _ContactCard(
               contact: contact,
+              geoNotFound: _givenUpGeoIds.contains(contact.id),
               onEdit: () => _openCardEditor(context, contact: contact),
               onCall: () => PhoneCallService.showCallPicker(context, contact),
               onDelete: () => viewModel.deleteContact(contact.id),
@@ -315,6 +342,8 @@ class _WalletViewState extends State<WalletView> {
 
 class _ContactCard extends StatelessWidget {
   final ContactModel contact;
+  // 주소는 있는데 지오코딩을 포기해 좌표가 없는 상태(= "위치값 없음").
+  final bool geoNotFound;
   final VoidCallback onEdit;
   final VoidCallback onCall;
   final VoidCallback onDelete;
@@ -322,6 +351,7 @@ class _ContactCard extends StatelessWidget {
 
   const _ContactCard({
     required this.contact,
+    required this.geoNotFound,
     required this.onEdit,
     required this.onCall,
     required this.onDelete,
@@ -428,16 +458,26 @@ class _ContactCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            // 주소가 없으면 주변 인맥에 뜨지 않는다 — 그런데
-                            // 사용자는 왜 안 뜨는지 알 수 없었다. 명함 목록에서
-                            // 미리 알려 채워 넣게 한다(사용자 요청, 2026-08-10).
-                            // 판단 기준은 좌표(geo)가 아니라 **주소 문자열**이다
-                            // — 좌표는 지오코딩이 끝나기 전 잠깐 비어 있을 수
-                            // 있어, 주소를 제대로 넣었는데도 배지가 깜빡일 수
-                            // 있다. 주소는 사용자가 직접 넣고 지우는 안정된 값.
+                            // 주소가 없거나 위치를 못 찾으면 주변 인맥(레이더)에
+                            // 안 뜬다 — 왜 안 뜨는지 목록에서 아이콘으로 미리
+                            // 알려 채워/고쳐 넣게 한다. 두 경우를 구분한다:
+                            // ① 주소 없음: 주소 문자열이 비었다(안정된 값이라
+                            //    깜빡임 없음). ② 위치값 없음: 주소는 있는데
+                            //    지오코딩을 여러 번 시도하고도 좌표를 못 만든
+                            //    확정 상태(geoNotFound). geo==null만으로 판단하면
+                            //    backfill 도중 깜빡이므로 "포기 확정"만 쓴다.
                             if ((contact.address ?? '').trim().isEmpty) ...[
                               const SizedBox(width: 6),
-                              const _NoAddressBadge(),
+                              const _LocationWarnIcon(
+                                icon: Icons.location_off_outlined,
+                                tooltip: '주소 없음',
+                              ),
+                            ] else if (geoNotFound) ...[
+                              const SizedBox(width: 6),
+                              const _LocationWarnIcon(
+                                icon: Icons.wrong_location_outlined,
+                                tooltip: '위치값 없음',
+                              ),
                             ],
                           ],
                         ),
@@ -555,40 +595,27 @@ class _ContactCard extends StatelessWidget {
   }
 }
 
-/// 명함에 주소가 없을 때 회사명 옆에 붙는 작은 배지.
-///
-/// 주소가 없으면 그 인맥은 "주변 인맥" 목록·지도에 뜨지 않는다. 기능이
-/// 조용히 빠지는 대신 이 자리에서 이유를 알리고, 명함을 눌러 주소를 채우도록
-/// 유도한다(사용자 요청, 2026-08-10).
-class _NoAddressBadge extends StatelessWidget {
-  const _NoAddressBadge();
+/// 명함 목록에서 위치 상태를 알리는 작은 아이콘. 텍스트 대신 아이콘으로 —
+/// 목록이 깔끔하고, 뜻은 길게 누르면 뜨는 툴팁으로 안내한다.
+/// - 주소 없음: [Icons.location_off_outlined]
+/// - 위치값 없음(주소는 있으나 좌표 못 찾음): [Icons.wrong_location_outlined]
+class _LocationWarnIcon extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+
+  const _LocationWarnIcon({required this.icon, required this.tooltip});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.warningSoft,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.location_off_outlined,
-            size: 11,
-            color: AppColors.warningText,
-          ),
-          SizedBox(width: 3),
-          Text(
-            '주소 없음',
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.warningText,
-            ),
-          ),
-        ],
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: AppColors.warningSoft,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(icon, size: 14, color: AppColors.warningText),
       ),
     );
   }
@@ -606,8 +633,14 @@ class _NoAddressBadge extends StatelessWidget {
 /// 화면에서 실시간으로 센다.
 class _LocationDiagnosticBanner extends StatelessWidget {
   final List<ContactModel> contacts;
+  // 카드 아이콘과 **같은 기준**을 쓰도록 지오코딩 포기 집합을 받아 센다 —
+  // geo==null로 세면 backfill 도중 값이 카드 아이콘과 어긋난다.
+  final Set<String> givenUpGeoIds;
 
-  const _LocationDiagnosticBanner({required this.contacts});
+  const _LocationDiagnosticBanner({
+    required this.contacts,
+    required this.givenUpGeoIds,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -617,9 +650,8 @@ class _LocationDiagnosticBanner extends StatelessWidget {
       final hasAddress = (c.address ?? '').trim().isNotEmpty;
       if (!hasAddress) {
         noAddress++;
-      } else if (c.geo == null) {
-        // 주소는 있는데 좌표가 아직/영영 없음. 로그인 직후 backfill 중이면
-        // 잠깐 잡힐 수 있으나, 배너는 "확인해 보라"는 안내라 과잉 경보는 아니다.
+      } else if (givenUpGeoIds.contains(c.id)) {
+        // 주소는 있는데 여러 번 시도하고도 좌표를 못 만든 확정 상태.
         noGeo++;
       }
     }
@@ -627,7 +659,7 @@ class _LocationDiagnosticBanner extends StatelessWidget {
 
     final parts = <String>[
       if (noAddress > 0) '주소 없는 명함 $noAddress개',
-      if (noGeo > 0) '위치를 못 찾은 명함 $noGeo개',
+      if (noGeo > 0) '위치값 없는 명함 $noGeo개',
     ];
 
     return Padding(
