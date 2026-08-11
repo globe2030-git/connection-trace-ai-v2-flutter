@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/contacts_repository.dart';
@@ -26,9 +29,36 @@ class WalletViewModel extends ChangeNotifier {
   ContactSort _sort = ContactSort.recent;
   bool _isDisposed = false;
 
+  static const String _sortPrefKey = 'wallet_sort_v1';
+
   WalletViewModel({required ContactsRepository contactsRepository})
     : _contactsRepository = contactsRepository {
     _contactsRepository.addListener(_onContactsChanged);
+    _loadSort();
+  }
+
+  /// 저장해 둔 정렬 기준을 불러온다(앱 재실행에도 기억). 비동기라 로드가
+  /// 끝나면 화면을 다시 그린다.
+  Future<void> _loadSort() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_sortPrefKey);
+      if (saved == null) return;
+      final match = ContactSort.values.where((e) => e.name == saved);
+      if (match.isNotEmpty && match.first != _sort) {
+        _sort = match.first;
+        _safeNotify();
+      }
+    } catch (_) {
+      // 저장소 접근 실패는 기본 정렬(최근등록순)로 두면 되므로 무시한다.
+    }
+  }
+
+  Future<void> _saveSort() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_sortPrefKey, _sort.name);
+    } catch (_) {}
   }
 
   void _onContactsChanged() => _safeNotify();
@@ -112,6 +142,7 @@ class WalletViewModel extends ChangeNotifier {
     if (_sort == sort) return;
     _sort = sort;
     _safeNotify();
+    unawaited(_saveSort());
   }
 
   static int _registeredAt(ContactModel c) =>

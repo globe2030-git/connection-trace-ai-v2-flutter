@@ -72,4 +72,25 @@ void main() {
       );
     });
   });
+
+  group('KoreanInitial.rankOfGroup — 그룹 라벨 직접 환산(점프 버그 회귀 방지)', () {
+    test('초성 라벨 "ㄱ"은 이름 "가나"와 같은 순위(0)여야 한다', () {
+      // 예전엔 인덱스 바에서 rank("ㄱ")를 호출해 of("ㄱ")가 호환 자모라 '#'로
+      // 오판 → targetRank가 40이 되어 점프가 안 먹었다. rankOfGroup은 라벨을
+      // 직접 환산해 이 문제를 없앤다.
+      expect(KoreanInitial.rankOfGroup('ㄱ'), KoreanInitial.rank('가나'));
+      expect(KoreanInitial.rankOfGroup('ㅎ'), KoreanInitial.rank('하늘'));
+    });
+
+    test('영문 라벨 "J"는 이름 "John"과 같은 순위', () {
+      expect(KoreanInitial.rankOfGroup('J'), KoreanInitial.rank('John'));
+    });
+
+    test('"#" 라벨은 맨 뒤 순위', () {
+      expect(
+        KoreanInitial.rankOfGroup('#') > KoreanInitial.rankOfGroup('Z'),
+        isTrue,
+      );
+    });
+  });
 }

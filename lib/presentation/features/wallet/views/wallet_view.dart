@@ -175,23 +175,23 @@ class _WalletViewState extends State<WalletView> {
     ContactSort.lastComm: '소통일순',
   };
 
-  /// 정렬 기준 선택 칩(가로 스크롤). 선택된 것만 강조.
+  /// 정렬 기준 선택 칩. 네 개를 한 화면에 균등 분할로 모두 보여준다(가로
+  /// 스크롤을 없애 "소통일순"이 잘려 보이던 문제 해결).
   Widget _buildSortSelector(WalletViewModel viewModel) {
-    return SizedBox(
-      height: 34,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          for (final entry in _sortLabels.entries) ...[
-            _SortChip(
-              label: entry.value,
-              selected: viewModel.sort == entry.key,
-              onTap: () => viewModel.setSort(entry.key),
+    final entries = _sortLabels.entries.toList();
+    return Row(
+      children: [
+        for (var i = 0; i < entries.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: _SortChip(
+              label: entries[i].value,
+              selected: viewModel.sort == entries[i].key,
+              onTap: () => viewModel.setSort(entries[i].key),
             ),
-            const SizedBox(width: 8),
-          ],
+          ),
         ],
-      ),
+      ],
     );
   }
 
@@ -264,7 +264,7 @@ class _WalletViewState extends State<WalletView> {
     WalletViewModel viewModel,
     List<ContactModel> contacts,
   ) {
-    final targetRank = KoreanInitial.rank(group == '#' ? '' : group);
+    final targetRank = KoreanInitial.rankOfGroup(group);
     for (var i = 0; i < contacts.length; i++) {
       if (KoreanInitial.rank(_sortKeyText(viewModel, contacts[i])) >=
           targetRank) {
@@ -649,20 +649,26 @@ class _SortChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: selected ? AppColors.accentSoft : AppColors.cardSurface,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(17),
           border: Border.all(
             color: selected ? AppColors.accent : AppColors.borderSubtle,
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: selected ? AppColors.accentText : AppColors.textSecondary,
+        // 균등 분할 폭이 좁아도 잘리지 않게 필요하면 살짝 줄인다.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.accentText : AppColors.textSecondary,
+            ),
           ),
         ),
       ),
@@ -681,40 +687,44 @@ class _InitialIndexBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Container(
-          width: 24,
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.cardSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.borderSubtle),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final g in groups)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => onSelect(g),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 2,
-                      horizontal: 4,
-                    ),
-                    child: Text(
-                      g,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.accentText,
+    // 폭을 명확히 고정한다 — Positioned(top/bottom/right)만으로는 가로 제약이
+    // 무한대라 Center/FittedBox 레이아웃이 불안정해질 수 있다(터치 영역 어긋남).
+    return SizedBox(
+      width: 28,
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Container(
+            width: 26,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.cardSurface,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final g in groups)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onSelect(g),
+                    child: Container(
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        g,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.accentText,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
