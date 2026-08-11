@@ -90,6 +90,19 @@ class GeoBackfillService {
     return _isGivenUp(c, attempts);
   }
 
+  /// [contacts] 중 **주소는 있는데 지오코딩을 포기한**(좌표를 못 만든) 명함
+  /// id 집합. 시도 기록을 한 번만 읽어 목록 전체를 판정한다 — 명함 목록에서
+  /// "위치값 없음" 아이콘을 카드마다 붙일 때 쓴다. `geo == null`만으로 판정하면
+  /// 로그인 직후 backfill이 도는 동안 아직 안 채워진 명함까지 잡혀 아이콘이
+  /// 깜빡이므로, "여러 번 시도하고도 못 찾은" 확정 상태만 넣는다.
+  Future<Set<String>> resolveGivenUpIds(List<ContactModel> contacts) async {
+    final attempts = await _loadAttempts();
+    return {
+      for (final c in contacts)
+        if (_needsGeo(c) && _isGivenUp(c, attempts)) c.id,
+    };
+  }
+
   /// 좌표가 비어 있는 명함들의 좌표를 채운다.
   ///
   /// 반환값은 `명함 id -> 새로 얻은 좌표` 맵이다. 호출자가 이 값으로
