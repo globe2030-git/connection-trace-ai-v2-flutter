@@ -2,6 +2,65 @@
 
 ## 작업 로그
 
+### 2026-08-11 (추가 163) — AI 충전 화면 UI 신설 (구매 없음, 표시만)
+
+과금 방향(추가 153, 충전형 확정)에 따라 관리자 콘솔 "충전 관리" 탭(추가 154)은
+이미 있었지만 **앱 쪽에 이걸 보여줄 화면이 없었다** — 이번에 그 화면만 만들었다.
+스토어에 상품ID가 아직 미등록이라 **결제(IAP)는 이번 범위 밖**이고, 구매
+버튼은 절대 눌러도 아무 일도 안 일어나는 비활성 "충전 준비 중" 상태로 뒀다
+(결제되는 척하는 가짜 동작 금지 원칙).
+
+**작업 순서(스펙 → UI설계 → 구현)**: `flutter-ui-designer`가 화면 전체(로딩/
+오류/빈상태/정상 4가지 상태)를 먼저 코드로 완성했고, `flutter-developer`가
+이어받아 저장소 파싱 로직에 단위 테스트 7건을 붙이고 설정 화면 진입점을
+연결했다. 두 에이전트 다 **다른 세션이 동시에 편집 중이던 파일**
+(`ai_usage_service.dart`/`ai_usage_chip.dart`/`ai_connection_modal_view.dart`/
+`ai_data_review_sheet.dart`/`weather_service.dart`/`functions/`/
+`briefing_overlay_view.dart`/`contact_model.dart`)을 건드리지 않고 신규 파일
+위주로 작업했다.
+
+**동시 작업 충돌 회피(재사용 가능한 패턴, HANDOFF "0-3"과 같은 유형)**: 1단계
+에이전트가 작업을 마쳤을 때 본체 저장소(`connection-trace-ai-v2-flutter/`)가
+이미 다른 세션의 `fix/weather-summary-b` 브랜치로 체크아웃돼 미커밋 변경분
+(`docs/admin/admin.js`/`functions/src/index.ts`/`weather_service.dart`)이 올라가
+있는 상태였다. 신규 파일 3개가 실수로 그 디렉토리에 복사돼 있었던 걸 발견해
+제거하고, `git worktree`로 격리된 `feat/charge-screen-ui` 브랜치 전용 작업
+공간을 만들어 2단계를 그 안에서만 진행시켰다. 세션 종료 후에도 남아있도록
+worktree를 임시 스크래치 경로에서 **영구 경로로 이전**:
+`/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter-charge-screen/`
+(브랜치 `feat/charge-screen-ui`, 커밋 안 함 — 리뷰 후 사용자가 커밋 여부 결정).
+
+**새 파일**:
+- `lib/data/models/billing_config_model.dart` — `BillingTier`(priceKrw/
+  credits/active)/`BillingConfig`(freeCredits/tiers), `AppUpdateStatus`
+  (`app_update_service.dart`)와 같은 스타일로 안전한 형변환.
+- `lib/data/repositories/billing_config_repository.dart` —
+  `BillingConfigRepository.fetchConfig()`가 Firestore `config/billing`을 읽어
+  `active==true && credits>=1`인 티어만 가격 오름차순으로 반환. 생성자에
+  `fetchRaw` 주입 지점을 둬서(`AppUpdateService`와 동일 패턴) Firestore 없이
+  단위 테스트 가능.
+- `lib/presentation/features/settings/views/ai_charge_view.dart` —
+  `AiChargeView`. 로딩(스피너)/오류(원문 미노출 + 다시 시도)/빈상태(가짜 상품
+  없이 정직한 안내)/정상(무료 제공 배너 + 티어 카드 리스트, 각 카드 트레일링에
+  `onPressed: null`로 고정한 "충전 준비 중" 버튼) 4상태.
+- `test/billing_config_repository_test.dart` — 정상 정렬/필터링,
+  active:false·credits:null·credits:0 제외, tiers 필드 누락/오타입(Map/
+  String)/배열 안 비-Map 항목, 문서 없음(null) 등 7건.
+
+**수정 파일**: `lib/presentation/features/settings/views/settings_view.dart` —
+"지원" 섹션의 "1:1 문의" 행 다음에 "AI 충전" 행 추가(`AiChargeView`로 이동).
+"데이터 및 개인정보" 섹션의 "AI 잔여 횟수" 행(다른 브랜치가 동시 편집 중)은
+건드리지 않았다.
+
+**검증**: `flutter analyze` 0 errors/0 warnings(info 19건, 기존과 동일 — 신규
+없음), `flutter test` 전체 스위트 147건 전부 통과(신규 7건 포함). 실기기 QA는
+의도적으로 생략 — 다른 기능들과 묶어 배치 QA 예정.
+
+**범위 밖(다음 단계)**: `in_app_purchase` 연동, 영수증 검증(P1-4), 결제 동의/
+고지 UI(P1-3), `config/billing` 실제 값(티어 회수) 확정 — 전부 HANDOFF
+"3. 해야 할 일" P1-1~P1-5 그대로 유지. 이 화면은 **P1-2(IAP 클라이언트 연동)의
+UI 셸만** 만든 것이다.
+
 ### 2026-08-11 (추가 162) — 버전 게이트(P1-45) 구현 + 사용자별 무료 회차 지급
 
 추가 161에서 등록한 P1-45를 구현하고, 관리자에서 사용자별 무료 회차를 줄 수
