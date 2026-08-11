@@ -20,6 +20,7 @@ import '../../radar/views/my_profile_edit_modal_view.dart';
 import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
+import 'ocr_stats_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -384,6 +385,18 @@ class SettingsView extends StatelessWidget {
                     // 않는 것과 같은 이유다.
                     onTap: () =>
                         showLegalDocument(context, LegalDocument.legalIndex),
+                  ),
+                  _SettingsRow(
+                    icon: const Icon(
+                      Icons.document_scanner_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
+                    title: '명함 인식 진단',
+                    subtitle: '자동 인식 품질을 값 없이 형태로만 확인',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OcrStatsView()),
+                    ),
                   ),
                   _SettingsRow(
                     icon: const Icon(

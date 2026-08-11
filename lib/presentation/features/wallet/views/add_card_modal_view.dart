@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/services/ocr_stats_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
@@ -72,6 +74,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   bool _inlineNoticeIsError = false;
   VoidCallback? _inlineNoticeAction;
   String? _inlineNoticeActionLabel;
+
+  // 명함 인식 품질 측정(개인정보 없이 형태만): 자동 인식이 각 필드에 실제로
+  // 넣은 값을 스캔 시점에 스냅샷으로 잡아 두고, 저장 시점에 사용자가 그걸
+  // 어떻게 바꿨는지(그대로/고침/지움)만 집계한다. 값 자체는 집계로 넘어가지
+  // 않는다 — 이 스냅샷은 "저장 시점 비교" 용도로 메모리에만 잠깐 머문다.
+  final OcrStatsService _ocrStats = OcrStatsService();
+  final Map<String, String> _ocrParsedSnapshot = {};
 
   // Text Controllers
   late TextEditingController _nameController;
@@ -322,6 +331,35 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       if (!mounted) return;
       if (choice == null) return; // 대화상자 닫힘 — 아무것도 안 바꾸고 그대로 둔다.
       overwrite = choice;
+    }
+
+    // 스캔 결과가 실제로 어느 필드에 "새로" 들어갈지는 지금(덮어쓰기 여부 +
+    // 각 칸이 비어 있었는지)으로 결정된다. 파서가 채운 값만 스냅샷에 남겨
+    // 저장 시점에 사용자가 고쳤는지 비교한다(값은 집계로 안 넘어감).
+    final fieldSources = <String, (TextEditingController, String)>{
+      'name': (_nameController, result.name),
+      'company': (_companyController, result.company),
+      'title': (_titleController, result.title),
+      'address': (_addressController, result.address),
+      'addressDetail': (_addressDetailController, result.addressDetail),
+      'postal': (_postalCodeController, result.postalCode),
+      'mobile': (_phoneController, result.phone),
+      'office': (_officePhoneController, result.officePhone),
+      'email': (_emailController, result.email),
+    };
+    fieldSources.forEach((key, src) {
+      final (controller, parsedValue) = src;
+      final wasEmpty = controller.text.trim().isEmpty;
+      // 덮어쓰기면 파서 값이 그 칸을 차지한다. 채우기(fill-if-empty)면 비어
+      // 있던 칸에만 들어간다. 어느 쪽이든 파서가 준 값이 실제로 들어간
+      // 경우만 스냅샷에 남긴다.
+      final landed = (overwrite || wasEmpty) && parsedValue.trim().isNotEmpty;
+      if (landed) _ocrParsedSnapshot[key] = parsedValue.trim();
+    });
+    // 파싱 형태(내용 없음)를 집계에 더한다 — fire-and-forget.
+    final shape = result.parseShape;
+    if (shape != null) {
+      unawaited(_ocrStats.recordParse(shape));
     }
 
     setState(() {
@@ -1099,10 +1137,44 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
+  /// 자동 인식이 채운 값들을 저장 시점의 최종 값과 비교해, 사용자가 각 필드를
+  /// 어떻게 바꿨는지(그대로/고침/지움)만 집계에 남긴다. **값은 넘기지 않는다.**
+  /// 스캔을 한 번도 안 했으면(스냅샷이 비었으면) 아무것도 기록하지 않는다.
+  void _recordOcrCorrections() {
+    if (_ocrParsedSnapshot.isEmpty) return;
+    final finalValues = <String, String>{
+      'name': _nameController.text.trim(),
+      'company': _companyController.text.trim(),
+      'title': _titleController.text.trim(),
+      'address': _addressController.text.trim(),
+      'addressDetail': _addressDetailController.text.trim(),
+      'postal': _postalCodeController.text.trim(),
+      'mobile': _phoneController.text.trim(),
+      'office': _officePhoneController.text.trim(),
+      'email': _emailController.text.trim(),
+    };
+    final corrections = <String, OcrCorrectionKind>{};
+    _ocrParsedSnapshot.forEach((key, parsed) {
+      final current = finalValues[key] ?? '';
+      if (current == parsed) {
+        corrections[key] = OcrCorrectionKind.unchanged;
+      } else if (current.isEmpty) {
+        corrections[key] = OcrCorrectionKind.cleared;
+      } else {
+        corrections[key] = OcrCorrectionKind.edited;
+      }
+    });
+    unawaited(_ocrStats.recordCorrections(corrections));
+  }
+
   Future<void> _executeFinalSave(
     String finalAddress,
     GeoPosition? resolvedGeo,
   ) async {
+    // 저장이 확정되는 지점 — 여기서 한 번만 자동 인식 대비 수정 형태를
+    // 남긴다(중복 병합 경로로 빠지든 신규로 저장하든 모두 이 지점을 지난다).
+    _recordOcrCorrections();
+
     final tags = _tagsController.text
         .split(',')
         .map((t) => t.trim())
