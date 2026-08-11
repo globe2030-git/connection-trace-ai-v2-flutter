@@ -75,7 +75,7 @@ class _RadarViewState extends State<RadarView> {
                       child: RepaintBoundary(
                         child: Image(
                           image: AssetImage(
-                            'assets/icons3d/pin_card_blue_splash.png',
+                            'assets/images/brand/splash.png',
                           ),
                           fit: BoxFit.contain,
                         ),
@@ -684,7 +684,7 @@ class _NearbyCountCard extends StatelessWidget {
               const Positioned.fill(
                 child: ExcludeSemantics(
                   child: Image(
-                    image: AssetImage('assets/map/nearby_card_map.jpg'),
+                    image: AssetImage('assets/images/nearby/map.jpg'),
                     fit: BoxFit.cover,
                     // 카드가 가로로 길어 정사각형 원본의 가운데 위쪽을 쓴다 —
                     // 그림 한가운데의 파란 현위치 점이 살아 있어야 "지금 내

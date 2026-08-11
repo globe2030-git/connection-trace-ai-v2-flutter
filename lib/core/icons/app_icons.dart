@@ -9,63 +9,63 @@ import 'package:flutter_svg/flutter_svg.dart';
 /// 그 부분만 치환하므로 다크 배경에서도 강조색은 그대로 유지된다.
 enum AppIconId {
   // 주요 항목 (탭바)
-  nearbyPeople('nearby-people'),
-  aiBriefing('ai-briefing'),
-  cardWallet('card-wallet'),
-  settings('settings'),
+  nearbyPeople('nearby/people'),
+  aiBriefing('ai/brief'),
+  cardWallet('wallet/wallet'),
+  settings('settings/gear'),
 
   // 기능 아이콘 (메뉴 · 설정)
-  talkPoints('talk-points'),
-  recentContact('recent-contact'),
-  memo('memo'),
-  callCheck('call-check'),
-  emailLink('email-link'),
-  logout('logout'),
-  accountDelete('account-delete'),
-  cancelService('cancel-service'),
-  radarDetect('radar-detect'),
-  detectRadius('detect-radius'),
-  locationInfo('location-info'),
-  consentRevoke('consent-revoke'),
-  cardData('card-data'),
-  aiChip('ai-chip'),
-  aiDataInfo('ai-data-info'),
+  talkPoints('ai/talkpts'),
+  recentContact('comm/recent'),
+  memo('comm/memo'),
+  callCheck('comm/callchk'),
+  emailLink('comm/maillink'),
+  logout('settings/logout'),
+  accountDelete('settings/acctdel'),
+  cancelService('settings/cancel'),
+  radarDetect('nearby/radar'),
+  detectRadius('nearby/radius'),
+  locationInfo('settings/locinfo'),
+  consentRevoke('settings/revoke'),
+  cardData('settings/carddata'),
+  aiChip('ai/chip'),
+  aiDataInfo('ai/datainfo'),
 
   // 기능성 아이콘 (액션 · 도구)
-  scanCard('scan-card'),
-  addCard('add-card'),
-  editCard('edit-card'),
-  share('share'),
-  saveDownload('save-download'),
-  call('call'),
-  message('message'),
-  mailSend('mail-send'),
-  chatSend('chat-send'),
+  scanCard('scan/scan'),
+  addCard('wallet/add'),
+  editCard('wallet/edit'),
+  share('common/share'),
+  saveDownload('common/save'),
+  call('comm/call'),
+  message('comm/msg'),
+  mailSend('comm/mailsend'),
+  chatSend('comm/chatsend'),
 
   // 상태 / 기타
-  pinActive('pin-active'),
-  pinInactive('pin-inactive'),
-  connecting('connecting'),
-  aiProcessing('ai-processing'),
-  sync('sync'),
-  notification('notification'),
-  favorite('favorite'),
-  more('more'),
-  back('back'),
+  pinActive('nearby/pin_on'),
+  pinInactive('nearby/pin_off'),
+  connecting('common/connect'),
+  aiProcessing('ai/proc'),
+  sync('common/sync'),
+  notification('common/notify'),
+  favorite('wallet/fav'),
+  more('common/more'),
+  back('common/back'),
 
   // 브랜드
-  appIconMark('app-icon'),
+  appIconMark('brand/mark'),
 
   // 2026-08-06 추가 — 공식 38종 핸드오프에 없어 같은 그리드(24×24·1.25px·
   // currentColor+#2563EB 강조) 규칙으로 직접 제작한 보충 아이콘.
-  qrScan('qr-scan'),
-  galleryUpload('gallery-upload');
+  qrScan('profile/qr'),
+  galleryUpload('scan/gallery');
 
   const AppIconId(this.assetId);
 
   final String assetId;
 
-  String get assetPath => 'assets/icons/$assetId.svg';
+  String get assetPath => 'assets/images/$assetId.svg';
 }
 
 /// [Icon]을 대체하는 커스텀 SVG 아이콘 위젯. `color`를 넘기지 않으면

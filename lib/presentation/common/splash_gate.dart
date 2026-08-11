@@ -74,7 +74,7 @@ class _SplashGateState extends State<SplashGate>
                   // 사용자 눈에는 "로딩 중에 옛 아이콘이 보인다"로 나타난다 —
                   // 리소스를 아무리 다시 생성해도 고쳐지지 않던 이유다.
                   child: Image.asset(
-                    'assets/icons3d/pin_card_blue_splash.png',
+                    'assets/images/brand/splash.png',
                     width: 220,
                   ),
                 ),
