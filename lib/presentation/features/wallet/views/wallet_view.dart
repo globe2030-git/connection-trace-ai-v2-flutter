@@ -245,6 +245,7 @@ class _WalletViewState extends State<WalletView> {
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];
+        final cardDate = viewModel.cardDateFor(contact);
         // .separated 대신 .builder를 쓰고 구분선을 항목 안에 넣는다 —
         // 인덱스 점프(scrollTo)의 index가 구분선 없이 항목과 1:1로 맞아야
         // 원하는 위치로 정확히 이동한다.
@@ -254,6 +255,8 @@ class _WalletViewState extends State<WalletView> {
             _ContactCard(
               contact: contact,
               geoNotFound: _givenUpGeoIds.contains(contact.id),
+              cardDate: cardDate.date,
+              cardDateLabel: cardDate.label,
               onEdit: () => _openCardEditor(context, contact: contact),
               onCall: () => PhoneCallService.showCallPicker(context, contact),
               onDelete: () => viewModel.deleteContact(contact.id),
@@ -340,6 +343,9 @@ class _ContactCard extends StatelessWidget {
   final ContactModel contact;
   // 주소는 있는데 지오코딩을 포기해 좌표가 없는 상태(= "위치값 없음").
   final bool geoNotFound;
+  // 카드에 표시할 날짜와 라벨 — 정렬 기준에 맞춘다(등록일/마지막 소통일).
+  final DateTime? cardDate;
+  final String cardDateLabel;
   final VoidCallback onEdit;
   final VoidCallback onCall;
   final VoidCallback onDelete;
@@ -348,6 +354,8 @@ class _ContactCard extends StatelessWidget {
   const _ContactCard({
     required this.contact,
     required this.geoNotFound,
+    required this.cardDate,
+    required this.cardDateLabel,
     required this.onEdit,
     required this.onCall,
     required this.onDelete,
@@ -467,17 +475,16 @@ class _ContactCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_savedOn != null)
+                      if (_dateText != null)
                         Padding(
                           padding: const EdgeInsets.only(right: 6, bottom: 2),
-                          // ⚠️ 등록일이 아니라 마지막 저장 시각(updatedAt)이다 —
-                          // 모델에 등록일이 없다. 날짜만 보이면 등록일로 오해할
-                          // 수 있어 스크린리더에는 무엇인지 밝혀 준다.
+                          // 날짜만 보이면 무슨 날짜인지 모호하니 스크린리더에는
+                          // 정렬에 맞춘 라벨(등록/마지막 소통)을 함께 읽어 준다.
                           child: Semantics(
-                            label: '마지막 저장 $_savedOn',
+                            label: '$cardDateLabel $_dateText',
                             child: ExcludeSemantics(
                               child: Text(
-                                _savedOn!,
+                                _dateText!,
                                 textAlign: TextAlign.right,
                                 style: const TextStyle(
                                   fontSize: 11.5,
@@ -560,10 +567,11 @@ class _ContactCard extends StatelessWidget {
     );
   }
 
-  /// 목록에 표시할 날짜. 모델에 등록일이 없어 `updatedAt`(마지막 저장 시각)을
-  /// 쓴다 — 예전 데이터에는 없을 수 있어 그때는 아예 표시하지 않는다.
-  String? get _savedOn {
-    final at = contact.updatedAt;
+  /// 목록에 표시할 날짜 문자열. 어떤 날짜인지(등록일/마지막 소통일)는 정렬
+  /// 기준에 따라 호출부(WalletViewModel.cardDateFor)가 정해 [cardDate]로
+  /// 넘겨준다. 값이 없으면 표시하지 않는다.
+  String? get _dateText {
+    final at = cardDate;
     if (at == null) return null;
     return '${at.year}.${at.month.toString().padLeft(2, '0')}.'
         '${at.day.toString().padLeft(2, '0')}';

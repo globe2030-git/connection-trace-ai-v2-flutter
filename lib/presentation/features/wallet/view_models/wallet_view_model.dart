@@ -145,6 +145,26 @@ class WalletViewModel extends ChangeNotifier {
     unawaited(_saveSort());
   }
 
+  /// 카드에 표시할 날짜와 그 의미 — **정렬 기준에 맞춘다**(사용자 요청).
+  /// - 소통일순 → 마지막 소통일(라벨 "마지막 소통")
+  /// - 그 외(최근등록순·이름순·회사명순) → 등록일(라벨 "등록")
+  /// 값이 없으면 date=null → 카드에서 날짜를 숨긴다. 등록일은 id에 심긴 등록
+  /// 시각(millisecondsSinceEpoch)에서 얻는다 — 모델에 별도 등록일 필드가 없다.
+  ({DateTime? date, String label}) cardDateFor(ContactModel c) {
+    if (_sort == ContactSort.lastComm) {
+      final ms = _lastCommAt(c);
+      return (
+        date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
+        label: '마지막 소통',
+      );
+    }
+    final ms = _registeredAt(c);
+    return (
+      date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
+      label: '등록',
+    );
+  }
+
   static int _registeredAt(ContactModel c) =>
       int.tryParse(c.id) ?? c.updatedAt?.millisecondsSinceEpoch ?? 0;
 
