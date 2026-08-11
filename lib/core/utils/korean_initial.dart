@@ -46,9 +46,14 @@ class KoreanInitial {
 
   /// 정렬 시 그룹 순서를 매기는 순위: 한글 초성(0~13) → 영문 A~Z(14~39) →
   /// 기타 '#'(40). 이름/회사명 정렬에서 한글을 가나다순으로 앞에, 영문을
-  /// 그다음, 숫자·기호를 맨 뒤로 보낸다.
-  static int rank(String text) {
-    final group = of(text);
+  /// 그다음, 숫자·기호를 맨 뒤로 보낸다. [text]는 이름/회사명 원문을 받는다.
+  static int rank(String text) => rankOfGroup(of(text));
+
+  /// **그룹 라벨**(ㄱ/A/# 등, [of]가 돌려준 값)을 직접 순위로 바꾼다.
+  /// 인덱스 바에서 누른 그룹을 순위로 환산할 때 쓴다 — 여기에 [of]를 다시
+  /// 태우면 안 된다("ㄱ"은 완성형 음절이 아니라 호환 자모라 [of]가 '#'으로
+  /// 오판한다. 점프가 안 먹던 원인).
+  static int rankOfGroup(String group) {
     final k = baseConsonants.indexOf(group);
     if (k != -1) return k;
     if (group.length == 1 &&
