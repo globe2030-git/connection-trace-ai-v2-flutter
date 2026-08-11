@@ -15,10 +15,16 @@ class ManualCommLogModalView extends StatefulWidget {
   final ContactModel contact;
   final String initialType;
 
+  /// "전한 대화 포인트를 소통 기록에 저장" 흐름에서 [수정 후 저장]을 눌렀을
+  /// 때 채널·내용을 미리 채워 넣는 값(2026-08-11). 사용자가 직접 손볼 수
+  /// 있도록 이 화면을 그대로 재사용한다.
+  final String? initialSummary;
+
   const ManualCommLogModalView({
     super.key,
     required this.contact,
     this.initialType = 'call',
+    this.initialSummary,
   });
 
   @override
@@ -35,6 +41,10 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
+    final initialSummary = widget.initialSummary;
+    if (initialSummary != null && initialSummary.isNotEmpty) {
+      _summaryController.text = initialSummary;
+    }
   }
 
   /// 선택 가능한 채널. **소통 기록 추가 시트의 항목과 1:1로 맞춘다** —
