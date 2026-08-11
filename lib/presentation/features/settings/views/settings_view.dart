@@ -17,6 +17,7 @@ import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
 import '../../radar/views/my_profile_edit_modal_view.dart';
+import 'ai_charge_view.dart';
 import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
@@ -461,6 +462,18 @@ class SettingsView extends StatelessWidget {
                     subtitle: '궁금한 점을 남겨주시면 답변드립니다',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const InquiryView()),
+                    ),
+                  ),
+                  _SettingsRow(
+                    icon: const Icon(
+                      Icons.bolt_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
+                    title: 'AI 충전',
+                    subtitle: '무료 횟수 소진 후 충전 상품 안내',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AiChargeView()),
                     ),
                   ),
                 ],
