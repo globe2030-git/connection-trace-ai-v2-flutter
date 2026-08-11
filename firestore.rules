@@ -44,6 +44,21 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // 충전 상품 설정(config/billing) — 티어별 제공 회수·무료 횟수. 관리자
+    // 콘솔에서 편집하고, 앱은 충전 화면에서 읽는다(IAP 구현 시). 값 자체는
+    // 비밀이 아니라 로그인 사용자 누구나 읽어도 된다. 쓰기는 관리자만.
+    match /config/billing {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // 충전(결제) 기록 — 고객응대·정산용. 영수증 검증을 통과한 서버(P1-4,
+    // Admin SDK)만 기록하고 클라이언트 쓰기는 전면 금지한다(위조 방지 —
+    // 여기 쓰기가 열리면 결제 없이 크레딧을 만들 수 있게 된다). 관리자만 읽는다.
+    match /purchases/{purchaseId} {
+      allow read: if isAdmin();
+    }
+
     // AI 호출 감사 로그 — 불만 처리·비용 추적용. 관리자만 읽는다. 클라이언트는
     // 절대 쓰지 못하고(위조 방지), 서버(generateBriefing)만 Admin SDK로 기록한다.
     match /aiAuditLogs/{logId} {
