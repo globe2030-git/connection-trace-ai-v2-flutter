@@ -98,6 +98,10 @@ dependencies:
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
   share_plus: ^12.0.2
+  # 명함지갑에서 초성(ㄱㄴㄷ) 인덱스 바로 특정 위치로 점프하기 위한 패키지.
+  # 카드 높이가 가변이라 일반 ListView로는 인덱스 오프셋을 계산할 수 없어,
+  # 인덱스 기반 스크롤(ItemScrollController.scrollTo)을 제공하는 이 패키지를 쓴다.
+  scrollable_positioned_list: ^0.3.8
 
 dev_dependencies:
   flutter_test:

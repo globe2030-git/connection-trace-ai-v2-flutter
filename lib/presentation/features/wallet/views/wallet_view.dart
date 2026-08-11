@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/contact_avatar.dart';
@@ -10,8 +12,19 @@ import '../view_models/wallet_view_model.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import 'add_card_modal_view.dart';
 
-class WalletView extends StatelessWidget {
+class WalletView extends StatefulWidget {
   const WalletView({super.key});
+
+  @override
+  State<WalletView> createState() => _WalletViewState();
+}
+
+class _WalletViewState extends State<WalletView> {
+  // 초성 인덱스 바에서 특정 위치로 점프하기 위한 컨트롤러. State에 두어야
+  // 리빌드에도 유지된다.
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   @override
   Widget build(BuildContext context) {
@@ -104,6 +117,8 @@ class WalletView extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 12),
+              _buildSortSelector(viewModel),
               if (viewModel.allTags.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 SizedBox(
@@ -144,34 +159,7 @@ class WalletView extends StatelessWidget {
                         hasSavedContacts: viewModel.contacts.isNotEmpty,
                         onAdd: () => _openCardEditor(context),
                       )
-                    : ListView.separated(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        itemCount: contacts.length,
-                        // 카드마다 그림자를 주는 대신 얇은 구분선으로 나눈다 —
-                        // 한 화면에 더 많은 인맥이 들어오고, 이름·직함·회사명
-                        // 세 줄이 카드 테두리와 경쟁하지 않는다(사용자 요청,
-                        // 2026-08-10).
-                        separatorBuilder: (_, _) => const Divider(
-                          height: 1,
-                          thickness: 1,
-                          color: AppColors.borderSubtle,
-                        ),
-                        itemBuilder: (context, index) => _ContactCard(
-                          contact: contacts[index],
-                          onEdit: () => _openCardEditor(
-                            context,
-                            contact: contacts[index],
-                          ),
-                          onCall: () => PhoneCallService.showCallPicker(
-                            context,
-                            contacts[index],
-                          ),
-                          onDelete: () =>
-                              viewModel.deleteContact(contacts[index].id),
-                          onBriefing: () =>
-                              _openBriefing(context, contacts[index]),
-                        ),
-                      ),
+                    : _buildContactList(context, viewModel, contacts),
               ),
             ],
           ),
@@ -179,6 +167,120 @@ class WalletView extends StatelessWidget {
       ),
     );
   }
+
+  static const _sortLabels = {
+    ContactSort.recent: '최근등록순',
+    ContactSort.name: '이름순',
+    ContactSort.company: '회사명순',
+    ContactSort.lastComm: '소통일순',
+  };
+
+  /// 정렬 기준 선택 칩(가로 스크롤). 선택된 것만 강조.
+  Widget _buildSortSelector(WalletViewModel viewModel) {
+    return SizedBox(
+      height: 34,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final entry in _sortLabels.entries) ...[
+            _SortChip(
+              label: entry.value,
+              selected: viewModel.sort == entry.key,
+              onTap: () => viewModel.setSort(entry.key),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 명함 목록 + (이름/회사명 정렬이고 충분히 많을 때) 오른쪽 초성 인덱스 바.
+  Widget _buildContactList(
+    BuildContext context,
+    WalletViewModel viewModel,
+    List<ContactModel> contacts,
+  ) {
+    // 인덱스 바에 실제로 존재하는 그룹만 순서대로 모은다. 그룹 점프가 의미
+    // 없는 시간 기준 정렬(최근등록·소통일)이나 항목이 적으면 바를 숨긴다.
+    final groups = <String>[];
+    for (final c in contacts) {
+      final g = viewModel.sortGroupOf(c);
+      if (g.isNotEmpty && !groups.contains(g)) groups.add(g);
+    }
+    final showIndexBar = groups.length >= 2 && contacts.length >= 10;
+
+    final list = ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
+      padding: EdgeInsets.only(bottom: 24, right: showIndexBar ? 22 : 0),
+      itemCount: contacts.length,
+      itemBuilder: (context, index) {
+        final contact = contacts[index];
+        // .separated 대신 .builder를 쓰고 구분선을 항목 안에 넣는다 —
+        // 인덱스 점프(scrollTo)의 index가 구분선 없이 항목과 1:1로 맞아야
+        // 원하는 위치로 정확히 이동한다.
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ContactCard(
+              contact: contact,
+              onEdit: () => _openCardEditor(context, contact: contact),
+              onCall: () => PhoneCallService.showCallPicker(context, contact),
+              onDelete: () => viewModel.deleteContact(contact.id),
+              onBriefing: () => _openBriefing(context, contact),
+            ),
+            if (index < contacts.length - 1)
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: AppColors.borderSubtle,
+              ),
+          ],
+        );
+      },
+    );
+
+    if (!showIndexBar) return list;
+    return Stack(
+      children: [
+        list,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          child: _InitialIndexBar(
+            groups: groups,
+            onSelect: (group) => _jumpToGroup(group, viewModel, contacts),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 인덱스 바에서 그룹을 누르면 그 그룹의 첫 명함으로 스크롤한다.
+  void _jumpToGroup(
+    String group,
+    WalletViewModel viewModel,
+    List<ContactModel> contacts,
+  ) {
+    final targetRank = KoreanInitial.rank(group == '#' ? '' : group);
+    for (var i = 0; i < contacts.length; i++) {
+      if (KoreanInitial.rank(_sortKeyText(viewModel, contacts[i])) >=
+          targetRank) {
+        _itemScrollController.scrollTo(
+          index: i,
+          alignment: 0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+        return;
+      }
+    }
+  }
+
+  String _sortKeyText(WalletViewModel viewModel, ContactModel c) =>
+      viewModel.sort == ContactSort.company ? c.company : c.name;
 
   void _openCardEditor(BuildContext context, {ContactModel? contact}) {
     AddCardModalView.show(context, contact: contact);
@@ -525,6 +627,97 @@ class _CompactAction extends StatelessWidget {
       padding: EdgeInsets.zero,
       visualDensity: VisualDensity.compact,
       constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+    );
+  }
+}
+
+/// 정렬 기준 선택 칩. 선택된 것만 강조한다.
+class _SortChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SortChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accentSoft : AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: selected ? AppColors.accent : AppColors.borderSubtle,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? AppColors.accentText : AppColors.textSecondary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 명함이 많을 때 오른쪽 가장자리에서 초성(ㄱㄴㄷ)·영문(A~Z)·기타(#)로
+/// 점프하는 인덱스 바. 실제 존재하는 그룹만 순서대로 보여준다. 그룹 수가
+/// 화면 높이보다 많아도 FittedBox가 줄여서 넘치지 않게 한다.
+class _InitialIndexBar extends StatelessWidget {
+  final List<String> groups;
+  final ValueChanged<String> onSelect;
+
+  const _InitialIndexBar({required this.groups, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Container(
+          width: 24,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.cardSurface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.borderSubtle),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final g in groups)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelect(g),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 2,
+                      horizontal: 4,
+                    ),
+                    child: Text(
+                      g,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.accentText,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
