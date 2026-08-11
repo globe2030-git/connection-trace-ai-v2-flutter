@@ -118,8 +118,6 @@ class _WalletViewState extends State<WalletView> {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
-              _buildSortSelector(viewModel),
               if (viewModel.allTags.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 SizedBox(
@@ -153,6 +151,9 @@ class _WalletViewState extends State<WalletView> {
                   ),
                 ),
               ],
+              // 정렬 칩은 태그 아래에 둔다(사용자 요청, 2026-08-11).
+              const SizedBox(height: 12),
+              _buildSortSelector(viewModel),
               // 위치 진단 배너. **필터가 아닌 전체 명함**(`viewModel.contacts`)을
               // 기준으로 센다 — 태그·검색으로 걸러진 화면 목록이 아니라 "내
               // 명함 전체 중 몇 개가 주변 인맥에 안 뜨는가"가 알고 싶은 값이다.
@@ -865,7 +866,8 @@ class _SortChip extends StatelessWidget {
             label,
             maxLines: 1,
             style: TextStyle(
-              fontSize: 13,
+              // 기존 13에서 10% 축소(사용자 요청, 2026-08-11).
+              fontSize: 11.7,
               fontWeight: FontWeight.w600,
               color: selected ? AppColors.accentText : AppColors.textSecondary,
             ),
