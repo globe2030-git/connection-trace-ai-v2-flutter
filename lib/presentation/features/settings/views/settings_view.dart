@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ai_briefing_service.dart';
+import '../../../../core/services/contact_image_service.dart';
+import '../../../../core/services/encryption_key_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
@@ -749,8 +754,9 @@ Future<void> _confirmDeleteAccount(
           ),
           const SizedBox(height: 14),
           const Text(
-            '이 계정으로 서버에 백업된 명함·프로필 데이터가 함께 영구적으로 '
-            '삭제됩니다. 다른 기기에 남아 있는 데이터도 열 수 없게 됩니다.\n\n'
+            '이 계정으로 서버에 백업된 명함·프로필 데이터와 이 기기에 저장된 '
+            '명함 사진·프로필 사진·암호화 키가 함께 영구적으로 삭제됩니다. '
+            '다른 기기에 남아 있는 데이터도 열 수 없게 됩니다.\n\n'
             '이 작업은 되돌릴 수 없습니다.',
           ),
         ],
@@ -781,6 +787,74 @@ Future<void> _confirmDeleteAccount(
   await _performAccountDeletion(context, auth);
 }
 
+/// 계정 삭제 후 **이 기기에 남는 것**을 정리한다.
+///
+/// `clearLocal()`은 SharedPreferences만 비운다. 2026-08-10 점검에서 세 가지가
+/// 기기에 그대로 남는 것을 확인했다 — 명함 이미지 암호문 파일, 프로필 아바타
+/// 사진(평문 JPG), 보안 저장소의 암호화 키. 방침은 "영구 삭제"라고 적고 있고
+/// 남는 것 중 명함 이미지는 **제3자(명함 주인)의 개인정보**다.
+///
+/// **순서가 안전을 결정한다.** 암호화 키를 가장 마지막에 지운다 — 키가 먼저
+/// 사라지면 남은 암호문 파일을 열 수도 지울 수도 없는 상태가 된다.
+///
+/// 하나가 실패해도 **나머지는 계속 진행한다**(멈추면 더 많이 남는다).
+/// 실패가 하나라도 있으면 true를 반환해 호출부가 사용자에게 알리게 한다.
+Future<bool> _cleanUpLocalArtifacts(
+  ContactsRepository contactsRepo,
+  MyProfileRepository profileRepo,
+  String? uid,
+) async {
+  var hadFailure = false;
+
+  // 1) 명함 이미지 — 명함 목록을 비우기 전에 지워야 한다. 목록이 먼저 비면
+  //    경로를 잃어 고아 파일이 된다.
+  final failedImages = await ContactImageService().deleteAllCardImages();
+  if (failedImages > 0) hadFailure = true;
+
+  // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
+  //    이전 사진이 그대로 보인다.
+  try {
+    final docsDir = await getApplicationDocumentsDirectory();
+    final avatar = File('${docsDir.path}/my_profile_avatar.jpg');
+    if (avatar.existsSync()) await avatar.delete();
+  } catch (e) {
+    hadFailure = true;
+    debugPrint('프로필 사진 삭제 실패: ${e.runtimeType}');
+  }
+
+  // 3) SharedPreferences(명함 목록·프로필) 정리.
+  await contactsRepo.clearLocal();
+  await profileRepo.clearLocal();
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(kLastSignedInUidPrefsKey);
+  } catch (e) {
+    hadFailure = true;
+    debugPrint('계정 삭제 후 마지막 로그인 uid 정리 실패: $e');
+  }
+
+  // 4) 암호화 키 — 반드시 마지막.
+  if (uid != null) {
+    final ok = await EncryptionKeyService().deleteLocalKey(uid);
+    if (!ok) hadFailure = true;
+  }
+
+  return hadFailure;
+}
+
+/// 정리 중 일부가 실패했을 때 알린다. 계정은 이미 지워졌고 되돌릴 수 없으므로
+/// **에러가 아니라 사실 안내**로 쓴다 — 사용자가 할 수 있는 다음 행동(앱 삭제)
+/// 까지 함께 알려 준다.
+void _showLocalCleanupWarning(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('계정은 삭제됐지만 이 기기에 일부 파일이 남았을 수 있어요. 앱을 삭제하면 함께 지워집니다.'),
+      backgroundColor: AppColors.destructive,
+      duration: Duration(seconds: 6),
+    ),
+  );
+}
+
 /// 실제 삭제 흐름 — 순서가 중요하다:
 /// 1) Firestore 서버 데이터 삭제(아직 인증된 상태일 때만 보안 규칙 통과)
 /// 2) Firebase Auth 계정 삭제(재인증 필요 시 사용자에게 안내 후 재시도)
@@ -804,15 +878,15 @@ Future<void> _performAccountDeletion(
     // 요청(토큰 갱신 실패로 "네트워크 오류"처럼 보임)을 아예 건너뛰고, 이
     // 기기의 로컬 데이터만 정리한 뒤 로그아웃시킨다.
     if (await auth.isAccountAlreadyDeleted()) {
-      await contactsRepo.clearLocal();
-      await profileRepo.clearLocal();
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(kLastSignedInUidPrefsKey);
-      } catch (e) {
-        debugPrint('계정 삭제 후 마지막 로그인 uid 정리 실패: $e');
-      }
+      // 다기기 사용자가 두 번째 기기에서 정리를 못 받는 일이 없도록, 이 경로도
+      // 같은 정리를 거친다.
+      final hadFailure = await _cleanUpLocalArtifacts(
+        contactsRepo,
+        profileRepo,
+        uid,
+      );
       await auth.signOut();
+      if (hadFailure && context.mounted) _showLocalCleanupWarning(context);
       if (context.mounted) _dismissLoadingDialog(context);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -868,16 +942,18 @@ Future<void> _performAccountDeletion(
       await auth.deleteFirebaseAccountAndLocalSession();
     }
 
-    await contactsRepo.clearLocal();
-    await profileRepo.clearLocal();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(kLastSignedInUidPrefsKey);
-    } catch (e) {
-      debugPrint('계정 삭제 후 마지막 로그인 uid 정리 실패: $e');
-    }
+    // 여기까지 왔다는 것은 서버 데이터와 Firebase 계정 삭제가 모두 성공했다는
+    // 뜻이다. 그 전에 로컬 파일을 지우면, 서버 삭제나 재인증이 실패했을 때
+    // 계정은 살아 있는데 기기 데이터만 날아간다 — 명함 이미지는 서버 백업이
+    // 없어 영구 손실이다.
+    final hadFailure = await _cleanUpLocalArtifacts(
+      contactsRepo,
+      profileRepo,
+      uid,
+    );
 
     if (context.mounted) _dismissLoadingDialog(context);
+    if (hadFailure && context.mounted) _showLocalCleanupWarning(context);
     // 성공 시 auth.isSignedIn이 false가 되어 AuthGate가 자동으로 로그인
     // 화면으로 전환한다(로그아웃과 동일한 종착점).
   } catch (e) {

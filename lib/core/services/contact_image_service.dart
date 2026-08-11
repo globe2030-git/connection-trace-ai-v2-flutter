@@ -87,4 +87,48 @@ class ContactImageService {
       debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
     }
   }
+
+  /// 계정 삭제(회원 탈퇴) 시 이 기기에 남은 **모든** 명함 이미지 파일을 지운다.
+  ///
+  /// `clearLocal()`은 SharedPreferences만 비우므로 이미지 파일은 그대로 남았다.
+  /// 게다가 명함 목록이 먼저 비워지면 경로를 잃어 **나중에 지울 수도 없는 고아
+  /// 파일**이 된다(2026-08-10 점검에서 발견). 방침은 "영구 삭제"라고 적고
+  /// 있는데 제3자(명함 주인)의 개인정보가 담긴 파일이 남는 셈이라 반드시
+  /// 정리해야 한다.
+  ///
+  /// 파일명 규칙(`contact_card_*.enc`)으로 **쓸어내는** 방식이라, 이전에
+  /// 중단된 삭제가 남긴 고아 파일까지 함께 정리된다.
+  ///
+  /// ⚠️ **이 방식은 "이 기기 로컬에 계정이 하나뿐"이라는 전제 위에서만
+  /// 안전하다.** 로컬 저장소를 계정별로 분리하는 작업(HANDOFF P1-10)이
+  /// 반영되면 **uid 범위로 좁혀야** 다른 계정의 이미지를 지우지 않는다.
+  ///
+  /// 실패한 파일 수를 반환한다 — 호출부가 사용자에게 알릴 수 있도록.
+  /// 하나가 실패해도 나머지는 계속 지운다(멈추면 더 많이 남는다).
+  Future<int> deleteAllCardImages() async {
+    var failed = 0;
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final entries = docsDir.listSync();
+      for (final entry in entries) {
+        if (entry is! File) continue;
+        final name = entry.uri.pathSegments.last;
+        if (!name.startsWith('contact_card_') || !name.endsWith('.enc')) {
+          continue;
+        }
+        try {
+          _decryptedCache.remove(entry.path);
+          await entry.delete();
+        } catch (e) {
+          failed++;
+          debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
+        }
+      }
+    } catch (e) {
+      failed++;
+      debugPrint('명함 이미지 목록 조회 실패: ${e.runtimeType}');
+    }
+    _decryptedCache.clear();
+    return failed;
+  }
 }
