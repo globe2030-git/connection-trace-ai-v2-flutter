@@ -818,8 +818,33 @@ async function loadAppUpdate() {
       </div>
       <label>iOS 스토어 URL (App Store)</label>
       <input type="text" id="auIos" placeholder="https://apps.apple.com/app/id...">
+      <p class="hint">
+        <code>https://apps.apple.com/app/id</code> 뒤에 <b>숫자(Apple ID)</b>만
+        붙이면 됩니다. 예: <code>https://apps.apple.com/app/id6501234567</code>
+        <br>그 숫자는 어디서? → <b>App Store Connect → 해당 앱 선택 → "앱
+        정보"(App Information) → "Apple ID"</b> 항목에 적힌 숫자를 그대로
+        복사합니다(개발자 계정 Apple ID와는 다른, 앱마다 하나씩 자동으로
+        부여되는 번호입니다).
+      </p>
       <label>Android 스토어 URL (Play)</label>
       <input type="text" id="auAndroid" placeholder="https://play.google.com/store/apps/details?id=...">
+      <p class="hint">
+        <code>https://play.google.com/store/apps/details?id=</code> 뒤에
+        <b>패키지명</b>만 붙이면 됩니다. 예:
+        <code>https://play.google.com/store/apps/details?id=com.connectiontrace.connection_trace_ai_flutter</code>
+        <br>패키지명은 이미 정해져 있고 앞으로도 안 바뀝니다 —
+        <code>com.connectiontrace.connection_trace_ai_flutter</code>를 그대로
+        복사해 붙이면 끝입니다.
+      </p>
+      <p class="hint" style="color:var(--warn); background:var(--warn-soft); border-radius:8px; padding:10px 12px;">
+        ⚠️ <b>베타 심사 중 주의</b>: 두 URL 모두 스토어에 <b>정식 공개(또는
+        공개 트랙)되기 전</b>에는 눌러도 빈 페이지이거나 "찾을 수 없음"이
+        뜹니다. 지금은 URL만 미리 채워 두고, <b>"최소 지원 빌드 번호"는
+        반드시 0(강제 없음)</b>으로 두세요. 최소값을 0보다 높게 걸면, 아직
+        스토어에 앱이 없는 상태에서 강제 업데이트가 발동해 사용자를 갈 곳
+        없는 빈 스토어 페이지로 보내고 <b>앱만 막는 사고</b>가 납니다. 정식
+        공개가 확정된 뒤에 최소값을 올리세요.
+      </p>
       <label>안내 문구 (선택 — 비우면 기본 문구)</label>
       <input type="text" id="auMsg" placeholder="예: 중요한 개선이 있어요. 업데이트해 주세요.">
       <div class="row" style="margin-top:14px;">
