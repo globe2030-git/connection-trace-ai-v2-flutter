@@ -3,7 +3,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/models/pending_comm_log_intent.dart';
@@ -941,7 +940,13 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
 /// - 카톡: 카카오톡에는 "특정 상대에게 미리 채운 메시지"를 여는 공개 경로가
 ///   없다. 그래서 복사 후 앱만 열어 주고, 사용자가 붙여넣게 안내한다.
 ///   있는 척하지 않고 실제 동작을 그대로 알린다.
-/// - 더보기: OS 공유 시트. 위 셋에 없는 앱(메일·슬랙 등)은 여기로 간다.
+/// - 이메일: `mailto:`로 명함의 주소를 수신인까지 채워 연다.
+///
+/// 예전의 "더보기"(OS 공유 시트로 슬랙 등 임의 앱 공유)는 뺐다 — 공유
+/// 시트는 어느 앱으로 보냈는지 알 수 없어 소통 기록으로 저장할 수 없고,
+/// "소통 기록을 저장할 수 있는 채널만 둔다"는 결정(사용자, 2026-08-11)에
+/// 따라 이메일을 직접 버튼으로 승격했다. 임의 공유가 필요하면 문장을
+/// 복사해 원하는 앱에 붙여넣으면 된다(통화·카톡 경로가 이미 복사해 준다).
 class _SendChannelRow extends StatelessWidget {
   final ContactModel contact;
   final String? selectedPoint;
@@ -964,6 +969,10 @@ class _SendChannelRow extends StatelessWidget {
   /// 정한다(사용자 요청, 2026-08-10).
   bool get _hasAnyPhone =>
       _hasMobile || (contact.officePhone?.trim().isNotEmpty ?? false);
+
+  /// 이메일 버튼은 명함에 주소가 있어야 살아난다 — 수신인 없이 메일 앱만
+  /// 여는 것은 "보내기" 경로로서 의미가 없다.
+  bool get _hasEmail => contact.email.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -998,11 +1007,10 @@ class _SendChannelRow extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: _ChannelButton(
-            icon: AppIconId.chatSend,
-            label: '더보기',
-            useMaterialIcon: Icons.ios_share,
-            enabled: true,
-            onTap: () => _share(context),
+            icon: AppIconId.mailSend,
+            label: '이메일',
+            enabled: _hasEmail,
+            onTap: () => _emailTap(context),
           ),
         ),
       ],
@@ -1033,7 +1041,6 @@ class _SendChannelRow extends StatelessWidget {
     final point = selectedPoint;
     if (point != null) {
       _toast(messenger, '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.');
-      onSent?.call('call', point);
     }
     if (!context.mounted) return;
     // ⚠️ 브리핑 화면을 먼저 닫으면 안 된다. 예전 코드는 닫은 뒤 번호 선택
@@ -1043,7 +1050,14 @@ class _SendChannelRow extends StatelessWidget {
     //
     // 통화가 끝나고 돌아오면 브리핑이 그대로 있어, 고른 대화 포인트를 다시
     // 볼 수 있다는 이점도 있다.
-    await PhoneCallService.showCallPicker(context, contact);
+    final launched = await PhoneCallService.showCallPicker(context, contact);
+    // 소통 기록 저장 의도는 **전화 걸기가 실제로 시작된 뒤에만** 남긴다.
+    // 시트를 열자마자 남기면, 번호를 고르지 않고 닫은 경우에도 의도가 남아
+    // — iOS에선 공유 시트를 닫기만 해도 resumed가 오므로 — 엉뚱한 시점에
+    // "저장할까요?" 다이얼로그가 떴다(2026-08-11 실기기 QA에서 발견).
+    if (launched && point != null) {
+      onSent?.call('call', point);
+    }
   }
 
   Future<void> _sms(BuildContext context) async {
@@ -1108,68 +1122,18 @@ class _SendChannelRow extends StatelessWidget {
     }
   }
 
-  /// "더보기" — 이메일 경로를 먼저 보여 주고, 그 밖의 앱은 공유 시트로 넘긴다.
-  ///
-  /// **왜 공유 시트를 바로 열지 않는가.** 공유 시트로 메일 앱을 고르면 본문만
-  /// 넘어가고 **받는 사람이 비어 있다**(사용자 보고, 2026-08-10). 공유 시트는
-  /// "내용"만 전달하는 통로라 수신인을 실을 자리가 없고, 메일 앱은 받은
-  /// 텍스트만 보고 누구에게 보낼지 알 수 없다. OS가 그렇게 설계돼 있어 우회할
-  /// 방법이 없다.
-  ///
-  /// 그래서 이메일만은 `mailto:`로 직접 열어 **명함에 적힌 주소를 수신인으로
-  /// 채운다.** 버튼을 다섯 개로 늘리는 대신 더보기 안에 넣어, 자주 쓰는 네
-  /// 경로가 한 줄에 유지되게 했다(사용자 결정).
-  Future<void> _share(BuildContext context) async {
+  /// 이메일 버튼. `mailto:`로 명함의 주소를 수신인까지 채워 연다 — 공유
+  /// 시트로 메일 앱을 고르면 본문만 넘어가고 받는 사람이 비기 때문
+  /// (사용자 보고, 2026-08-10). 예전엔 "더보기" 시트 안에 있었지만,
+  /// 일반 공유를 없애면서 직접 버튼으로 승격했다(2026-08-11).
+  Future<void> _emailTap(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final point = selectedPoint;
     if (point == null) {
       _toast(messenger, '먼저 전할 대화 포인트를 선택해 주세요.');
       return;
     }
-    final email = contact.email.trim();
-
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppColors.cardSurface,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (email.isNotEmpty)
-              ListTile(
-                leading: const AppIcon(
-                  AppIconId.mailSend,
-                  size: 22,
-                  color: AppColors.accentText,
-                ),
-                title: const Text('이메일로 보내기'),
-                // 어디로 가는지 미리 보여 준다 — 명함에 오래된 주소가 적혀
-                // 있으면 보내기 전에 알아챌 수 있다.
-                subtitle: Text(email),
-                onTap: () => Navigator.pop(sheetContext, 'email'),
-              ),
-            ListTile(
-              leading: const Icon(
-                Icons.ios_share,
-                size: 22,
-                color: AppColors.accentText,
-              ),
-              title: const Text('다른 앱으로 공유'),
-              subtitle: const Text('메모·메신저 등 — 받는 사람은 앱에서 직접 고릅니다'),
-              onTap: () => Navigator.pop(sheetContext, 'share'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-
-    if (choice == 'email') {
-      await _email(messenger, point, email);
-    } else if (choice == 'share') {
-      await SharePlus.instance.share(ShareParams(text: point));
-    }
+    await _email(messenger, point, contact.email.trim());
   }
 
   /// 메일 앱을 **수신인까지 채운 채로** 연다. 수신인은 명함에 적힌 이메일이다.
@@ -1199,9 +1163,6 @@ class _SendChannelRow extends StatelessWidget {
 
 class _ChannelButton extends StatelessWidget {
   final AppIconId icon;
-
-  /// 앱 아이콘 세트에 마땅한 것이 없을 때만 쓰는 대체 아이콘(예: 공유).
-  final IconData? useMaterialIcon;
   final String label;
   final bool enabled;
   final VoidCallback onTap;
@@ -1211,7 +1172,6 @@ class _ChannelButton extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onTap,
-    this.useMaterialIcon,
   });
 
   @override
@@ -1243,10 +1203,7 @@ class _ChannelButton extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (useMaterialIcon != null)
-                  Icon(useMaterialIcon, size: 20, color: foreground)
-                else
-                  AppIcon(icon, size: 20, color: foreground),
+                AppIcon(icon, size: 20, color: foreground),
                 const SizedBox(height: 4),
                 Text(
                   label,
