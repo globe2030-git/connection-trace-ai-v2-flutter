@@ -96,7 +96,7 @@ class _LoginViewState extends State<LoginView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              Center(child: Image.asset('assets/CI.png', width: 140)),
+              Center(child: Image.asset('assets/br_ci.png', width: 140)),
               const SizedBox(height: 24),
               const Text(
                 '커넥션센스 시작하기',

@@ -134,12 +134,12 @@ dependency_overrides:
 # `dart run flutter_native_splash:create`를 실행하면 이 설정을 읽어 Android/iOS/Web
 # 각 플랫폼용 스플래시 리소스를 실제로 생성한다. 2026-08-05, Claude Design
 # 아이콘 시스템 핸드오프에 맞춰 기존 라벤더 레이더 마크 대신 브랜드 블루
-# 위치핀+인물+명함 마크(assets/icons3d/pin_card_blue_splash.png)로 교체.
+# 위치핀+인물+명함 마크(assets/icons3d/br_splash.png)로 교체.
 flutter_native_splash:
   color: "#F7F8FA"
-  image: assets/icons3d/pin_card_blue_splash.png
+  image: assets/icons3d/br_splash.png
   color_dark: "#F7F8FA"
-  image_dark: assets/icons3d/pin_card_blue_splash.png
+  image_dark: assets/icons3d/br_splash.png
   # Android 12(API 31)부터 스플래시는 OS가 그린다. 이 블록이 없거나 값이
   # 비면 OS가 **런처 아이콘의 적응형 전경**을 대신 쓰는데, 그 전경은 안전
   # 영역(66%)에 맞춰 축소돼 런처에서 보던 것과 크기·여백이 달라진다 —
@@ -147,19 +147,19 @@ flutter_native_splash:
   # 아이콘 뒷배경 색까지 지정해 원형 안쪽이 스플래시 배경과 이어지게 한다.
   android_12:
     color: "#F7F8FA"
-    image: assets/icons3d/pin_card_blue_splash.png
+    image: assets/icons3d/br_splash.png
     icon_background_color: "#F7F8FA"
     color_dark: "#F7F8FA"
-    image_dark: assets/icons3d/pin_card_blue_splash.png
+    image_dark: assets/icons3d/br_splash.png
     icon_background_color_dark: "#F7F8FA"
   web: true
 
 # 앱 아이콘(커넥션센스) 설정. 2026-08-05, Claude Design 아이콘 시스템 핸드오프의
 # 브랜드 마크(위치핀 안의 인물 + 명함, 브랜드 블루 #2563EB)로 교체 —
-# assets/icons3d/pin_card_blue_full_bleed.png (풀블리드 정사각형, OS가 각자의
+# assets/icons3d/br_icon.png (풀블리드 정사각형, OS가 각자의
 # 마스크 모양으로 코너를 잘라내는 방식).
 flutter_launcher_icons:
-  image_path: "assets/icons3d/pin_card_blue_full_bleed.png"
+  image_path: "assets/icons3d/br_icon.png"
   ios: true
   remove_alpha_ios: true
   android: true
@@ -190,7 +190,7 @@ flutter:
     - assets/icons3d/
     - assets/map/
     - assets/icons/
-    - assets/CI.png
+    - assets/br_ci.png
     - assets/web/address_search.html
     # 번들한 폰트의 라이선스 원문. 앱 안 "오픈소스 라이선스" 화면에서
     # 읽어 표시하므로 에셋으로 포함해야 한다(SIL OFL 1.1의 고지 의무).
