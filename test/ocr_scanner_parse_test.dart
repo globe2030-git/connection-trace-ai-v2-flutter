@@ -422,4 +422,157 @@ void main() {
       expect(r.addressDetail, '한컴타워 3층');
     });
   });
+
+  group('팩스 번호 오분류 방지 (2026-08-11)', () {
+    String digits(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+
+    test('팩스 라벨이 붙은 번호는 사무실 전화로 배정하지 않는다', () {
+      final r = parse([
+        '주식회사 라음소프트',
+        '홍길동',
+        'tel 031-123-4567',
+        'fax 031-123-4568',
+        'M 010-1111-2222',
+      ]);
+      // 포맷 정규화는 자릿수별로 달라 문자열 대신 숫자만 비교한다.
+      expect(digits(r.officePhone), '0311234567'); // tel 쪽
+      expect(digits(r.phone), '01011112222');
+      // 팩스 번호가 사무실 전화 자리를 차지하지 않았는지 확인
+      expect(digits(r.officePhone), isNot('0311234568'));
+    });
+
+    test('팩스 번호만 있고 대표전화가 없으면 사무실 전화는 빈다', () {
+      final r = parse([
+        '주식회사 라음소프트',
+        '홍길동',
+        'RAUM fax 070-4735-7770',
+        'M 010-1111-2222',
+      ]);
+      expect(r.officePhone, '');
+      // 팩스 번호가 이름/회사로 새지 않았는지(회사는 키워드로 이미 잡힘)
+      expect(r.name, '홍길동');
+      expect(r.company, '주식회사 라음소프트');
+    });
+  });
+
+  group('직함·회사 키워드 보수적 확장 (2026-08-11)', () {
+    test('직함 "회장"', () {
+      final r = parse(['(주)커넥션', '홍길동 회장', 'M 010-1234-5678']);
+      expect(r.name, '홍길동');
+      expect(r.title, '회장');
+    });
+    test('회사 접미사 "공단"', () {
+      final r = parse(['한국산업안전보건공단', '홍길동', '주임', 'M 010-1234-5678']);
+      expect(r.company, '한국산업안전보건공단');
+      expect(r.name, '홍길동');
+    });
+    test('회사 접미사 "진흥원"', () {
+      final r = parse(['한국콘텐츠진흥원', '이영희', '선임', 'M 010-1234-5678']);
+      expect(r.company, '한국콘텐츠진흥원');
+      expect(r.name, '이영희');
+    });
+  });
+
+  group('주소 인식 강화 (2026-08-11, 측정상 주소가 최대 병목)', () {
+    test('도(道) 풀네임 — "충청북도 청주시..."도 인식', () {
+      final r = parse([
+        '주식회사 커넥션',
+        '홍길동',
+        '충청북도 청주시 상당구 대성로 100',
+        'M 010-1234-5678',
+      ]);
+      expect(r.address, '충청북도 청주시 상당구 대성로 100');
+    });
+
+    test('경상남도 풀네임', () {
+      final r = parse(['(주)커넥션', '홍길동', '경상남도 창원시 의창구 중앙대로 210']);
+      expect(r.address, '경상남도 창원시 의창구 중앙대로 210');
+    });
+
+    test('도/시 이름 없이 "강남구 테헤란로 123"으로 시작하는 주소', () {
+      final r = parse([
+        '주식회사 커넥션',
+        '홍길동',
+        '강남구 테헤란로 123',
+        'M 010-1234-5678',
+      ]);
+      expect(r.address, '강남구 테헤란로 123');
+    });
+
+    test('시+구 두 단계 "성남시 분당구 판교로 235"', () {
+      final r = parse(['(주)커넥션', '홍길동', '성남시 분당구 판교로 235']);
+      expect(r.address, '성남시 분당구 판교로 235');
+    });
+
+    test('시/군/구 + 로/길 + 숫자가 아니면 주소로 오인하지 않는다(오탐 방지)', () {
+      // "경영지원본부" 같은 부서명은 로/길+숫자가 없어 주소로 안 잡혀야 한다.
+      final r = parse(['(주)커넥션', '홍길동', '경영지원본부', 'M 010-1234-5678']);
+      expect(r.address, '');
+    });
+
+    test('우편번호가 별도 줄에 홀로 있을 때 인식', () {
+      final r = parse([
+        '주식회사 커넥션',
+        '홍길동',
+        '06234',
+        '서울특별시 강남구 테헤란로 123',
+        'M 010-1234-5678',
+      ]);
+      expect(r.postalCode, '06234');
+      expect(r.address, '서울특별시 강남구 테헤란로 123');
+    });
+
+    test('우편번호 대괄호 표기 "[06234]" 별도 줄', () {
+      final r = parse(['(주)커넥션', '홍길동', '[06234]', '서울 강남구 테헤란로 123']);
+      expect(r.postalCode, '06234');
+    });
+  });
+
+  group('글자 크기 기반 이름 폴백 — 규칙으로 이름을 확신 못 할 때만', () {
+    OcrScanResult parseH(List<({String text, double height})> lines) =>
+        OcrScannerService.parseLinesForTestingWithHeights(lines);
+
+    test('규칙으로 이름을 못 찾은 경우, 가장 크게 인쇄된 줄을 이름으로 고른다', () {
+      // 영문 이름이라 한글 이름 규칙에 안 걸리고, 직함/회사 키워드도 없어
+      // 예전이면 leftover 맨 앞("Global Sales Division")이 이름이 됐다.
+      // 이름 "John Smith"가 훨씬 큰 글자이므로 그쪽을 골라야 한다.
+      final r = parseH([
+        (text: 'Global Sales Division', height: 20),
+        (text: 'John Smith', height: 44),
+        (text: 'some tagline here', height: 18),
+      ]);
+      expect(r.name, 'John Smith');
+      expect(r.parseShape?.nameSource, OcrNameSource.fontSizePreferred);
+    });
+
+    test('높이 정보가 없으면(=0) 기존대로 맨 앞 줄을 이름으로 쓴다 — 회귀 방지', () {
+      final r = parseH([
+        (text: 'Global Sales Division', height: 0),
+        (text: 'John Smith', height: 0),
+      ]);
+      expect(r.name, 'Global Sales Division');
+      expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
+    });
+
+    test('가장 큰 줄이 맨 앞 줄보다 눈에 띄게 크지 않으면 기존 동작 유지', () {
+      final r = parseH([
+        (text: 'Global Sales Division', height: 30),
+        (text: 'John Smith', height: 31),
+      ]);
+      expect(r.name, 'Global Sales Division');
+      expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
+    });
+
+    test('한글 이름을 규칙으로 확신한 경우엔 글자 크기와 무관하게 그 이름 유지', () {
+      // "홍길동"은 한글 이름 규칙(koreanStripped)으로 이미 확신 — 회사명이
+      // 더 크더라도 이름은 안 바뀐다.
+      final r = parseH([
+        (text: '주식회사 커넥션센스', height: 50),
+        (text: '홍길동', height: 30),
+        (text: 'M 010-1234-5678', height: 20),
+      ]);
+      expect(r.name, '홍길동');
+      expect(r.parseShape?.nameSource, OcrNameSource.koreanStripped);
+    });
+  });
 }

@@ -901,6 +901,65 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
     </div>
   </section>
 
+  <section>
+    <h2><span class="num">15</span>무료 10회 → 이후 충전 — 무료 체험 폭을 2배로 넓힐 때</h2>
+    <p class="section-desc">2026-08-11 사용자 방향 확정: <b>기본 구조는 "무료 몇 회 사용 후 충전"</b>이며, 그 무료 회차를 <b>5회에서 10회로</b> 늘렸을 때의 손익을 따로 계산한다. 앞선 13·14번(E2 충전형)과 <b>같은 단가·같은 충전 사다리</b>를 쓰되, 바뀌는 것은 <b>가입 시 1회성으로 주는 무료 회차 수 하나뿐</b>이다. 무료 회차를 <b>매월 리셋하지 않고 가입 시 1회</b>만 준다는 전제도 그대로 유지한다(월 리셋은 유료를 잠식한다 — E1, 13-3).</p>
+
+    <div class="assumptions" style="margin-bottom:16px;">
+      <ul>
+        <li><span>변경점</span><b>가입 시 무료 5회 → 무료 10회 (1회성)</b> <span style="color:var(--ink-faint); font-weight:400;">그 외 단가·사다리·수수료·환율은 13번과 동일</span></li>
+        <li><span>AI 호출 1회당 비용</span><b>$0.0023 = ₩3.29</b> · <span>스토어 수수료</span><b>15%</b> · <span>환율</span><b>₩1,430/$</b></li>
+        <li><span>충전 ₩1,000(10회) 1건 공헌이익</span><b>₩817</b> <span style="color:var(--ink-faint); font-weight:400;">(순매출 ₩850 − AI원가 ₩33, 13-1과 동일)</span></li>
+      </ul>
+    </div>
+
+    <div class="callout good" style="margin-bottom:16px;">
+      <b>핵심.</b> 무료 회차가 <b>가입 시 1회성</b>이면 무료 비용은 <b>월마다 반복되지 않는 획득비(CAC) 한 번</b>으로 끝난다. 5회→10회로 늘려도 1인당 추가 부담은 <b>₩16.4(약 $0.0115) 단 한 번</b>뿐이고, 이후 사용은 전부 충전(선불)이라 <b>사용=매출</b> 구조가 유지된다. 즉 <b>구조적 다운사이드가 없다</b> — E2가 원래 가진 장점(회차가 곧 비용 상한)을 그대로 물려받는다.
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">15-1. 무료 5회 vs 무료 10회 — 1회성 획득비 비교</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>항목</th><th>무료 5회</th><th>무료 10회</th><th>차이(추가 5회)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1인 무료분 원가(가입 시 1회성)</td><td class="tabular">$0.0115 · ₩16.4</td><td class="tabular">$0.023 · ₩32.9</td><td class="tabular">+$0.0115 · +₩16.4</td></tr>
+          <tr><td>무료 5만 명 전원 소진 시 총원가(1회성)</td><td class="tabular">$575</td><td class="tabular">$1,150</td><td class="tabular">+$575</td></tr>
+          <tr><td>월 반복 비용에 미치는 영향</td><td class="tabular">없음(1회성)</td><td class="tabular">없음(1회성)</td><td class="tabular profit-pos">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="section-desc" style="margin-top:10px;">무료를 <b>매월 리셋</b>하면 위 "1회성"이 전부 <b>월 반복 비용</b>으로 바뀐다 — 5만 명 무료 10회 매월이면 월 $1,150이 매달 나간다. 그래서 무료 10회는 반드시 <b>가입 시 1회</b>여야 한다.</p>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">15-2. 자기부담 회수 — 무료 사용자의 몇 %가 충전하면 본전인가</h3>
+    <p class="section-desc" style="margin-bottom:12px;">무료 회차 비용은 결국 <b>충전 매출로 회수</b>된다. 충전 ₩1,000 1건의 공헌이익이 ₩817이므로, 무료 사용자 중 <b>한 번이라도 충전하는 비율(p)</b>이 아래를 넘으면 무료분이 전액 회수된다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>기준</th><th>무료 5회</th><th>무료 10회</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>회수 손익분기 전환율(무료→최소1회 충전)</td><td class="tabular">≥ 2.0%</td><td class="tabular">≥ 4.0%</td></tr>
+          <tr><td>충전 ₩1,000 1건이 커버하는 무료 인원</td><td class="tabular">약 50명</td><td class="tabular">약 25명</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="section-desc" style="margin-top:10px;">즉 <b>무료 사용자의 4%만 한 번이라도 충전하면 무료 10회 전체가 자기 비용을 회수</b>한다. 소비형 인앱결제(충전)의 통상 전환율(2~5%)을 감안하면 충분히 도달 가능한 선이다.</p>
+
+    <div class="callout" style="margin-bottom:16px;">
+      <b>왜 5회가 아니라 10회를 고려할 만한가.</b> AI 대화 브리핑은 <b>몇 번 써봐야 유용함이 각인</b>되는 기능이다. 5회는 "체험 → 가치 인지 → 충전"의 앞단이 얇아 이탈로 이어질 수 있다. 10회로 넓히면 추가 획득비는 인당 ₩16 한 번뿐인데, <b>가치 각인 기회는 2배</b>가 된다 — 획득비의 절대액이 워낙 작아 전환율을 아주 조금만 올려도 남는 장사다.
+    </div>
+
+    <div class="callout good" style="margin-bottom:16px;">
+      <b>권고.</b> ① 무료 <b>10회, 가입 시 1회성</b>으로 채택(월 리셋 금지). ② 이후는 13번의 충전 사다리(₩1,000·10 / ₩3,000·33 / ₩5,000·60 / ₩10,000·130) 그대로. ③ 출시 후 <code>aiAuditLogs</code>로 <b>무료→충전 전환율</b>을 실측해 4% 선을 넘는지 확인하고, 미달이면 무료 회차를 7~8회로 조정. ④ 구현 시 잔여 무료·충전 회차는 <code>aiUsage</code>처럼 <b>서버 전용</b>으로 — <code>clientWritableUserFields()</code>에 넣으면 사용자가 자기 잔액을 채운다(14번 보안 주의와 동일).
+    </div>
+
+    <div class="callout" style="margin-top:12px; background:var(--surface-2); border-color:var(--border);">
+      <b>이 절의 한계.</b> "무료→충전 전환율 4%"는 이 문서의 다른 수치와 마찬가지로 <b>미실측 가정</b>이다. 소비형 결제 전환율은 앱 성격·온보딩 품질에 크게 좌우되므로, 위 손익분기는 <b>"넘어야 할 목표선"</b>으로 읽어야지 확정된 결과로 보면 안 된다. 실측은 출시 후 <code>aiAuditLogs</code>의 무료 소진→첫 충전 퍼널로 가능하다.
+    </div>
+  </section>
+
   <footer>
     이 문서의 모든 수치는 가정에 기반한 추정치이며, 실사용 데이터가 쌓이면 재계산이 필요합니다.
     스토어 수수료는 애플/구글의 중소사업자 프로그램(연 매출 $1M 미만, 15%) 기준이며, 이 기준을 초과하면 30%로 재계산해야 합니다.
@@ -910,6 +969,7 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
     <br>단, <b>모델·사고 설정을 바꾸면 이 단가가 몇 배로 움직입니다</b> — 실측에서 사고 단계를 HIGH로 올리면 회당 $0.0103(4.5배)이었습니다. 모델을 교체하거나 <code>THINKING_LEVEL</code>을 조정하면 이 문서를 함께 재계산해야 합니다.
     <br><b>13·14번 섹션(회차 판매안, 2026-08-09 추가)</b>은 위 실측 단가를 그대로 쓰되, <b>티어 구성비(₩1,000 60% / ₩3,000 25% / ₩5,000 10% / ₩10,000 5%)</b>와 <b>실사용률(상한의 60%)</b>, <b>사용 집중도(월 사용량의 60%가 한 주에 몰림)</b>라는 세 가지 미실측 가정 위에 있습니다.
     해지율은 반영하지 않았으므로 F안(회차 구독)의 우위는 상한값으로 읽어야 합니다. 이 값들은 2026-08-09 배포한 AI 호출 감사 로그(<code>aiAuditLogs</code>)로 실측 가능합니다.
+    <br><b>15번 섹션(무료 10회 → 충전, 2026-08-11 추가)</b>은 13번과 동일한 단가·사다리를 쓰되, 무료 회차를 5→10회로 늘렸을 때의 <b>1회성 획득비</b>와 <b>자기부담 회수 손익분기(무료→충전 전환율 4%)</b>를 계산합니다. 이 전환율은 미실측 목표선입니다.
     <br>그 밖의 가정(전환율 50:1, 사용량 평균/상한, 환율 ₩1,430/$)은 여전히 추정치이며 실사용 데이터가 쌓이면 재계산이 필요합니다.
     스토어 수수료는 애플/구글의 중소사업자 프로그램(연 매출 $1M 미만, 15%) 기준이며, 이 기준을 초과하면 30%로 재계산해야 합니다.
     작성: Claude (커넥션센스 프로젝트 어시스턴트) · 원본 데이터: docs/admin/reports/pnl-analysis-freemium.html
