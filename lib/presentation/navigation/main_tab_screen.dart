@@ -48,7 +48,16 @@ class _MainTabScreenState extends State<MainTabScreen>
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        onDestinationSelected: (index) {
+          // '주변' 탭을 누르면 그 위에 떠 있던 AI 대화 가이드 오버레이를 닫아
+          // 첫 화면으로 돌아온다. IndexedStack이라 이미 주변에 있는 상태에서
+          // 탭을 다시 눌러도 _currentIndex가 그대로여서 오버레이가 남아 있던
+          // 문제를 고친다(사용자 제보: 주변 → AI 가이드 → 주변이 안 돌아옴).
+          if (index == 0) {
+            context.read<RadarViewModel>().closeBriefing();
+          }
+          setState(() => _currentIndex = index);
+        },
         destinations: const [
           NavigationDestination(
             icon: AppIcon(AppIconId.nearbyPeople),
