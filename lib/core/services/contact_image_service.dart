@@ -80,21 +80,6 @@ class ContactImageService {
     }
   }
 
-  /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
-  /// JSON에는 경로를 넣지 않는데(다른 기기에선 무의미한 로컬 경로라서),
-  /// 정작 이 기기에 저장해 둔 암호문 파일은 그대로 남아 있다. 파일명이
-  /// contactId로 결정되므로, 경로가 끊긴 명함이 자기 파일을 되찾을 수
-  /// 있게 한다. 파일이 없으면(정말 이미지가 없는 명함) null.
-  Future<String?> findExistingCardImagePath(String contactId) async {
-    try {
-      final docsDir = await getApplicationDocumentsDirectory();
-      final path = '${docsDir.path}/${_fileName(contactId)}';
-      return File(path).existsSync() ? path : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// [sourcePath]의 이미지를 읽어 암호화해 저장하고, 저장된 암호문 파일 경로를
   /// 반환한다. 실패하면 null(이미지는 부가 기능이라 저장 실패가 명함 저장을
   /// 막지 않는다).
