@@ -27,6 +27,58 @@ class ContactImageService {
   static final Map<String, Uint8List> _decryptedCache = {};
 
   static String _fileName(String contactId) => 'contact_card_$contactId.enc';
+  static const String _fileNamePrefix = 'contact_card_';
+  static const String _fileNameSuffix = '.enc';
+
+  /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
+  /// JSON에는 경로를 넣지 않는데(다른 기기에선 무의미한 로컬 경로라서),
+  /// 정작 이 기기에 저장해 둔 암호문 파일은 그대로 남아 있다. 파일명이
+  /// contactId로 결정되므로, 경로가 끊긴 명함이 자기 파일을 되찾을 수
+  /// 있게 한다. 파일이 없으면(정말 이미지가 없는 명함) null.
+  ///
+  /// 단건용 — 명함 수정 화면 진입 시 한 건만 확인할 때 쓴다. 목록 전체를
+  /// 재연결할 때는 [findAllExistingCardImagePaths]를 대신 쓸 것(명함마다
+  /// 개별 IO를 내지 않기 위함).
+  Future<String?> findExistingCardImagePath(String contactId) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final path = '${docsDir.path}/${_fileName(contactId)}';
+      return File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// [findExistingCardImagePath]의 일괄판 — 명함이 수백 장이어도 문서
+  /// 디렉터리를 **한 번만** 조회해 `contactId → 암호문 파일 경로` 맵을
+  /// 만든다(개별 존재 확인 대신 파일명 규칙으로 매칭). 서버 복원/다기기
+  /// 병합 직후 로컬 명함 목록에서 경로가 빠진 항목을 일괄 재연결하는 데
+  /// 쓴다(추가 - 명함 이미지 경로 일괄 재연결).
+  Future<Map<String, String>> findAllExistingCardImagePaths() async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final dir = Directory(docsDir.path);
+      if (!dir.existsSync()) return {};
+      final result = <String, String>{};
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = entity.path.split('/').last;
+        if (!name.startsWith(_fileNamePrefix) || !name.endsWith(_fileNameSuffix)) {
+          continue;
+        }
+        final id = name.substring(
+          _fileNamePrefix.length,
+          name.length - _fileNameSuffix.length,
+        );
+        if (id.isEmpty) continue;
+        result[id] = entity.path;
+      }
+      return result;
+    } catch (e) {
+      debugPrint('명함 이미지 파일 목록 조회 실패: ${e.runtimeType}');
+      return {};
+    }
+  }
 
   /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
   /// JSON에는 경로를 넣지 않는데(다른 기기에선 무의미한 로컬 경로라서),
