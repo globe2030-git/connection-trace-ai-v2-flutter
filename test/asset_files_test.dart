@@ -25,10 +25,10 @@ void main() {
   test('코드가 직접 참조하는 이미지 파일이 실제로 존재한다', () async {
     // 파일을 옮기거나 개명하면 이 목록도 함께 고칠 것 (참조처 주석 참고).
     const paths = [
-      'assets/br_ci.png', // login_view.dart
-      'assets/icons3d/br_splash.png', // splash_gate.dart, radar_view.dart
-      'assets/icons3d/br_icon.png', // pubspec flutter_launcher_icons
-      'assets/map/nb_map.jpg', // radar_view.dart
+      'assets/images/brand/ci.png', // login_view.dart
+      'assets/images/brand/splash.png', // splash_gate.dart, radar_view.dart
+      'assets/images/brand/icon.png', // pubspec flutter_launcher_icons
+      'assets/images/nearby/map.jpg', // radar_view.dart
     ];
     for (final path in paths) {
       try {
