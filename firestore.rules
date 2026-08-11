@@ -58,6 +58,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 명함 인식 품질 통계(2026-08-11). 필드별 인식률·이름 추출 경로·사용자 수정
+    // 카운트 등 **형태(숫자)만** 담고 개인정보(이름/전화/이메일/주소 원문)는
+    // 담지 않는다 — 관리자 콘솔에서 전 사용자 인식률을 보기 위한 것이다.
+    // 소유자 쓰기를 허용한다: 여기 값은 곧 돈·한도가 아니라 통계라, 조작해도
+    // 관리자 화면만 지저분해질 뿐 보안·비용 영향이 없다(aiUsage와 대비되는
+    // 지점 — 그건 서버 전용이다). 읽기는 관리자만.
+    match /ocrStats/{uid} {
+      allow read: if isAdmin();
+      allow write: if isOwner(uid);
+    }
+
     // 공지사항 — published=true인 것만 일반 사용자에게 공개, 초안은 관리자만.
     match /notices/{noticeId} {
       allow read: if resource.data.published == true || isAdmin();

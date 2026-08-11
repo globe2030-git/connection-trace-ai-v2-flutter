@@ -150,6 +150,7 @@ onAuthStateChanged(auth, async (user) => {
   loadReports();
   await loadTesters();
   await loadUsageLogs();
+  await loadOcrStats();
 });
 
 // ---------- 경영 리포트 ----------
@@ -393,6 +394,146 @@ async function renderAuditLogs() {
     `;
     list.appendChild(item);
   }
+}
+
+// ---------- 명함 인식 통계 ----------
+// 앱이 올린 형태 통계(ocrStats/{uid})를 전 사용자 합산해 인식률을 본다.
+// 개인정보(이름/전화/이메일/주소 원문)는 담기지 않고 카운트만 있다.
+
+const OCR_FIELD_LABELS = {
+  name: "이름", company: "회사명", title: "직함", mobile: "휴대폰",
+  office: "사무실 전화", email: "이메일", address: "주소",
+  addressDetail: "상세주소", postal: "우편번호",
+};
+const OCR_NAME_SOURCE_LABELS = {
+  keywordSplit: "직함 줄에서 분리", koreanStripped: "한글 이름줄",
+  mixedTokenFront: "혼용줄 앞 토큰", mixedTokenLast: "혼용줄 끝 토큰",
+  fontSizePreferred: "글자 크기 폴백(개선)", leftoverFallback: "맨 앞 줄 폴백(약함)",
+  none: "못 찾음",
+};
+const OCR_COMPANY_SOURCE_LABELS = {
+  keyword: "회사 키워드", leftoverPick: "남은 줄에서 선택", none: "못 찾음",
+};
+
+function ocrPct(n, total) {
+  if (!total || total <= 0) return "0%";
+  return Math.round((n * 100) / total) + "%";
+}
+
+function addCounts(target, src) {
+  if (!src || typeof src !== "object") return;
+  for (const [k, v] of Object.entries(src)) {
+    if (typeof v === "number") target[k] = (target[k] ?? 0) + v;
+  }
+}
+
+async function loadOcrStats() {
+  const panel = $("#tab-ocr");
+  panel.innerHTML = `<p class="hint">불러오는 중…</p>`;
+  let snap;
+  try {
+    snap = await getDocs(collection(db, "ocrStats"));
+  } catch (e) {
+    panel.innerHTML = `<div class="error">명함 인식 통계 조회 실패: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const agg = {
+    scans: 0, correctedCards: 0, users: 0,
+    filled: {}, nameSource: {}, companySource: {}, corrections: {},
+    platform: {},
+  };
+  snap.forEach((d) => {
+    const s = d.data();
+    agg.users += 1;
+    agg.scans += Number(s.scans ?? 0);
+    agg.correctedCards += Number(s.correctedCards ?? 0);
+    addCounts(agg.filled, s.filled);
+    addCounts(agg.nameSource, s.nameSource);
+    addCounts(agg.companySource, s.companySource);
+    for (const [field, byKind] of Object.entries(s.corrections ?? {})) {
+      agg.corrections[field] = agg.corrections[field] ?? {};
+      addCounts(agg.corrections[field], byKind);
+    }
+    const plat = s.platform ?? "기타";
+    agg.platform[plat] = agg.platform[plat] ?? { users: 0, scans: 0 };
+    agg.platform[plat].users += 1;
+    agg.platform[plat].scans += Number(s.scans ?? 0);
+  });
+
+  if (agg.users === 0 || agg.scans === 0) {
+    panel.innerHTML = `<div class="card"><p class="hint" style="margin:0;">아직 수집된 명함 인식 통계가 없습니다. 앱에서 명함을 스캔·저장하면 여기에 쌓입니다.</p></div>`;
+    return;
+  }
+
+  const row = (label, value) =>
+    `<div class="list-item"><div class="title">${escapeHtml(label)}</div><div>${escapeHtml(value)}</div></div>`;
+
+  const platformRows = Object.entries(agg.platform)
+    .map(([p, v]) => row(p, `사용자 ${v.users}명 · 스캔 ${v.scans}회`))
+    .join("");
+
+  const fieldRows = Object.keys(OCR_FIELD_LABELS)
+    .map((k) => row(OCR_FIELD_LABELS[k], `${agg.filled[k] ?? 0}/${agg.scans} (${ocrPct(agg.filled[k] ?? 0, agg.scans)})`))
+    .join("");
+
+  const nameRows = Object.entries(agg.nameSource)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => row(OCR_NAME_SOURCE_LABELS[k] ?? k, `${v} (${ocrPct(v, agg.scans)})`))
+    .join("");
+
+  const companyRows = Object.entries(agg.companySource)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => row(OCR_COMPANY_SOURCE_LABELS[k] ?? k, `${v} (${ocrPct(v, agg.scans)})`))
+    .join("");
+
+  const correctionRows = Object.keys(OCR_FIELD_LABELS)
+    .map((k) => {
+      const bk = agg.corrections[k];
+      if (!bk) return "";
+      const edited = bk.edited ?? 0, cleared = bk.cleared ?? 0;
+      if (edited === 0 && cleared === 0) return "";
+      return row(OCR_FIELD_LABELS[k], `고침 ${edited} · 지움 ${cleared}`);
+    })
+    .filter(Boolean)
+    .join("") || `<p class="hint" style="margin:0;">아직 수정 기록이 없습니다.</p>`;
+
+  panel.innerHTML = `
+    <div class="card">
+      <p class="hint" style="margin-top:0;">
+        앱이 올린 <b>형태 통계</b>만 표시합니다 — 이름·전화·이메일·주소 원문이나
+        명함 이미지는 포함되지 않습니다. 필드별 인식률과 사용자가 자동 인식을
+        고친 정도로 어디를 개선할지 판단합니다.
+      </p>
+      <div class="row"><button class="btn-ghost" id="ocrRefreshBtn">새로고침</button></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">전체</h3>
+      ${row("수집된 사용자 수", `${agg.users}명`)}
+      ${row("스캔 파싱 횟수(합계)", `${agg.scans}회`)}
+      ${row("자동 인식을 고친 명함", `${agg.correctedCards}건 (${ocrPct(agg.correctedCards, agg.scans)})`)}
+      ${platformRows}
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">필드별 인식률 (채워진 비율)</h3>
+      ${fieldRows}
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">이름을 뽑은 경로</h3>
+      <p class="hint" style="margin-top:0;">"맨 앞 줄 폴백(약함)"과 "못 찾음" 비율이 높으면 파싱이 병목입니다.</p>
+      ${nameRows}
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">회사명을 뽑은 경로</h3>
+      ${companyRows}
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">필드별 사용자 수정 (오인식 신호)</h3>
+      <p class="hint" style="margin-top:0;">주소는 앱의 도로명 자동변환이 "고침"에 섞일 수 있어(참고) 순수 오인식보다 높게 보일 수 있습니다.</p>
+      ${correctionRows}
+    </div>
+  `;
+  $("#ocrRefreshBtn")?.addEventListener("click", () => loadOcrStats());
 }
 
 // ---------- 탭 ----------
