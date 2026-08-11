@@ -794,25 +794,25 @@ async function loadAppUpdate() {
         <br>· <b>최신 빌드</b>: 이 미만이면 <b>권장</b>("나중에" 허용).
         <br>둘 다 비우거나 0이면 아무 안내도 하지 않습니다.
       </p>
-      <label>최소 지원 빌드 번호</label>
+      <label>iOS</label>
       <div class="field-2col">
         <div>
-          <span class="field-sublabel">iOS</span>
+          <span class="field-sublabel">최소 지원 빌드 번호</span>
           <input type="number" id="auMinIos" min="0">
         </div>
         <div>
-          <span class="field-sublabel">Android</span>
-          <input type="number" id="auMinAndroid" min="0">
-        </div>
-      </div>
-      <label>최신 빌드 번호</label>
-      <div class="field-2col">
-        <div>
-          <span class="field-sublabel">iOS</span>
+          <span class="field-sublabel">최신 빌드 번호</span>
           <input type="number" id="auLatestIos" min="0">
         </div>
+      </div>
+      <label>Android</label>
+      <div class="field-2col">
         <div>
-          <span class="field-sublabel">Android</span>
+          <span class="field-sublabel">최소 지원 빌드 번호</span>
+          <input type="number" id="auMinAndroid" min="0">
+        </div>
+        <div>
+          <span class="field-sublabel">최신 빌드 번호</span>
           <input type="number" id="auLatestAndroid" min="0">
         </div>
       </div>
