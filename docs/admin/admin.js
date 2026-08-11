@@ -13,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  setDoc, query, orderBy, limit, serverTimestamp,
+  setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getFunctions, httpsCallable,
@@ -148,6 +148,7 @@ onAuthStateChanged(auth, async (user) => {
   await loadInquiries();
   await loadLegalDocs();
   loadReports();
+  await loadBilling();
   await loadTesters();
   await loadUsageLogs();
   await loadOcrStats();
@@ -199,6 +200,199 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+// ---------- 충전 관리 ----------
+// 과금 모델은 충전형(소모성)이다(2026-08-11 결정, backlog 추가 153):
+// 무료 10회 이후 1,000/3,000/5,000/10,000원 충전. 이 탭은 세 가지를 맡는다.
+// ① 상품 설정: 티어별 제공 회수·무료 횟수(config/billing) — 회수는 테스트
+//    기간 AI 비용 실측 후 확정하므로 코드 배포 없이 여기서 조정한다.
+// ② 충전 내역 조회(고객응대): "결제했는데 안 들어왔어요" 문의 대응.
+// ③ 정산 요약: 월별 충전 건수·금액·예상 정산액 + CSV 내려받기.
+// purchases 기록은 영수증 검증 서버(P1-4)만 쓴다 — IAP 구현 전까지는
+// 기록이 없는 게 정상이고, 빈 상태를 그대로 보여준다(가짜 데이터 금지).
+
+const TIER_PRICES = [1000, 3000, 5000, 10000];
+// 부가세 제외(÷1.1) 후 스토어 수수료 15% 공제 — backlog 추가 153의 정산 감각.
+const NET_RATE = (1 / 1.1) * 0.85;
+
+async function getBillingConfig() {
+  const snap = await getDoc(doc(db, "config", "billing"));
+  const data = snap.exists() ? snap.data() : {};
+  return {
+    freeCredits: data.freeCredits ?? 10,
+    tiers: TIER_PRICES.map((price) => {
+      const found = (data.tiers ?? []).find((t) => t.priceKrw === price);
+      return { priceKrw: price, credits: found?.credits ?? null, active: found?.active ?? false };
+    }),
+  };
+}
+
+async function loadBilling() {
+  const panel = $("#tab-billing");
+  panel.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">충전 상품 설정</h3>
+      <p class="hint">
+        가격 4단계는 확정, <strong>제공 회수는 테스트 기간 AI 비용 실측 후 확정</strong>
+        (미정이면 비워 두세요). 여기 저장한 값은 영수증 검증 서버가 크레딧 지급량으로,
+        앱이 충전 화면 표시용으로 읽습니다 — 회수 조정에 앱 배포가 필요 없습니다.
+      </p>
+      <div id="tierRows"></div>
+      <label style="margin-top:12px;">무료 제공 횟수 (신규 가입 시)</label>
+      <div class="row">
+        <input type="number" id="freeCredits" min="0" style="width:120px;">
+        <button class="btn-primary" id="billingSaveBtn">저장</button>
+      </div>
+      <div id="billingMsg"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">충전 내역 조회 (고객응대용)</h3>
+      <p class="hint">
+        "결제했는데 충전이 안 됐어요" 문의 대응용. 앱 로그인 이메일로 검색합니다.
+        기록은 영수증 검증 서버만 남기므로 결제 기능(IAP) 출시 전에는 비어 있는 게 정상입니다.
+      </p>
+      <div class="row">
+        <input type="email" id="purchaseEmail" placeholder="사용자 로그인 이메일" style="flex:1;">
+        <button class="btn-primary" id="purchaseSearchBtn">조회</button>
+      </div>
+      <div id="purchaseResult"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">정산 요약</h3>
+      <p class="hint">
+        월별 충전 실적. 예상 정산액은 부가세 제외 후 스토어 수수료 15% 공제 기준
+        (판매가의 약 77%) — 실제 정산서와는 환율·조정액만큼 다를 수 있습니다.
+      </p>
+      <div class="row">
+        <input type="month" id="settleMonth">
+        <button class="btn-primary" id="settleBtn">집계</button>
+        <button class="btn-primary" id="settleCsvBtn" style="display:none;">CSV 내려받기</button>
+      </div>
+      <div id="settleResult"></div>
+    </div>
+  `;
+
+  // ① 상품 설정 — 현재값 로드
+  const cfg = await getBillingConfig();
+  $("#freeCredits").value = cfg.freeCredits;
+  $("#tierRows").innerHTML = cfg.tiers.map((t, i) => `
+    <div class="row" style="align-items:center; margin-bottom:6px;">
+      <div style="width:110px; font-weight:700;">${t.priceKrw.toLocaleString()}원</div>
+      <input type="number" id="tierCredits${i}" min="1" placeholder="회수 미정"
+        value="${t.credits ?? ""}" style="width:120px;">
+      <span class="hint" style="margin:0 4px;">회 제공</span>
+      <label style="margin:0; display:flex; align-items:center; gap:4px;">
+        <input type="checkbox" id="tierActive${i}" ${t.active ? "checked" : ""}> 판매
+      </label>
+    </div>
+  `).join("");
+
+  $("#billingSaveBtn").addEventListener("click", async () => {
+    const tiers = TIER_PRICES.map((price, i) => {
+      const raw = $(`#tierCredits${i}`).value.trim();
+      return {
+        priceKrw: price,
+        credits: raw === "" ? null : Math.max(1, parseInt(raw, 10) || 0),
+        active: $(`#tierActive${i}`).checked,
+      };
+    });
+    const bad = tiers.find((t) => t.active && !t.credits);
+    if (bad) {
+      $("#billingMsg").innerHTML =
+        `<div class="error">${bad.priceKrw.toLocaleString()}원 상품은 회수를 정해야 판매로 켤 수 있습니다.</div>`;
+      return;
+    }
+    const freeCredits = Math.max(0, parseInt($("#freeCredits").value, 10) || 0);
+    await setDoc(doc(db, "config", "billing"),
+      { freeCredits, tiers, updatedAt: serverTimestamp() }, { merge: true });
+    $("#billingMsg").innerHTML = `<div class="hint">저장했습니다.</div>`;
+  });
+
+  // ② 충전 내역 조회 (이메일)
+  $("#purchaseSearchBtn").addEventListener("click", async () => {
+    const email = $("#purchaseEmail").value.trim().toLowerCase();
+    const box = $("#purchaseResult");
+    if (!email) return;
+    box.innerHTML = `<p class="hint">조회 중…</p>`;
+    try {
+      const snap = await getDocs(query(
+        collection(db, "purchases"), where("email", "==", email), limit(50)));
+      if (snap.empty) {
+        box.innerHTML = `<p class="hint">이 이메일의 충전 기록이 없습니다.</p>`;
+        return;
+      }
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.purchasedAt?.seconds ?? 0) - (a.purchasedAt?.seconds ?? 0));
+      box.innerHTML = rows.map((p) => `
+        <div class="list-item">
+          <div>
+            <div class="title">${(p.priceKrw ?? 0).toLocaleString()}원 · ${p.credits ?? "?"}회 충전
+              ${p.status === "refunded" ? '<span style="color:#EF4444;">(환불됨)</span>' : ""}</div>
+            <div class="hint">${formatDate(p.purchasedAt)} · ${p.platform ?? "-"} ·
+              거래 ID ${escapeHtml(p.transactionId ?? p.id)}</div>
+          </div>
+        </div>
+      `).join("");
+    } catch (e) {
+      box.innerHTML = `<div class="error">조회 실패: ${escapeHtml(e.message)}</div>`;
+    }
+  });
+
+  // ③ 정산 요약 (월)
+  let settleRows = [];
+  $("#settleBtn").addEventListener("click", async () => {
+    const ym = $("#settleMonth").value; // "2026-08"
+    const box = $("#settleResult");
+    if (!ym) return;
+    box.innerHTML = `<p class="hint">집계 중…</p>`;
+    $("#settleCsvBtn").style.display = "none";
+    try {
+      const [y, m] = ym.split("-").map(Number);
+      const start = Timestamp.fromDate(new Date(y, m - 1, 1));
+      const end = Timestamp.fromDate(new Date(y, m, 1));
+      const snap = await getDocs(query(
+        collection(db, "purchases"),
+        where("purchasedAt", ">=", start), where("purchasedAt", "<", end)));
+      settleRows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .filter((p) => p.status !== "refunded");
+      const refunded = snap.size - settleRows.length;
+      if (settleRows.length === 0) {
+        box.innerHTML = `<p class="hint">${ym} 충전 기록이 없습니다.${refunded ? ` (환불 ${refunded}건 제외)` : ""}</p>`;
+        return;
+      }
+      const total = settleRows.reduce((s, p) => s + (p.priceKrw ?? 0), 0);
+      const byTier = TIER_PRICES.map((price) =>
+        ({ price, n: settleRows.filter((p) => p.priceKrw === price).length }))
+        .filter((t) => t.n > 0);
+      box.innerHTML = `
+        <div class="list-item"><div>
+          <div class="title">${ym} — 총 ${settleRows.length}건 · ${total.toLocaleString()}원</div>
+          <div class="hint">예상 정산액 약 ${Math.round(total * NET_RATE).toLocaleString()}원
+            (부가세·수수료 15% 공제)${refunded ? ` · 환불 ${refunded}건 제외` : ""}</div>
+          <div class="hint">${byTier.map((t) => `${t.price.toLocaleString()}원 ×${t.n}`).join(" · ")}</div>
+        </div></div>`;
+      $("#settleCsvBtn").style.display = "";
+    } catch (e) {
+      box.innerHTML = `<div class="error">집계 실패: ${escapeHtml(e.message)}</div>`;
+    }
+  });
+
+  $("#settleCsvBtn").addEventListener("click", () => {
+    const header = "purchasedAt,priceKrw,credits,platform,email,uid,transactionId,status";
+    const lines = settleRows.map((p) => [
+      p.purchasedAt?.toDate?.().toISOString() ?? "", p.priceKrw ?? "", p.credits ?? "",
+      p.platform ?? "", p.email ?? "", p.uid ?? "", p.transactionId ?? p.id, p.status ?? "paid",
+    ].map((v) => `"${String(v).replaceAll('"', '""')}"`).join(","));
+    const blob = new Blob(["﻿" + [header, ...lines].join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `settlement_${$("#settleMonth").value}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
 }
 
 // ---------- 테스터 관리 ----------
