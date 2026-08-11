@@ -1033,7 +1033,6 @@ class _SendChannelRow extends StatelessWidget {
     final point = selectedPoint;
     if (point != null) {
       _toast(messenger, '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.');
-      onSent?.call('call', point);
     }
     if (!context.mounted) return;
     // ⚠️ 브리핑 화면을 먼저 닫으면 안 된다. 예전 코드는 닫은 뒤 번호 선택
@@ -1043,7 +1042,14 @@ class _SendChannelRow extends StatelessWidget {
     //
     // 통화가 끝나고 돌아오면 브리핑이 그대로 있어, 고른 대화 포인트를 다시
     // 볼 수 있다는 이점도 있다.
-    await PhoneCallService.showCallPicker(context, contact);
+    final launched = await PhoneCallService.showCallPicker(context, contact);
+    // 소통 기록 저장 의도는 **전화 걸기가 실제로 시작된 뒤에만** 남긴다.
+    // 시트를 열자마자 남기면, 번호를 고르지 않고 닫은 경우에도 의도가 남아
+    // — iOS에선 공유 시트를 닫기만 해도 resumed가 오므로 — 엉뚱한 시점에
+    // "저장할까요?" 다이얼로그가 떴다(2026-08-11 실기기 QA에서 발견).
+    if (launched && point != null) {
+      onSent?.call('call', point);
+    }
   }
 
   Future<void> _sms(BuildContext context) async {
