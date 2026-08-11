@@ -113,7 +113,10 @@ class _WalletViewState extends State<WalletView> {
                       ),
                     ),
                     icon: const AppIcon(
-                      AppIconId.scanCard,
+                      // 주변 화면의 "명함 등록" 원형 버튼과 같은 아이콘으로
+                      // 통일(사용자 요청, 2026-08-11) — 같은 기능(새 명함
+                      // 등록)이 화면마다 다른 아이콘이면 다른 기능처럼 보인다.
+                      AppIconId.addCard,
                       size: 18,
                       color: AppColors.accentText,
                     ),
