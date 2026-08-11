@@ -157,14 +157,24 @@ class _UsageDetailSheet extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            const Text(
-              '같은 계정이면 기기와 상관없이 함께 차감돼요. 한도는 시간이 지나면 자동으로 다시 채워집니다.\n'
-              '충전·보너스로 받은 회차는 시간이 지나도 사라지지 않아요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: AppColors.textSecondary,
-                height: 1.4,
+            // 문장마다 줄을 나눠 왼쪽 정렬로 읽는다 — 가운데 정렬은 문장이
+            // 자동 줄바꿈될 때 단어 중간에서 끊겨 다음 줄이 어디서 이어지는지
+            // 알아보기 어려웠다(사용자 제보, 2026-08-12). `SizedBox`로 폭을
+            // 카드 전체로 늘려야 텍스트가 실제로 왼쪽 끝에 붙는다 — 그냥
+            // `textAlign.left`만 주면 `Column`의 기본 가운데 정렬 때문에
+            // 텍스트 블록 자체가 가운데로 몰려 보인다.
+            const SizedBox(
+              width: double.infinity,
+              child: Text(
+                '같은 계정이면 기기와 상관없이 함께 차감돼요.\n'
+                '한도는 시간이 지나면 자동으로 다시 채워집니다.\n'
+                '충전·보너스로 받은 회차는 시간이 지나도 사라지지 않아요.',
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
               ),
             ),
             if (usage.lowBalance || usage.exhausted) ...[

@@ -1460,6 +1460,18 @@ JSON 암호화, Android 실기기 QA, Apple Developer Program 가입(단, 이 �
 - **Android 폴더블 기기 스크린샷**: `adb exec-out screencap -p`만 쓰면 멀티
   디스플레이 경고가 섞여 나온다 — `-d <display-id>`를 명시해야 함
   (`dumpsys SurfaceFlinger --display-id`로 확인).
+- **iOS 실기기 스크린샷은 `idevicescreenshot` 대신 `pymobiledevice3 developer
+  dvt screenshot`을 쓸 것(2026-08-12 확인)**: `idevicescreenshot`
+  (libimobiledevice)은 최신 iOS의 screenshotr 프로토콜과 안 맞아
+  `Invalid service`로 항상 실패한다(무선이든 유선이든 무관 — 예전 기록의
+  "무선이라 실패"는 원인 오판이었다). 기기에서 "이 컴퓨터를 신뢰" 팝업을
+  한 번 승인해 페어링이 `idevicepair validate` 기준 `SUCCESS`이면,
+  `pymobiledevice3 developer dvt screenshot`이 대신 캡처에 성공한다. 단
+  **터치/탭 주입은 여전히 안 됨** — `pymobiledevice3 developer dvt` 밑에는
+  프로세스/성능 계측 API만 있고, 실기기 UI 자동조작은 기기에
+  WebDriverAgent(XCTest 러너, 별도 서명·설치 필요)가 있어야 하는데 기본
+  상태에는 없다. 그래서 초기 화면 캡처까지는 자동으로 되지만, 버튼을 눌러
+  다음 화면으로 넘어가는 건 여전히 사람이 직접 조작해야 한다.
 - **iOS 실기기에서 debug 빌드를 홈 화면에서 단독 실행하면 즉시 죽는다
   (signal 11)**: debug 모드 앱은 Flutter 툴이 계속 붙어 있어야 엔진이 뜨는
   구조라, `flutter build ios --debug` + `xcrun devicectl device process

@@ -95,39 +95,28 @@ class _WalletViewState extends State<WalletView> {
                       ],
                     ),
                   ),
-                  // "+"와 하단 "명함 스캔" 버튼이 같은 기능이라 하나로
-                  // 합쳤다 — 새 명함 등록 진입점은 이거 하나만 남긴다.
-                  // 내 명함 등록 화면의 "내 명함 카메라 스캔" 버튼과 같은
-                  // 아웃라인 스타일로 통일(꽉 채운 배경은 부담스럽다는 피드백).
-                  OutlinedButton.icon(
-                    onPressed: () => _openCardEditor(context),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.accentText),
-                      foregroundColor: AppColors.accentText,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  // "+"와 "명함 스캔" 버튼이 같은 기능이라 하나로 합쳤다 —
+                  // 새 명함 등록 진입점은 이거 하나만 남긴다. 예전엔 라벨이
+                  // 붙은 아웃라인 버튼이었지만, 주변 화면의 "명함 등록"
+                  // 원형 아이콘 버튼과 자리·모양을 완전히 통일했다(사용자
+                  // 결정, 2026-08-12) — 라벨 없이 아이콘만으로도 같은
+                  // 화면 배치에 있는 다른 탭들이 이미 이 스타일을 쓰고 있어
+                  // 낯설지 않다.
+                  IconButton(
+                    tooltip: '명함 등록',
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.accentSoftStrong,
+                      shape: const CircleBorder(),
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(40, 40),
+                      maximumSize: const Size(40, 40),
                     ),
                     icon: const AppIcon(
-                      // 주변 화면의 "명함 등록" 원형 버튼과 같은 아이콘으로
-                      // 통일(사용자 요청, 2026-08-11) — 같은 기능(새 명함
-                      // 등록)이 화면마다 다른 아이콘이면 다른 기능처럼 보인다.
                       AppIconId.addCard,
-                      size: 18,
                       color: AppColors.accentText,
+                      size: 20,
                     ),
-                    label: const Text(
-                      '명함 스캔',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: AppColors.accentText,
-                      ),
-                    ),
+                    onPressed: () => _openCardEditor(context),
                   ),
                 ],
               ),

@@ -855,7 +855,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ],
           ),
         );
-        if (proceed != true) return;
+        if (proceed != true) {
+          // "취소"를 골랐다는 건 이 명함을 등록하지 않기로 확정한 것이므로
+          // 등록 화면까지 함께 닫는다(사용자 제보, 2026-08-12) — 예전엔
+          // 폼에 그대로 남아 닫기 버튼을 한 번 더 눌러야 했다.
+          if (mounted) Navigator.pop(context);
+          return;
+        }
         if (!mounted) return;
       }
     }
