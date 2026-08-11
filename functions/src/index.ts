@@ -325,6 +325,7 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
           dailyResetAt?: FirebaseFirestore.Timestamp;
           monthlyCount?: number;
           monthlyResetAt?: FirebaseFirestore.Timestamp;
+          bonusCredits?: number;
         }
       | undefined;
 
@@ -337,14 +338,26 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 
     const dailyCount = dailyExpired ? 0 : (usage?.dailyCount ?? 0);
     const monthlyCount = monthlyExpired ? 0 : (usage?.monthlyCount ?? 0);
+    // 관리자가 지급한 무료 회차(또는 향후 충전 회차). 일/월 한도를 다 쓴
+    // 뒤에도 남아 있으면 이걸 먼저 소진해 계속 쓸 수 있게 한다 — "추가로
+    // 준 회차"이므로 일/월 카운트에는 올리지 않고 잔액만 1 줄인다.
+    const bonusCredits = usage?.bonusCredits ?? 0;
 
-    if (dailyCount >= DAILY_LIMIT) {
-      throw new HttpsError(
-        "resource-exhausted",
-        "오늘 사용 가능한 AI 브리핑 횟수를 모두 사용했어요. 내일 다시 시도해 주세요."
-      );
-    }
-    if (monthlyCount >= MONTHLY_LIMIT) {
+    if (dailyCount >= DAILY_LIMIT || monthlyCount >= MONTHLY_LIMIT) {
+      if (bonusCredits > 0) {
+        tx.set(
+          userRef,
+          {aiUsage: {bonusCredits: bonusCredits - 1}},
+          {merge: true}
+        );
+        return;
+      }
+      if (dailyCount >= DAILY_LIMIT) {
+        throw new HttpsError(
+          "resource-exhausted",
+          "오늘 사용 가능한 AI 브리핑 횟수를 모두 사용했어요. 내일 다시 시도해 주세요."
+        );
+      }
       throw new HttpsError(
         "resource-exhausted",
         "이번 달 AI 브리핑 사용 한도에 도달했어요. 다음 달 1일에 초기화됩니다."
@@ -766,6 +779,7 @@ interface GetUserUsageResponse {
   monthlyLimit: number;
   dailyResetAt: string | null;
   monthlyResetAt: string | null;
+  bonusCredits: number;
 }
 
 /**
@@ -799,6 +813,7 @@ export const getUserUsage = onCall<GetUserUsageRequest>(
       dailyResetAt?: FirebaseFirestore.Timestamp;
       monthlyCount?: number;
       monthlyResetAt?: FirebaseFirestore.Timestamp;
+      bonusCredits?: number;
     };
 
     // 리셋 시각이 지났으면 카운트는 사실상 0이다(다음 호출 때 초기화됨).
@@ -817,6 +832,59 @@ export const getUserUsage = onCall<GetUserUsageRequest>(
       monthlyLimit: MONTHLY_LIMIT,
       dailyResetAt: dailyReset ? dailyReset.toISOString() : null,
       monthlyResetAt: monthlyReset ? monthlyReset.toISOString() : null,
+      bonusCredits: usage.bonusCredits ?? 0,
     };
+  }
+);
+
+interface GrantBonusCreditsRequest {
+  email: string;
+  amount: number;
+}
+
+/**
+ * 관리자 콘솔용 — 특정 사용자에게 무료 회차(bonusCredits)를 추가 지급한다.
+ * 관리자만 호출할 수 있고, 회차는 곧 비용이라 **클라이언트가 직접 못 쓰게**
+ * 서버(Admin SDK)에서만 올린다(Firestore 규칙은 aiUsage 쓰기를 막고 있다).
+ *
+ * bonusCredits는 일/월 한도를 다 쓴 뒤 소진되는 오버플로우다(generateBriefing
+ * 참고). 지급 즉시 반영되며, 앞으로 충전(IAP) 크레딧도 같은 필드로 얹을 수 있다.
+ */
+export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  async (request): Promise<{uid: string; bonusCredits: number}> => {
+    if (!isAdminRequest(request.auth)) {
+      throw new HttpsError("permission-denied", "관리자만 지급할 수 있어요.");
+    }
+    const email = (request.data?.email ?? "").trim().toLowerCase();
+    const amount = Math.trunc(Number(request.data?.amount));
+    if (!email) {
+      throw new HttpsError("invalid-argument", "이메일을 입력해 주세요.");
+    }
+    if (!Number.isFinite(amount) || amount === 0) {
+      throw new HttpsError("invalid-argument", "지급할 회차(0이 아닌 정수)를 입력해 주세요.");
+    }
+
+    let userRecord;
+    try {
+      userRecord = await getAuth().getUserByEmail(email);
+    } catch {
+      throw new HttpsError("not-found", "그 이메일의 계정을 찾을 수 없어요.");
+    }
+
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(userRecord.uid);
+    // 트랜잭션으로 현재 잔액에 더한다. 음수 지급(회수)도 허용하되 0 밑으로는
+    // 안 내려가게 막는다.
+    const newBalance = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      const current = (snap.data()?.aiUsage?.bonusCredits as number | undefined) ?? 0;
+      const next = Math.max(0, current + amount);
+      tx.set(userRef, {aiUsage: {bonusCredits: next}}, {merge: true});
+      return next;
+    });
+
+    logger.info("무료 회차 지급", {uid: userRecord.uid, amount, newBalance});
+    return {uid: userRecord.uid, bonusCredits: newBalance};
   }
 );

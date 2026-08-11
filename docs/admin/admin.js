@@ -34,6 +34,7 @@ const db = getFirestore(app);
 // httpsCallable이 기본(us-central1)으로 호출해 not-found가 난다.
 const functions = getFunctions(app, "asia-northeast3");
 const getUserUsageFn = httpsCallable(functions, "getUserUsage");
+const grantBonusCreditsFn = httpsCallable(functions, "grantBonusCredits");
 
 const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
@@ -536,8 +537,33 @@ async function loadUsageLogs() {
           <div>${d.dailyCount} / ${d.dailyLimit} <span class="hint">(남은 ${Math.max(0, d.dailyLimit - d.dailyCount)}회)</span></div></div>
         <div class="list-item"><div class="title">이번 달</div>
           <div>${d.monthlyCount} / ${d.monthlyLimit} <span class="hint">(남은 ${Math.max(0, d.monthlyLimit - d.monthlyCount)}회)</span></div></div>
+        <div class="list-item"><div class="title">무료 회차 잔액 (추가 지급분)</div>
+          <div id="bonusBalance">${d.bonusCredits ?? 0}회</div></div>
         <div class="meta" style="margin-top:8px;">uid: ${escapeHtml(d.uid)}</div>
+        <div class="row" style="margin-top:12px; align-items:center;">
+          <input type="number" id="grantAmount" placeholder="지급할 회차 (예: 5)" style="width:180px;">
+          <button class="btn-primary" id="grantBtn">무료 회차 지급</button>
+        </div>
+        <p class="hint" style="margin-top:6px;">일/월 한도를 다 쓴 뒤 이 잔액이 먼저 소진됩니다. 음수를 넣으면 회수(0 미만으로는 안 내려감).</p>
+        <div id="grantResult"></div>
       `;
+      $("#grantBtn").addEventListener("click", async () => {
+        const amount = parseInt($("#grantAmount").value, 10);
+        const out = $("#grantResult");
+        if (!Number.isFinite(amount) || amount === 0) {
+          out.innerHTML = `<div class="error">0이 아닌 정수를 입력해 주세요.</div>`;
+          return;
+        }
+        out.innerHTML = `<p class="hint">지급 중…</p>`;
+        try {
+          const gr = await grantBonusCreditsFn({ email, amount });
+          $("#bonusBalance").textContent = `${gr.data.bonusCredits}회`;
+          $("#grantAmount").value = "";
+          out.innerHTML = `<div class="hint">완료 — 현재 무료 회차 잔액 ${gr.data.bonusCredits}회.</div>`;
+        } catch (e) {
+          out.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        }
+      });
     } catch (e) {
       box.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
     }
