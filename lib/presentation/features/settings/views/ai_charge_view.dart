@@ -198,32 +198,193 @@ class _ChargeContent extends StatelessWidget {
             const SizedBox(height: 26),
             const _SectionTitle('충전 상품'),
             const SizedBox(height: 10),
-            for (var i = 0; i < config.tiers.length; i++) ...[
-              _TierCard(tier: config.tiers[i]),
-              if (i < config.tiers.length - 1) const SizedBox(height: 10),
-            ],
-            const SizedBox(height: 18),
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            _TierGrid(tiers: config.tiers),
+            const SizedBox(height: 26),
+            const _SectionTitle('충전 안내'),
+            const SizedBox(height: 10),
+            const _GuideSection(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 티어 카드를 세로로 나열하던 예전 방식은 7개 상품에서 화면을 지나치게
+/// 많이 썼다(사용자 피드백, 2026-08-12). 2열 그리드로 압축해 대부분의
+/// 화면 높이에서 스크롤 없이 한 번에 들어오게 한다. 티어 개수는 관리자
+/// 콘솔이 늘리거나 줄일 수 있으므로 `itemCount`를 하드코딩하지 않는다.
+class _TierGrid extends StatelessWidget {
+  final List<BillingTier> tiers;
+
+  const _TierGrid({required this.tiers});
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: tiers.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.55,
+      ),
+      itemBuilder: (context, i) => _TierTile(tier: tiers[i]),
+    );
+  }
+}
+
+/// 압축 타일 하나 = 상품 하나. 개별 "구매" 버튼 대신 타일 자체가 비활성
+/// 상태다(GlassCard 기본값인 `onTap: null` — 눌러도 반응이 없다). 우측 상단
+/// 배지가 "충전 준비 중"을 알려 예전의 큰 아웃라인 버튼을 줄인 자리를
+/// 대신한다.
+class _TierTile extends StatelessWidget {
+  final BillingTier tier;
+
+  const _TierTile({required this.tier});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '₩${_formatWon(tier.priceKrw)}, ${tier.credits}회 충전, 충전 준비 중',
+      child: GlassCard(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 15,
-                  color: AppColors.textMuted,
-                ),
-                SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    '충전 기능은 준비 중입니다. 출시 후 다시 안내드릴게요.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.accentSoft,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.bolt_outlined,
+                    size: 16,
+                    color: AppColors.accentText,
                   ),
                 ),
+                const _MiniBadge('준비중'),
               ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '₩${_formatWon(tier.priceKrw)}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${tier.credits}회 충전',
+              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 타일 우측 상단의 작은 상태 배지. 예전 `_DisabledChargeButton`(세로 44px
+/// 아웃라인 버튼)을 그리드 타일 안에 그대로 넣으면 다시 커져 압축 효과가
+/// 사라지므로, 같은 "비활성 = 회색 텍스트 + 옅은 테두리" 언어를 유지한 채
+/// 훨씬 작은 알약 배지로 줄였다.
+class _MiniBadge extends StatelessWidget {
+  final String text;
+
+  const _MiniBadge(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.borderSubtle),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textMuted,
+        ),
+      ),
+    );
+  }
+}
+
+/// 충전 관련 사실 안내. 사용자 요청(2026-08-12)에 따라 화면 하단에 추가.
+/// **여기 적힌 내용은 전부 현재 서버 동작·정책과 일치하는 사실만 담는다** —
+/// 미구현 기능이나 확정되지 않은 정책은 쓰지 않는다(CLAUDE.md 4장).
+class _GuideSection extends StatelessWidget {
+  const _GuideSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const GlassCard(
+      padding: EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _GuideItem(
+            icon: Icons.cloud_done_outlined,
+            text: '충전한 회차는 계정 기준으로 저장돼요. 기기를 바꿔도 그대로 유지됩니다.',
+          ),
+          SizedBox(height: 10),
+          _GuideItem(
+            icon: Icons.stacked_line_chart_outlined,
+            text: '무료 제공 회차를 먼저 사용하고, 다 쓴 뒤에 충전한 회차가 차감돼요.',
+          ),
+          SizedBox(height: 10),
+          _GuideItem(
+            icon: Icons.campaign_outlined,
+            text: '결제 기능은 아직 준비 중이에요. 오픈되면 앱 공지로 안내해 드릴게요.',
+          ),
+          // 환불 규정 확정 시 이 안내 섹션에 추가(검토 중) — 지금은 결제
+          // 기능 자체가 없어 환불 규정도 미정이다. 확정 전까지 문구를
+          // 지어내지 않는다(CLAUDE.md 4장 "가짜 데이터를 만들지 않는다").
+        ],
+      ),
+    );
+  }
+}
+
+class _GuideItem extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _GuideItem({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.45,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -297,90 +458,6 @@ class _SectionTitle extends StatelessWidget {
         fontSize: 15,
         fontWeight: FontWeight.w700,
         color: AppColors.textSecondary,
-      ),
-    );
-  }
-}
-
-class _TierCard extends StatelessWidget {
-  final BillingTier tier;
-
-  const _TierCard({required this.tier});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: AppColors.accentSoft,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.bolt_outlined,
-              size: 22,
-              color: AppColors.accentText,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '₩${_formatWon(tier.priceKrw)}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '${tier.credits}회 충전',
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          const _DisabledChargeButton(),
-        ],
-      ),
-    );
-  }
-}
-
-/// 결제 준비 전 자리표시자 버튼. **절대 실제 동작(다이얼로그·스낵바 포함)을
-/// 하지 않는다** — `onPressed: null`로 고정해 시각적으로도 눌리지 않음이
-/// 분명하게 만든다(회색 텍스트 + 옅은 테두리, 기본 카드 배경과 대비되게).
-class _DisabledChargeButton extends StatelessWidget {
-  const _DisabledChargeButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: null,
-      style: OutlinedButton.styleFrom(
-        disabledForegroundColor: AppColors.textMuted,
-        side: const BorderSide(color: AppColors.borderSubtle),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        minimumSize: const Size(0, 38),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
-      ),
-      child: const Text(
-        '충전 준비 중',
-        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
       ),
     );
   }
