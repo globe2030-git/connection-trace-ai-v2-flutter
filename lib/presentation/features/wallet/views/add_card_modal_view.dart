@@ -389,6 +389,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (_selectedScanIndex < 0 || (hadName && !currentHadName)) {
           _selectedScanIndex = _scannedCardImages.length - 1;
         }
+        // 신규 등록에서 명함을 촬영했으면 "대표 이미지로 사용"을 기본 켠다
+        // (사용자 요청, 2026-08-11). 예전엔 기본 꺼짐이라, 등록 때 안 켜면
+        // 목록에서 명함 사진이 안 보였고 나중에 켜는 방법도 찾기 어려웠다.
+        // 첫 장에서만 켜고 이후엔 손대지 않는다 — 사용자가 직접 껐다면
+        // 뒷면을 추가 스캔해도 그 선택을 뒤집지 않기 위함. 기존 명함
+        // 편집(contactToEdit != null)에서는 저장된 선택을 존중한다.
+        if (widget.contactToEdit == null && _scannedCardImages.length == 1) {
+          _useCardAsAvatar = true;
+        }
       }
       if (overwrite) {
         _setTextFromStart(_nameController, result.name);
