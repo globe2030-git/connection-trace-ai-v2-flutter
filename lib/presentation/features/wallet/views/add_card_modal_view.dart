@@ -178,6 +178,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _selectedAvatarUrl = c?.avatarUrl;
     _cardImagePath = c?.cardImagePath;
     _useCardAsAvatar = c?.useCardAsAvatar ?? false;
+    // 서버 복원을 거친 명함은 cardImagePath가 유실될 수 있다(백업 JSON에
+    // 로컬 경로를 넣지 않으므로). 기기에 암호문 파일이 남아 있으면 다시
+    // 이어준다 — 이게 없으면 수정 화면에서 명함 이미지와 "대표 이미지로
+    // 사용" 토글이 통째로 안 보여, 나중에 대표로 지정할 방법이 없었다
+    // (사용자 제보, 2026-08-11). 저장 시 이 경로가 다시 로컬에 기록된다.
+    if (_cardImagePath == null && widget.contactToEdit != null) {
+      ContactImageService()
+          .findExistingCardImagePath(widget.contactToEdit!.id)
+          .then((path) {
+        if (path != null && mounted) {
+          setState(() => _cardImagePath = path);
+        }
+      });
+    }
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
@@ -1238,7 +1252,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 명함 이미지(추가 133): 새로 스캔한 이미지가 있으면 암호화(P1-9)해서
     // 보관하고 그 경로를 쓴다. 없으면 편집 중이던 기존 이미지를 유지한다.
     // 로그인(uid) 없으면(게스트) 키가 없어 저장하지 않는다.
-    var cardImagePath = _isEditing ? widget.contactToEdit!.cardImagePath : null;
+    // 편집이면 화면 상태(_cardImagePath)를 쓴다 — 위 initState의 재연결로
+    // 복원된 경로가 있으면 저장하면서 로컬에 다시 기록되게 하기 위함.
+    var cardImagePath = _isEditing ? _cardImagePath : null;
     final uid = context.read<AuthRepository>().firebaseUid;
     if (_scannedCardImageSourcePath != null && uid != null) {
       final saved = await ContactImageService().saveEncryptedCardImage(
