@@ -152,6 +152,7 @@ onAuthStateChanged(auth, async (user) => {
   await loadTesters();
   await loadUsageLogs();
   await loadOcrStats();
+  await loadAppUpdate();
 });
 
 // ---------- 경영 리포트 ----------
@@ -728,6 +729,73 @@ async function loadOcrStats() {
     </div>
   `;
   $("#ocrRefreshBtn")?.addEventListener("click", () => loadOcrStats());
+}
+
+// ---------- 앱 업데이트(버전 게이트, P1-45) ----------
+// 앱이 시작 시 config/appUpdate를 읽어 빌드 번호를 비교한다. 여기 값을 바꾸면
+// 앱 배포 없이 강제/권장 업데이트 안내가 바뀐다.
+
+async function loadAppUpdate() {
+  const panel = $("#tab-appupdate");
+  let d = {};
+  try {
+    const snap = await getDoc(doc(db, "config", "appUpdate"));
+    if (snap.exists()) d = snap.data();
+  } catch (e) {
+    panel.innerHTML = `<div class="error">설정 조회 실패: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  panel.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">앱 업데이트 안내 (버전 게이트)</h3>
+      <p class="hint">
+        기준은 <b>빌드 번호</b>(pubspec <code>1.0.0+N</code>의 N). 앱이 시작할 때 이
+        값과 비교해 안내합니다. <b>값을 바꾸면 앱 배포 없이 즉시 반영</b>됩니다.
+        <br>· <b>최소 지원 빌드</b>: 이 미만이면 <b>강제</b>(닫기 불가, 스토어로만 이동).
+        <br>· <b>최신 빌드</b>: 이 미만이면 <b>권장</b>("나중에" 허용).
+        <br>둘 다 비우거나 0이면 아무 안내도 하지 않습니다.
+      </p>
+      <label>최소 지원 빌드 번호</label>
+      <input type="number" id="auMin" min="0" style="width:140px;">
+      <label>최신 빌드 번호</label>
+      <input type="number" id="auLatest" min="0" style="width:140px;">
+      <label>iOS 스토어 URL (App Store)</label>
+      <input type="text" id="auIos" placeholder="https://apps.apple.com/app/id...">
+      <label>Android 스토어 URL (Play)</label>
+      <input type="text" id="auAndroid" placeholder="https://play.google.com/store/apps/details?id=...">
+      <label>안내 문구 (선택 — 비우면 기본 문구)</label>
+      <input type="text" id="auMsg" placeholder="예: 중요한 개선이 있어요. 업데이트해 주세요.">
+      <div class="row" style="margin-top:14px;">
+        <button class="btn-primary" id="auSaveBtn">저장</button>
+      </div>
+      <div id="auMsgOut"></div>
+    </div>
+  `;
+  // 값은 innerHTML 대신 프로퍼티로 넣어 따옴표 이스케이프 문제를 피한다.
+  $("#auMin").value = d.minSupportedBuild ?? "";
+  $("#auLatest").value = d.latestBuild ?? "";
+  $("#auIos").value = d.iosUrl ?? "";
+  $("#auAndroid").value = d.androidUrl ?? "";
+  $("#auMsg").value = d.message ?? "";
+
+  $("#auSaveBtn").addEventListener("click", async () => {
+    const min = parseInt($("#auMin").value, 10);
+    const latest = parseInt($("#auLatest").value, 10);
+    const payload = {
+      minSupportedBuild: Number.isFinite(min) ? Math.max(0, min) : 0,
+      latestBuild: Number.isFinite(latest) ? Math.max(0, latest) : 0,
+      iosUrl: $("#auIos").value.trim(),
+      androidUrl: $("#auAndroid").value.trim(),
+      message: $("#auMsg").value.trim(),
+      updatedAt: serverTimestamp(),
+    };
+    try {
+      await setDoc(doc(db, "config", "appUpdate"), payload, { merge: true });
+      $("#auMsgOut").innerHTML = `<div class="hint">저장했습니다. 앱을 다시 켜면 반영됩니다.</div>`;
+    } catch (e) {
+      $("#auMsgOut").innerHTML = `<div class="error">저장 실패: ${escapeHtml(e.message)}</div>`;
+    }
+  });
 }
 
 // ---------- 탭 ----------

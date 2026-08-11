@@ -52,6 +52,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 앱 업데이트 게이트(config/appUpdate, P1-45) — 최소지원/최신 빌드번호,
+    // 스토어 URL, 안내문구. 앱이 시작 시(로그인 전에도) 읽어 강제/권장 업데이트를
+    // 판단해야 하므로 공개 읽기, 편집은 관리자만. 비밀이 아니다.
+    match /config/appUpdate {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // 충전(결제) 기록 — 고객응대·정산용. 영수증 검증을 통과한 서버(P1-4,
     // Admin SDK)만 기록하고 클라이언트 쓰기는 전면 금지한다(위조 방지 —
     // 여기 쓰기가 열리면 결제 없이 크레딧을 만들 수 있게 된다). 관리자만 읽는다.

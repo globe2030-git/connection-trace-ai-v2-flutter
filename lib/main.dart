@@ -18,6 +18,7 @@ import 'data/repositories/contacts_repository.dart';
 import 'data/repositories/my_profile_repository.dart';
 import 'presentation/common/auth_gate.dart';
 import 'presentation/common/splash_gate.dart';
+import 'presentation/common/version_gate.dart';
 import 'presentation/features/radar/view_models/radar_view_model.dart';
 import 'presentation/features/wallet/view_models/wallet_view_model.dart';
 import 'presentation/navigation/main_tab_screen.dart';
@@ -114,7 +115,11 @@ class ConnectionTraceApp extends StatelessWidget {
         title: '커넥션센스',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        home: const SplashGate(child: AuthGate(child: MainTabScreen())),
+        // 스플래시 뒤, 로그인 이전에 버전을 확인한다(P1-45) — 강제 업데이트면
+        // 로그인·본 화면으로 들어가기 전에 막아야 하기 때문.
+        home: const SplashGate(
+          child: VersionGate(child: AuthGate(child: MainTabScreen())),
+        ),
       ),
     );
   }
