@@ -1993,8 +1993,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '이 주소로 위치를 찾지 못해 ‘주변’ 목록에는 표시되지 않아요. '
-                              '도로명 주소가 맞는지 확인하거나 위 검색으로 다시 선택해 주세요.',
+                              '위치를 못 찾았어요. 주소를 확인해 주세요.',
                               style: TextStyle(
                                 fontSize: 12,
                                 height: 1.4,
