@@ -41,6 +41,13 @@ class AppUpdateStatus {
 /// - 기준은 **빌드 번호**(pubspec `1.0.0+N`의 N). 버전 문자열보다 비교가 쉽다.
 /// - 서버 값은 Firestore `config/appUpdate`에 두고 **관리자 콘솔에서 편집**한다
 ///   (충전 상품 설정과 같은 config 패턴 — 배포 없이 제어).
+/// - **최소/최신 빌드는 플랫폼별로 나뉜다**(`minSupportedBuildIos`/
+///   `minSupportedBuildAndroid`, `latestBuildIos`/`latestBuildAndroid`,
+///   추가 165 후속). iOS·Android는 스토어 심사 통과 시점이 달라 실제 배포된
+///   최신 빌드번호가 어긋날 수 있다 — 단일 값이면 뒤처진 쪽 스토어 사용자가
+///   헛되게 "업데이트 있음"을 보거나, 최소(강제)에 걸려 갈 곳이 없어 앱이
+///   막히는(soft-brick) 위험이 있었다. 플랫폼 필드가 없으면(구 설정)
+///   레거시 단일 필드(`minSupportedBuild`/`latestBuild`)로 **폴백**한다.
 /// - **오프라인·설정 없음·오류는 모두 "안내 안 함"(none)으로 fail-open** 한다.
 ///   네트워크가 없다고 앱을 잠그면 안 된다.
 class AppUpdateService {
@@ -49,12 +56,15 @@ class AppUpdateService {
   /// 테스트에서 갈아끼울 수 있게 열어 둔다.
   final Future<int> Function() _currentBuild;
   final Future<Map<String, dynamic>?> Function() _fetchConfig;
+  final bool Function() _isIos;
 
   AppUpdateService({
     Future<int> Function()? currentBuild,
     Future<Map<String, dynamic>?> Function()? fetchConfig,
+    bool Function()? isIos,
   }) : _currentBuild = currentBuild ?? _readCurrentBuild,
-       _fetchConfig = fetchConfig ?? _readConfig;
+       _fetchConfig = fetchConfig ?? _readConfig,
+       _isIos = isIos ?? (() => Platform.isIOS);
 
   Future<AppUpdateStatus> check() async {
     // 웹은 스토어 업데이트 개념이 없어 대상이 아니다.
@@ -65,10 +75,11 @@ class AppUpdateService {
       final cfg = await _fetchConfig();
       if (cfg == null) return AppUpdateStatus.none;
 
-      final minBuild = (cfg['minSupportedBuild'] as num?)?.toInt() ?? 0;
-      final latestBuild = (cfg['latestBuild'] as num?)?.toInt() ?? 0;
+      final isIos = _isIos();
+      final minBuild = _platformBuild(cfg, isIos, 'minSupportedBuild');
+      final latestBuild = _platformBuild(cfg, isIos, 'latestBuild');
       final message = (cfg['message'] as String?)?.trim();
-      final storeUrl = _storeUrlFor(cfg);
+      final storeUrl = _storeUrlFor(cfg, isIos);
 
       if (current < minBuild) {
         return AppUpdateStatus(
@@ -92,10 +103,24 @@ class AppUpdateService {
     }
   }
 
-  static String? _storeUrlFor(Map<String, dynamic> cfg) {
+  /// 플랫폼별 필드(`<key>Ios`/`<key>Android`)를 우선 읽고, 없으면(null)
+  /// 레거시 단일 필드(`<key>`)로 폴백한다 — 기존 설정만 있는 config도
+  /// 그대로 동작하게 하기 위함.
+  static int _platformBuild(
+    Map<String, dynamic> cfg,
+    bool isIos,
+    String key,
+  ) {
+    final platformKey = isIos ? '${key}Ios' : '${key}Android';
+    final platformValue = (cfg[platformKey] as num?)?.toInt();
+    if (platformValue != null) return platformValue;
+    return (cfg[key] as num?)?.toInt() ?? 0;
+  }
+
+  static String? _storeUrlFor(Map<String, dynamic> cfg, bool isIos) {
     final ios = (cfg['iosUrl'] as String?)?.trim();
     final android = (cfg['androidUrl'] as String?)?.trim();
-    final url = Platform.isIOS ? ios : android;
+    final url = isIos ? ios : android;
     return (url != null && url.isNotEmpty) ? url : null;
   }
 
