@@ -1195,7 +1195,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       if (duplicate != null) {
         final wantsUpdate = await _showDuplicateFoundDialog(duplicate);
         if (!mounted) return;
-        if (wantsUpdate != true) return; // 취소 또는 "기존 정보 유지" — 저장하지 않고 폼에 남는다.
+        if (wantsUpdate == false) {
+          // "기존 정보 유지" = 이 명함을 등록하지 않기로 확정한 것이므로
+          // 등록 화면까지 함께 닫는다. 예전엔 폼에 남아서 닫기 버튼을 한 번
+          // 더 눌러야 했다(사용자 불편 제보, 2026-08-11). 번호를 잘못 입력해
+          // 중복으로 오인된 경우에는 다이얼로그를 시스템 뒤로가기로 닫으면
+          // (아래 null 분기) 폼이 유지되므로 고칠 길이 남아 있다.
+          Navigator.pop(context);
+          return;
+        }
+        if (wantsUpdate != true) return; // 다이얼로그만 닫힘 — 폼 유지(입력 수정 기회).
 
         final deleteOldRecord = await _showKeepHistoryDialog();
         if (!mounted) return;
