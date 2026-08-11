@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
@@ -53,6 +54,7 @@ class GeoBackfillService {
   static const int consecutiveFailuresToAbort = 3;
 
   static const String _attemptsKey = 'geo_backfill_attempts_v1';
+  static const String _shapeStatsKey = 'geo_backfill_fail_shapes_v1';
 
   /// 테스트에서 실제 지오코더를 타지 않도록 주입할 수 있게 열어 둔다.
   final Future<AddressValidationResult> Function(String address) _geocode;
@@ -71,7 +73,9 @@ class GeoBackfillService {
     List<ContactModel> contacts,
   ) async {
     final attempts = await _loadAttempts();
-    return contacts.where((c) => _needsGeo(c) && !_isGivenUp(c, attempts)).toList();
+    return contacts
+        .where((c) => _needsGeo(c) && !_isGivenUp(c, attempts))
+        .toList();
   }
 
   /// 이 명함이 **주소 지오코딩을 [maxAttemptsPerContact]회 모두 실패해 포기된**
@@ -169,9 +173,73 @@ class GeoBackfillService {
   ) {
     final hash = _hashAddress(address);
     final existing = attempts[contactId];
-    attempts[contactId] = (existing != null && existing.addressHash == hash)
-        ? _AttemptRecord(hash, existing.count + 1)
-        : _AttemptRecord(hash, 1);
+    final firstFailureForThisAddress =
+        existing == null || existing.addressHash != hash;
+    attempts[contactId] = firstFailureForThisAddress
+        ? _AttemptRecord(hash, 1)
+        : _AttemptRecord(hash, existing.count + 1);
+
+    // C안(2026-08-10): 어떤 주소가 좌표 변환에 실패하는지 **패턴**을 남긴다.
+    // 왜 실패하는지(예: 건물명만 있고 지번이 없는 주소가 잘 실패한다)를 알아야
+    // 지오코딩을 개선할 근거가 생긴다. 같은 주소를 재시도할 때마다 중복
+    // 집계하지 않도록 그 주소의 **첫 실패**에서만 기록한다.
+    //
+    // ⚠️ 주소 원문은 절대 남기지 않는다(개인정보). 형태 신호(불리언)만 남긴다.
+    if (firstFailureForThisAddress) {
+      unawaited(_recordFailureShape(address));
+    }
+  }
+
+  /// 실패한 주소의 **형태**를 집계에 더한다. 원문은 남기지 않는다.
+  Future<void> _recordFailureShape(String address) async {
+    final shape = _addressShape(address);
+    debugPrint('[GeoBackfill] 좌표 변환 실패 · 형태=$shape');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_shapeStatsKey);
+      final Map<String, dynamic> stats = raw == null || raw.isEmpty
+          ? {}
+          : (jsonDecode(raw) as Map).cast<String, dynamic>();
+      stats[shape] = ((stats[shape] as num?)?.toInt() ?? 0) + 1;
+      await prefs.setString(_shapeStatsKey, jsonEncode(stats));
+    } catch (e) {
+      debugPrint('실패 형태 집계 저장 실패: $e');
+    }
+  }
+
+  /// 주소를 **개인정보가 아닌 형태 코드**로 축약한다. 예: "road=1;jibun=0;
+  /// digit=1;bldg=1;len=M". 내용(동 이름·번지·건물명)은 담지 않는다.
+  static String _addressShape(String address) {
+    final a = address.trim();
+    // 도로명 주소: "…로 123" / "…길 45" 처럼 로/길 뒤에 번호.
+    final hasRoad = RegExp(r'(로|길)\s*\d').hasMatch(a);
+    // 지번 주소: "…동/리 12-3" 처럼 동/리 뒤에 번지.
+    final hasJibun = RegExp(r'(동|리|가)\s*\d').hasMatch(a);
+    final hasAnyDigit = RegExp(r'\d').hasMatch(a);
+    // 건물명 후보: 흔한 건물 접미어. 있으면 "번지 없이 건물명만" 유형을
+    // 가려내는 데 도움이 된다.
+    final hasBldg = RegExp(r'(빌딩|타워|센터|플라자|하우스|오피스텔|아파트)').hasMatch(a);
+    final len = a.length < 12
+        ? 'S'
+        : a.length < 25
+        ? 'M'
+        : 'L';
+    return 'road=${hasRoad ? 1 : 0};jibun=${hasJibun ? 1 : 0};'
+        'digit=${hasAnyDigit ? 1 : 0};bldg=${hasBldg ? 1 : 0};len=$len';
+  }
+
+  /// 지금까지 쌓인 실패 형태 집계를 읽는다(진단 화면용). `{형태코드: 건수}`.
+  static Future<Map<String, int>> readFailureShapeStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_shapeStatsKey);
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (e) {
+      debugPrint('실패 형태 집계 로드 실패: $e');
+      return const {};
+    }
   }
 
   /// 주소 원문을 저장하지 않기 위한 축약 해시. 충돌해도 "재시도를 한 번 더
@@ -212,10 +280,8 @@ class GeoBackfillService {
         _attemptsKey,
         jsonEncode(
           attempts.map(
-            (key, value) => MapEntry(key, {
-              'h': value.addressHash,
-              'n': value.count,
-            }),
+            (key, value) =>
+                MapEntry(key, {'h': value.addressHash, 'n': value.count}),
           ),
         ),
       );

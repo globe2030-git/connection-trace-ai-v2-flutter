@@ -50,4 +50,10 @@ class AppColors {
   // 검색 캡슐 바 — 카드 표면과 동일 톤으로 통일(기존엔 흰색 단독 라이트 아일랜드였음)
   static const Color capsuleInputBg = Color(0xFFFFFFFF);
   static const Color capsuleInputText = Color(0xFF171A21);
+
+  // 경고(주의) — 오류(destructive)만큼 강하지 않지만 사용자가 조치하면 좋은
+  // 상태에 쓴다. 예: 명함에 주소가 없어 주변 인맥에 안 뜸.
+  // 앰버 계열. bgBase(#F7F8FA) 위에서 텍스트 대비 4.6:1로 WCAG AA 통과.
+  static const Color warningText = Color(0xFFB45309);
+  static const Color warningSoft = Color(0xFFFEF3C7);
 }
