@@ -9,20 +9,37 @@ class AiUsage {
   final int dailyUsed;
   final int monthlyUsed;
 
-  const AiUsage({required this.dailyUsed, required this.monthlyUsed});
+  /// 관리자가 `grantBonusCredits`로 지급한 보너스 회차. 일/월 무료 한도를
+  /// 다 쓴 뒤에만 소진되는 오버플로우라 만료가 없다(리셋 대상 아님).
+  final int bonusCredits;
+
+  const AiUsage({
+    required this.dailyUsed,
+    required this.monthlyUsed,
+    this.bonusCredits = 0,
+  });
 
   int get dailyRemaining =>
       (AiBriefingService.dailyLimit - dailyUsed).clamp(0, AiBriefingService.dailyLimit);
   int get monthlyRemaining =>
       (AiBriefingService.monthlyLimit - monthlyUsed).clamp(0, AiBriefingService.monthlyLimit);
 
-  /// 오늘 한도와 이번 달 한도 중 **먼저 걸리는 쪽**. 사용자에게는 "몇 번 더
-  /// 쓸 수 있는가" 하나만 보여주는 게 이해하기 쉽다.
+  /// 오늘 한도와 이번 달 한도 중 **먼저 걸리는 쪽**(무료분만, 보너스 제외).
+  /// 하위 호환을 위해 이름은 유지한다 — 다른 화면이 여전히 이 값을 쓴다.
   int get remaining =>
       dailyRemaining < monthlyRemaining ? dailyRemaining : monthlyRemaining;
 
+  /// "앞으로 더 쓸 수 있는 진짜 총 횟수" = 무료 잔여 + 보너스.
+  int get totalRemaining => remaining + bonusCredits;
+
   bool get isMonthlyBinding => monthlyRemaining < dailyRemaining;
-  bool get exhausted => remaining <= 0;
+
+  /// 무료분과 보너스를 모두 소진했을 때만 참이다 — 보너스가 남아 있으면
+  /// 무료 한도를 다 썼어도 서버는 요청을 허용한다.
+  bool get exhausted => totalRemaining <= 0;
+
+  /// 잔여가 얼마 남지 않았음(0은 이미 [exhausted]가 커버).
+  bool get lowBalance => totalRemaining > 0 && totalRemaining < 5;
 }
 
 /// 서버가 기록한 AI 호출량을 읽어 온다.
@@ -58,11 +75,13 @@ class AiUsageService {
       final usage = snap.data()?['aiUsage'] as Map<String, dynamic>?;
       final result = usage == null
           // 아직 한 번도 안 썼으면 문서에 필드가 없다 — 0회로 본다.
-          ? const AiUsage(dailyUsed: 0, monthlyUsed: 0)
+          ? const AiUsage(dailyUsed: 0, monthlyUsed: 0, bonusCredits: 0)
           : AiUsage(
               dailyUsed: _countIfNotExpired(usage, 'dailyCount', 'dailyResetAt'),
               monthlyUsed:
                   _countIfNotExpired(usage, 'monthlyCount', 'monthlyResetAt'),
+              // 보너스는 리셋 로직 대상이 아니다 — 만료 없이 그대로 읽는다.
+              bonusCredits: (usage['bonusCredits'] as num?)?.toInt() ?? 0,
             );
       latest.value = result; // 구독 중인 칩들에 방송.
       return result;
