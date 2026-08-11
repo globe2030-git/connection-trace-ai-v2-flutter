@@ -51,7 +51,7 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
   ///
   /// 기기에 저장하지 않고 앱이 켜져 있는 동안만 들고 있는다 — 남는 것은
   /// 기록 식별자뿐이지만, 굳이 디스크에 늘릴 이유가 없다. 앱을 다시 켜면
-  /// 기본값(최근 5건)으로 돌아간다.
+  /// 아무것도 선택되지 않은 상태(기본 제외, opt-in)로 시작한다.
   static final Map<String, Set<String>> _lastSelectionByContact = {};
 
   late final List<CommunicationLogModel> _availableLogs;
@@ -80,15 +80,16 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
       _availableLogs.length > 10 ? 10 : _availableLogs.length,
       _availableLogs.length,
     );
-    // 직전 선택이 있으면 그것을, 없으면 최근 5건을 기본으로 고른다. 직전
-    // 선택 중 이미 삭제된 기록은 걸러낸다 — 없는 항목이 선택된 것처럼 보이면
-    // "무엇이 전송되는가"가 어긋난다.
+    // 기본 선택 없음(opt-in) — 소통 기록은 사용자가 직접 골라야만 전송된다
+    // (사용자 결정 2026-08-11: 개인정보라 기본 포함이 아니라 기본 제외로).
+    // 단 같은 인맥을 다시 열면 **직전에 사용자가 고른 것**은 되살린다 — 그건
+    // 사용자가 명시적으로 선택한 값이라 opt-in 원칙에 어긋나지 않고, 매번
+    // 처음부터 다시 고르는 번거로움만 던다. 직전 선택 중 이미 삭제된 기록은
+    // 걸러낸다(없는 항목이 선택된 것처럼 보이면 "무엇이 전송되는가"가 어긋남).
     final remembered = _lastSelectionByContact[widget.contact.id];
     final availableIds = _availableLogs.map((log) => log.id).toSet();
     if (remembered != null && remembered.any(availableIds.contains)) {
       _selectedIds.addAll(remembered.where(availableIds.contains));
-    } else {
-      _selectedIds.addAll(_availableLogs.take(5).map((log) => log.id));
     }
 
     // 남은 횟수는 서버 카운터가 유일한 진실이라 매번 새로 읽는다.
