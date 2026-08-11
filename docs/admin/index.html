@@ -39,10 +39,16 @@ h1{font-size:20px; margin:0 0 4px;}
 .card{background:var(--paper); border:1px solid var(--border); border-radius:14px; padding:22px; box-shadow:var(--shadow); margin-bottom:16px;}
 label{display:block; font-size:12px; font-weight:700; color:var(--ink-dim); margin:14px 0 6px;}
 label:first-child{margin-top:0;}
-input[type=text], input[type=email], input[type=password], textarea, select{
+input[type=text], input[type=email], input[type=password], input[type=number], textarea, select{
   width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px;
   background:var(--paper-2); color:var(--ink); font-family:inherit; font-size:13.5px;
 }
+/* 라벨 하나 아래 값 2개(예: iOS/Android)를 나란히 두는 2열 그리드 —
+   기존 4줄 세로 나열 대신 2행×2열로 묶어 화면을 덜 쓴다(사용자 요청,
+   2026-08-12). 앱 업데이트 탭의 최소/최신 빌드 입력에 쓴다. */
+.field-2col{display:grid; grid-template-columns:1fr 1fr; gap:0 14px; margin-top:6px;}
+.field-2col input{max-width:160px;}
+.field-sublabel{display:block; font-size:10.5px; font-weight:700; color:var(--ink-faint); margin-bottom:4px;}
 textarea{min-height:140px; resize:vertical; font-family:ui-monospace,Consolas,monospace; font-size:12.5px;}
 button{cursor:pointer; border:none; border-radius:8px; padding:10px 16px; font-weight:700; font-size:13px; font-family:inherit;}
 .btn-primary{background:var(--brand); color:#fff;}
