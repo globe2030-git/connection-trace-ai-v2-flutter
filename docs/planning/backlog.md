@@ -2,6 +2,27 @@
 
 ## 작업 로그
 
+### 2026-08-12 (추가 166) — 관리자 콘솔 재디자인(검정 기준 좌측 사이드바, PR #119)
+
+사용자 요청: 관리자 화면을 **검정색 기준 + 포인트만 다르게**, "AI스럽지 않은"
+구조로. 메뉴는 좌측, 앱 업데이트 입력 항목 순서는 유지, 자료가 많아질 때 고려.
+
+- `docs/admin/index.html`만 수정(셸 + 인라인 CSS). **admin.js 불변** — CSS
+  변수명/컴포넌트 클래스명(.card/.list-item/.badge/.btn-*/.bubble)과 요소 ID
+  (#loginScreen/#dashboard/.tab-btn[data-tab]/#tab-*/.visible/폼 ID)를 모두 유지.
+  `initTabs()`가 레이아웃 독립적이라 탭 버튼만 사이드바로 옮겨도 그대로 동작.
+- 상단 가로 탭 → **좌측 sticky 사이드바**(그룹 내비 + SVG 아이콘 + 활성
+  하이라이트), 본문만 독립 스크롤. near-black 배경 + 단일 블루 포인트(#4C8DFF) +
+  상태색만. **폰트는 Pretendard 유지**(사용자 지정). 스케일용 `.data-table`
+  (sticky thead)·`.scroll-y` 추가.
+- 앱 업데이트 필드 순서 그대로(admin.js 렌더), 폼 패널만 카드 max-width로 폭 제한.
+- **버그 하나 잡음**: 주석의 `.btn-*/.bubble`에 든 `*/`가 CSS 주석을 조기 종료해
+  :root 변수 전체가 파싱 누락 → 브라우저 실물 렌더로 발견·수정. 로그인 화면은
+  admin.js가 로그아웃 시 인라인 display:block을 세팅하므로 flex 중앙정렬 대신
+  margin auto로 배치(충돌 회피).
+- ⚠️ **라이브 반영은 배포 필요**: `firebase deploy --only hosting:admin`
+  (connection-sense-admin.web.app). 커밋만으로는 라이브 콘솔이 안 바뀐다.
+
 ### 2026-08-11~12 (추가 165) — 테스터 빌드 2차 통합: 기능 4종 + 수정 9건 (QA 직전 중단)
 
 하루 반 동안 병렬 세션·서브에이전트로 만든 것을 통합 브랜치
