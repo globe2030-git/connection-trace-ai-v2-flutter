@@ -9,6 +9,9 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../view_models/radar_view_model.dart';
+// 반경 선택 칩은 주변 화면과 공유한다 — 옵션·라벨·선택 시트가 갈라지면
+// 두 화면이 서로 다른 반경 목록을 보여주게 된다.
+import 'radar_view.dart';
 
 /// 감지 반경 안의 인맥을 실제 지도 위에 보여주는 화면.
 ///
@@ -45,6 +48,11 @@ class NearbyMapView extends StatefulWidget {
 
 class _NearbyMapViewState extends State<NearbyMapView> {
   final _mapController = MapController();
+
+  /// 직전에 그린 반경. 지도에서 반경을 바꾸면 원 크기만 바뀌고 화면 배율은
+  /// 그대로라 원이 화면 밖으로 나가거나 점처럼 작아진다 — 바뀐 것을 눈으로
+  /// 확인할 수 있도록 배율을 다시 맞추려고 들고 있는다.
+  double? _lastRadius;
 
   /// 브이월드(국토교통부 공간정보 오픈플랫폼) 인증키. 빌드할 때
   /// `--dart-define=VWORLD_KEY=...`로 넣는다. 키를 저장소에 커밋하지 않기
@@ -114,6 +122,20 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     }
 
     final center = LatLng(me.lat, me.lng);
+
+    // 반경이 바뀌었으면 원이 화면에 들어오도록 배율을 다시 맞춘다. 빌드 중에는
+    // 지도를 움직일 수 없어 다음 프레임으로 미룬다.
+    if (_lastRadius != null && _lastRadius != radius) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        try {
+          _mapController.move(center, _initialZoom(radius));
+        } catch (_) {
+          // 지도가 아직 준비되지 않았으면 그냥 넘어간다 — 다음 조작 때 맞춰진다.
+        }
+      });
+    }
+    _lastRadius = radius;
 
     return Scaffold(
       backgroundColor: AppColors.bgBase,
@@ -206,23 +228,30 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     return AppBar(
       backgroundColor: AppColors.cardSurface,
       surfaceTintColor: Colors.transparent,
-      title: Text(
-        radius.isInfinite
-            ? '주변 인맥 지도'
-            : '주변 인맥 지도 · 반경 ${_radiusLabel(radius)}',
-        style: const TextStyle(
+      title: const Text(
+        '주변 인맥 지도',
+        style: TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w800,
           color: AppColors.textPrimary,
         ),
       ),
+      // 반경을 제목에 글자로만 적어 두면 "여기서 바꿀 수 있다"는 걸 알 수 없다.
+      // 원을 보면서 바로 조절하고 싶다는 요청(2026-08-12)에 따라 주변 화면과
+      // **같은 선택 칩**을 여기에도 둔다. 고른 값은 같은 뷰모델을 거쳐 기기에
+      // 저장되므로 주변 화면으로 돌아가도 그대로 유지된다.
+      actions: [
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: Center(
+            child: RadiusSelector(
+              radiusMeters: radius,
+              onChanged: context.read<RadarViewModel>().updateRadius,
+            ),
+          ),
+        ),
+      ],
     );
-  }
-
-  static String _radiusLabel(double meters) {
-    if (meters.isInfinite) return '제한 없음';
-    if (meters < 1000) return '${meters.round()}m';
-    return '${(meters / 1000).toStringAsFixed(0)}km';
   }
 
   void _showContactSheet(

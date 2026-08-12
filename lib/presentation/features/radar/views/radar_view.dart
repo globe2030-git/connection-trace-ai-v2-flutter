@@ -265,7 +265,7 @@ class _RadarViewState extends State<RadarView> {
                               enabled: viewModel.usingRealGps,
                               onTap: () => NearbyMapView.show(context),
                             ),
-                            _RadiusSelector(
+                            RadiusSelector(
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
@@ -928,11 +928,18 @@ String _greetingForNow() {
 /// 설정 화면에도 같은 항목이 있었지만 그쪽에서는 결과를 볼 수 없었다 —
 /// 반경을 바꾸면 바로 달라지는 것이 "주변 인맥" 목록이라 여기가 제자리다
 /// (사용자 요청, 추가 139).
-class _RadiusSelector extends StatelessWidget {
+/// 감지 반경 선택 칩. 주변 화면과 **지도 화면이 함께 쓴다**(사용자 요청,
+/// 2026-08-12) — 지도에서 반경 원을 보다가 바로 바꾸고 싶다는 요구라, 옵션
+/// 목록·라벨·선택 시트를 한 곳에 두고 양쪽이 같은 것을 쓰게 한다.
+class RadiusSelector extends StatelessWidget {
   final double radiusMeters;
   final ValueChanged<double> onChanged;
 
-  const _RadiusSelector({required this.radiusMeters, required this.onChanged});
+  const RadiusSelector({
+    super.key,
+    required this.radiusMeters,
+    required this.onChanged,
+  });
 
   /// 3km·5km는 사용자 요청으로 추가했다(추가 139). 도보권(500m)과 같은 동네
   /// (1km) 사이만으로는 "차로 잠깐 가는 거리"를 담을 수 없었다.
