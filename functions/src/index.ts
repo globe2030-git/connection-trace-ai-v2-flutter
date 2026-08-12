@@ -29,6 +29,7 @@ import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
+import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 
 initializeApp();
 
@@ -365,9 +366,12 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
       );
     }
 
-    const nextMidnight = new Date(now);
-    nextMidnight.setHours(24, 0, 0, 0);
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    // 반드시 한국시간(KST) 기준 자정/월초여야 한다 — 서버 로컬 시간대에
+    // 기대는 `setHours`/`getMonth`를 쓰면 Cloud Functions 런타임 기본 시간대인
+    // UTC로 계산돼 리셋이 실제로는 한국시간 오전 9시에 일어난다(usageReset.ts
+    // 상단 주석 참고).
+    const nextMidnight = nextKstMidnight(now);
+    const nextMonth = nextKstMonthStart(now);
 
     tx.set(
       userRef,
