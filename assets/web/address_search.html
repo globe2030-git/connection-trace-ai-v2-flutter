@@ -32,6 +32,13 @@
     return data.buildingName ? ' (' + data.buildingName + ')' : '';
   }
 
+  // 앱이 넘겨준 초기 검색어. 로드 직전에 Flutter가 이 자리를 실제 값으로
+  // 바꿔 넣는다(`AddressSearchView`의 `_initialQueryToken` 참고). 값이 있으면
+  // 검색창에 자동으로 넣고 바로 검색한다 — 예전에는 클립보드에 복사해 두고
+  // 사용자가 직접 붙여넣게 했는데, 웹뷰 안에서는 붙여넣기가 잘 되지 않아
+  // 사실상 쓸 수 없었다(사용자 제보, 2026-08-12: 안드로이드·아이폰 모두).
+  var INITIAL_QUERY = '__INITIAL_QUERY__';
+
   new daum.Postcode({
     oncomplete: function (data) {
       // 사용자가 목록에서 도로명/지번 중 무엇을 골랐는지 그대로 따른다.
@@ -57,7 +64,13 @@
     },
     width: '100%',
     height: '100%'
-  }).embed(document.getElementById('layer'));
+    // `q`는 embed 옵션이라 위 생성자 옵션과 섞지 않는다.
+  }).embed(document.getElementById('layer'), {
+    q: INITIAL_QUERY,
+    // 검색 결과가 하나뿐이어도 자동으로 닫지 않는다 — 사용자가 무엇이 골라졌는지
+    // 확인하고 직접 고르게 한다.
+    autoClose: false
+  });
 </script>
 </body>
 </html>
