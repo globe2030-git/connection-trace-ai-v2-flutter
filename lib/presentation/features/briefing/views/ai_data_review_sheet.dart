@@ -489,12 +489,11 @@ class _UsageRemainingLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final exhausted = usage.exhausted;
-    // 오늘 한도와 이번 달 한도 중 먼저 걸리는 쪽을 보여준다. 둘 다 적으면
-    // 사용자는 "어느 게 나를 막는 건지" 헷갈린다.
-    final scope = usage.isMonthlyBinding ? '이번 달' : '오늘';
+    // "오늘"/"이번 달" 같은 스코프 접두사는 붙이지 않는다 — 보너스 회차가
+    // 섞이면 무료 한도의 스코프(일/월)가 더 이상 정확한 설명이 아니다.
     final text = exhausted
-        ? '$scope 사용 가능한 횟수를 모두 썼어요'
-        : '$scope ${usage.remaining}회 더 쓸 수 있어요';
+        ? '사용 가능한 횟수를 모두 썼어요'
+        : '${usage.totalRemaining}회 더 쓸 수 있어요';
     final color = exhausted ? AppColors.destructive : AppColors.textSecondary;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,

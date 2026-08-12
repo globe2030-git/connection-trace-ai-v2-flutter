@@ -15,10 +15,16 @@ class ManualCommLogModalView extends StatefulWidget {
   final ContactModel contact;
   final String initialType;
 
+  /// "전한 대화 포인트를 소통 기록에 저장" 흐름에서 [수정 후 저장]을 눌렀을
+  /// 때 채널·내용을 미리 채워 넣는 값(2026-08-11). 사용자가 직접 손볼 수
+  /// 있도록 이 화면을 그대로 재사용한다.
+  final String? initialSummary;
+
   const ManualCommLogModalView({
     super.key,
     required this.contact,
     this.initialType = 'call',
+    this.initialSummary,
   });
 
   @override
@@ -35,6 +41,10 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
+    final initialSummary = widget.initialSummary;
+    if (initialSummary != null && initialSummary.isNotEmpty) {
+      _summaryController.text = initialSummary;
+    }
   }
 
   /// 선택 가능한 채널. **소통 기록 추가 시트의 항목과 1:1로 맞춘다** —
@@ -49,6 +59,17 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     {'type': 'call', 'label': '통화', 'icon': AppIconId.call},
     {'type': 'sms', 'label': '문자', 'icon': AppIconId.message},
     {'type': 'kakao', 'label': '카카오톡', 'icon': AppIconId.chatSend},
+  ];
+
+  /// 실제로 화면에 그릴 채널 목록. 기본은 위 3종이지만, 브리핑의 "더보기 →
+  /// 이메일"에서 [수정 후 저장]으로 넘어온 경우(initialType == 'email')에는
+  /// 이메일 칩을 함께 보여준다 — 안 그러면 어느 칩도 선택돼 있지 않은
+  /// 상태로 보여, 무슨 채널로 저장되는지 화면이 설명하지 못한다(2026-08-11).
+  /// 직접 "추가"로 들어온 경우에는 여전히 3종만 보인다(추가 138의 결정 유지).
+  List<Map<String, Object>> get _visibleChannelOptions => [
+    ..._channelOptions,
+    if (widget.initialType == 'email')
+      {'type': 'email', 'label': '이메일', 'icon': AppIconId.mailSend},
   ];
 
   @override
@@ -117,6 +138,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     'call' => '통화 후 메모',
     'sms' => '문자 내용 추가',
     'kakao' => '카카오톡 내용 추가',
+    'email' => '이메일 내용 추가',
     _ => '소통 기록 추가',
   };
 
@@ -124,6 +146,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     'call' => '통화기록을 읽지 않습니다. 통화 후 기억할 내용만 직접 적어 주세요.',
     'sms' => '문자 앱에서 필요한 대화만 복사해 붙여넣어 주세요.',
     'kakao' => '카카오톡에서 필요한 대화만 복사해 붙여넣어 주세요.',
+    'email' => '보낸 이메일에서 기억할 내용만 직접 적어 주세요.',
     _ => '필요한 내용만 직접 입력해 주세요.',
   };
 
@@ -131,6 +154,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
     'call' => '예: 신규 프로젝트를 다음 주에 다시 논의하기로 함',
     'sms' => '문자 앱에서 복사한 필요한 대화를 붙여넣으세요.',
     'kakao' => '카카오톡에서 복사한 필요한 대화를 붙여넣으세요.',
+    'email' => '예: 견적서 회신 — 다음 주 미팅에서 조건 확정하기로 함',
     _ => '기억할 내용을 입력하세요.',
   };
 
@@ -235,8 +259,8 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                   // 줄 전체가 들쭉날쭉해 보인다. 폭을 먼저 맞춰야 정렬이 산다.
                   Row(
                     children: [
-                      for (final opt in _channelOptions) ...[
-                        if (opt != _channelOptions.first)
+                      for (final opt in _visibleChannelOptions) ...[
+                        if (opt != _visibleChannelOptions.first)
                           const SizedBox(width: 8),
                         Expanded(
                           child: _ChannelChip(

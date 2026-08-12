@@ -37,8 +37,13 @@ class _AiUsageChipState extends State<AiUsageChip> {
       valueListenable: AiUsageService.latest,
       builder: (context, usage, _) {
         if (usage == null) return const SizedBox.shrink();
-        final exhausted = usage.dailyRemaining <= 0;
-        final fg = exhausted ? AppColors.destructive : AppColors.accentText;
+        final exhausted = usage.exhausted;
+        final lowBalance = usage.lowBalance;
+        final fg = exhausted
+            ? AppColors.destructive
+            : lowBalance
+                ? AppColors.warningText
+                : AppColors.accentText;
         return Material(
           color: Colors.transparent,
           child: InkWell(
@@ -56,7 +61,7 @@ class _AiUsageChipState extends State<AiUsageChip> {
                   Icon(Icons.bolt, size: 14, color: fg),
                   const SizedBox(width: 3),
                   Text(
-                    exhausted ? '오늘 소진' : '오늘 ${usage.dailyRemaining}회',
+                    exhausted ? '한도 소진' : '잔여 ${usage.totalRemaining}회',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -130,32 +135,86 @@ class _UsageDetailSheet extends StatelessWidget {
               children: [
                 Expanded(
                   child: _StatTile(
-                    label: '오늘 남음',
-                    value:
-                        '${usage.dailyRemaining} / ${AiBriefingService.dailyLimit}회',
+                    label: '오늘 사용',
+                    value: '${usage.dailyUsed}회',
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: _StatTile(
-                    label: '이번 달 남음',
-                    value:
-                        '${usage.monthlyRemaining} / ${AiBriefingService.monthlyLimit}회',
+                    label: '잔여',
+                    value: '${usage.totalRemaining}회',
                   ),
                 ),
               ],
             ),
+            if (usage.bonusCredits > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                '무료 ${usage.remaining}회 + 충전/보너스 ${usage.bonusCredits}회',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+              ),
+            ],
             const SizedBox(height: 12),
-            const Text(
-              '같은 계정이면 기기와 상관없이 함께 차감돼요. 한도는 시간이 지나면 자동으로 다시 채워집니다.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: AppColors.textSecondary,
-                height: 1.4,
+            // 문장마다 줄을 나눠 왼쪽 정렬로 읽는다 — 가운데 정렬은 문장이
+            // 자동 줄바꿈될 때 단어 중간에서 끊겨 다음 줄이 어디서 이어지는지
+            // 알아보기 어려웠다(사용자 제보, 2026-08-12). `SizedBox`로 폭을
+            // 카드 전체로 늘려야 텍스트가 실제로 왼쪽 끝에 붙는다 — 그냥
+            // `textAlign.left`만 주면 `Column`의 기본 가운데 정렬 때문에
+            // 텍스트 블록 자체가 가운데로 몰려 보인다.
+            const SizedBox(
+              width: double.infinity,
+              child: Text(
+                '같은 계정이면 기기와 상관없이 함께 차감돼요.\n'
+                '한도는 시간이 지나면 자동으로 다시 채워집니다.\n'
+                '충전·보너스로 받은 회차는 시간이 지나도 사라지지 않아요.',
+                textAlign: TextAlign.left,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
               ),
             ),
+            if (usage.lowBalance || usage.exhausted) ...[
+              const SizedBox(height: 12),
+              _LowBalanceBanner(exhausted: usage.exhausted),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 잔여 회차가 얼마 없거나 소진됐을 때 시트 안에 보여주는 인라인 안내.
+/// 바텀시트 안에서는 스낵바가 가려져 안 보이므로 인라인으로 그린다.
+// TODO: 충전 화면(config/billing 기반) 완성되면 여기 CTA 버튼 연결 예정
+class _LowBalanceBanner extends StatelessWidget {
+  final bool exhausted;
+  const _LowBalanceBanner({required this.exhausted});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = exhausted
+        ? '잔여 회차를 모두 사용했어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.'
+        : '잔여 회차가 얼마 남지 않았어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 11.5,
+          color: AppColors.warningText,
+          height: 1.4,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );

@@ -105,10 +105,16 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                '커넥션센스가 제공하는 AI가 자동으로 대화 포인트를 만들어드려요.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+              // 왼쪽 정렬 + 전체 폭(SizedBox)로 늘려야 실제로 카드 왼쪽 끝에
+              // 붙는다 — 가운데 정렬은 자동 줄바꿈 시 두 번째 줄이 첫 줄과
+              // 안 맞아 보였다(사용자 제보, 2026-08-12).
+              const SizedBox(
+                width: double.infinity,
+                child: Text(
+                  '커넥션센스가 제공하는 AI가 자동으로 대화 포인트를 만들어드려요.',
+                  textAlign: TextAlign.left,
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                ),
               ),
               const SizedBox(height: 16),
 
@@ -121,30 +127,48 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 children: [
                   Expanded(
                     child: _StatTile(
-                      label: usage == null ? '하루 한도' : '오늘 남음',
+                      label: usage == null ? '하루 한도' : '오늘 사용',
                       value: usage == null
                           ? '${AiBriefingService.dailyLimit}회'
-                          : '${usage.dailyRemaining} / ${AiBriefingService.dailyLimit}회',
+                          : '${usage.dailyUsed}회',
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: _StatTile(
-                      label: usage == null ? '이번 달 한도' : '이번 달 남음',
+                      label: usage == null ? '이번 달 한도' : '잔여',
                       value: usage == null
                           ? '${AiBriefingService.monthlyLimit}회'
-                          : '${usage.monthlyRemaining} / ${AiBriefingService.monthlyLimit}회',
+                          : '${usage.totalRemaining}회',
                     ),
                   ),
                 ],
               ),
               if (usage != null) ...[
+                if (usage.bonusCredits > 0) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '무료 ${usage.remaining}회 + 충전/보너스 ${usage.bonusCredits}회',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
-                const Text(
-                  '같은 계정이면 기기와 상관없이 함께 차감돼요.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+                const SizedBox(
+                  width: double.infinity,
+                  child: Text(
+                    '같은 계정이면 기기와 상관없이 함께 차감돼요.',
+                    textAlign: TextAlign.left,
+                    style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+                  ),
                 ),
+                if (usage.lowBalance || usage.exhausted) ...[
+                  const SizedBox(height: 12),
+                  _LowBalanceBanner(exhausted: usage.exhausted),
+                ],
               ],
             ],
           ),
@@ -173,6 +197,38 @@ class _StatusBanner extends StatelessWidget {
             ? '무료로 제공돼요 — 별도 설정 없이 바로 사용할 수 있어요.'
             : '서비스 준비 중 — 곧 제공될 예정이에요.',
         style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+      ),
+    );
+  }
+}
+
+/// 잔여 회차가 얼마 없거나 소진됐을 때 보여주는 인라인 안내(스낵바 대신).
+// TODO: 충전 화면(config/billing 기반) 완성되면 여기 CTA 버튼 연결 예정
+class _LowBalanceBanner extends StatelessWidget {
+  final bool exhausted;
+  const _LowBalanceBanner({required this.exhausted});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = exhausted
+        ? '잔여 회차를 모두 사용했어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.'
+        : '잔여 회차가 얼마 남지 않았어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warningSoft,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 11.5,
+          color: AppColors.warningText,
+          height: 1.4,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

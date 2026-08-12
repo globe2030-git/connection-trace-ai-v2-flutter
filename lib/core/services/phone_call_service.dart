@@ -21,7 +21,14 @@ class PhoneCallService {
   /// 없으면 휴대폰으로 바로 걸기"로만 나눴다. 그래서 **사무실 번호만 있는
   /// 인맥은 전화를 걸 수 없었다** — 빈 번호로 `tel:`을 열어 아무 일도
   /// 일어나지 않았다. 두 번호를 대칭으로 다룬다(2026-08-10).
-  static Future<void> showCallPicker(
+  ///
+  /// **실제로 전화 걸기가 시작됐으면 true**를 반환한다(시트에서 번호를
+  /// 고르지 않고 닫으면 false). 호출한 쪽이 "통화를 시도했다"는 사실에
+  /// 의존하는 후속 동작(예: 소통 기록 저장 확인)을 걸 수 있게 하기 위함 —
+  /// 시트를 열기만 하고 취소한 경우까지 "통화했다"로 치면, iOS에서 공유
+  /// 시트만 닫아도 resumed가 발생해 묵은 확인 다이얼로그가 엉뚱한 시점에
+  /// 뜬다(2026-08-11 실기기 QA에서 발견).
+  static Future<bool> showCallPicker(
     BuildContext context,
     ContactModel contact,
   ) async {
@@ -30,17 +37,17 @@ class PhoneCallService {
     final hasMobile = mobile.isNotEmpty;
     final hasOfficePhone = office.isNotEmpty;
 
-    if (!hasMobile && !hasOfficePhone) return;
+    if (!hasMobile && !hasOfficePhone) return false;
     if (!hasOfficePhone) {
-      await makeCall(mobile);
-      return;
+      return makeCall(mobile);
     }
     if (!hasMobile) {
-      await makeCall(office);
-      return;
+      return makeCall(office);
     }
 
-    showModalBottomSheet(
+    // 시트는 "선택된 번호"를 결과로 돌려주고, 실제 걸기는 여기서 한다.
+    // 시트 안에서 makeCall까지 하면 밖에서는 취소와 선택을 구분할 수 없다.
+    final selected = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -91,10 +98,7 @@ class PhoneCallService {
 
                 // 📱 Mobile Phone Option
                 GlassCard(
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    makeCall(contact.phone);
-                  },
+                  onTap: () => Navigator.pop(ctx, contact.phone),
                   child: Row(
                     children: [
                       const CircleAvatar(
@@ -141,10 +145,7 @@ class PhoneCallService {
 
                 // ☎️ Office Phone Option
                 GlassCard(
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    makeCall(contact.officePhone!);
-                  },
+                  onTap: () => Navigator.pop(ctx, contact.officePhone),
                   child: Row(
                     children: [
                       CircleAvatar(
@@ -196,5 +197,8 @@ class PhoneCallService {
         );
       },
     );
+    // 시트를 그냥 닫았으면(선택 없음) 통화 시도 자체가 없었던 것이다.
+    if (selected == null || selected.trim().isEmpty) return false;
+    return makeCall(selected);
   }
 }
