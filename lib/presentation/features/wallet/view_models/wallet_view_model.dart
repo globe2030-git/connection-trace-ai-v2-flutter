@@ -90,12 +90,15 @@ class WalletViewModel extends ChangeNotifier {
   }
 
   List<ContactModel> get filteredContacts {
+    final query = _searchTerm.trim().toLowerCase();
     final list = _contactsRepository.contacts.where((c) {
       final matchesSearch =
-          _searchTerm.isEmpty ||
-          c.name.contains(_searchTerm) ||
-          c.company.contains(_searchTerm) ||
-          c.title.contains(_searchTerm);
+          query.isEmpty ||
+          // 대소문자를 무시한다. 예전에는 그대로 비교해서 'SAMSUNG'으로 저장된
+          // 회사명이 'samsung'으로는 검색되지 않았다(영문 회사명에서 흔한 일).
+          c.name.toLowerCase().contains(query) ||
+          c.company.toLowerCase().contains(query) ||
+          c.title.toLowerCase().contains(query);
 
       final matchesTags =
           _selectedTags.isEmpty ||

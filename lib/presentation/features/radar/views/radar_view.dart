@@ -10,6 +10,8 @@ import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
+// 주변에서 못 찾은 검색을 명함 지갑(전체 검색)으로 이어 주기 위해 탭 통로를 쓴다.
+import '../../../navigation/main_tab_screen.dart';
 import '../view_models/radar_view_model.dart';
 import 'my_profile_edit_modal_view.dart';
 import 'qr_code_modal_view.dart';
@@ -265,7 +267,7 @@ class _RadarViewState extends State<RadarView> {
                               enabled: viewModel.usingRealGps,
                               onTap: () => NearbyMapView.show(context),
                             ),
-                            _RadiusSelector(
+                            RadiusSelector(
                               radiusMeters: viewModel.settings.radiusMeters,
                               onChanged: viewModel.updateRadius,
                             ),
@@ -319,7 +321,13 @@ class _RadarViewState extends State<RadarView> {
                                       vertical: 6,
                                     ),
                                     border: InputBorder.none,
-                                    hintText: '이름, 회사명, 키워드로 검색해 보세요',
+                                    // 이 검색은 **주변 목록 안에서만** 걸러낸다.
+                                    // 예전 문구('이름, 회사명, 키워드로 검색해
+                                    // 보세요')는 명함 전체를 찾는다고 오해하게
+                                    // 만들었고, 주변에 아무도 없을 때 결과가 0인
+                                    // 것을 "검색이 고장났다"고 느끼게 했다
+                                    // (테스터 E-07). 범위를 문구에 밝힌다.
+                                    hintText: '주변 인맥 중에서 검색',
                                     hintStyle: TextStyle(
                                       fontSize: 13,
                                       color: AppColors.textMuted,
@@ -395,22 +403,19 @@ class _RadarViewState extends State<RadarView> {
                         // 사람만 다른가"를 설명해야 했고, 대표 카드가 화면
                         // 절반을 먹어 정작 목록은 스크롤해야 보였다.
                         // 이제 **가장 가까운 사람도 목록의 첫 줄**로 들어간다.
+                        // 비어 있을 때 **왜 비었는지**를 밝힌다. 예전에는 이유와
+                        // 상관없이 같은 문구뿐이라, 위치를 못 잡은 것인지 검색어와
+                        // 맞는 사람이 없는 것인지 구분할 수 없었다 — 그래서 QA도
+                        // "빈 화면"을 정상으로 넘겼고 테스터는 "검색이 안 된다"고
+                        // 느꼈다(E-07).
                         if (viewModel.filteredContacts.isEmpty)
-                          GlassCard(
-                            padding: const EdgeInsets.all(20),
-                            child: Center(
-                              child: Text(
-                                viewModel.usingRealGps
-                                    ? '주변에 감지된 인맥이 없습니다'
-                                    : '위치 권한이 없어 거리를 표시할 수 없습니다',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
+                          _NearbyEmptyState(
+                            hasLocation: viewModel.currentPosition != null,
+                            usingRealGps: viewModel.usingRealGps,
+                            searchTerm: viewModel.searchTerm,
+                            radiusIsUnlimited:
+                                viewModel.settings.radiusMeters.isInfinite,
+                            onOpenWallet: _openWalletTab,
                           ),
 
                         const SizedBox(height: 16),
@@ -468,6 +473,12 @@ class _RadarViewState extends State<RadarView> {
           ),
       ],
     );
+  }
+
+  /// 명함 지갑 탭으로 보낸다. 주변 검색은 '지금 주변에 있는 인맥'만 대상으로
+  /// 하므로, 전체에서 찾고 싶을 때 갈 곳을 말로만 알려 주지 않고 실제로 연다.
+  void _openWalletTab() {
+    MainTabScreen.openTab(MainTabScreen.walletTabIndex);
   }
 
   Future<void> _showConsent(RadarViewModel viewModel) async {
@@ -928,11 +939,108 @@ String _greetingForNow() {
 /// 설정 화면에도 같은 항목이 있었지만 그쪽에서는 결과를 볼 수 없었다 —
 /// 반경을 바꾸면 바로 달라지는 것이 "주변 인맥" 목록이라 여기가 제자리다
 /// (사용자 요청, 추가 139).
-class _RadiusSelector extends StatelessWidget {
+/// 주변 목록이 비었을 때 **왜 비었는지**와 다음에 할 일을 알려 준다.
+///
+/// 예전에는 이유와 상관없이 한 문장뿐이라, 위치를 못 잡은 것인지 검색어에
+/// 맞는 사람이 없는 것인지 구분할 수 없었다. 그래서 테스터는 "검색 기능이
+/// 작동하지 않는다"(E-07)고 느꼈고, QA도 빈 화면을 정상으로 넘겼다.
+class _NearbyEmptyState extends StatelessWidget {
+  final bool hasLocation;
+  final bool usingRealGps;
+  final String searchTerm;
+  final bool radiusIsUnlimited;
+  final VoidCallback onOpenWallet;
+
+  const _NearbyEmptyState({
+    required this.hasLocation,
+    required this.usingRealGps,
+    required this.searchTerm,
+    required this.radiusIsUnlimited,
+    required this.onOpenWallet,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final query = searchTerm.trim();
+    final String title;
+    String? hint;
+    var showWalletButton = false;
+
+    if (!hasLocation) {
+      // 위치가 없으면 반경·검색어와 무관하게 목록이 비게 된다. 이 경우를 먼저
+      // 가려내지 않으면 "검색이 안 된다"는 오해가 그대로 남는다.
+      title = usingRealGps ? '현재 위치를 확인하지 못했어요' : '위치 권한이 없어 주변 인맥을 찾을 수 없어요';
+      hint = usingRealGps
+          ? '위의 위치 아이콘을 눌러 다시 시도해 보세요.'
+          : '위의 위치 아이콘을 눌러 위치 사용을 허용해 주세요.';
+    } else if (query.isNotEmpty) {
+      title = '‘$query’와 일치하는 주변 인맥이 없어요';
+      hint = '이 검색은 지금 주변에 있는 인맥만 찾아요. 전체 명함에서 찾으려면 명함 지갑을 이용해 주세요.';
+      showWalletButton = true;
+    } else {
+      title = '주변에 감지된 인맥이 없어요';
+      hint = radiusIsUnlimited
+          // 반경이 이미 '전체'인데도 비었다면 남는 이유는 좌표뿐이다.
+          ? '주소가 없거나 위치를 찾지 못한 명함은 주변에 표시되지 않아요.'
+          : '반경을 넓히면 더 멀리 있는 인맥까지 볼 수 있어요.';
+    }
+
+    return GlassCard(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            hint,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12.5,
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          if (showWalletButton) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onOpenWallet,
+              icon: const Icon(Icons.search, size: 18),
+              label: const Text('명함 지갑에서 전체 검색'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.accentText,
+                side: const BorderSide(color: AppColors.accentText),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 감지 반경 선택 칩. 주변 화면과 **지도 화면이 함께 쓴다**(사용자 요청,
+/// 2026-08-12) — 지도에서 반경 원을 보다가 바로 바꾸고 싶다는 요구라, 옵션
+/// 목록·라벨·선택 시트를 한 곳에 두고 양쪽이 같은 것을 쓰게 한다.
+class RadiusSelector extends StatelessWidget {
   final double radiusMeters;
   final ValueChanged<double> onChanged;
 
-  const _RadiusSelector({required this.radiusMeters, required this.onChanged});
+  const RadiusSelector({
+    super.key,
+    required this.radiusMeters,
+    required this.onChanged,
+  });
 
   /// 3km·5km는 사용자 요청으로 추가했다(추가 139). 도보권(500m)과 같은 동네
   /// (1km) 사이만으로는 "차로 잠깐 가는 거리"를 담을 수 없었다.
