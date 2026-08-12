@@ -663,7 +663,19 @@ Future<void> _confirmConsentWithdrawal(
   if (confirmed == true) await viewModel.withdrawLocationConsent();
 }
 
+/// 로그아웃과 계정 삭제는 서로 배타적인 동작이라 동시에 진행되면 안 된다.
+///
+/// `AuthRepository.signOut()`은 Google/Firebase 서버 호출을 기다린 **뒤에야**
+/// `isSignedIn`을 false로 바꾼다 — 즉 로그아웃이 진행되는 동안에도
+/// `auth.isSignedIn`은 한동안 true로 남아 있고, 설정 화면은 여전히 탭 가능한
+/// 상태다. 실기기에서 로그아웃을 누른 직후, 화면이 로그인 화면으로 전환되는
+/// 1초 미만의 찰나에 "계정 삭제"를 눌러 삭제 절차가 함께 시작된 사례가
+/// 있었다(2026-08-12). `isSignedIn` 값만으로는 이 구간을 못 잡기 때문에, 로그아웃/
+/// 삭제 중임을 직접 표시하는 이 플래그로 재진입을 막는다.
+bool _accountActionInProgress = false;
+
 Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
+  if (!auth.isSignedIn || _accountActionInProgress) return;
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -684,7 +696,16 @@ Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
       ],
     ),
   );
-  if (confirmed == true) await auth.signOut();
+  if (confirmed != true) return;
+  // 다이얼로그가 떠 있는 사이 다른 경로(예: 계정 삭제)로 이미 로그아웃 처리가
+  // 시작됐을 수 있다 — 재확인 후 진행한다.
+  if (_accountActionInProgress) return;
+  _accountActionInProgress = true;
+  try {
+    await auth.signOut();
+  } finally {
+    _accountActionInProgress = false;
+  }
 }
 
 /// 계정 삭제(backlog #49) 확인 다이얼로그. 로그아웃과 달리 되돌릴 수 없고
@@ -700,6 +721,12 @@ Future<void> _confirmDeleteAccount(
   BuildContext context,
   AuthRepository auth,
 ) async {
+  // 로그아웃이 진행 중(또는 이미 완료)이면 삭제를 시작하지 않는다 — 위
+  // `_accountActionInProgress` 문서 참고. 확인 다이얼로그조차 띄우지 않고
+  // 조용히 무시한다: 사용자가 의도적으로 누른 게 아니라 화면 전환 중 오탭일
+  // 가능성이 높아, "이미 로그아웃 중입니다" 같은 안내를 띄우면 오히려
+  // 혼란스럽다.
+  if (!auth.isSignedIn || _accountActionInProgress) return;
   // 이메일이 가장 알아보기 쉽지만 항상 있지는 않다 — Apple은 "이메일 가리기"를
   // 쓰거나 최초 1회 이후로는 이메일을 내려주지 않는다(auth_repository 주석).
   // 그래서 이름 → uid 앞자리 순으로 물러난다. 무엇이든 화면에 보여야 한다.
@@ -784,7 +811,15 @@ Future<void> _confirmDeleteAccount(
   );
   if (confirmed != true) return;
   if (!context.mounted) return;
-  await _performAccountDeletion(context, auth);
+  // 확인 다이얼로그가 떠 있는 사이(사용자가 "영구 삭제"를 누르기 전) 로그아웃이
+  // 끝났을 수도 있다 — 실행 직전에 다시 확인한다.
+  if (!auth.isSignedIn || _accountActionInProgress) return;
+  _accountActionInProgress = true;
+  try {
+    await _performAccountDeletion(context, auth);
+  } finally {
+    _accountActionInProgress = false;
+  }
 }
 
 /// 계정 삭제 후 **이 기기에 남는 것**을 정리한다.
@@ -887,6 +922,12 @@ Future<void> _performAccountDeletion(
   BuildContext context,
   AuthRepository auth,
 ) async {
+  // `_confirmDeleteAccount`가 이미 같은 조건을 확인하지만, 이 함수는 그 흐름의
+  // 유일한 진입점이 아니게 바뀔 수 있으므로(예: 재인증 재시도 경로 추가) 방어적으로
+  // 한 번 더 막는다 — 비용이 거의 없고, 로그인 상태가 아닌데 삭제 절차가 시작되는
+  // 구멍을 원천 차단한다.
+  if (!auth.isSignedIn) return;
+
   final contactsRepo = context.read<ContactsRepository>();
   final profileRepo = context.read<MyProfileRepository>();
   final uid = auth.firebaseUid;
