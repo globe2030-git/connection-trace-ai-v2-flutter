@@ -38,6 +38,12 @@ class ContactsRepository extends ChangeNotifier {
   // 다시 계산해 채워 넣는 역할을 이 서비스가 맡는다.
   final GeoBackfillService _geoBackfillService;
 
+  // cardImagePath도 좌표와 같은 이유로 서버 백업에 포함하지 않는다(다른
+  // 기기에선 무의미한 로컬 경로). 서버 복원/다기기 병합이 로컬을 덮어쓰면
+  // 경로만 유실되고 기기에 저장된 암호문 파일(contact_card_<id>.enc)은
+  // 남아 있으므로, 파일명 규칙으로 다시 이어붙이는 역할을 이 서비스가 맡는다.
+  final ContactImageService _contactImageService;
+
   // 좌표 재계산 진행 상태 — 복원 직후에는 거리 계산이 안 되는 구간이
   // 생기므로 화면에서 "준비 중"을 보여줄 수 있게 노출한다.
   bool _isBackfillingGeo = false;
@@ -59,8 +65,10 @@ class ContactsRepository extends ChangeNotifier {
   ContactsRepository({
     EncryptionKeyService? encryptionKeyService,
     GeoBackfillService? geoBackfillService,
+    ContactImageService? contactImageService,
   }) : _encryptionKeyService = encryptionKeyService ?? EncryptionKeyService(),
-       _geoBackfillService = geoBackfillService ?? GeoBackfillService() {
+       _geoBackfillService = geoBackfillService ?? GeoBackfillService(),
+       _contactImageService = contactImageService ?? ContactImageService() {
     _loadFromDisk();
   }
 
@@ -104,6 +112,9 @@ class ContactsRepository extends ChangeNotifier {
     final restored = await DataBackupService.restoreContacts(uid);
     if (restored.isEmpty) return;
     _contacts = restored;
+    // 서버 백업엔 cardImagePath가 없다 — 기기에 남은 암호문 파일과 다시
+    // 잇는다(추가 - 명함 이미지 경로 일괄 재연결). 저장은 아래 한 번으로 합친다.
+    await relinkMissingCardImagePaths();
     notifyListeners();
     await _saveToDisk();
     // 복원 시점에는 서버 문서에 좌표가 남아 있을 수 있다 — 여기서 한 번 더
@@ -122,6 +133,8 @@ class ContactsRepository extends ChangeNotifier {
   Future<void> forceRestoreFromServer(String uid) async {
     final restored = await DataBackupService.restoreContacts(uid);
     _contacts = restored;
+    // 서버 백업엔 cardImagePath가 없다 — 기기에 남은 암호문 파일과 다시 잇는다.
+    await relinkMissingCardImagePaths();
     notifyListeners();
     await _saveToDisk();
     unawaited(_stripGeoFromServerBackupsOnce(uid));
@@ -221,6 +234,9 @@ class ContactsRepository extends ChangeNotifier {
       tombstones: tombstones,
     );
     _contacts = outcome.merged;
+    // 병합에서 서버 쪽 사본이 채택된 명함은 cardImagePath가 없다(서버 백업엔
+    // 애초에 안 담기므로) — 기기에 남은 암호문 파일과 다시 잇는다.
+    await relinkMissingCardImagePaths();
     notifyListeners();
     await _saveToDisk();
     // 로컬에만 있거나 로컬이 더 최신인 명함을 서버로 올린다(손실 방지·편집 전파).
@@ -279,6 +295,60 @@ class ContactsRepository extends ChangeNotifier {
       _geoBackfillTotal = 0;
       notifyListeners();
     }
+  }
+
+  /// [relinkMissingCardImagePaths]의 순수 매칭 로직 — 단위 테스트로 고정한다.
+  ///
+  /// `cardImagePath`가 없는 명함에 한해 [existingPathsById](contactId → 기기
+  /// 암호문 파일 경로)에 같은 id가 있으면 경로를 채운다. id가 없으면(정말
+  /// 이미지가 없는 명함) 그대로 null을 유지한다. 이미 경로가 있는 명함은
+  /// 건드리지 않는다(로컬에서 방금 등록해 경로가 확실한 경우를 덮어써
+  /// 사고 나지 않도록).
+  @visibleForTesting
+  static List<ContactModel> relinkCardImagePaths(
+    List<ContactModel> contacts,
+    Map<String, String> existingPathsById,
+  ) {
+    return contacts.map((c) {
+      if (c.cardImagePath != null) return c;
+      final path = existingPathsById[c.id];
+      if (path == null) return c;
+      return c.copyWith(cardImagePath: path);
+    }).toList();
+  }
+
+  /// 서버 복원/다기기 병합이 로컬 명함 목록을 덮어쓰면 `cardImagePath`가
+  /// 유실된다(백업 JSON에 넣지 않는 설계 — 다른 기기에선 무의미한 로컬
+  /// 경로라서). 기기에 저장된 암호문 파일(`contact_card_<id>.enc`)은 그대로
+  /// 남아 있으므로, 파일명 규칙으로 다시 이어붙인다.
+  ///
+  /// 명함마다 개별로 파일 존재를 확인하지 않고 문서 디렉터리를 **1회만**
+  /// 조회한다(명함이 수백 장이어도 IO 1회) — 단, 애초에 경로가 빠진 명함이
+  /// 하나도 없으면 그 조회조차 건너뛴다.
+  ///
+  /// 게스트(로그인 전, `_uid == null`)는 대상에서 제외한다 — 명함 이미지는
+  /// 저장 시점에 uid 기반 암호화 키가 있어야만 만들어지므로(`add_card_modal_
+  /// view.dart`), 게스트 상태에서는 애초에 암호문 파일이 존재할 수 없다.
+  ///
+  /// 반환값은 실제로 뭔가 바뀌었는지 — 호출자가 이걸 보고 저장 여부를
+  /// 결정한다(이미 그 자리에서 저장하는 흐름이면 중복 저장을 피하려고).
+  Future<bool> relinkMissingCardImagePaths() async {
+    if (_uid == null) return false;
+    if (_contacts.every((c) => c.cardImagePath != null)) return false;
+
+    final existing = await _contactImageService.findAllExistingCardImagePaths();
+    if (existing.isEmpty) return false;
+
+    final relinked = relinkCardImagePaths(_contacts, existing);
+    var changed = false;
+    for (var i = 0; i < _contacts.length; i++) {
+      if (_contacts[i].cardImagePath != relinked[i].cardImagePath) {
+        changed = true;
+        break;
+      }
+    }
+    _contacts = relinked;
+    return changed;
   }
 
   /// 좌표를 서버에서 빼기로 하기 전에 올라간 백업 문서에는 암호문 안에
@@ -343,6 +413,8 @@ class ContactsRepository extends ChangeNotifier {
         _contacts = legacyList
             .map((j) => ContactModel.fromJson(j as Map<String, dynamic>))
             .toList();
+        // 로그인 전(uid==null)이면 내부에서 바로 false를 반환하니 안전하다.
+        await relinkMissingCardImagePaths();
         notifyListeners();
         // 로그인된 상태라면 즉시 암호화해서 재저장(1회성 투명 마이그레이션).
         // 아직 로그인 전이면 로그인 시점([setCurrentUid])에 마이그레이션한다.
@@ -369,6 +441,11 @@ class ContactsRepository extends ChangeNotifier {
       _contacts = jsonList
           .map((j) => ContactModel.fromJson(j as Map<String, dynamic>))
           .toList();
+      // 이전 세션에서 서버 복원/병합으로 경로가 빠진 채 저장된 명함이
+      // 있을 수 있다 — 일반 로드 시점에도 재연결을 시도해 둔다.
+      if (await relinkMissingCardImagePaths()) {
+        await _saveToDisk();
+      }
       notifyListeners();
     } catch (e) {
       // 복호화 실패(위변조/키 불일치 등)를 포함해 어떤 이유로든 로드에
@@ -450,7 +527,7 @@ class ContactsRepository extends ChangeNotifier {
     final idx = _contacts.indexWhere((c) => c.id == id);
     final cardImagePath = idx >= 0 ? _contacts[idx].cardImagePath : null;
     if (cardImagePath != null) {
-      ContactImageService().deleteCardImage(cardImagePath);
+      _contactImageService.deleteCardImage(cardImagePath);
     }
     _contacts.removeWhere((c) => c.id == id);
     notifyListeners();

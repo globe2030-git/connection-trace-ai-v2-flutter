@@ -178,6 +178,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _selectedAvatarUrl = c?.avatarUrl;
     _cardImagePath = c?.cardImagePath;
     _useCardAsAvatar = c?.useCardAsAvatar ?? false;
+    // 서버 복원을 거친 명함은 cardImagePath가 유실될 수 있다(백업 JSON에
+    // 로컬 경로를 넣지 않으므로). 기기에 암호문 파일이 남아 있으면 다시
+    // 이어준다 — 이게 없으면 수정 화면에서 명함 이미지와 "대표 이미지로
+    // 사용" 토글이 통째로 안 보여, 나중에 대표로 지정할 방법이 없었다
+    // (사용자 제보, 2026-08-11). 저장 시 이 경로가 다시 로컬에 기록된다.
+    if (_cardImagePath == null && widget.contactToEdit != null) {
+      ContactImageService()
+          .findExistingCardImagePath(widget.contactToEdit!.id)
+          .then((path) {
+        if (path != null && mounted) {
+          setState(() => _cardImagePath = path);
+        }
+      });
+    }
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
@@ -388,6 +402,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             _scannedCardImages[_selectedScanIndex].hadName;
         if (_selectedScanIndex < 0 || (hadName && !currentHadName)) {
           _selectedScanIndex = _scannedCardImages.length - 1;
+        }
+        // 신규 등록에서 명함을 촬영했으면 "대표 이미지로 사용"을 기본 켠다
+        // (사용자 요청, 2026-08-11). 예전엔 기본 꺼짐이라, 등록 때 안 켜면
+        // 목록에서 명함 사진이 안 보였고 나중에 켜는 방법도 찾기 어려웠다.
+        // 첫 장에서만 켜고 이후엔 손대지 않는다 — 사용자가 직접 껐다면
+        // 뒷면을 추가 스캔해도 그 선택을 뒤집지 않기 위함. 기존 명함
+        // 편집(contactToEdit != null)에서는 저장된 선택을 존중한다.
+        if (widget.contactToEdit == null && _scannedCardImages.length == 1) {
+          _useCardAsAvatar = true;
         }
       }
       if (overwrite) {
@@ -832,7 +855,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ],
           ),
         );
-        if (proceed != true) return;
+        if (proceed != true) {
+          // "취소"를 골랐다는 건 이 명함을 등록하지 않기로 확정한 것이므로
+          // 등록 화면까지 함께 닫는다(사용자 제보, 2026-08-12) — 예전엔
+          // 폼에 그대로 남아 닫기 버튼을 한 번 더 눌러야 했다.
+          if (mounted) Navigator.pop(context);
+          return;
+        }
         if (!mounted) return;
       }
     }
@@ -1195,7 +1224,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       if (duplicate != null) {
         final wantsUpdate = await _showDuplicateFoundDialog(duplicate);
         if (!mounted) return;
-        if (wantsUpdate != true) return; // 취소 또는 "기존 정보 유지" — 저장하지 않고 폼에 남는다.
+        if (wantsUpdate == false) {
+          // "기존 정보 유지" = 이 명함을 등록하지 않기로 확정한 것이므로
+          // 등록 화면까지 함께 닫는다. 예전엔 폼에 남아서 닫기 버튼을 한 번
+          // 더 눌러야 했다(사용자 불편 제보, 2026-08-11). 번호를 잘못 입력해
+          // 중복으로 오인된 경우에는 다이얼로그를 시스템 뒤로가기로 닫으면
+          // (아래 null 분기) 폼이 유지되므로 고칠 길이 남아 있다.
+          Navigator.pop(context);
+          return;
+        }
+        if (wantsUpdate != true) return; // 다이얼로그만 닫힘 — 폼 유지(입력 수정 기회).
 
         final deleteOldRecord = await _showKeepHistoryDialog();
         if (!mounted) return;
@@ -1220,7 +1258,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 명함 이미지(추가 133): 새로 스캔한 이미지가 있으면 암호화(P1-9)해서
     // 보관하고 그 경로를 쓴다. 없으면 편집 중이던 기존 이미지를 유지한다.
     // 로그인(uid) 없으면(게스트) 키가 없어 저장하지 않는다.
-    var cardImagePath = _isEditing ? widget.contactToEdit!.cardImagePath : null;
+    // 편집이면 화면 상태(_cardImagePath)를 쓴다 — 위 initState의 재연결로
+    // 복원된 경로가 있으면 저장하면서 로컬에 다시 기록되게 하기 위함.
+    var cardImagePath = _isEditing ? _cardImagePath : null;
     final uid = context.read<AuthRepository>().firebaseUid;
     if (_scannedCardImageSourcePath != null && uid != null) {
       final saved = await ContactImageService().saveEncryptedCardImage(

@@ -3,9 +3,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/models/pending_comm_log_intent.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -42,7 +42,8 @@ class BriefingOverlayView extends StatefulWidget {
   State<BriefingOverlayView> createState() => _BriefingOverlayViewState();
 }
 
-class _BriefingOverlayViewState extends State<BriefingOverlayView> {
+class _BriefingOverlayViewState extends State<BriefingOverlayView>
+    with WidgetsBindingObserver {
   int _selectedIndex = 0;
   late List<String> _points;
   bool _isGenerating = false;
@@ -55,12 +56,34 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
   // 판단했다. AiDataReviewSheet의 동의 문구도 이 범위에 맞춰 함께 고쳤다.
   AiBriefingSelection? _consentedSelection;
 
+  // "전한 대화 포인트를 소통 기록에 저장" 기능(2026-08-11)의 대기 의도.
+  // 통화/문자/카톡/더보기(이메일)로 실제로 앱을 벗어난 순간 여기 채워 두고,
+  // 앱이 다시 활성화(resumed)되면 한 번 확인 다이얼로그를 띄운다. url_launcher/
+  // share는 "보냄" 콜백이 없어 라이프사이클로 복귀를 감지하는 수밖에 없다.
+  // 매핑·중복 방지 로직은 위젯 트리 밖(core/models/pending_comm_log_intent.dart)
+  // 으로 뽑아 두어 위젯 없이도 단위 테스트할 수 있게 했다.
+  final _pendingSaveTracker = PendingCommLogTracker();
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _points = widget.contact.talkingPoints;
     // 상단 잔여 칩(AiUsageChip)이 구독하는 최신값을 미리 읽어 둔다.
     AiUsageService.fetch();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _maybeConfirmPendingSave();
+    }
   }
 
   @override
@@ -146,7 +169,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
     }
   }
 
-  Future<void> _openManualRecord(String type) {
+  Future<void> _openManualRecord(String type, {String? initialSummary}) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -154,6 +177,96 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
       builder: (_) => ManualCommLogModalView(
         contact: _resolveContact(context.read<ContactsRepository>()),
         initialType: type,
+        initialSummary: initialSummary,
+      ),
+    );
+  }
+
+  /// 통화/문자/카톡/더보기(이메일) 경로를 실제로 실행한 순간
+  /// `_SendChannelRow`가 호출한다. 대기 의도는 1건만 유지한다 — 연속으로
+  /// 다른 경로를 누르면 새 것으로 교체돼 중복 저장을 막는다.
+  void _rememberPendingSave(String contactId, String channel, String point) {
+    _pendingSaveTracker.remember(
+      PendingCommLogIntent(
+        contactId: contactId,
+        channel: channel,
+        point: point,
+      ),
+    );
+  }
+
+  /// 앱이 다시 활성화됐을 때(라이프사이클 resumed) 대기 의도가 있으면 한 번
+  /// 확인한다. `consume()`이 처리 시작과 동시에 대기 의도를 비워 다이얼로그가
+  /// 뜨는 도중 다시 백그라운드/포그라운드를 반복해도 두 번 뜨지 않게 한다.
+  Future<void> _maybeConfirmPendingSave() async {
+    final intent = _pendingSaveTracker.consume();
+    if (intent == null || !mounted) return;
+
+    final contact = _resolveContact(context.read<ContactsRepository>());
+    // 대기 의도를 남긴 인맥과 지금 열려 있는 브리핑의 인맥이 다르면(이론상
+    // 화면 전환 중 드문 경우) 확인을 건너뛴다 — 엉뚱한 인맥 기록에 붙는 걸
+    // 막는다.
+    if (contact.id != intent.contactId) return;
+
+    final action = await showDialog<PendingCommLogAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          '방금 ${communicationChannelLabel(intent.channel)}로 전한 내용을 소통 기록에 저장할까요?',
+        ),
+        content: Text(
+          '"${communicationLogPreview(intent.point)}"',
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PendingCommLogAction.discard),
+            child: const Text('아니오'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PendingCommLogAction.edit),
+            child: const Text('수정 후 저장'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, PendingCommLogAction.save),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+            child: const Text('저장', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || action == null || action == PendingCommLogAction.discard) {
+      return;
+    }
+    if (action == PendingCommLogAction.save) {
+      _saveCommLog(intent);
+    } else {
+      await _openManualRecord(intent.channel, initialSummary: intent.point);
+    }
+  }
+
+  void _saveCommLog(PendingCommLogIntent intent) {
+    final current = _resolveContact(context.read<ContactsRepository>());
+    final newLog = CommunicationLogModel(
+      type: intent.channel,
+      summary: intent.point,
+      timestamp: DateTime.now(),
+      isAutoSynced: false,
+      source: 'manual',
+    );
+    final updated = current.copyWith(commLogs: [newLog, ...current.commLogs]);
+    context.read<RadarViewModel>().updateContact(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('소통 기록에 저장했어요'),
+        backgroundColor: AppColors.accent,
       ),
     );
   }
@@ -601,6 +714,8 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
                                 _selectedIndex < _points.length
                             ? _points[_selectedIndex]
                             : null,
+                        onSent: (channel, point) =>
+                            _rememberPendingSave(contact.id, channel, point),
                       ),
                     ],
 
@@ -825,12 +940,27 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView> {
 /// - 카톡: 카카오톡에는 "특정 상대에게 미리 채운 메시지"를 여는 공개 경로가
 ///   없다. 그래서 복사 후 앱만 열어 주고, 사용자가 붙여넣게 안내한다.
 ///   있는 척하지 않고 실제 동작을 그대로 알린다.
-/// - 더보기: OS 공유 시트. 위 셋에 없는 앱(메일·슬랙 등)은 여기로 간다.
+/// - 이메일: `mailto:`로 명함의 주소를 수신인까지 채워 연다.
+///
+/// 예전의 "더보기"(OS 공유 시트로 슬랙 등 임의 앱 공유)는 뺐다 — 공유
+/// 시트는 어느 앱으로 보냈는지 알 수 없어 소통 기록으로 저장할 수 없고,
+/// "소통 기록을 저장할 수 있는 채널만 둔다"는 결정(사용자, 2026-08-11)에
+/// 따라 이메일을 직접 버튼으로 승격했다. 임의 공유가 필요하면 문장을
+/// 복사해 원하는 앱에 붙여넣으면 된다(통화·카톡 경로가 이미 복사해 준다).
 class _SendChannelRow extends StatelessWidget {
   final ContactModel contact;
   final String? selectedPoint;
 
-  const _SendChannelRow({required this.contact, required this.selectedPoint});
+  /// 통화/문자/카톡/더보기(이메일)로 실제로 앱을 벗어났을 때 호출된다
+  /// (channel, point). 대기 의도를 기억해 두었다가 앱이 다시 활성화되면
+  /// 소통 기록 저장 여부를 한 번 확인한다(2026-08-11 스펙).
+  final void Function(String channel, String point)? onSent;
+
+  const _SendChannelRow({
+    required this.contact,
+    required this.selectedPoint,
+    this.onSent,
+  });
 
   /// 문자는 휴대폰 번호로만 보낸다 — 사무실 유선번호로 문자를 보낼 수는 없다.
   bool get _hasMobile => contact.phone.trim().isNotEmpty;
@@ -839,6 +969,10 @@ class _SendChannelRow extends StatelessWidget {
   /// 정한다(사용자 요청, 2026-08-10).
   bool get _hasAnyPhone =>
       _hasMobile || (contact.officePhone?.trim().isNotEmpty ?? false);
+
+  /// 이메일 버튼은 명함에 주소가 있어야 살아난다 — 수신인 없이 메일 앱만
+  /// 여는 것은 "보내기" 경로로서 의미가 없다.
+  bool get _hasEmail => contact.email.trim().isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -873,11 +1007,10 @@ class _SendChannelRow extends StatelessWidget {
         const SizedBox(width: 8),
         Expanded(
           child: _ChannelButton(
-            icon: AppIconId.chatSend,
-            label: '더보기',
-            useMaterialIcon: Icons.ios_share,
-            enabled: true,
-            onTap: () => _share(context),
+            icon: AppIconId.mailSend,
+            label: '이메일',
+            enabled: _hasEmail,
+            onTap: () => _emailTap(context),
           ),
         ),
       ],
@@ -905,7 +1038,8 @@ class _SendChannelRow extends StatelessWidget {
     // 앱이 전화 화면 위에 계속 떠 있는 건 OS가 막아서(iOS/Android 공통) 통화
     // 중에는 화면을 볼 수 없지만, 복사해 두면 메모 앱에 붙여넣어 볼 수 있다.
     await _copyPoint();
-    if (selectedPoint != null) {
+    final point = selectedPoint;
+    if (point != null) {
       _toast(messenger, '선택한 대화 포인트를 복사했어요. 통화 중 메모 앱 등에 붙여넣어 참고하세요.');
     }
     if (!context.mounted) return;
@@ -916,7 +1050,14 @@ class _SendChannelRow extends StatelessWidget {
     //
     // 통화가 끝나고 돌아오면 브리핑이 그대로 있어, 고른 대화 포인트를 다시
     // 볼 수 있다는 이점도 있다.
-    await PhoneCallService.showCallPicker(context, contact);
+    final launched = await PhoneCallService.showCallPicker(context, contact);
+    // 소통 기록 저장 의도는 **전화 걸기가 실제로 시작된 뒤에만** 남긴다.
+    // 시트를 열자마자 남기면, 번호를 고르지 않고 닫은 경우에도 의도가 남아
+    // — iOS에선 공유 시트를 닫기만 해도 resumed가 오므로 — 엉뚱한 시점에
+    // "저장할까요?" 다이얼로그가 떴다(2026-08-11 실기기 QA에서 발견).
+    if (launched && point != null) {
+      onSent?.call('call', point);
+    }
   }
 
   Future<void> _sms(BuildContext context) async {
@@ -941,8 +1082,11 @@ class _SendChannelRow extends StatelessWidget {
           ? 'sms:$number'
           : 'sms:$number${separator}body=${Uri.encodeComponent(point)}',
     );
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) {
       _toast(messenger, '문자 앱을 열지 못했어요.');
+    } else if (point != null) {
+      onSent?.call('sms', point);
     }
   }
 
@@ -971,73 +1115,25 @@ class _SendChannelRow extends StatelessWidget {
     }
     if (opened) {
       _toast(messenger, '대화 포인트를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.');
+      final point = selectedPoint;
+      if (point != null) onSent?.call('kakao', point);
     } else {
       _toast(messenger, '카카오톡을 열지 못했어요. 대화 포인트는 복사해 뒀으니 붙여넣어 주세요.');
     }
   }
 
-  /// "더보기" — 이메일 경로를 먼저 보여 주고, 그 밖의 앱은 공유 시트로 넘긴다.
-  ///
-  /// **왜 공유 시트를 바로 열지 않는가.** 공유 시트로 메일 앱을 고르면 본문만
-  /// 넘어가고 **받는 사람이 비어 있다**(사용자 보고, 2026-08-10). 공유 시트는
-  /// "내용"만 전달하는 통로라 수신인을 실을 자리가 없고, 메일 앱은 받은
-  /// 텍스트만 보고 누구에게 보낼지 알 수 없다. OS가 그렇게 설계돼 있어 우회할
-  /// 방법이 없다.
-  ///
-  /// 그래서 이메일만은 `mailto:`로 직접 열어 **명함에 적힌 주소를 수신인으로
-  /// 채운다.** 버튼을 다섯 개로 늘리는 대신 더보기 안에 넣어, 자주 쓰는 네
-  /// 경로가 한 줄에 유지되게 했다(사용자 결정).
-  Future<void> _share(BuildContext context) async {
+  /// 이메일 버튼. `mailto:`로 명함의 주소를 수신인까지 채워 연다 — 공유
+  /// 시트로 메일 앱을 고르면 본문만 넘어가고 받는 사람이 비기 때문
+  /// (사용자 보고, 2026-08-10). 예전엔 "더보기" 시트 안에 있었지만,
+  /// 일반 공유를 없애면서 직접 버튼으로 승격했다(2026-08-11).
+  Future<void> _emailTap(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
     final point = selectedPoint;
     if (point == null) {
       _toast(messenger, '먼저 전할 대화 포인트를 선택해 주세요.');
       return;
     }
-    final email = contact.email.trim();
-
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: AppColors.cardSurface,
-      showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (email.isNotEmpty)
-              ListTile(
-                leading: const AppIcon(
-                  AppIconId.mailSend,
-                  size: 22,
-                  color: AppColors.accentText,
-                ),
-                title: const Text('이메일로 보내기'),
-                // 어디로 가는지 미리 보여 준다 — 명함에 오래된 주소가 적혀
-                // 있으면 보내기 전에 알아챌 수 있다.
-                subtitle: Text(email),
-                onTap: () => Navigator.pop(sheetContext, 'email'),
-              ),
-            ListTile(
-              leading: const Icon(
-                Icons.ios_share,
-                size: 22,
-                color: AppColors.accentText,
-              ),
-              title: const Text('다른 앱으로 공유'),
-              subtitle: const Text('메모·메신저 등 — 받는 사람은 앱에서 직접 고릅니다'),
-              onTap: () => Navigator.pop(sheetContext, 'share'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-
-    if (choice == 'email') {
-      await _email(messenger, point, email);
-    } else if (choice == 'share') {
-      await SharePlus.instance.share(ShareParams(text: point));
-    }
+    await _email(messenger, point, contact.email.trim());
   }
 
   /// 메일 앱을 **수신인까지 채운 채로** 연다. 수신인은 명함에 적힌 이메일이다.
@@ -1059,15 +1155,14 @@ class _SendChannelRow extends StatelessWidget {
     }
     if (!opened) {
       _toast(messenger, '메일 앱을 열지 못했어요.');
+    } else {
+      onSent?.call('email', point);
     }
   }
 }
 
 class _ChannelButton extends StatelessWidget {
   final AppIconId icon;
-
-  /// 앱 아이콘 세트에 마땅한 것이 없을 때만 쓰는 대체 아이콘(예: 공유).
-  final IconData? useMaterialIcon;
   final String label;
   final bool enabled;
   final VoidCallback onTap;
@@ -1077,7 +1172,6 @@ class _ChannelButton extends StatelessWidget {
     required this.label,
     required this.enabled,
     required this.onTap,
-    this.useMaterialIcon,
   });
 
   @override
@@ -1109,10 +1203,7 @@ class _ChannelButton extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (useMaterialIcon != null)
-                  Icon(useMaterialIcon, size: 20, color: foreground)
-                else
-                  AppIcon(icon, size: 20, color: foreground),
+                AppIcon(icon, size: 20, color: foreground),
                 const SizedBox(height: 4),
                 Text(
                   label,

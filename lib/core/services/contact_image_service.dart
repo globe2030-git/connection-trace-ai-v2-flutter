@@ -27,6 +27,58 @@ class ContactImageService {
   static final Map<String, Uint8List> _decryptedCache = {};
 
   static String _fileName(String contactId) => 'contact_card_$contactId.enc';
+  static const String _fileNamePrefix = 'contact_card_';
+  static const String _fileNameSuffix = '.enc';
+
+  /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
+  /// JSON에는 경로를 넣지 않는데(다른 기기에선 무의미한 로컬 경로라서),
+  /// 정작 이 기기에 저장해 둔 암호문 파일은 그대로 남아 있다. 파일명이
+  /// contactId로 결정되므로, 경로가 끊긴 명함이 자기 파일을 되찾을 수
+  /// 있게 한다. 파일이 없으면(정말 이미지가 없는 명함) null.
+  ///
+  /// 단건용 — 명함 수정 화면 진입 시 한 건만 확인할 때 쓴다. 목록 전체를
+  /// 재연결할 때는 [findAllExistingCardImagePaths]를 대신 쓸 것(명함마다
+  /// 개별 IO를 내지 않기 위함).
+  Future<String?> findExistingCardImagePath(String contactId) async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final path = '${docsDir.path}/${_fileName(contactId)}';
+      return File(path).existsSync() ? path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// [findExistingCardImagePath]의 일괄판 — 명함이 수백 장이어도 문서
+  /// 디렉터리를 **한 번만** 조회해 `contactId → 암호문 파일 경로` 맵을
+  /// 만든다(개별 존재 확인 대신 파일명 규칙으로 매칭). 서버 복원/다기기
+  /// 병합 직후 로컬 명함 목록에서 경로가 빠진 항목을 일괄 재연결하는 데
+  /// 쓴다(추가 - 명함 이미지 경로 일괄 재연결).
+  Future<Map<String, String>> findAllExistingCardImagePaths() async {
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final dir = Directory(docsDir.path);
+      if (!dir.existsSync()) return {};
+      final result = <String, String>{};
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+        final name = entity.path.split('/').last;
+        if (!name.startsWith(_fileNamePrefix) || !name.endsWith(_fileNameSuffix)) {
+          continue;
+        }
+        final id = name.substring(
+          _fileNamePrefix.length,
+          name.length - _fileNameSuffix.length,
+        );
+        if (id.isEmpty) continue;
+        result[id] = entity.path;
+      }
+      return result;
+    } catch (e) {
+      debugPrint('명함 이미지 파일 목록 조회 실패: ${e.runtimeType}');
+      return {};
+    }
+  }
 
   /// [sourcePath]의 이미지를 읽어 암호화해 저장하고, 저장된 암호문 파일 경로를
   /// 반환한다. 실패하면 null(이미지는 부가 기능이라 저장 실패가 명함 저장을
@@ -86,5 +138,49 @@ class ContactImageService {
     } catch (e) {
       debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
     }
+  }
+
+  /// 계정 삭제(회원 탈퇴) 시 이 기기에 남은 **모든** 명함 이미지 파일을 지운다.
+  ///
+  /// `clearLocal()`은 SharedPreferences만 비우므로 이미지 파일은 그대로 남았다.
+  /// 게다가 명함 목록이 먼저 비워지면 경로를 잃어 **나중에 지울 수도 없는 고아
+  /// 파일**이 된다(2026-08-10 점검에서 발견). 방침은 "영구 삭제"라고 적고
+  /// 있는데 제3자(명함 주인)의 개인정보가 담긴 파일이 남는 셈이라 반드시
+  /// 정리해야 한다.
+  ///
+  /// 파일명 규칙(`contact_card_*.enc`)으로 **쓸어내는** 방식이라, 이전에
+  /// 중단된 삭제가 남긴 고아 파일까지 함께 정리된다.
+  ///
+  /// ⚠️ **이 방식은 "이 기기 로컬에 계정이 하나뿐"이라는 전제 위에서만
+  /// 안전하다.** 로컬 저장소를 계정별로 분리하는 작업(HANDOFF P1-10)이
+  /// 반영되면 **uid 범위로 좁혀야** 다른 계정의 이미지를 지우지 않는다.
+  ///
+  /// 실패한 파일 수를 반환한다 — 호출부가 사용자에게 알릴 수 있도록.
+  /// 하나가 실패해도 나머지는 계속 지운다(멈추면 더 많이 남는다).
+  Future<int> deleteAllCardImages() async {
+    var failed = 0;
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final entries = docsDir.listSync();
+      for (final entry in entries) {
+        if (entry is! File) continue;
+        final name = entry.uri.pathSegments.last;
+        if (!name.startsWith('contact_card_') || !name.endsWith('.enc')) {
+          continue;
+        }
+        try {
+          _decryptedCache.remove(entry.path);
+          await entry.delete();
+        } catch (e) {
+          failed++;
+          debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
+        }
+      }
+    } catch (e) {
+      failed++;
+      debugPrint('명함 이미지 목록 조회 실패: ${e.runtimeType}');
+    }
+    _decryptedCache.clear();
+    return failed;
   }
 }
