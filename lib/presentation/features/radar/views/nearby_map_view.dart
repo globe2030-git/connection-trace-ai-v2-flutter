@@ -18,13 +18,25 @@ import '../view_models/radar_view_model.dart';
 class NearbyMapView extends StatefulWidget {
   const NearbyMapView({super.key});
 
-  static Future<void> show(BuildContext context) {
-    return Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (_) => const NearbyMapView(),
-      ),
-    );
+  /// 지도가 이미 열려 있는지. 연속 탭으로 지도 화면이 겹겹이 쌓이는 것을
+  /// 막는다(테스터 피드백, 2026-08-12) — 지도는 열 때마다 타일을 새로 내려받아
+  /// 여러 장이 쌓이면 메모리·네트워크가 급격히 늘고 화면이 멈춘 것처럼 보인다.
+  static bool _isOpen = false;
+
+  static Future<void> show(BuildContext context) async {
+    if (_isOpen) return;
+    _isOpen = true;
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          fullscreenDialog: true,
+          builder: (_) => const NearbyMapView(),
+        ),
+      );
+    } finally {
+      // 닫히면(또는 예외가 나면) 다시 열 수 있게 반드시 풀어 준다.
+      _isOpen = false;
+    }
   }
 
   @override
