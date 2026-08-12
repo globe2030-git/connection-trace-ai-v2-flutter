@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
+import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -69,18 +69,17 @@ class _AddressSearchViewState extends State<AddressSearchView> {
 
   late final WebViewController _controller;
   bool _isLoading = true;
-  bool _justCopied = false;
+  /// 초기 검색어로 자동 검색했음을 알리는 안내를 띄울지.
+  bool _showAutoSearchNotice = false;
 
   @override
   void initState() {
     super.initState();
     final query = widget.initialQuery?.trim();
-    if (query != null && query.isNotEmpty) {
-      // 검색창에 자동으로 타이핑해 넣는 공식 API가 없어서, 대신 클립보드에
-      // 바로 복사해 둔다 — 사용자는 검색창을 탭한 뒤 붙여넣기만 하면 된다.
-      Clipboard.setData(ClipboardData(text: query));
-      _justCopied = true;
-    }
+    // 검색어는 HTML 로드 시 `q` 옵션으로 직접 넣는다(_withInitialQuery).
+    // 예전에는 클립보드에 복사해 두고 사용자가 붙여넣게 했는데, 웹뷰 안에서는
+    // 붙여넣기가 잘 되지 않아 사실상 쓸 수 없었다(사용자 제보, 2026-08-12).
+    _showAutoSearchNotice = query != null && query.isNotEmpty;
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -169,10 +168,15 @@ class _AddressSearchViewState extends State<AddressSearchView> {
   ///
   /// HTML 자체는 앱 안에 그대로 두고 `baseUrl`만 https로 지정한다 — 문서를
   /// 서버에서 내려받지 않으므로 네트워크 왕복이 늘지 않는다.
+  /// HTML 안에서 초기 검색어가 들어갈 자리. 이 문자열을 실제 검색어로 바꿔
+  /// 넣는다.
   Future<void> _loadPage() async {
     try {
       final html = await rootBundle.loadString('assets/web/address_search.html');
-      await _controller.loadHtmlString(html, baseUrl: _baseUrl);
+      await _controller.loadHtmlString(
+        injectInitialQuery(html, widget.initialQuery),
+        baseUrl: _baseUrl,
+      );
     } catch (e) {
       debugPrint('[AddressSearch] 페이지 로드 실패: $e');
       if (mounted) setState(() => _isLoading = false);
@@ -211,7 +215,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
       ),
       body: Column(
         children: [
-          if (_justCopied) _buildCopiedBanner(),
+          if (_showAutoSearchNotice) _buildAutoSearchBanner(),
           Expanded(
             child: Stack(
               children: [
@@ -228,20 +232,20 @@ class _AddressSearchViewState extends State<AddressSearchView> {
     );
   }
 
-  Widget _buildCopiedBanner() {
+  Widget _buildAutoSearchBanner() {
     return Material(
       color: AppColors.accentText.withValues(alpha: 0.12),
       child: InkWell(
-        onTap: () => setState(() => _justCopied = false),
+        onTap: () => setState(() => _showAutoSearchNotice = false),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           child: Row(
             children: [
-              const Icon(Icons.content_copy, size: 16, color: AppColors.accentText),
+              const Icon(Icons.search, size: 16, color: AppColors.accentText),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '"${widget.initialQuery!.trim()}" 클립보드에 복사됨 — 검색창을 탭하고 붙여넣기 하세요',
+                  '\'${widget.initialQuery!.trim()}\'(으)로 검색했어요 — 결과가 없으면 검색어를 줄여 보세요',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.accentText,
@@ -259,3 +263,25 @@ class _AddressSearchViewState extends State<AddressSearchView> {
     );
   }
 }
+
+/// 주소 검색 HTML의 자리표시자를 실제 검색어로 바꾼다.
+///
+/// 다음 우편번호 서비스는 `embed(el, {q: '검색어'})`로 초기 검색을 지원한다.
+/// 예전에는 이 통로를 몰라 클립보드에 복사해 두고 사용자가 붙여넣게 했는데,
+/// 웹뷰 안에서는 붙여넣기가 잘 되지 않아 사실상 쓸 수 없었다(사용자 제보,
+/// 2026-08-12: 안드로이드·아이폰 모두).
+///
+/// ⚠️ 검색어는 사용자가 입력하거나 OCR이 읽은 값이라 따옴표·역슬래시·줄바꿈이
+/// 섞일 수 있다. 그대로 끼워 넣으면 자바스크립트 문자열이 깨져 **검색 화면
+/// 자체가 뜨지 않는다** — `jsonEncode`로 감싸 안전한 리터럴로 만든다.
+/// 자리표시자를 감싼 따옴표까지 함께 바꾸므로 HTML 쪽에 따옴표를 남기지 않는다.
+@visibleForTesting
+String injectInitialQuery(String html, String? query) {
+  return html.replaceFirst(
+    "'$kInitialQueryToken'",
+    jsonEncode(query?.trim() ?? ''),
+  );
+}
+
+/// HTML 안에서 초기 검색어가 들어갈 자리.
+const String kInitialQueryToken = '__INITIAL_QUERY__';
