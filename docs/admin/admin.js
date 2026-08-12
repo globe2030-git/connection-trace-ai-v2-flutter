@@ -760,6 +760,17 @@ async function loadOcrStats() {
 // ---------- 앱 업데이트(버전 게이트, P1-45) ----------
 // 앱이 시작 시 config/appUpdate를 읽어 빌드 번호를 비교한다. 여기 값을 바꾸면
 // 앱 배포 없이 강제/권장 업데이트 안내가 바뀐다.
+//
+// 최소/최신 빌드는 플랫폼별로 나뉜다(iOS/Android 각각) — 두 스토어의 심사
+// 통과 시점이 달라 배포된 최신 빌드번호가 어긋날 수 있어서다. 레거시 단일
+// 필드(minSupportedBuild/latestBuild)는 구버전 앱(플랫폼 필드를 모르는 앱)
+// 이 계속 읽으므로, 저장할 때 두 플랫폼 값 중 **낮은 쪽**을 함께 써서 구버전
+// 앱이 실수로 강제 업데이트에 막히지 않게 한다.
+
+function _numOrZero(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
 
 async function loadAppUpdate() {
   const panel = $("#tab-appupdate");
@@ -775,20 +786,65 @@ async function loadAppUpdate() {
     <div class="card">
       <h3 style="margin-top:0;">앱 업데이트 안내 (버전 게이트)</h3>
       <p class="hint">
-        기준은 <b>빌드 번호</b>(pubspec <code>1.0.0+N</code>의 N). 앱이 시작할 때 이
-        값과 비교해 안내합니다. <b>값을 바꾸면 앱 배포 없이 즉시 반영</b>됩니다.
+        기준은 <b>빌드 번호</b>(pubspec <code>1.0.0+N</code>의 N). 앱이 시작할 때 자기
+        플랫폼(iOS/Android) 값과 비교해 안내합니다 — <b>두 스토어의 배포 빌드가 다를
+        수 있어 iOS/Android를 각각 설정</b>합니다. <b>값을 바꾸면 앱 배포 없이 즉시
+        반영</b>됩니다.
         <br>· <b>최소 지원 빌드</b>: 이 미만이면 <b>강제</b>(닫기 불가, 스토어로만 이동).
         <br>· <b>최신 빌드</b>: 이 미만이면 <b>권장</b>("나중에" 허용).
         <br>둘 다 비우거나 0이면 아무 안내도 하지 않습니다.
       </p>
-      <label>최소 지원 빌드 번호</label>
-      <input type="number" id="auMin" min="0" style="width:140px;">
-      <label>최신 빌드 번호</label>
-      <input type="number" id="auLatest" min="0" style="width:140px;">
+      <label>iOS</label>
+      <div class="field-2col">
+        <div>
+          <span class="field-sublabel">최소 지원 빌드 번호</span>
+          <input type="number" id="auMinIos" min="0">
+        </div>
+        <div>
+          <span class="field-sublabel">최신 빌드 번호</span>
+          <input type="number" id="auLatestIos" min="0">
+        </div>
+      </div>
+      <label>Android</label>
+      <div class="field-2col">
+        <div>
+          <span class="field-sublabel">최소 지원 빌드 번호</span>
+          <input type="number" id="auMinAndroid" min="0">
+        </div>
+        <div>
+          <span class="field-sublabel">최신 빌드 번호</span>
+          <input type="number" id="auLatestAndroid" min="0">
+        </div>
+      </div>
       <label>iOS 스토어 URL (App Store)</label>
       <input type="text" id="auIos" placeholder="https://apps.apple.com/app/id...">
+      <p class="hint">
+        <code>https://apps.apple.com/app/id</code> 뒤에 <b>숫자(Apple ID)</b>만
+        붙이면 됩니다. 예: <code>https://apps.apple.com/app/id6501234567</code>
+        <br>그 숫자는 어디서? → <b>App Store Connect → 해당 앱 선택 → "앱
+        정보"(App Information) → "Apple ID"</b> 항목에 적힌 숫자를 그대로
+        복사합니다(개발자 계정 Apple ID와는 다른, 앱마다 하나씩 자동으로
+        부여되는 번호입니다).
+      </p>
       <label>Android 스토어 URL (Play)</label>
       <input type="text" id="auAndroid" placeholder="https://play.google.com/store/apps/details?id=...">
+      <p class="hint">
+        <code>https://play.google.com/store/apps/details?id=</code> 뒤에
+        <b>패키지명</b>만 붙이면 됩니다. 예:
+        <code>https://play.google.com/store/apps/details?id=com.connectiontrace.connection_trace_ai_flutter</code>
+        <br>패키지명은 이미 정해져 있고 앞으로도 안 바뀝니다 —
+        <code>com.connectiontrace.connection_trace_ai_flutter</code>를 그대로
+        복사해 붙이면 끝입니다.
+      </p>
+      <p class="hint" style="color:var(--warn); background:var(--warn-soft); border-radius:8px; padding:10px 12px;">
+        ⚠️ <b>베타 심사 중 주의</b>: 두 URL 모두 스토어에 <b>정식 공개(또는
+        공개 트랙)되기 전</b>에는 눌러도 빈 페이지이거나 "찾을 수 없음"이
+        뜹니다. 지금은 URL만 미리 채워 두고, <b>"최소 지원 빌드 번호"는
+        반드시 0(강제 없음)</b>으로 두세요. 최소값을 0보다 높게 걸면, 아직
+        스토어에 앱이 없는 상태에서 강제 업데이트가 발동해 사용자를 갈 곳
+        없는 빈 스토어 페이지로 보내고 <b>앱만 막는 사고</b>가 납니다. 정식
+        공개가 확정된 뒤에 최소값을 올리세요.
+      </p>
       <label>안내 문구 (선택 — 비우면 기본 문구)</label>
       <input type="text" id="auMsg" placeholder="예: 중요한 개선이 있어요. 업데이트해 주세요.">
       <div class="row" style="margin-top:14px;">
@@ -798,18 +854,32 @@ async function loadAppUpdate() {
     </div>
   `;
   // 값은 innerHTML 대신 프로퍼티로 넣어 따옴표 이스케이프 문제를 피한다.
-  $("#auMin").value = d.minSupportedBuild ?? "";
-  $("#auLatest").value = d.latestBuild ?? "";
+  // 플랫폼 필드가 없으면(구 설정) 레거시 단일값으로 채운다 — 폴백은 앱
+  // 쪽(app_update_service.dart)과 같은 원칙.
+  $("#auMinIos").value = d.minSupportedBuildIos ?? d.minSupportedBuild ?? "";
+  $("#auMinAndroid").value =
+    d.minSupportedBuildAndroid ?? d.minSupportedBuild ?? "";
+  $("#auLatestIos").value = d.latestBuildIos ?? d.latestBuild ?? "";
+  $("#auLatestAndroid").value = d.latestBuildAndroid ?? d.latestBuild ?? "";
   $("#auIos").value = d.iosUrl ?? "";
   $("#auAndroid").value = d.androidUrl ?? "";
   $("#auMsg").value = d.message ?? "";
 
   $("#auSaveBtn").addEventListener("click", async () => {
-    const min = parseInt($("#auMin").value, 10);
-    const latest = parseInt($("#auLatest").value, 10);
+    const minIos = _numOrZero($("#auMinIos").value);
+    const minAndroid = _numOrZero($("#auMinAndroid").value);
+    const latestIos = _numOrZero($("#auLatestIos").value);
+    const latestAndroid = _numOrZero($("#auLatestAndroid").value);
     const payload = {
-      minSupportedBuild: Number.isFinite(min) ? Math.max(0, min) : 0,
-      latestBuild: Number.isFinite(latest) ? Math.max(0, latest) : 0,
+      minSupportedBuildIos: minIos,
+      minSupportedBuildAndroid: minAndroid,
+      latestBuildIos: latestIos,
+      latestBuildAndroid: latestAndroid,
+      // 레거시 단일 필드는 구버전 앱을 위한 하위호환용 — 두 플랫폼 중
+      // 낮은 쪽을 넣어야, 플랫폼 필드를 모르는 구버전 앱이 실수로 강제
+      // 업데이트에 막히지 않는다.
+      minSupportedBuild: Math.min(minIos, minAndroid),
+      latestBuild: Math.min(latestIos, latestAndroid),
       iosUrl: $("#auIos").value.trim(),
       androidUrl: $("#auAndroid").value.trim(),
       message: $("#auMsg").value.trim(),
