@@ -65,6 +65,12 @@ button:disabled{opacity:.45; cursor:not-allowed;}
 .checkbox-row{display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13px; color:var(--ink-dim);}
 .checkbox-row input{width:auto;}
 input[type=checkbox]{accent-color:var(--brand);}
+/* 빌드번호 입력을 2행×2열(iOS 행 / Android 행)로 묶는 그리드 — 4줄 세로
+   나열 대신 화면을 덜 쓴다. "앱 업데이트" 탭에서 admin.js가 렌더하는
+   .field-2col > div > (.field-sublabel + input) 구조에 쓰인다(PR #117 연동). */
+.field-2col{display:grid; grid-template-columns:1fr 1fr; gap:0 14px; margin-top:6px;}
+.field-2col input{max-width:160px;}
+.field-sublabel{display:block; font-size:10.5px; font-weight:700; color:var(--ink-faint); margin-bottom:4px;}
 
 .error{background:var(--bad-soft); color:var(--bad); border:1px solid rgba(248,113,113,.3); border-radius:8px; padding:10px 12px; font-size:12.5px; margin-top:12px;}
 .hint{color:var(--ink-faint); font-size:11.5px; margin-top:6px;}
