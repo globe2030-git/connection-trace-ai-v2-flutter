@@ -845,8 +845,12 @@ Future<bool> _cleanUpLocalArtifacts(
 /// 정리 중 일부가 실패했을 때 알린다. 계정은 이미 지워졌고 되돌릴 수 없으므로
 /// **에러가 아니라 사실 안내**로 쓴다 — 사용자가 할 수 있는 다음 행동(앱 삭제)
 /// 까지 함께 알려 준다.
-void _showLocalCleanupWarning(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
+///
+/// `BuildContext`가 아니라 미리 잡아 둔 [ScaffoldMessengerState]를 받는다 —
+/// 계정 삭제가 성공하면 이 스낵바를 띄우기 전에 이미 SettingsView가
+/// unmount됐을 수 있어서다(아래 `_performAccountDeletion` 주석 참고).
+void _showLocalCleanupWarning(ScaffoldMessengerState messenger) {
+  messenger.showSnackBar(
     const SnackBar(
       content: Text('계정은 삭제됐지만 이 기기에 일부 파일이 남았을 수 있어요. 앱을 삭제하면 함께 지워집니다.'),
       backgroundColor: AppColors.destructive,
@@ -863,6 +867,22 @@ void _showLocalCleanupWarning(BuildContext context) {
 /// 기존 백업 로직과 달리 실패를 조용히 삼키지 않는다 — 각 단계 실패는
 /// 사용자에게 명확한 에러 메시지로 알린다(서버에 데이터가 남았는데 사용자는
 /// 삭제됐다고 믿는 상황을 방지).
+///
+/// **await 뒤에 이 함수의 `context`(SettingsView)를 다시 쓰면 안전하지
+/// 않다.** `auth.deleteFirebaseAccountAndLocalSession()`이 성공하는 순간
+/// `AuthRepository` 상태가 바뀌고, 이를 듣고 있는 `AuthGate`가 곧바로
+/// `MainTabScreen`을 로그인 화면으로 갈아치운다 — 그 아래 있던 SettingsView가
+/// 통째로 unmount된다(실기기 제보, 2026-08-12). 그 시점 이후 `context.mounted`는
+/// false가 되어, "닫아야 하는데 context가 죽어서 못 닫는" 상황이 된다 — 로딩
+/// 다이얼로그가 화면에 영원히 남는다.
+///
+/// 그래서 시작 시점에 루트 [NavigatorState]와 [ScaffoldMessengerState]를
+/// 미리 잡아 둔다. 둘 다 앱 최상단(MaterialApp 바로 아래)에 있어 SettingsView가
+/// 사라져도 살아 있다 — `briefing_overlay_view.dart`에서 이미 쓰는 것과 같은
+/// 관용구다. 로딩 다이얼로그를 띄울 때도 SettingsView의 context 대신 이
+/// NavigatorState 자신의 context를 쓴다 — 화면 전환과 무관하게 유효하다.
+/// 이미 닫은 다이얼로그를 또 pop해 엉뚱한 화면(로그인 화면 등)이 닫히는 일이
+/// 없도록 `isLoadingDialogShown` 플래그로 표시 여부를 추적한다.
 Future<void> _performAccountDeletion(
   BuildContext context,
   AuthRepository auth,
@@ -871,7 +891,24 @@ Future<void> _performAccountDeletion(
   final profileRepo = context.read<MyProfileRepository>();
   final uid = auth.firebaseUid;
 
-  _showLoadingDialog(context);
+  final rootNavigator = Navigator.of(context, rootNavigator: true);
+  final rootContext = rootNavigator.context;
+  final messenger = ScaffoldMessenger.of(context);
+
+  var isLoadingDialogShown = false;
+  void showLoading() {
+    if (isLoadingDialogShown) return;
+    isLoadingDialogShown = true;
+    _showLoadingDialog(rootContext);
+  }
+
+  void dismissLoading() {
+    if (!isLoadingDialogShown) return;
+    isLoadingDialogShown = false;
+    rootNavigator.pop();
+  }
+
+  showLoading();
 
   try {
     // 다른 기기에서 이미 삭제된 계정이면 서버엔 지울 게 없다. 이 경우 서버
@@ -886,16 +923,14 @@ Future<void> _performAccountDeletion(
         uid,
       );
       await auth.signOut();
-      if (hadFailure && context.mounted) _showLocalCleanupWarning(context);
-      if (context.mounted) _dismissLoadingDialog(context);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('이미 다른 기기에서 삭제된 계정이에요. 이 기기에서도 로그아웃했어요.'),
-            backgroundColor: AppColors.accent,
-          ),
-        );
-      }
+      dismissLoading();
+      if (hadFailure) _showLocalCleanupWarning(messenger);
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('이미 다른 기기에서 삭제된 계정이에요. 이 기기에서도 로그아웃했어요.'),
+          backgroundColor: AppColors.accent,
+        ),
+      );
       return;
     }
 
@@ -908,7 +943,11 @@ Future<void> _performAccountDeletion(
     } on AuthException catch (e) {
       if (!e.requiresReauth) rethrow;
 
-      if (context.mounted) _dismissLoadingDialog(context);
+      dismissLoading();
+
+      // 여기 도달했다는 것은 계정 삭제가 아직 완료되지 않았다는(재인증 필요로
+      // 실패했다는) 뜻이라 auth 상태는 그대로다 — SettingsView는 아직 살아
+      // 있으므로 이 확인 다이얼로그는 원래 context를 그대로 써도 안전하다.
       if (!context.mounted) return;
       // provider별 재인증 메서드(Google/Apple)로 갈라 부르지 않고
       // reauthenticateCurrentProvider() 하나로 통일 — 로그인 수단이 늘어나도
@@ -935,9 +974,8 @@ Future<void> _performAccountDeletion(
         ),
       );
       if (wantsReauth != true) return;
-      if (!context.mounted) return;
 
-      _showLoadingDialog(context);
+      showLoading();
       await auth.reauthenticateCurrentProvider();
       await auth.deleteFirebaseAccountAndLocalSession();
     }
@@ -952,13 +990,13 @@ Future<void> _performAccountDeletion(
       uid,
     );
 
-    if (context.mounted) _dismissLoadingDialog(context);
-    if (hadFailure && context.mounted) _showLocalCleanupWarning(context);
+    dismissLoading();
+    if (hadFailure) _showLocalCleanupWarning(messenger);
     // 성공 시 auth.isSignedIn이 false가 되어 AuthGate가 자동으로 로그인
     // 화면으로 전환한다(로그아웃과 동일한 종착점).
   } catch (e) {
-    if (context.mounted) _dismissLoadingDialog(context);
-    if (context.mounted) _showAccountDeletionError(context, e);
+    dismissLoading();
+    _showAccountDeletionError(messenger, e);
   }
 }
 
@@ -973,17 +1011,13 @@ void _showLoadingDialog(BuildContext context) {
   );
 }
 
-void _dismissLoadingDialog(BuildContext context) {
-  if (context.mounted) {
-    Navigator.of(context, rootNavigator: true).pop();
-  }
-}
-
-void _showAccountDeletionError(BuildContext context, Object error) {
+/// `BuildContext`가 아니라 미리 잡아 둔 [ScaffoldMessengerState]를 받는다 —
+/// 이유는 `_performAccountDeletion` 주석 참고.
+void _showAccountDeletionError(ScaffoldMessengerState messenger, Object error) {
   final message = error is AuthException
       ? error.message
       : '계정 삭제 중 오류가 발생했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.';
-  ScaffoldMessenger.of(context).showSnackBar(
+  messenger.showSnackBar(
     SnackBar(content: Text(message), backgroundColor: AppColors.destructive),
   );
 }
