@@ -82,6 +82,21 @@ def get_json(url: str, token: str):
     return json.load(urllib.request.urlopen(req, timeout=30))
 
 
+def post_json(url: str, token: str, body: dict):
+    """관리자 권한으로 POST 요청을 보낸다(주로 `:runQuery` 구조화 질의용)."""
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    return json.load(urllib.request.urlopen(req, timeout=60))
+
+
 def get_json_or_none(url: str, token: str):
     """문서가 없으면(404) None을 돌려준다.
 
