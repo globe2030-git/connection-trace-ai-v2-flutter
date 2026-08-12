@@ -9,6 +9,22 @@ import '../features/wallet/views/wallet_view.dart';
 class MainTabScreen extends StatefulWidget {
   const MainTabScreen({super.key});
 
+  /// 탭 순서. 다른 화면에서 탭을 지정할 때 숫자를 직접 쓰지 않게 이름을 둔다.
+  static const int nearbyTabIndex = 0;
+  static const int walletTabIndex = 1;
+  static const int settingsTabIndex = 2;
+
+  /// 다른 화면에서 탭을 바꿔 달라고 요청하는 통로.
+  ///
+  /// 탭은 이 화면의 State가 들고 있어서 하위 화면이 직접 바꿀 수 없다. 주변
+  /// 화면에서 "명함 지갑에서 전체 검색"으로 보내 주려면 통로가 필요해 둔다
+  /// (E-07 후속). 값을 넣으면 아래 리스너가 반영하고 곧바로 비운다 — 남겨 두면
+  /// 다음에 이 화면이 다시 만들어질 때 의도치 않게 탭이 튄다.
+  static final ValueNotifier<int?> tabRequest = ValueNotifier<int?>(null);
+
+  /// [tabRequest]에 요청을 넣는다. 호출부가 notifier를 직접 만지지 않게 감싼다.
+  static void openTab(int index) => tabRequest.value = index;
+
   @override
   State<MainTabScreen> createState() => _MainTabScreenState();
 }
@@ -27,12 +43,22 @@ class _MainTabScreenState extends State<MainTabScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    MainTabScreen.tabRequest.addListener(_handleTabRequest);
   }
 
   @override
   void dispose() {
+    MainTabScreen.tabRequest.removeListener(_handleTabRequest);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _handleTabRequest() {
+    final requested = MainTabScreen.tabRequest.value;
+    if (requested == null || !mounted) return;
+    setState(() => _currentIndex = requested);
+    // 요청을 소비한다. 비우면 이 리스너가 한 번 더 불리지만 위에서 null로 걸러진다.
+    MainTabScreen.tabRequest.value = null;
   }
 
   @override
