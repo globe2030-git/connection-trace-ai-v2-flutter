@@ -3,6 +3,9 @@
 **작성일**: 2026년 8월 13일  
 **작성 목적**: 기존 구글/애플 로그인 구조에서 카카오/네이버 SNS 인증 추가, `authProfile` DB 본인인증 원천 데이터 보관 및 관리자 사용자 검증 기능 개발을 위한 차기 Claude/개발자 인수인계 문서.
 
+> 🚨 **P0 필수 구현 지침 (USER DIRECTIVE)**  
+> **구글, 애플, 네이버, 카카오 등 4대 SNS 인증 성공 시 수신되는 모든 프로필 및 본인인증 데이터(원천 응답 Payload 전체)를 누락 없이 Firestore `users/{uid}.authProfile`에 반드시 저장해야 합니다.**
+
 ---
 
 ## 1. 지금까지 완료된 작업 현황 Summary
@@ -18,22 +21,36 @@
 
 ---
 
-## 2. SNS 본인인증(Kakao/Naver) 추가 및 `authProfile` DB 아키텍처 사양
+## 2. SNS 본인인증(Kakao/Naver/Google/Apple) 추가 및 `authProfile` DB 아키텍처 사양
 
 ### 2-1. Firestore DB `users/{uid}` 데이터 구조 사양
 
-로그인 성공 시점에 `users/{uid}` 문서에 **`authProfile` (SNS 본인인증 원본 데이터)**을 저장하여 사용자가 앱 내에서 프로필 이름을 수동 변경하더라도 원본 인증 정보를 보존합니다.
+로그인 성공 시점에 `users/{uid}` 문서에 **`authProfile` (SNS 수신 원천 데이터 전체)**을 저장하여 사용자가 앱 내에서 프로필 이름을 수동 변경하더라도 원본 인증 정보를 보존합니다.
 
 ```json
 // Firestore: users/{uid} 문서
 {
   "authProfile": {
-    "provider": "kakao.com",          // google.com | apple.com | kakao.com | naver.com
+    "provider": "google.com | apple.com | kakao.com | naver.com",
     "displayName": "홍길동",          // SNS 최초 수신 실명/닉네임
-    "email": "hong@kakao.com",       // SNS 수신 이메일
+    "email": "hong@naver.com",       // SNS 수신 이메일
     "photoUrl": "http://...",        // 프로필 사진 URL
-    "mobile": "010-1234-5678",       // 전화번호 (네이버 등 제공 시)
-    "firstSignedInAt": "2026-08-13T18:50:00Z"
+    "mobile": "010-1234-5678",       // 휴대전화번호 (네이버 등 수신 시)
+    "gender": "M",                   // 성별 (네이버/카카오 등 수신 시)
+    "birthday": "10-01",             // 생일
+    "birthyear": "1995",             // 출생년도
+    "rawPayload": {                  // ⚠️ 4대 SNS 인증 시 전달받는 원본 JSON Payload 전체 저장
+      "id": "123456789",
+      "name": "홍길동",
+      "email": "hong@naver.com",
+      "profile_image": "http://...",
+      "mobile": "010-1234-5678",
+      "gender": "M",
+      "birthday": "10-01",
+      "birthyear": "1995"
+    },
+    "firstSignedInAt": "2026-08-13T18:50:00Z",
+    "lastSignedInAt": "2026-08-13T18:50:00Z"
   },
   "profile": {
     "name": "길동이",                 // 사용자가 앱 내에서 수동 편집한 표시용 이름
@@ -113,5 +130,5 @@ function isInitialAuthProfileWrite() {
 - [ ] `SnsAuthProvider` Enum에 `kakao`, `naver` 추가
 - [ ] `AuthRepository` 내 `signInWithKakao()`, `signInWithNaver()` 구현
 - [ ] `login_view.dart` 내 `_prefillAvatarFromSns()` 카카오/네이버 프로필 사진 자동다운로드 확장
-- [ ] 로그인 성공 시 `users/{uid}.authProfile` (실명, 이메일, 프로필사진, 전화번호) 기록 로직 추가
+- [ ] 🚨 **로그인 성공 시 4대 SNS(구글/애플/네이버/카카오)에서 수신된 전체 응답 데이터(`rawPayload`)를 `users/{uid}.authProfile`에 통째로 누락 없이 저장**
 - [ ] `AdminInquiryManagementView`에서 `authProfile`과 `inquiry.userName` 대조 표시 UI 연결
