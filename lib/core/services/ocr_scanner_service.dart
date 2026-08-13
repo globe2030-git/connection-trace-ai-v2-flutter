@@ -466,6 +466,40 @@ class OcrScannerService {
     return _nameParticleEndings.any(trimmed.endsWith);
   }
 
+  /// 사람 이름일 수 없는 일반명사. 명함 상단 홍보 문구가 OCR에서 잘리면 이런
+  /// 낱말이 한글 2~4자 이름 규칙에 그대로 걸린다 — 실기기에서 "…최고의 ICT
+  /// 전문 **기업**"의 마지막 조각이 이름 칸에 들어갔다(2026-08-13).
+  ///
+  /// ⚠️ **완전히 일치할 때만** 거른다. 부분 문자열로 비교하면 추가 178·180에서
+  /// 겪은 함정을 그대로 반복한다("기업"으로 거르면 "기업은행" 같은 회사명까지
+  /// 걸린다). 이 목록은 이름 칸에만 쓰이고 회사명·직함 판정에는 관여하지 않는다.
+  static const _nonNameWords = {
+    '기업',
+    '전문',
+    '고객',
+    '서비스',
+    '최고',
+    '성공',
+    '만족',
+    '제공',
+    '사업',
+    '정보',
+    '시스템',
+    '솔루션',
+    '주소',
+    '전화',
+    '팩스',
+    '이메일',
+    '홈페이지',
+    '본사',
+    '지사',
+    '문의',
+    '상담',
+  };
+
+  static bool _isNonNameWord(String name) =>
+      _nonNameWords.contains(name.trim());
+
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
   static bool _hasHangul(String s) =>
@@ -1133,7 +1167,7 @@ class OcrScannerService {
     // 사람 이름은 **조사나 어미로 끝나지 않는다** — 이 성질만으로 충분히 걸러진다.
     // 걸리면 비워 둔다. 잘못된 이름을 넣는 것보다 낫고, 스캔 화면이 "이름을 찾지
     // 못했다"고 안내해 사용자가 직접 채운다.
-    if (_endsWithParticle(name)) {
+    if (_endsWithParticle(name) || _isNonNameWord(name)) {
       name = '';
       nameSource = OcrNameSource.none;
     }
