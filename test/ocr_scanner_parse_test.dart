@@ -789,6 +789,52 @@ void main() {
       expect(r.name, '남궁현');
     });
 
+    test('연락처 라벨만 남은 줄은 이름이 되지 않는다 — "TEL. FAX. 02-…"', () {
+      // 67장 실측: 번호를 뽑아 간 뒤 남은 라벨 조각이 이름 칸에 들어갔다.
+      final r = parse([
+        'TEL.  FAX. 02-0000-0000',
+        '(주)한빛정보기술',
+        '010-0000-0000',
+      ]);
+      expect(r.name, isNot(contains('TEL')));
+      expect(r.name, isNot(contains('FAX')));
+      expect(r.company, '(주)한빛정보기술');
+    });
+
+    test('연락처 라벨만 남은 줄은 회사명도 되지 않는다 — "Tel Fax 070-…", "Fax."', () {
+      final r = parse([
+        'Tel  Fax 070-0000-0000',
+        'Fax.',
+        '남궁현',
+        '상무',
+      ]);
+      expect(r.company, isNot(contains('Fax')));
+      expect(r.company, isNot(contains('Tel')));
+      expect(r.name, '남궁현');
+    });
+
+    test('웹사이트+라벨만 있는 줄도 회사명이 되지 않는다', () {
+      final r = parse([
+        'www.hanbit.co.kr E-mail',
+        '한빛하우스(주)',
+        '남궁현',
+      ]);
+      expect(r.company, '한빛하우스(주)');
+    });
+
+    test('라벨과 겹치는 글자를 품은 회사명은 지켜진다 — "SK telecom"', () {
+      // 부분 문자열로 지웠다면 "telecom"에서 TEL이 잘려 나갔을 것이다.
+      // 단어 경계로만 지우므로 멀쩡히 남아야 한다.
+      final r = parse([
+        'SK telecom',
+        '남궁현',
+        '상무',
+        '010-0000-0000',
+      ]);
+      expect(r.company, 'SK telecom');
+      expect(r.name, '남궁현');
+    });
+
     test('라벨 잔여물("M.")은 이름이 되지 않는다', () {
       final r = parse([
         'M.',
