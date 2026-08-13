@@ -473,6 +473,84 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                       ),
                       const SizedBox(height: 16),
 
+                      // 1-2. 고객 AI 이용 & 충전 크레딧 현황 카드
+                      if (inquiry.userId.isNotEmpty) ...[
+                        FutureBuilder<Map<String, dynamic>?>(
+                          future: widget.repo.fetchUserAiUsage(inquiry.userId),
+                          builder: (context, usageSnapshot) {
+                            final usageData = usageSnapshot.data;
+                            final dailyCount =
+                                (usageData?['dailyCount'] as num?)?.toInt() ?? 0;
+                            final bonusCredits =
+                                (usageData?['bonusCredits'] as num?)?.toInt() ?? 0;
+                            final paidBalance =
+                                (usageData?['paidBalance'] as num?)?.toInt() ?? 0;
+                            final freeBalance =
+                                (usageData?['freeBalance'] as num?)?.toInt() ?? 0;
+
+                            return Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppColors.accent.withValues(alpha: 0.2),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.account_balance_wallet_outlined,
+                                        color: AppColors.accentText,
+                                        size: 18,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        '고객 AI 크레딧 & 충전 이용 현황',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.accentText,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: _usageStatBox(
+                                          '오늘 사용량',
+                                          '$dailyCount회 / 10회',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _usageStatBox(
+                                          '유료 충전 잔여',
+                                          '$paidBalance 크레딧',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _usageStatBox(
+                                          '보너스/무료',
+                                          '${freeBalance + bonusCredits} 크레딧',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                      ],
+
                       // 2. 문의 본문 내용 카드
                       const Text(
                         '문의 내용',
@@ -693,6 +771,36 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _usageStatBox(String title, String val) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      decoration: BoxDecoration(
+        color: AppColors.bgBase,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.textMuted,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            val,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
