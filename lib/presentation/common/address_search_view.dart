@@ -21,9 +21,33 @@ class AddressSearchResult {
   final String? buildingName;
   final String? postalCode;
 
+  /// 같은 위치의 도로명 주소와 지번 주소. 표시·저장에는 쓰지 않고 **좌표 조회
+  /// 실패 시 재시도**에만 쓴다([geocodeFallback] 참고).
+  ///
+  /// 왜 필요한가: OS 지오코더가 도로명 주소로는 좌표를 못 찾는데 지번으로는
+  /// 찾는 경우가 실사용에서 확인됐고, **그 반대도 있을 수 있다**(2026-08-14).
+  /// 좌표가 없으면 그 인맥은 주변 지도에 아예 안 뜬다. 우편번호 서비스는 두
+  /// 표기를 함께 주는데 예전에는 둘 다 버리고 표시용 문장만 넘겼다.
+  final String? roadAddress;
+  final String? jibunAddress;
+
+  /// 좌표 조회에 재시도로 쓸 **표시하지 않은 쪽** 주소. 사용자가 도로명을
+  /// 골랐으면 지번을, 지번을 골랐으면 도로명을 돌려준다. 어느 쪽을 골랐는지에
+  /// 상관없이 한 번 더 시도할 수 있어야 해서 방향을 고정하지 않았다.
+  String? get geocodeFallback {
+    final shown = address.trim();
+    for (final candidate in [roadAddress, jibunAddress]) {
+      final c = (candidate ?? '').trim();
+      if (c.isNotEmpty && !shown.contains(c) && c != shown) return c;
+    }
+    return null;
+  }
+
   const AddressSearchResult({
     required this.address,
     this.buildingName,
+    this.roadAddress,
+    this.jibunAddress,
     this.postalCode,
   });
 }
@@ -114,6 +138,14 @@ class _AddressSearchViewState extends State<AddressSearchView> {
               context,
               AddressSearchResult(
                 address: address,
+                roadAddress:
+                    (roadAddress != null && roadAddress.trim().isNotEmpty)
+                    ? roadAddress.trim()
+                    : null,
+                jibunAddress:
+                    (jibunAddress != null && jibunAddress.trim().isNotEmpty)
+                    ? jibunAddress.trim()
+                    : null,
                 buildingName:
                     (buildingName != null && buildingName.trim().isNotEmpty)
                     ? buildingName.trim()

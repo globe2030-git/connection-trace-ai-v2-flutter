@@ -548,6 +548,15 @@ class OcrScannerService {
     return words.every((w) => RegExp(r"^[A-Za-z][A-Za-z.'-]*$").hasMatch(w));
   }
 
+  /// 줄에서 이메일과 URL을 걷어낸다. 키워드 판정 전에 쓴다 — 도메인 문자열이
+  /// 회사 키워드에 우연히 걸리는 것을 막기 위해서다(`elancer.**co**.kr` ⊂ `Co.`).
+  static String _stripContacts(String line) => line
+      .replaceAll(RegExp(r'[\w.+-]+@[\w.-]+'), ' ')
+      .replaceAll(
+        RegExp(r'(https?://|www\.)[^\s]+', caseSensitive: false),
+        ' ',
+      );
+
   /// 연락처 라벨(TEL/FAX/E-mail 등)과 번호·주소를 걷어내면 **글자가 거의 남지
   /// 않는 줄**인지. 그런 줄은 어느 칸에도 들어갈 값이 아니다.
   ///
@@ -1041,6 +1050,18 @@ class OcrScannerService {
       // — 뒤에서 걸러 봐야 이미 늦는다(테스트가 잡았다).
       if (_isContactLabelResidue(line)) continue;
 
+      // 주소로 보이는 줄은 회사명·직함·이름 후보로 쓰지 않는다.
+      //
+      // 주소 필드는 하나뿐이라 **두 번째 주소**(본사와 공장, 국문과 영문 병기
+      // 등)는 어디에도 안 들어간다. 그런데 그대로 두면 leftover로 흘러 회사명
+      // 자리를 차지한다 — 103장 실측에서 회사명 오분류의 대부분이 이것이었다
+      // (`대구 공장| 대구광역시 달서구 …`, `(07207 ) 서울특별시 영등포구 …`).
+      // 값이 없는 것이 틀린 값보다 낫다는 원칙(추가 183)과 같은 방향이다.
+      if (addressRegExp.hasMatch(line) ||
+          roadAddressNoProvinceRegExp.hasMatch(line)) {
+        continue;
+      }
+
       // 직함 키워드가 걸린 줄에 이름도 같이 붙어 있는 경우가 실제 명함
       // 샘플에서 흔하게 확인됐다 — "실장 곽용환"(키워드 먼저), "이정섭
       // 부장"(이름 먼저), "윤 덕 현 컨설팅 및 딜리버리 팀장"(이름이 한
@@ -1061,7 +1082,14 @@ class OcrScannerService {
       // 정당한 직함**이라 목록에서 지울 수 없고, "뒤에 한글이 이어지면 제외"
       // 같은 형태 규칙도 못 쓴다("수석연구원"이 같은 모양이면서 정상 직함이다).
       // 그래서 줄이 무엇인지를 보고 거른다.
-      final isCompanyLine = _companyKeywords.any((k) => _containsCi(line, k));
+      // ⚠️ 회사 키워드는 **URL·이메일을 걷어낸 뒤** 본다. `.co.kr` 도메인의
+      // `.co.`가 키워드 'Co.'에 걸려, 웹사이트 줄이 회사명으로 확정되던 문제가
+      // 실측에서 2장 나왔다(추가 183). 추가 178·180·182와 같은 부분 문자열
+      // 함정의 네 번째 사례다.
+      final lineWithoutContacts = _stripContacts(line);
+      final isCompanyLine = _companyKeywords.any(
+        (k) => _containsCi(lineWithoutContacts, k),
+      );
       final isQualificationLine = _qualificationMarkers.any(
         (k) => _containsCi(line, k),
       );
@@ -1085,8 +1113,7 @@ class OcrScannerService {
       // 영문 회사 표기가 "NELSON SPORTS, INC."처럼 전부 대문자인 경우가
       // 실제 명함에서 확인됐다 — 키워드 목록의 "Inc."/"Co."는 대소문자가
       // 섞여 있어 그대로 비교하면 놓친다. 대소문자를 구분하지 않고 검사.
-      if (companyLine == null &&
-          _companyKeywords.any((k) => _containsCi(line, k))) {
+      if (companyLine == null && isCompanyLine) {
         companyLine = line;
         companySource = OcrCompanySource.keyword;
         continue;
@@ -1213,9 +1240,21 @@ class OcrScannerService {
     final emailDomain = email == null || !email.contains('@')
         ? null
         : email.split('@').last;
+    // 웹사이트 주소도 로고 판별의 근거다 — 로고는 도메인과 같은 브랜드명인
+    // 경우가 많다(`HANBIT` ⊂ `www.hanbit.co.kr`). 회사명 줄만 보면, URL을
+    // 회사명에서 걷어낸 뒤로는 단서가 사라진다(테스트가 잡았다).
+    final urlTexts = [
+      for (final l in lines)
+        for (final m in RegExp(
+          r'(https?://|www\.)[^\s]+',
+          caseSensitive: false,
+        ).allMatches(l))
+          m.group(0)!,
+    ];
     final logoHaystacks = [
       ?companyLine,
       ?emailDomain,
+      ...urlTexts,
     ].map((s) => s.replaceAll(RegExp(r'[\s.]'), '')).toList();
 
     // ⚠️ leftover에서 **지우지는 않는다.** 여기서 지우면 회사명 폴백까지 후보를
