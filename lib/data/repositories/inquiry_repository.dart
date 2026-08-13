@@ -31,6 +31,7 @@ class InquiryRepository {
 
   Future<void> submitInquiry({
     required String userId,
+    String userName = '',
     required String userEmail,
     required String subject,
     required String message,
@@ -38,6 +39,7 @@ class InquiryRepository {
     final model = InquiryModel(
       id: '',
       userId: userId,
+      userName: userName,
       userEmail: userEmail,
       subject: subject,
       message: message,

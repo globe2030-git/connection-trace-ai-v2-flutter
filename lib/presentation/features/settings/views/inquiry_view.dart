@@ -34,7 +34,12 @@ class _InquiryViewState extends State<InquiryView> {
           ? null
           : FloatingActionButton.extended(
               backgroundColor: AppColors.accent,
-              onPressed: () => _openCompose(context, uid, auth.email ?? ''),
+              onPressed: () => _openCompose(
+                context,
+                uid,
+                auth.displayName ?? '',
+                auth.email ?? '',
+              ),
               icon: const Icon(Icons.add, color: Colors.white),
               label: const Text(
                 '새 문의',
@@ -111,6 +116,7 @@ class _InquiryViewState extends State<InquiryView> {
   Future<void> _openCompose(
     BuildContext context,
     String uid,
+    String userName,
     String email,
   ) async {
     await showModalBottomSheet<void>(
@@ -120,6 +126,7 @@ class _InquiryViewState extends State<InquiryView> {
       builder: (_) => _InquiryComposeSheet(
         repo: _repo,
         uid: uid,
+        userName: userName,
         email: email,
       ),
     );
@@ -155,11 +162,13 @@ class _StatusBadge extends StatelessWidget {
 class _InquiryComposeSheet extends StatefulWidget {
   final InquiryRepository repo;
   final String uid;
+  final String userName;
   final String email;
 
   const _InquiryComposeSheet({
     required this.repo,
     required this.uid,
+    required this.userName,
     required this.email,
   });
 
@@ -187,6 +196,7 @@ class _InquiryComposeSheetState extends State<_InquiryComposeSheet> {
     try {
       await widget.repo.submitInquiry(
         userId: widget.uid,
+        userName: widget.userName,
         userEmail: widget.email,
         subject: subject,
         message: message,
