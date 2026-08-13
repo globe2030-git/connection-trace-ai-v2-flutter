@@ -385,7 +385,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final offsetX = (imgW - visibleImgW) / 2;
       final offsetY = (imgH - visibleImgH) / 2;
 
-      const margin = 1.3;
+      // 명함 주변 텍스트 잘림을 방지하기 위해 마진을 1.5배로 넓게 잡는다.
+      const margin = 1.5;
       final guideSize = _guideFrameSizeFor(screenSize);
       final guideW = guideSize.width * margin;
       final guideH = guideSize.height * margin;
