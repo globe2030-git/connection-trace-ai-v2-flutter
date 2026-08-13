@@ -99,4 +99,16 @@ class InquiryRepository {
 
     await batch.commit();
   }
+
+  /// 관리자가 사용자 문의 응대 시 해당 사용자의 AI 크레딧/충전 및 사용량 정보를 읽어온다.
+  Future<Map<String, dynamic>?> fetchUserAiUsage(String uid) async {
+    if (uid.isEmpty) return null;
+    try {
+      final snap = await _db.collection('users').doc(uid).get();
+      if (!snap.exists) return null;
+      return snap.data()?['aiUsage'] as Map<String, dynamic>?;
+    } catch (e) {
+      return null;
+    }
+  }
 }
