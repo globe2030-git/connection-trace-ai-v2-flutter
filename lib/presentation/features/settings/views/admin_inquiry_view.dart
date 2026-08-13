@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/inquiry_model.dart';
 import '../../../../data/repositories/inquiry_repository.dart';
@@ -314,6 +315,17 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
   final _replyController = TextEditingController();
   bool _submitting = false;
 
+  /// 사용량 조회는 서버 함수 호출이라 **한 번만** 쏜다. `build` 안에서
+  /// `FutureBuilder(future: ...)`를 만들면 답변을 입력할 때마다(리빌드마다)
+  /// 서버를 다시 부른다.
+  late final Future<AdminUserUsage> _usageFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _usageFuture = AiUsageService.fetchForAdmin(widget.inquiry.userEmail);
+  }
+
   @override
   void dispose() {
     _replyController.dispose();
@@ -473,20 +485,32 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                       ),
                       const SizedBox(height: 16),
 
-                      // 1-2. 고객 AI 이용 & 충전 크레딧 현황 카드
-                      if (inquiry.userId.isNotEmpty) ...[
-                        FutureBuilder<Map<String, dynamic>?>(
-                          future: widget.repo.fetchUserAiUsage(inquiry.userId),
+                      // 1-2. 고객 AI 이용 현황 카드
+                      //
+                      // 값은 서버 함수(getUserUsage)가 준 것만 그린다. 예전에는
+                      // 클라이언트가 users/{uid}를 직접 읽었는데, 그 문서는 본인만
+                      // 읽을 수 있어(명함 복호화 키가 함께 들어 있다) 관리자에게는
+                      // 항상 권한 거부가 났고, 그 실패를 삼켜 0을 그렸다.
+                      // "유료 충전 잔여"·"무료 잔여"는 서버에 그런 필드 자체가
+                      // 없어 언제나 0이었으므로 화면에서 뺐다 — 근거 없는 숫자를
+                      // 관리자에게 보여주면 응대가 틀어진다(backlog 추가 178).
+                      FutureBuilder<AdminUserUsage>(
+                          future: _usageFuture,
                           builder: (context, usageSnapshot) {
-                            final usageData = usageSnapshot.data;
-                            final dailyCount =
-                                (usageData?['dailyCount'] as num?)?.toInt() ?? 0;
-                            final bonusCredits =
-                                (usageData?['bonusCredits'] as num?)?.toInt() ?? 0;
-                            final paidBalance =
-                                (usageData?['paidBalance'] as num?)?.toInt() ?? 0;
-                            final freeBalance =
-                                (usageData?['freeBalance'] as num?)?.toInt() ?? 0;
+                            if (usageSnapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return _usageMessageBox('사용량을 불러오는 중…');
+                            }
+                            if (usageSnapshot.hasError) {
+                              final e = usageSnapshot.error;
+                              return _usageMessageBox(
+                                e is AdminUsageException
+                                    ? e.message
+                                    : '사용량을 불러오지 못했습니다.',
+                                isError: true,
+                              );
+                            }
+                            final usage = usageSnapshot.data!;
 
                             return Container(
                               padding: const EdgeInsets.all(14),
@@ -509,7 +533,7 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                                       ),
                                       SizedBox(width: 8),
                                       Text(
-                                        '고객 AI 크레딧 & 충전 이용 현황',
+                                        '고객 AI 이용 현황',
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.bold,
@@ -523,22 +547,22 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                                     children: [
                                       Expanded(
                                         child: _usageStatBox(
-                                          '오늘 사용량',
-                                          '$dailyCount회 / 10회',
+                                          '오늘 사용',
+                                          '${usage.dailyCount}회 / ${usage.dailyLimit}회',
                                         ),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _usageStatBox(
-                                          '유료 충전 잔여',
-                                          '$paidBalance 크레딧',
+                                          '이번 달 사용',
+                                          '${usage.monthlyCount}회 / ${usage.monthlyLimit}회',
                                         ),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: _usageStatBox(
-                                          '보너스/무료',
-                                          '${freeBalance + bonusCredits} 크레딧',
+                                          '보너스 회차',
+                                          '${usage.bonusCredits}회',
                                         ),
                                       ),
                                     ],
@@ -548,8 +572,7 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                             );
                           },
                         ),
-                        const SizedBox(height: 16),
-                      ],
+                      const SizedBox(height: 16),
 
                       // 2. 문의 본문 내용 카드
                       const Text(
@@ -771,6 +794,46 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
           ),
         ),
       ],
+    );
+  }
+
+  /// 사용량을 아직 못 읽었거나(로딩) 못 읽은(오류) 상태를 **숫자 대신 문장으로**
+  /// 보여준다. 숫자 자리에 0을 그리면 관리자가 "이 고객은 한 번도 안 썼다"로
+  /// 읽어 응대가 틀어진다.
+  Widget _usageMessageBox(String message, {bool isError = false}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isError
+            ? AppColors.textMuted.withValues(alpha: 0.08)
+            : AppColors.accent.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isError
+              ? AppColors.textMuted.withValues(alpha: 0.25)
+              : AppColors.accent.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isError ? Icons.info_outline : Icons.hourglass_empty,
+            size: 18,
+            color: isError ? AppColors.textMuted : AppColors.accentText,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

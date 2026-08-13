@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
@@ -40,6 +41,62 @@ class AiUsage {
 
   /// 잔여가 얼마 남지 않았음(0은 이미 [exhausted]가 커버).
   bool get lowBalance => totalRemaining > 0 && totalRemaining < 5;
+}
+
+/// 관리자가 **다른 사용자**의 사용량을 조회한 결과(`getUserUsage` 응답).
+///
+/// 본인용 [AiUsage]와 따로 두는 이유: 한도(`dailyLimit`)를 앱 상수가 아니라
+/// **서버가 준 값**으로 보여줘야 한다. 앱 상수는 배포 시점에 굳어서, 서버에서
+/// 한도를 바꾸면 관리자 화면만 옛 숫자를 말하게 된다.
+class AdminUserUsage {
+  final String uid;
+  final String? email;
+  final int dailyCount;
+  final int dailyLimit;
+  final int monthlyCount;
+  final int monthlyLimit;
+  final int bonusCredits;
+
+  const AdminUserUsage({
+    required this.uid,
+    required this.email,
+    required this.dailyCount,
+    required this.dailyLimit,
+    required this.monthlyCount,
+    required this.monthlyLimit,
+    required this.bonusCredits,
+  });
+}
+
+/// 관리자 조회가 실패한 이유. 화면이 "0회"와 "못 읽었음"을 구분해서 보여줘야
+/// 하기 때문에 남긴다 — 예전 구현은 실패를 삼키고 0을 그렸고, 그래서 관리자가
+/// "이 고객은 크레딧이 0"이라고 오해할 수 있었다(backlog 추가 178).
+enum AdminUsageError {
+  /// 관리자 계정이 아니다(서버가 거부).
+  notAdmin,
+
+  /// 그 이메일로 가입한 계정이 없다 — 탈퇴했거나, SNS 이메일이 문의 당시와
+  /// 다른 경우다(애플 "이메일 가리기"가 대표적).
+  accountNotFound,
+
+  /// 문의에 이메일이 없다. 조회 키가 없으니 시도조차 못 한다.
+  noEmail,
+
+  /// 네트워크·서버 오류 등 그 밖의 실패.
+  unknown,
+}
+
+class AdminUsageException implements Exception {
+  final AdminUsageError reason;
+  const AdminUsageException(this.reason);
+
+  /// 관리자에게 그대로 보여줄 안내. 개인정보는 담지 않는다.
+  String get message => switch (reason) {
+    AdminUsageError.notAdmin => '관리자 계정에서만 조회할 수 있습니다.',
+    AdminUsageError.accountNotFound => '가입된 계정을 찾을 수 없습니다(탈퇴했거나 로그인 이메일이 다릅니다).',
+    AdminUsageError.noEmail => '문의에 이메일이 없어 조회할 수 없습니다.',
+    AdminUsageError.unknown => '사용량을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  };
 }
 
 /// 서버가 기록한 AI 호출량을 읽어 온다.
@@ -89,6 +146,54 @@ class AiUsageService {
       // 개인정보가 섞이지 않도록 예외 타입만 남긴다.
       debugPrint('AI 사용량 조회 실패: ${e.runtimeType}');
       return null;
+    }
+  }
+
+  /// 관리자가 **다른 사용자**의 사용량을 이메일로 조회한다(1:1 문의 응대용).
+  ///
+  /// **왜 서버 함수를 부르나**: `users/{uid}` 문서는 `firestore.rules`에서
+  /// 본인만 읽을 수 있다(`allow read: if isOwner(uid)`). 관리자에게 이 문서를
+  /// 열어 주면 안 되는데, 같은 문서에 **명함 복호화용 키(`encryptionKeyB64`)**가
+  /// 들어 있어서 관리자가 모든 고객의 명함을 복호화할 수 있게 되기 때문이다.
+  /// 그래서 서버(`getUserUsage`)가 Admin SDK로 읽어 **사용량만** 돌려준다.
+  ///
+  /// 실패는 [AdminUsageException]으로 던진다 — 화면이 "0회"와 "못 읽었음"을
+  /// 반드시 구분해야 하기 때문이다(backlog 추가 178).
+  static Future<AdminUserUsage> fetchForAdmin(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) {
+      throw const AdminUsageException(AdminUsageError.noEmail);
+    }
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: AiBriefingService.region,
+      ).httpsCallable('getUserUsage');
+      final result = await callable.call<Map<String, dynamic>>({
+        'email': trimmed,
+      });
+      final d = result.data;
+      return AdminUserUsage(
+        uid: (d['uid'] as String?) ?? '',
+        email: d['email'] as String?,
+        dailyCount: (d['dailyCount'] as num?)?.toInt() ?? 0,
+        dailyLimit: (d['dailyLimit'] as num?)?.toInt() ?? 0,
+        monthlyCount: (d['monthlyCount'] as num?)?.toInt() ?? 0,
+        monthlyLimit: (d['monthlyLimit'] as num?)?.toInt() ?? 0,
+        bonusCredits: (d['bonusCredits'] as num?)?.toInt() ?? 0,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      // 서버가 주는 코드별로 관리자가 할 수 있는 일이 다르다. 뭉뚱그리면
+      // "탈퇴한 계정"과 "권한 없음"이 같은 문구로 보여 응대가 막힌다.
+      throw AdminUsageException(switch (e.code) {
+        'permission-denied' => AdminUsageError.notAdmin,
+        'not-found' => AdminUsageError.accountNotFound,
+        'invalid-argument' => AdminUsageError.noEmail,
+        _ => AdminUsageError.unknown,
+      });
+    } catch (e) {
+      // 개인정보가 섞이지 않도록 예외 타입만 남긴다.
+      debugPrint('관리자 사용량 조회 실패: ${e.runtimeType}');
+      throw const AdminUsageException(AdminUsageError.unknown);
     }
   }
 

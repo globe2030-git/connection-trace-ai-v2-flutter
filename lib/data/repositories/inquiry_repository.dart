@@ -100,15 +100,10 @@ class InquiryRepository {
     await batch.commit();
   }
 
-  /// 관리자가 사용자 문의 응대 시 해당 사용자의 AI 크레딧/충전 및 사용량 정보를 읽어온다.
-  Future<Map<String, dynamic>?> fetchUserAiUsage(String uid) async {
-    if (uid.isEmpty) return null;
-    try {
-      final snap = await _db.collection('users').doc(uid).get();
-      if (!snap.exists) return null;
-      return snap.data()?['aiUsage'] as Map<String, dynamic>?;
-    } catch (e) {
-      return null;
-    }
-  }
+  // 사용자의 AI 사용량 조회는 여기 두지 않는다. `users/{uid}` 문서는
+  // `firestore.rules`에서 본인만 읽을 수 있고(같은 문서에 명함 복호화 키가
+  // 들어 있어 관리자에게 열면 안 된다), 서버에 이미 관리자 전용
+  // `getUserUsage` 함수가 있다 — `AiUsageService.fetchForAdmin`을 쓴다.
+  // 예전에 여기서 Firestore를 직접 읽던 구현은 항상 권한 거부가 났고,
+  // 그 실패를 삼켜 0을 그렸다(backlog 추가 178).
 }
