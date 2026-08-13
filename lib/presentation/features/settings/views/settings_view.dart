@@ -28,6 +28,7 @@ import 'inquiry_view.dart';
 import 'notices_view.dart';
 import 'ocr_stats_view.dart';
 import 'admin_inquiry_view.dart';
+import 'ocr_batch_scan_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -420,6 +421,21 @@ class SettingsView extends StatelessWidget {
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const AdminInquiryManagementView(),
+                        ),
+                      ),
+                    ),
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.grid_view_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '명함 일괄 스캔 (관리자)',
+                      subtitle: '여러 장을 한 번에 스캔해 인식 결과를 표로 확인',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OcrBatchScanView(),
                         ),
                       ),
                     ),

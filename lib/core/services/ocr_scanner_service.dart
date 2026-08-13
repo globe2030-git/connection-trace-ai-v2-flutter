@@ -155,6 +155,17 @@ class OcrScannerService {
     );
   }
 
+  /// 갤러리에서 명함 이미지를 **여러 장** 고른다(관리자 일괄 스캔용).
+  ///
+  /// 인식 규칙을 고칠 때마다 한 장씩 눈으로 확인하면 "전체적으로 좋아졌는지"를
+  /// 알 수 없다 — 실제로 한 장을 고치면 다른 장이 깨지는 일이 반복됐다
+  /// (backlog 추가 180). 여러 장을 한 번에 돌려 표로 보기 위한 진입점이다.
+  ///
+  /// `pickImage`와 같은 이유로 해상도·품질을 줄이지 않는다.
+  static Future<List<XFile>> pickImagesFromGallery() {
+    return _picker.pickMultiImage(imageQuality: 100);
+  }
+
   /// 실제로 캡처/선택된 명함 이미지에서 ML Kit 온디바이스 텍스트 인식으로 텍스트를
   /// 추출하고, 위치 기반 재정렬 + 키워드 휴리스틱으로 이름/전화/이메일/주소 등
   /// 필드를 채운다. 명함 레이아웃은 회사마다 제각각이라(2단 레이아웃, 이름이
@@ -1097,8 +1108,8 @@ class OcrScannerService {
         ? null
         : email.split('@').last;
     final logoHaystacks = [
-      if (companyLine != null) companyLine,
-      if (emailDomain != null) emailDomain,
+      ?companyLine,
+      ?emailDomain,
     ].map((s) => s.replaceAll(RegExp(r'[\s.]'), '')).toList();
 
     // ⚠️ leftover에서 **지우지는 않는다.** 여기서 지우면 회사명 폴백까지 후보를
