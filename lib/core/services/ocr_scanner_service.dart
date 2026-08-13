@@ -511,6 +511,35 @@ class OcrScannerService {
   static bool _isNonNameWord(String name) =>
       _nonNameWords.contains(name.trim());
 
+  /// 연락처 라벨(TEL/FAX/E-mail 등)과 번호·주소를 걷어내면 **글자가 거의 남지
+  /// 않는 줄**인지. 그런 줄은 어느 칸에도 들어갈 값이 아니다.
+  ///
+  /// 왜 필요한가: 전화번호·이메일은 앞 단계에서 뽑아 가는데, 그 줄에 남은
+  /// 라벨 조각(`TEL. FAX.`)은 그대로 leftover로 흘러가 맨 앞이면 이름이나
+  /// 회사명이 된다. 67장 실측에서 실제로 3장이 이렇게 망가졌다(추가 181).
+  ///
+  /// ⚠️ **단어 경계로만 지운다.** 부분 문자열로 지우면 "SK **tel**ecom"의 로고가
+  /// 잘려 나가는 식으로 멀쩡한 회사명을 망가뜨린다 — 추가 178·180에서 반복해
+  /// 겪은 함정이라 여기서는 처음부터 경계를 건다. 한 글자 라벨(T·F·M·E)은
+  /// **뒤에 마침표가 붙은 형태만** 라벨로 본다.
+  static final _contactLabelPattern = RegExp(
+    r'\b(TEL|FAX|PHONE|MOBILE|E-?MAIL|DIRECT|DIR|HP|CP)\b|\b[TFMEHC]\.|'
+    r'전화|팩스|휴대폰|휴대전화|이메일|직통|대표전화',
+    caseSensitive: false,
+  );
+
+  static bool _isContactLabelResidue(String line) {
+    var s = line;
+    // 이메일 → URL → 숫자 순으로 걷어낸다(이메일이 URL 규칙에 먼저 걸리지
+    // 않도록 순서가 중요하다).
+    s = s.replaceAll(RegExp(r'[\w.+-]+@[\w.-]+'), ' ');
+    s = s.replaceAll(RegExp(r'(https?://|www\.)[^\s]+', caseSensitive: false), ' ');
+    s = s.replaceAll(RegExp(r'\d'), ' ');
+    s = s.replaceAll(_contactLabelPattern, ' ');
+    final letters = s.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '');
+    return letters.length < 2;
+  }
+
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
   static bool _hasHangul(String s) =>
@@ -935,6 +964,16 @@ class OcrScannerService {
     final leftover = <String>[];
 
     for (final line in remaining) {
+      // 연락처 라벨만 남은 줄은 **어떤 판정도 하지 않고** 버린다. 번호·이메일은
+      // 이미 앞 단계에서 뽑아 갔고, 남은 "TEL. FAX." 같은 조각은 어느 칸에도
+      // 들어갈 값이 아니다. 67장 실측에서 이름에 "TEL.  FAX. 02-2606-3026",
+      // 회사명에 "Tel  Fax 070-7600-0812", "Fax."가 들어갔다(추가 181·182).
+      //
+      // ⚠️ **회사 키워드 검사보다 먼저** 해야 한다. "www.hanbit.co.kr E-mail"은
+      // 도메인의 `.co.`가 회사 키워드 'Co.'에 걸려 회사명으로 확정돼 버린다
+      // — 뒤에서 걸러 봐야 이미 늦는다(테스트가 잡았다).
+      if (_isContactLabelResidue(line)) continue;
+
       // 직함 키워드가 걸린 줄에 이름도 같이 붙어 있는 경우가 실제 명함
       // 샘플에서 흔하게 확인됐다 — "실장 곽용환"(키워드 먼저), "이정섭
       // 부장"(이름 먼저), "윤 덕 현 컨설팅 및 딜리버리 팀장"(이름이 한
