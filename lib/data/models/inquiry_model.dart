@@ -13,6 +13,7 @@ InquiryStatus _statusFromString(String? raw) => switch (raw) {
 class InquiryModel {
   final String id;
   final String userId;
+  final String userName;
   final String userEmail;
   final String subject;
   final String message;
@@ -22,6 +23,7 @@ class InquiryModel {
   const InquiryModel({
     required this.id,
     required this.userId,
+    this.userName = '',
     required this.userEmail,
     required this.subject,
     required this.message,
@@ -36,6 +38,7 @@ class InquiryModel {
     return InquiryModel(
       id: doc.id,
       userId: (data['userId'] as String?) ?? '',
+      userName: (data['userName'] as String?) ?? (data['displayName'] as String?) ?? '',
       userEmail: (data['userEmail'] as String?) ?? '',
       subject: (data['subject'] as String?) ?? '',
       message: (data['message'] as String?) ?? '',
@@ -46,6 +49,7 @@ class InquiryModel {
 
   Map<String, dynamic> toCreatePayload() => {
     'userId': userId,
+    'userName': userName,
     'userEmail': userEmail,
     'subject': subject,
     'message': message,
