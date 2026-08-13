@@ -13,6 +13,22 @@ class MyProfileModel {
   // 갤러리에서 고른 이미지를 앱 문서 디렉터리에 복사해 둔 로컬 파일 경로를 저장한다.
   final String? avatarPath;
 
+  /// 생일 — **월·일만** `"MM-DD"` 형식으로 보관한다(예: `"10-01"`). 미지정이면 null.
+  ///
+  /// **연도를 안 받는 이유**: 생일 축하·생일 혜택에 필요한 건 월일뿐인데,
+  /// 연도까지 붙으면 생년월일 전체가 되어 이름과 조합했을 때 사실상 개인이
+  /// 특정된다. 월일만으로는 식별력이 훨씬 낮다.
+  ///
+  /// **왜 0을 채우나**: `"10-01"`처럼 두 자리로 맞춰야 문자열 정렬이 날짜
+  /// 순서와 같아진다. 그래야 "이번 달 생일자"를 `>= "10-01" && <= "10-31"`
+  /// 범위로 그대로 뽑을 수 있다. `"10-1"`이 섞이면 정렬이 깨진다.
+  /// 값을 만들 때는 [formatMonthDay]를 쓴다.
+  ///
+  /// 지금은 **받아 두기만 하고 쓰지 않는다** — 생일 축하 알림·생일 무료 충전은
+  /// 나중에 붙인다(사용자 결정 2026-08-13). 그때 기존 가입자의 생일이 없으면
+  /// 다시 물어봐야 하므로 입력만 먼저 열어 둔다.
+  final String? birthMonthDay;
+
   const MyProfileModel({
     required this.name,
     required this.title,
@@ -22,7 +38,27 @@ class MyProfileModel {
     required this.address,
     this.addressDetail,
     this.avatarPath,
+    this.birthMonthDay,
   });
+
+  /// 월·일을 저장 형식(`"MM-DD"`)으로 만든다. 범위를 벗어나면 null.
+  static String? formatMonthDay(int? month, int? day) {
+    if (month == null || day == null) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return '${month.toString().padLeft(2, '0')}-${day.toString().padLeft(2, '0')}';
+  }
+
+  /// 저장된 `"MM-DD"`에서 월을 꺼낸다. 값이 없거나 형식이 깨졌으면 null.
+  int? get birthMonth => _birthPart(0);
+
+  /// 저장된 `"MM-DD"`에서 일을 꺼낸다. 값이 없거나 형식이 깨졌으면 null.
+  int? get birthDay => _birthPart(1);
+
+  int? _birthPart(int index) {
+    final parts = birthMonthDay?.split('-');
+    if (parts == null || parts.length != 2) return null;
+    return int.tryParse(parts[index]);
+  }
 
   // 최초 실행 시 기본값 — 예전엔 "홍길동 대표" 같은 가짜 인물 정보를 채워
   // 뒀는데, 사용자가 프로필을 아직 안 고쳤을 때 QR/vCard로 그 가짜 정보가
@@ -63,6 +99,7 @@ class MyProfileModel {
     'address': address,
     'addressDetail': addressDetail,
     'avatarPath': avatarPath,
+    'birthMonthDay': birthMonthDay,
   };
 
   factory MyProfileModel.fromJson(Map<String, dynamic> json) => MyProfileModel(
@@ -74,6 +111,8 @@ class MyProfileModel {
     address: json['address'] as String? ?? defaultProfile.address,
     addressDetail: json['addressDetail'] as String?,
     avatarPath: json['avatarPath'] as String?,
+    // 이 필드가 없던 시절에 저장된 프로필은 null로 읽힌다 — 마이그레이션 불필요.
+    birthMonthDay: json['birthMonthDay'] as String?,
   );
 
   MyProfileModel copyWith({
@@ -89,6 +128,9 @@ class MyProfileModel {
     // 플래그를 둔다.
     String? avatarPath,
     bool clearAvatar = false,
+    // 생일도 "지정 안 함"으로 되돌릴 수 있어야 해서 사진과 같은 방식을 쓴다.
+    String? birthMonthDay,
+    bool clearBirthday = false,
   }) {
     return MyProfileModel(
       name: name ?? this.name,
@@ -99,6 +141,8 @@ class MyProfileModel {
       address: address ?? this.address,
       addressDetail: addressDetail ?? this.addressDetail,
       avatarPath: clearAvatar ? null : (avatarPath ?? this.avatarPath),
+      birthMonthDay:
+          clearBirthday ? null : (birthMonthDay ?? this.birthMonthDay),
     );
   }
 }
