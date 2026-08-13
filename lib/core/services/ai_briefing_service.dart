@@ -62,7 +62,10 @@ class AiQuotaExceededException extends AiBriefingException {
 /// 한도는 아직 구독 등급 구분 없이 전 사용자 동일하다(#58, 별도 작업 예정).
 class AiBriefingService {
   static const _timeout = Duration(seconds: 30);
-  static const _region = 'asia-northeast3';
+
+  /// 서버 함수가 배포된 리전. 다른 서비스(관리자 사용량 조회 등)도 같은 리전을
+  /// 불러야 하므로 공개한다 — 리전이 어긋나면 함수를 못 찾아 실패한다.
+  static const String region = 'asia-northeast3';
 
   /// 하루/월 사용 한도.
   ///
@@ -98,7 +101,7 @@ class AiBriefingService {
     }
 
     final callable = FirebaseFunctions.instanceFor(
-      region: _region,
+      region: region,
     ).httpsCallable('generateBriefing');
 
     try {
