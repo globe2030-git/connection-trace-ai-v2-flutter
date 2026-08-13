@@ -687,6 +687,35 @@ void main() {
       expect(r.name, isNot('HANBIT'));
     });
 
+    test('회사명이 한글이어도 이메일 도메인으로 로고를 걸러낸다', () {
+      // 실기기 재스캔에서 확인: 회사명이 "크림하우스(주)"로 정확히 잡히자
+      // 로고 영문과 겹치는 부분이 없어져 회사명 기준 필터가 무력해졌다.
+      // 남은 근거가 이메일 도메인이다(globe@creamhouse.net ← CREAMHOUSE).
+      final r = parse([
+        'HANBIT',
+        'CT 사업본부 | 상무',
+        'M.P 010-0000-0000',
+        'Email globe@hanbit.net',
+        '한빛하우스(주)',
+      ]);
+      expect(r.name, isNot('HANBIT'));
+      expect(r.company, '한빛하우스(주)');
+    });
+
+    test('접미사 없는 회사명은 도메인과 겹쳐도 회사명 자리를 지킨다 — 회귀 확인', () {
+      // 로고 판정은 이름 후보에서만 뺀다. leftover에서 지워 버리면 접미사 없는
+      // 회사명(자기 도메인에 들어 있는 경우)이 회사명 자리를 잃는다.
+      final r = parse([
+        'Sovargen',
+        '이정현',
+        '경영기획실',
+        'M 010-0000-0000',
+        'E test@sovargen.com',
+      ]);
+      expect(r.company, 'Sovargen');
+      expect(r.name, '이정현');
+    });
+
     test('한글 이름은 로고 판정에 걸리지 않는다 — 회귀 확인', () {
       final r = parse([
         'HANBIT',
@@ -705,6 +734,32 @@ void main() {
       ]);
       expect(r.name, 'John Smith');
       expect(r.company, 'NELSON SPORTS, INC.');
+    });
+
+    test('슬로건 조각은 이름이 되지 않는다 — 조사로 끝난다', () {
+      // 명함 위쪽 홍보 문구가 OCR에서 여러 줄로 잘리면 그 조각이 한글 2~4자라
+      // 이름 규칙에 걸린다. 실기기 재스캔에서 "고객에게"가 이름이 됐다.
+      final r = parse([
+        '인터넷, 모바일 서비스를 통해',
+        '고객에게',
+        '성공과 만족을 제공하는 최고의 ICT 전문 기업',
+        'HANBIT',
+        'CT 사업본부 | 상무',
+        '크림하우스(주)',
+      ]);
+      expect(r.name, isNot('고객에게'));
+      expect(r.name, isNot('통해'));
+      expect(r.company, '크림하우스(주)');
+    });
+
+    test('조사로 끝나지 않는 한글 이름은 그대로 둔다 — 회귀 확인', () {
+      final r = parse([
+        '(주)한빛정보기술',
+        '남궁현',
+        '상무',
+        '010-0000-0000',
+      ]);
+      expect(r.name, '남궁현');
     });
 
     test('라벨 잔여물("M.")은 이름이 되지 않는다', () {

@@ -436,6 +436,36 @@ class OcrScannerService {
   static final _singleHangulRegExp = RegExp(r'^[가-힣]$');
   static final _whitespaceSplitRegExp = RegExp(r'[\s　]+');
 
+  /// 사람 이름이 될 수 없는 끝맺음(조사·연결어미). 홍보 문구가 잘린 조각을
+  /// 이름에서 걸러내는 데 쓴다.
+  ///
+  /// ⚠️ 실제 이름으로 쓰일 수 있는 말은 넣지 않는다 — 예를 들어 '이나'는
+  /// "김이나"처럼 사람 이름에 실제로 쓰여서 뺐다. 애매하면 넣지 않는 쪽이
+  /// 안전하다. 잘못 넣으면 멀쩡한 이름이 사라진다.
+  static const _nameParticleEndings = [
+    '에게',
+    '에서',
+    '으로',
+    '에는',
+    '까지',
+    '부터',
+    '하는',
+    '되는',
+    '있는',
+    '통해',
+    '통한',
+    '위해',
+    '위한',
+    '대해',
+    '관한',
+  ];
+
+  static bool _endsWithParticle(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return false;
+    return _nameParticleEndings.any(trimmed.endsWith);
+  }
+
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
   static bool _hasHangul(String s) =>
@@ -1024,23 +1054,38 @@ class OcrScannerService {
     // 남는 후보가 없어져 이름이 빈 값이 되는 것도 **의도한 결과**다. 로고를
     // 사람 이름으로 저장하는 것보다, 비워 두고 사용자가 직접 채우게 하는 쪽이
     // 낫다(스캔 화면이 "이름을 찾지 못했다"고 안내한다).
-    final companyForLogoCheck = companyLine;
-    if (companyForLogoCheck != null) {
-      leftover.removeWhere(
-        (candidate) =>
-            candidate.length >= 3 &&
-            !_hasHangul(candidate) &&
-            _containsCi(
-              companyForLogoCheck.replaceAll(RegExp(r'[\s.]'), ''),
-              candidate.replaceAll(RegExp(r'[\s.]'), ''),
-            ),
-      );
+    //
+    // 비교 대상은 두 곳이다. 회사명 줄만 보면 회사명이 한글로 정확히 잡힌
+    // 순간("크림하우스(주)") 로고 영문과 겹치는 부분이 없어져 필터가 무력해진다
+    // — 실기기 재스캔에서 실제로 그렇게 됐다. **이메일 도메인**이 남은 근거다
+    // (`globe@creamhouse.net` ← `CREAMHOUSE`).
+    final emailDomain = email == null || !email.contains('@')
+        ? null
+        : email.split('@').last;
+    final logoHaystacks = [
+      if (companyLine != null) companyLine,
+      if (emailDomain != null) emailDomain,
+    ].map((s) => s.replaceAll(RegExp(r'[\s.]'), '')).toList();
+
+    // ⚠️ leftover에서 **지우지는 않는다.** 여기서 지우면 회사명 폴백까지 후보를
+    // 잃는다 — 접미사 없는 회사명(Sovargen)은 자기 도메인(sovargen.com)에
+    // 들어 있어서 로고 판정에 걸리고, 지워 버리면 회사명이 빈 값이 된다
+    // (테스트 5건이 이걸로 깨졌다). 이름을 고를 때만 뺀다.
+    bool isLogoLike(String candidate) {
+      if (logoHaystacks.isEmpty || _hasHangul(candidate)) return false;
+      final squashed = candidate.replaceAll(RegExp(r'[\s.]'), '');
+      // 4자 미만은 비교하지 않는다 — "Han"이 "hanbit.co.kr"에 걸리는 식으로
+      // 짧은 영문 이름이 도메인에 우연히 들어가는 경우를 피한다.
+      if (squashed.length < 4) return false;
+      return logoHaystacks.any((h) => _containsCi(h, squashed));
     }
+
+    final nameCandidates = leftover.where((l) => !isLogoLike(l)).toList();
 
     String name;
     if (nameLine != null) {
       name = nameLine;
-    } else if (leftover.isEmpty) {
+    } else if (nameCandidates.isEmpty) {
       name = '';
       nameSource = OcrNameSource.none;
     } else {
@@ -1049,7 +1094,7 @@ class OcrScannerService {
       // 인쇄되므로 글자 높이를 아는 경우엔 "가장 큰 줄"을 이름으로 고른다.
       // 높이 정보가 전혀 없으면(테스트 입력 등) 기존과 똑같이 맨 앞 줄을 쓴다 —
       // 그래서 이 개선은 확신 경로를 건드리지 않고 약한 폴백만 바꾼다.
-      final withHeight = leftover
+      final withHeight = nameCandidates
           .where((l) => (heightByText[l] ?? 0) > 0)
           .toList();
       if (withHeight.length >= 2) {
@@ -1061,19 +1106,45 @@ class OcrScannerService {
         // 큰 정도는 잡음일 수 있어 10% 여유를 둔다). 그렇지 않으면 기존
         // 동작(맨 앞 줄)을 유지한다.
         final biggestH = heightByText[biggest] ?? 0;
-        final firstH = heightByText[leftover.first] ?? 0;
-        if (biggest != leftover.first && biggestH >= firstH * 1.1) {
+        final firstH = heightByText[nameCandidates.first] ?? 0;
+        if (biggest != nameCandidates.first && biggestH >= firstH * 1.1) {
           name = biggest;
           leftover.remove(biggest);
           nameSource = OcrNameSource.fontSizePreferred;
         } else {
-          name = leftover.removeAt(0);
+          name = nameCandidates.first;
+          leftover.remove(name);
           nameSource = OcrNameSource.leftoverFallback;
         }
       } else {
-        name = leftover.removeAt(0);
+        name = nameCandidates.first;
+        leftover.remove(name);
         nameSource = OcrNameSource.leftoverFallback;
       }
+    }
+
+    // 슬로건 문장 조각이 이름이 되는 것을 막는다.
+    //
+    // 명함 위쪽 홍보 문구("인터넷, 모바일 서비스를 **통해** **고객에게** 성공과
+    // 만족을 제공하는…")는 OCR에서 여러 줄로 잘리는데, 그 조각이 한글 2~4자라
+    // 이름 규칙에 그대로 걸린다. 실기기 재스캔에서 이름 칸에 "고객에게"가
+    // 들어갔다(2026-08-13, backlog 추가 180).
+    //
+    // 사람 이름은 **조사나 어미로 끝나지 않는다** — 이 성질만으로 충분히 걸러진다.
+    // 걸리면 비워 둔다. 잘못된 이름을 넣는 것보다 낫고, 스캔 화면이 "이름을 찾지
+    // 못했다"고 안내해 사용자가 직접 채운다.
+    if (_endsWithParticle(name)) {
+      name = '';
+      nameSource = OcrNameSource.none;
+    }
+
+    // 로고 판정은 **확정 경로(nameLine)에도** 적용한다. 후보 목록에서만 걸렀더니
+    // 로고가 약한 폴백이 아니라 앞쪽 규칙으로 이름이 되는 경우에 그대로 통과했다
+    // — 실기기 재스캔에서 "CREAMHOUSE"가 이 경로로 들어왔다(2026-08-13).
+    // 한글 이름은 `isLogoLike`가 처음부터 건드리지 않으므로 영향이 없다.
+    if (isLogoLike(name)) {
+      name = '';
+      nameSource = OcrNameSource.none;
     }
 
     final companyFromKeyword = companyLine;
