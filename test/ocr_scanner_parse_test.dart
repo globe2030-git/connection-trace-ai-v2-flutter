@@ -882,6 +882,29 @@ void main() {
       expect(r.name, isNot(contains('Dept')));
     });
 
+    test('".co.kr" 도메인이 회사 키워드 "Co."에 걸리지 않는다', () {
+      // 실측: "서비스 : www.elancer.co.kr 회사: …"가 회사명으로 확정됐다.
+      // 도메인의 .co.가 키워드 'Co.'에 걸린 것 — URL을 걷어낸 뒤 판정한다.
+      final r = parse([
+        '서비스 : www.hanbit.co.kr',
+        '한빛하우스(주)',
+        '남궁현',
+        '상무',
+      ]);
+      expect(r.company, '한빛하우스(주)');
+    });
+
+    test('회사명과 웹사이트가 한 줄에 있으면 회사명으로 인정한다 — 회귀 확인', () {
+      // URL을 걷어내도 'INC.'가 남으므로 회사명 판정은 유지돼야 한다.
+      final r = parse([
+        'NELSON SPORTS, INC. www.nelson.co.kr',
+        '김형준',
+        '010-0000-0000',
+      ]);
+      expect(r.company, contains('NELSON SPORTS'));
+      expect(r.name, '김형준');
+    });
+
     test('웹사이트 주소는 회사명이 되지 않는다', () {
       final r = parse(['www.hanbit.co.kr', '남궁현', '상무']);
       expect(r.company, isNot(contains('www')));

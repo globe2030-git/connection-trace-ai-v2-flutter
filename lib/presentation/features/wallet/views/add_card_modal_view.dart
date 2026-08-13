@@ -139,6 +139,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 띄우지 않는다 — 저장할 때마다 변환창이 계속 다시 뜨던 문제.
   String? _confirmedRoadNameAddress;
 
+  /// 좌표 조회가 실패했을 때 다시 시도할 **같은 위치의 다른 표기**(도로명↔지번).
+  /// 우편번호 검색에서 받아 둔다 — OS 지오코더가 한쪽 표기로는 좌표를 못 찾는
+  /// 경우가 있고 방향은 둘 다 가능하다(2026-08-14 실사용 확인).
+  String? _addressGeocodeFallback;
+
   // X 버튼으로 닫으려 할 때 "정말 취소할지" 물을지 판단하는 기준값 — 화면을
   // 열었을 때(수정이면 기존 명함 값, 신규면 빈 값) 스냅샷을 떠 두고, 닫기
   // 직전 각 필드와 비교한다. 신규 등록 중 아무것도 안 적고 바로 닫으면
@@ -672,6 +677,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 않는다 — 그 제안은 오히려 구 단위가 빠진 짧은 주소를 만든다
       // (backlog 추가 83, 사용자 제보).
       _confirmedRoadNameAddress = picked;
+      _addressGeocodeFallback = result.geocodeFallback;
 
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
@@ -980,6 +986,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     setState(() => _isSavingCard = true);
     final addressResult = await AddressGeocodingService.validateAndConvert(
       rawAddress,
+      fallbackAddress: _addressGeocodeFallback,
     );
     if (!mounted) return;
     setState(() => _isSavingCard = false);

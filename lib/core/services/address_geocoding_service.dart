@@ -39,9 +39,41 @@ class AddressGeocodingService {
   /// 웹처럼 geocoding 플랫폼 구현체가 없거나, 주소를 못 찾거나, 기기에 네트워크가
   /// 없는 등 실패 상황에서는 예외를 그대로 던지지 않고 실패 결과를 반환해서 호출
   /// 쪽이 "위치를 찾을 수 없는 주소" 안내를 보여줄 수 있게 한다.
+  /// [fallbackAddress]는 1차 조회가 실패했을 때 다시 시도할 **같은 위치의 다른
+  /// 표기**다(도로명으로 안 되면 지번으로).
+  ///
+  /// 왜 필요한가: OS 지오코더가 도로명 주소로는 좌표를 못 찾는데 지번으로는
+  /// 찾는 경우가 실사용에서 확인됐다(2026-08-14). 좌표가 없으면 그 인맥은
+  /// 주변 지도에 아예 안 뜨는데, 우편번호 서비스는 두 표기를 함께 주므로
+  /// 한 번 더 물어보면 살릴 수 있다.
+  ///
+  /// 저장되는 주소 문자열은 **1차 주소 그대로**다 — 화면에 보이는 주소가
+  /// 갑자기 지번으로 바뀌면 사용자는 자기가 고른 것과 다르다고 느낀다.
+  /// 여기서 지번은 좌표를 얻는 데만 쓴다.
   static Future<AddressValidationResult> validateAndConvert(
-    String address,
-  ) async {
+    String address, {
+    String? fallbackAddress,
+  }) async {
+    final first = await _lookup(address);
+    if (first.isValid) return first;
+
+    final fallback = (fallbackAddress ?? '').trim();
+    if (fallback.isEmpty || fallback == address.trim()) return first;
+
+    final second = await _lookup(fallback);
+    if (!second.isValid) return first;
+
+    // 좌표는 지번으로 얻었지만 주소는 1차(도로명) 것을 유지한다.
+    return AddressValidationResult(
+      isValid: true,
+      originalAddress: address.trim(),
+      roadNameAddress: second.roadNameAddress,
+      geoPosition: second.geoPosition,
+      message: second.message,
+    );
+  }
+
+  static Future<AddressValidationResult> _lookup(String address) async {
     final trimmed = address.trim();
     if (trimmed.isEmpty) {
       return const AddressValidationResult(
