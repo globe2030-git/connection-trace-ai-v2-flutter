@@ -511,6 +511,43 @@ class OcrScannerService {
   static bool _isNonNameWord(String name) =>
       _nonNameWords.contains(name.trim());
 
+  /// 이 줄이 **사람 이름 모양**인지. 약한 폴백(규칙으로 확신하지 못한 구간)에서
+  /// 후보를 거르는 데만 쓴다 — 확신 경로로 잡힌 이름은 이 검사를 거치지 않는다.
+  ///
+  /// 통과 기준은 "이름이라면 이럴 리 없다"는 것들만 본다. 이름을 알아맞히려는
+  /// 게 아니라 **명백히 이름이 아닌 것을 떨어뜨리는** 용도다.
+  ///
+  /// 실측에서 이름 칸에 들어갔던 것들(추가 181·182): `duke@etribe.co.kr`,
+  /// `704, SK V1 TOWER, 25, Yeonmujang 5ga-gil`, `I'm a Voyager of value`,
+  /// `설계, 제작 및 납품 E-mail.`, `Head of R&D Dept. Ko Byoung Ho`.
+  static bool _looksLikePersonName(String line) {
+    final s = line.trim();
+    if (s.isEmpty || s.length > 25) return false;
+    // 이메일·URL은 이름이 아니다.
+    if (s.contains('@') ||
+        RegExp(r'(https?://|www\.)', caseSensitive: false).hasMatch(s)) {
+      return false;
+    }
+    // 이름에는 쉼표가 없다. 주소·서술형 문장을 떨어뜨린다.
+    if (s.contains(',')) return false;
+    // 숫자가 둘 이상이면 이름이 아니다(주소·번호 조각).
+    if (RegExp(r'\d').allMatches(s).length >= 2) return false;
+    // 연락처 라벨이 남아 있으면 이름이 아니다.
+    if (_contactLabelPattern.hasMatch(s)) return false;
+
+    if (_hasHangul(s)) {
+      // 한글 이름은 음절 사이를 띄우는 경우까지 감안해 공백을 뺀 길이로 본다.
+      // 복성(황보·남궁)과 5자 이름까지 허용한다.
+      final compact = s.replaceAll(RegExp(r'\s'), '');
+      return compact.length >= 2 && compact.length <= 5;
+    }
+    // 영문 이름은 단어 2~4개 정도다. "I'm a Voyager of value"(6단어)나
+    // "Head of R&D Dept. Ko Byoung Ho"(7단어)는 여기서 떨어진다.
+    final words = s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty || words.length > 4) return false;
+    return words.every((w) => RegExp(r"^[A-Za-z][A-Za-z.'-]*$").hasMatch(w));
+  }
+
   /// 연락처 라벨(TEL/FAX/E-mail 등)과 번호·주소를 걷어내면 **글자가 거의 남지
   /// 않는 줄**인지. 그런 줄은 어느 칸에도 들어갈 값이 아니다.
   ///
@@ -656,15 +693,45 @@ class OcrScannerService {
   /// (안 뽑는 것보단 나으므로) 그래도 맨 앞 줄을 쓴다.
   static String? _pickCompanyFromLeftover(List<String> leftover) {
     if (leftover.isEmpty) return null;
-    final bestIndex = leftover.indexWhere(
-      (l) => !_looksLikeDeptOrTagline(l) && !_looksLikeLogoNoise(l),
+    // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄.
+    var idx = leftover.indexWhere(
+      (l) =>
+          !_looksLikeDeptOrTagline(l) &&
+          !_looksLikeLogoNoise(l) &&
+          _looksLikeCompanyName(l),
     );
-    if (bestIndex != -1) return leftover.removeAt(bestIndex);
-    final betterIndex = leftover.indexWhere(
-      (l) => !_looksLikeDeptOrTagline(l),
-    );
-    final idx = betterIndex != -1 ? betterIndex : 0;
+    // 2순위: 로고 잡음 조건만 완화한다(짧은 영문 브랜드명이 여기 걸린다).
+    if (idx == -1) {
+      idx = leftover.indexWhere(
+        (l) => !_looksLikeDeptOrTagline(l) && _looksLikeCompanyName(l),
+      );
+    }
+    // 못 찾으면 **비운다**(사용자 결정 2026-08-14). 예전에는 조건을 통과하는
+    // 줄이 없으면 맨 앞 줄을 그냥 썼는데, 그래서 쓰레기를 하나 걸러낼 때마다
+    // 다음 쓰레기가 회사명 자리를 채웠다(추가 182).
+    if (idx == -1) return null;
     return leftover.removeAt(idx);
+  }
+
+  /// 이 줄이 **회사명 모양**인지. 약한 폴백에서 후보를 거르는 데만 쓴다 —
+  /// 회사 키워드로 확정된 줄은 이 검사를 거치지 않는다.
+  ///
+  /// 실측에서 회사명 칸에 들어갔던 것들(추가 181·182): `www.raumsoft.co.kr`,
+  /// `Tel  Fax 070-7600-0812`, `.E-mail: … Fäx: Mobile : Address : 경기도 시…`,
+  /// `대구 공장| 대구광역시 달서구 성서공단남로 37 …`.
+  static bool _looksLikeCompanyName(String line) {
+    final s = line.trim();
+    if (s.isEmpty || s.length > 40) return false;
+    // 이메일·URL은 회사명이 아니다(웹사이트 필드가 생기면 그쪽으로 간다).
+    if (s.contains('@') ||
+        RegExp(r'(https?://|www\.)', caseSensitive: false).hasMatch(s)) {
+      return false;
+    }
+    // 숫자가 글자보다 많으면 주소·번호 줄이다.
+    final digits = RegExp(r'\d').allMatches(s).length;
+    final letters = s.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '').length;
+    if (letters < 2 || digits > letters) return false;
+    return true;
   }
 
   /// `_parse`는 파일 내부 전용이라 다른 파일(테스트 포함)에서 직접 못
@@ -1164,7 +1231,19 @@ class OcrScannerService {
       return logoHaystacks.any((h) => _containsCi(h, squashed));
     }
 
-    final nameCandidates = leftover.where((l) => !isLogoLike(l)).toList();
+    // 약한 폴백에는 **이름 모양인 후보만** 넣는다(사용자 결정 2026-08-14).
+    //
+    // 예전에는 규칙으로 확신하지 못하면 남은 줄 맨 앞을 그냥 이름으로 썼다.
+    // 그래서 쓰레기를 하나 걸러내면 **그 자리를 다음 쓰레기가 채웠다** —
+    // 67장 실측에서 라벨 찌꺼기를 없앴더니 슬로건("I'm a Voyager of value",
+    // "설계, 제작 및 납품 E-mail.")이 대신 들어왔다(추가 182).
+    //
+    // 명함 앱에서 이름이 틀린 채 저장되면 나중에 그 사람을 못 찾고, 사용자는
+    // 틀린 줄도 모른다. 그래서 **확신하지 못하면 비운다** — 스캔 화면이
+    // "이름을 찾지 못했다"고 안내하고 사용자가 직접 채운다.
+    final nameCandidates = leftover
+        .where((l) => !isLogoLike(l) && _looksLikePersonName(l))
+        .toList();
 
     String name;
     if (nameLine != null) {
