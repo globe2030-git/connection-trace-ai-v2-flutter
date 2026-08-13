@@ -337,15 +337,20 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
 
   @override
   Widget build(BuildContext context) {
-    final displayName = widget.inquiry.userName.isNotEmpty
-        ? widget.inquiry.userName
-        : widget.inquiry.userEmail;
+    final inquiry = widget.inquiry;
+    final answered = inquiry.status == InquiryStatus.answered;
+    final displayName = inquiry.userName.isNotEmpty
+        ? inquiry.userName
+        : (inquiry.userEmail.isNotEmpty ? inquiry.userEmail : '익명 사용자');
+    final formattedDate =
+        '${inquiry.createdAt.year}-${inquiry.createdAt.month.toString().padLeft(2, '0')}-${inquiry.createdAt.day.toString().padLeft(2, '0')} ${inquiry.createdAt.hour.toString().padLeft(2, '0')}:${inquiry.createdAt.minute.toString().padLeft(2, '0')}';
 
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
         padding: const EdgeInsets.all(20),
         decoration: const BoxDecoration(
           color: AppColors.cardSurface,
@@ -353,43 +358,270 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
         ),
         child: SafeArea(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '[$displayName] 문의 답변 작성',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
+              // 헤더: 타이틀 & 닫기 버튼
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '고객 문의 응대 및 상세 정보',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: AppColors.textMuted),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
-              Text(
-                '제목: ${widget.inquiry.subject}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textMuted,
+
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 1. 고객 프로필 정보 카드
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgBase,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.textMuted.withValues(alpha: 0.15),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const CircleAvatar(
+                                  radius: 18,
+                                  backgroundColor: AppColors.accent,
+                                  child: Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        displayName,
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      if (inquiry.userEmail.isNotEmpty)
+                                        Text(
+                                          inquiry.userEmail,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: AppColors.textMuted,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: (answered
+                                            ? AppColors.accentText
+                                            : AppColors.textMuted)
+                                        .withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    answered ? '답변완료' : '답변대기',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: answered
+                                          ? AppColors.accentText
+                                          : AppColors.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const Divider(height: 24, color: Colors.white12),
+                            _infoRow('접수 시각', formattedDate),
+                            const SizedBox(height: 4),
+                            _infoRow(
+                              '사용자 UID',
+                              inquiry.userId.isNotEmpty
+                                  ? inquiry.userId
+                                  : '비회원/익명',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // 2. 문의 본문 내용 카드
+                      const Text(
+                        '문의 내용',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgBase.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              inquiry.subject,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              inquiry.message,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                height: 1.4,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // 3. 대화 / 답변 이력 타임라인 Stream
+                      const Text(
+                        '답변 & 대화 이력',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      StreamBuilder<List<InquiryReplyModel>>(
+                        stream: widget.repo.watchReplies(inquiry.id),
+                        builder: (context, snapshot) {
+                          final replies = snapshot.data ?? const [];
+                          if (replies.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8),
+                              child: Text(
+                                '등록된 답변 이력이 없습니다. 아래에서 답변을 작성해 주세요.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textMuted,
+                                ),
+                              ),
+                            );
+                          }
+                          return ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: replies.length,
+                            separatorBuilder: (context, index) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, index) {
+                              final r = replies[index];
+                              final isAdmin = r.from == 'admin';
+                              return Align(
+                                alignment: isAdmin
+                                    ? Alignment.centerRight
+                                    : Alignment.centerLeft,
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width *
+                                            0.75,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isAdmin
+                                        ? AppColors.accent
+                                            .withValues(alpha: 0.2)
+                                        : AppColors.cardSurface,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isAdmin
+                                          ? AppColors.accent
+                                          : AppColors.textMuted
+                                              .withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        isAdmin ? '관리자 답변' : '고객 추가 문의',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: isAdmin
+                                              ? AppColors.accentText
+                                              : AppColors.textMuted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        r.message,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                '내용: ${widget.inquiry.message}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              const SizedBox(height: 16),
+
+              // 4. 관리자 답변 작성 및 응대 전송 하단 입력 폼
+              const Divider(height: 1, color: Colors.white12),
+              const SizedBox(height: 12),
               TextField(
                 controller: _replyController,
-                maxLines: 4,
+                maxLines: 3,
                 style: const TextStyle(color: AppColors.textPrimary),
                 decoration: InputDecoration(
-                  hintText: '답변할 내용을 입력하세요...',
+                  hintText: '고객에게 전달할 응대 답변을 작성하세요...',
                   hintStyle: TextStyle(
                     color: AppColors.textMuted.withValues(alpha: 0.6),
+                    fontSize: 13,
                   ),
                   filled: true,
                   fillColor: AppColors.bgBase,
@@ -399,7 +631,7 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -421,7 +653,7 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                           ),
                         )
                       : const Text(
-                          '답변 전송하기',
+                          '답변 등록 및 응대 완료',
                           style: TextStyle(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -434,6 +666,33 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
