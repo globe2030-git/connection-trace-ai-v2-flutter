@@ -801,13 +801,26 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ],
         ),
         const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 180),
-            color: AppColors.bgBase,
-            child: preview,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.borderSubtle.withValues(alpha: 0.8)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 180),
+              color: AppColors.bgBase,
+              child: preview,
+            ),
           ),
         ),
         // 앞/뒷면처럼 여러 장을 스캔한 경우 — 어느 면을 대표로 저장할지
