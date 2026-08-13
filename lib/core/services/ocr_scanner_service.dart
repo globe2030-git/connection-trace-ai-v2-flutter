@@ -1015,6 +1015,11 @@ class OcrScannerService {
 
     return OcrScanResult(
       rawText: rawText.isEmpty ? '[텍스트를 인식하지 못했습니다]' : rawText,
+      // 터치 퀵 매핑 UI(명함 등록 화면)가 이 목록을 칩으로 깔고, 사용자가
+      // 잘못 배정된 값을 직접 눌러 다른 칸으로 옮긴다. 여기서 안 채우면
+      // 기본값 const []가 그대로 나가 UI가 **조용히 안 뜬다**(2026-08-13
+      // 실기기 확인, backlog 추가 178).
+      rawLines: lines,
       name: name,
       company: company,
       title: title,
