@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -41,9 +45,93 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
   int _done = 0;
   int _total = 0;
 
+  /// 앱 전용 외부 저장소의 `card_samples/` 폴더를 통째로 읽는다.
+  ///
+  /// **왜 갤러리 선택기를 안 쓰나**: 시스템 선택기는 촬영일(EXIF) 순으로 정렬해서
+  /// 예전 날짜의 명함 수십 장이 목록 아래에 묻힌다. 67장을 하나씩 눌러 고르는
+  /// 것은 현실적이지 않았다(2026-08-13 실제로 시도하다 포기).
+  ///
+  /// 앱 전용 디렉터리(`Android/data/<패키지>/files`)는 **저장소 권한 없이**
+  /// 읽을 수 있어서 별도 권한 요청도, 새 패키지 의존성도 필요 없다.
+  /// 넣는 방법은 `docs/planning/backlog.md` 추가 181 참고(adb push).
+  /// 명함 이미지가 들어 있는 폴더를 찾아 통째로 읽는다.
+  ///
+  /// **왜 갤러리 선택기를 안 쓰나**: 시스템 선택기는 촬영일(EXIF) 순으로 정렬해서
+  /// 예전 날짜의 명함 수십 장이 목록 아래에 묻힌다. 67장을 하나씩 눌러 고르는
+  /// 것은 현실적이지 않았다(2026-08-13 실제로 시도하다 포기).
+  ///
+  /// **두 곳을 순서대로 본다.**
+  /// 1. 앱 내부 문서 폴더 — `adb shell run-as`로 넣는다. 앱 소유라 항상 읽힌다.
+  /// 2. 앱 전용 외부 저장소 — `adb push`로 넣기는 쉽지만, 그렇게 만든 폴더는
+  ///    **shell 소유라 앱이 읽지 못하고** `PathAccessException(errno 13)`이 난다
+  ///    (2026-08-13 실기기에서 확인). 기기·안드로이드 버전에 따라 되는 경우도
+  ///    있어 후보로는 남겨 둔다.
+  ///
+  /// 넣는 방법은 `docs/planning/backlog.md` 추가 181 참고.
+  Future<void> _scanFromAppFolder() async {
+    final candidates = <Directory>[];
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      candidates.add(Directory('${docs.path}/card_samples'));
+    } catch (_) {
+      // 경로를 못 얻으면 다음 후보로 넘어간다.
+    }
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) candidates.add(Directory('${ext.path}/card_samples'));
+    } catch (_) {
+      // 안드로이드가 아니거나 외부 저장소가 없는 경우.
+    }
+
+    const exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'};
+    final tried = <String>[];
+    for (final dir in candidates) {
+      tried.add(dir.path);
+      List<FileSystemEntity> entries;
+      try {
+        if (!dir.existsSync()) continue;
+        entries = dir.listSync();
+      } catch (e) {
+        // 권한 거부 등은 예외로 던져 화면을 멈추게 하지 말고 다음 후보로 넘어간다.
+        // 예전에는 이 예외가 잡히지 않아 버튼을 눌러도 아무 일도 안 일어나는
+        // 것처럼 보였다(로그에만 남았다).
+        debugPrint('일괄 스캔 폴더 읽기 실패: ${e.runtimeType}');
+        continue;
+      }
+      final images =
+          entries
+              .whereType<File>()
+              .where((f) => exts.any((e) => f.path.toLowerCase().endsWith(e)))
+              .toList()
+            ..sort((a, b) => a.path.compareTo(b.path));
+      if (images.isNotEmpty) {
+        await _runScan(images.map((f) => XFile(f.path)).toList());
+        return;
+      }
+    }
+
+    _toast(
+      tried.isEmpty
+          ? '앱 폴더를 찾지 못했습니다(안드로이드에서만 동작).'
+          : '읽을 수 있는 이미지가 없습니다. 확인한 경로: ${tried.join(' , ')}',
+    );
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _pickAndScan() async {
     final files = await OcrScannerService.pickImagesFromGallery();
     if (files.isEmpty || !mounted) return;
+    await _runScan(files);
+  }
+
+  Future<void> _runScan(List<XFile> files) async {
+    if (!mounted) return;
 
     setState(() {
       _rows.clear();
@@ -75,7 +163,36 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
 
   /// 표를 탭 구분 텍스트로 만들어 클립보드에 넣는다. 맥으로 옮겨 정답 데이터를
   /// 만들 때 쓴다 — 화면에서 눈으로 옮겨 적는 것보다 정확하고 빠르다.
+  /// 표를 파일로도 남긴다. 67줄짜리 표를 휴대폰 클립보드로 옮기는 것은
+  /// 현실적이지 않아서(붙여넣을 곳이 마땅치 않다), 이미지와 같은 폴더에
+  /// `scan_result.tsv`로 써 둔다. 맥에서는
+  /// `adb shell run-as <패키지> cat app_flutter/card_samples/scan_result.tsv`로
+  /// 그대로 읽을 수 있다.
+  Future<void> _saveAsTsvFile() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/card_samples');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final file = File('${dir.path}/scan_result.tsv');
+      file.writeAsStringSync(_buildTsv());
+      _toast('저장했습니다: ${file.path}');
+    } catch (e) {
+      _toast('파일로 저장하지 못했습니다(${e.runtimeType}).');
+    }
+  }
+
   Future<void> _copyAsTsv() async {
+    await Clipboard.setData(ClipboardData(text: _buildTsv()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${_rows.length}건을 클립보드에 복사했습니다.'),
+        backgroundColor: AppColors.accent,
+      ),
+    );
+  }
+
+  String _buildTsv() {
     final buffer = StringBuffer()
       ..writeln(
         ['파일명', '이름', '회사', '직함', '휴대폰', '사무실', '이메일', '우편번호', '주소', '상세주소']
@@ -98,14 +215,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         ].map((s) => s.replaceAll('\t', ' ').replaceAll('\n', ' ')).join('\t'),
       );
     }
-    await Clipboard.setData(ClipboardData(text: buffer.toString()));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${_rows.length}건을 클립보드에 복사했습니다.'),
-        backgroundColor: AppColors.accent,
-      ),
-    );
+    return buffer.toString();
   }
 
   /// 채워진 항목 수 — "인식이 얼마나 됐나"의 거친 지표. 맞았는지는 사람이
@@ -130,6 +240,12 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
         actions: [
+          if (_rows.isNotEmpty && !_running)
+            IconButton(
+              icon: const Icon(Icons.save_alt_outlined),
+              tooltip: '표를 파일(scan_result.tsv)로 저장',
+              onPressed: _saveAsTsvFile,
+            ),
           if (_rows.isNotEmpty && !_running)
             IconButton(
               icon: const Icon(Icons.copy_all_outlined),
@@ -182,6 +298,28 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: OutlinedButton.icon(
+                onPressed: _running ? null : _scanFromAppFolder,
+                icon: const Icon(Icons.folder_open_outlined, size: 18),
+                label: const Text('앱 폴더(card_samples) 전체 스캔'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.accentText,
+                  side: BorderSide(
+                    color: AppColors.accent.withValues(alpha: 0.4),
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
