@@ -575,4 +575,70 @@ void main() {
       expect(r.parseShape?.nameSource, OcrNameSource.koreanStripped);
     });
   });
+
+  // 2026-08-13 (backlog 추가 178). 키워드 목록은 `_containsCi` — 단어 경계가
+  // 없는 대문자 contains로 비교된다. 그래서 짧은 영문 약어를 넣으면 엉뚱한
+  // 단어 속에 걸리는데, 실제로 'PO'가 "SPORTS"에, 'Global'이 부서명에 걸려
+  // 회사명·이름이 통째로 틀어졌다. 직함 검사가 회사 검사보다 먼저 돌며
+  // continue하므로, 한 번 잘못 걸리면 회사명은 영영 못 채운다.
+  group('키워드가 부분 문자열로 걸리지 않는다 (2026-08-13 회귀 방지)', () {
+    test('회사명 속 "SPORTS"를 직함으로 오인하지 않는다', () {
+      final r = parse([
+        'NELSON SPORTS, INC.',
+        'John Smith',
+        'Sales Manager',
+      ]);
+      expect(r.company, 'NELSON SPORTS, INC.');
+      expect(r.title, 'Sales Manager');
+    });
+
+    test('이메일 줄을 회사명으로 오인하지 않는다 — "e-mail" 속 "AI"', () {
+      final r = parse([
+        '주식회사 커넥션센스',
+        '홍길동',
+        'e-mail hong@connectionsense.co.kr',
+      ]);
+      expect(r.company, '주식회사 커넥션센스');
+      expect(r.email, 'hong@connectionsense.co.kr');
+    });
+
+    test('직함 "Technical Director"를 회사명으로 오인하지 않는다 — 속의 "Tech"', () {
+      final r = parse([
+        '주식회사 커넥션센스',
+        'John Smith',
+        'Technical Director',
+      ]);
+      expect(r.company, '주식회사 커넥션센스');
+      expect(r.title, 'Technical Director');
+    });
+
+    test('부서명 "Global Sales Division"이 회사명 자리를 뺏지 않는다', () {
+      final r = parse([
+        'Global Sales Division',
+        'John Smith',
+      ]);
+      expect(r.company, isNot('Global Sales Division'));
+    });
+  });
+
+  // 2026-08-13 (backlog 추가 178). rawLines를 파서가 안 채워서 명함 등록
+  // 화면의 터치 퀵 매핑 UI가 조용히 안 뜨던 결함(실기기 확인)의 회귀 방지.
+  // 필드가 "존재하지만 비어 있는" 상태는 화면을 열어보기 전에는 안 드러난다.
+  group('rawLines — 터치 퀵 매핑 UI에 넘길 원문 줄 (2026-08-13 회귀 방지)', () {
+    test('인식한 줄이 그대로 rawLines에 담긴다', () {
+      final input = [
+        '주식회사 커넥션센스',
+        '홍길동',
+        '대표이사',
+        'M 010-1234-5678',
+      ];
+      final r = parse(input);
+      expect(r.rawLines, input);
+    });
+
+    test('빈 입력이어도 rawLines는 빈 목록이다(널이 아니다)', () {
+      final r = parse([]);
+      expect(r.rawLines, isEmpty);
+    });
+  });
 }
