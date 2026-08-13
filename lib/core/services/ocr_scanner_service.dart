@@ -326,6 +326,24 @@ class OcrScannerService {
     '그룹장',
   ];
 
+  /// 자격증·인증 표기. 이 표기가 있는 줄은 **직함으로 쓰지 않는다** — 자격증은
+  /// 직함이 아니고, 별도 필드로 저장하지도 않기로 했다(사용자 결정 2026-08-13).
+  /// 직함 칸이 자격증으로 채워지면 정작 직함이 들어갈 자리가 없어진다.
+  ///
+  /// 실제 명함 예: 직함 없이 "정보시스템수석감리원 / 정보시스템감리사 /
+  /// PIMS 심사원"만 나열된 경우 — '수석'이 첫 줄에 걸려 직함이 됐다.
+  ///
+  /// ⚠️ 여기에도 짧은 약어는 넣지 않는다(`_containsCi`가 부분 문자열이다).
+  /// '기사'는 "전기기사"(자격증)뿐 아니라 "운전기사"(직업)에도 걸리고,
+  /// '노무사'·'세무사'·'회계사'는 **그 사람의 직함 자체**인 경우가 많아 뺐다.
+  static const _qualificationMarkers = [
+    '감리원',
+    '감리사',
+    '심사원',
+    '기술사',
+    '지도사',
+  ];
+
   static const _companyKeywords = [
     '주식회사',
     '(주)',
@@ -361,6 +379,13 @@ class OcrScannerService {
     // Division"을 회사명 자리로 끌어와 테스트가 깨졌다(부서명이 회사명을
     // 뺏는 문제는 아래 _departmentSuffixes 주석의 실사용 버그와 같은 계열).
     // 한글 표기('테크'·'바이오'·'글로벌')는 겹칠 여지가 없어 그대로 둔다.
+    // 2026-08-13: 회사명 줄이 직함 키워드를 품고 있어 통째로 직함이 되던
+    // 사례를 막기 위해 함께 넣는다(위 직함 판정에서 회사 키워드가 걸린 줄은
+    // 건너뛴다). '대리점'은 '대리'를, '사무소'는 앞에 붙는 말에 따라 '사원'
+    // 등을 품는다 — 이 목록에 있으면 회사명 자리로 정확히 들어간다.
+    '대리점',
+    '사무소',
+    '영업소',
     'Labs',
     'Studio',
     '스튜디오',
@@ -410,6 +435,11 @@ class OcrScannerService {
   static final _koreanNameRegExp = RegExp(r'^[가-힣]{2,4}$');
   static final _singleHangulRegExp = RegExp(r'^[가-힣]$');
   static final _whitespaceSplitRegExp = RegExp(r'[\s　]+');
+
+  /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
+  /// 건드리지 않기 위해 쓴다.
+  static bool _hasHangul(String s) =>
+      RegExp(r'[가-힣ㄱ-ㆎ]').hasMatch(s);
 
   static bool _containsCi(String haystack, String needle) =>
       haystack.toUpperCase().contains(needle.toUpperCase());
@@ -836,10 +866,30 @@ class OcrScannerService {
       // 글자씩 띄어져 있고 직함은 길게 서술형)까지 순서와 형태가 제각각.
       // 줄 전체를 직함으로 삼으면 이름을 영영 못 찾으므로 토큰 단위로
       // 분리를 시도한다.
-      final matchedTitleKeyword = _titleKeywords.firstWhere(
+      // ⚠️ 직함 키워드는 `_containsCi`(단어 경계 없는 부분 문자열)로 걸리므로,
+      // **직함이 아닌 줄이 직함 키워드를 우연히 품고 있는 경우**를 먼저 걸러야
+      // 한다. 이 검사가 없으면 그 줄이 통째로 직함이 되고 `continue` 때문에
+      // 회사명은 영영 못 채운다 — 2026-08-13 진단에서 실제로 확인했다
+      // (backlog 추가 180):
+      //
+      //   "한빛전자 강남대리점"      → '대리'가 "강남**대리**점"에 걸려 회사·이름이 전부 어긋남
+      //   "한빛사원아파트관리사무소" → '사원'이 걸려 회사명이 빈 값
+      //   "정보시스템수석감리원"     → '수석'이 걸려 자격증이 직함 자리를 차지
+      //
+      // 영문에서 짧은 약어를 뺀 것과 달리 '대리'·'사원'·'수석'은 **그 자체로
+      // 정당한 직함**이라 목록에서 지울 수 없고, "뒤에 한글이 이어지면 제외"
+      // 같은 형태 규칙도 못 쓴다("수석연구원"이 같은 모양이면서 정상 직함이다).
+      // 그래서 줄이 무엇인지를 보고 거른다.
+      final isCompanyLine = _companyKeywords.any((k) => _containsCi(line, k));
+      final isQualificationLine = _qualificationMarkers.any(
         (k) => _containsCi(line, k),
-        orElse: () => '',
       );
+      final matchedTitleKeyword = (isCompanyLine || isQualificationLine)
+          ? ''
+          : _titleKeywords.firstWhere(
+              (k) => _containsCi(line, k),
+              orElse: () => '',
+            );
       if (titleLine == null && matchedTitleKeyword.isNotEmpty) {
         final split = _splitNameFromTitleLine(line, matchedTitleKeyword);
         if (nameLine == null && split != null) {
@@ -942,7 +992,49 @@ class OcrScannerService {
           }
         }
       }
+      // 자격증 줄은 leftover에도 넣지 않는다. 직함·회사명·이름은 모두 leftover
+      // 맨 앞을 폴백으로 쓰기 때문에, 여기 남겨 두면 직함 키워드 매칭에서
+      // 걸러 놓고도 결국 직함 자리에 다시 들어간다(2026-08-13 확인).
+      // 단 "○○감리사무소"처럼 회사명이면서 자격증 표기를 품은 줄은 회사명으로
+      // 살려야 하므로 회사 키워드가 걸린 줄은 예외로 둔다.
+      if (isQualificationLine && !isCompanyLine) continue;
       leftover.add(line);
+    }
+
+    // 회사 로고를 이름으로 착각하는 것을 막는다.
+    //
+    // 명함 위쪽의 큰 영문 로고("CREAMHOUSE")는 글자도 크고 맨 앞에 있어서,
+    // 한글 이름이 인식되지 않으면 아래 약한 폴백이 그걸 이름으로 고른다.
+    // 실기기에서 실제로 벌어졌고 "이름 칸에 기업명이 들어가는 경우가 많다"는
+    // 사용자 보고와 같은 현상이다(2026-08-13, backlog 추가 180).
+    //
+    // 판별 근거: **그 후보가 회사명 줄 안에 통째로 들어 있는지.** 로고는
+    // 회사명/도메인의 일부라 거의 항상 걸리고("CREAMHOUSE" ⊂
+    // "Www.CREAMHOUSE.CO.KR"), 사람 이름이 회사명 문자열에 통째로 포함되는
+    // 일은 드물다. 한글이 섞인 후보는 건드리지 않는다 — 한글 이름은 위
+    // 규칙들이 이미 정확히 잡고, 여기서 잘못 걸러내면 손해가 크다.
+    // 글자가 사실상 없는 잔여물("M.", "T." 같은 라벨 찌꺼기)은 이름 후보에서
+    // 뺀다. 빈 이름보다 이런 값이 들어가는 쪽이 더 나쁘다 — 사용자는 화면에
+    // 뜬 "M."을 보고 인식이 됐다고 오해하고, 저장하면 그대로 인맥 이름이 된다.
+    // 값을 지어내지 않는다는 원칙(CLAUDE.md)과도 같은 방향이다.
+    leftover.removeWhere(
+      (candidate) => candidate.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '').length < 2,
+    );
+
+    // 남는 후보가 없어져 이름이 빈 값이 되는 것도 **의도한 결과**다. 로고를
+    // 사람 이름으로 저장하는 것보다, 비워 두고 사용자가 직접 채우게 하는 쪽이
+    // 낫다(스캔 화면이 "이름을 찾지 못했다"고 안내한다).
+    final companyForLogoCheck = companyLine;
+    if (companyForLogoCheck != null) {
+      leftover.removeWhere(
+        (candidate) =>
+            candidate.length >= 3 &&
+            !_hasHangul(candidate) &&
+            _containsCi(
+              companyForLogoCheck.replaceAll(RegExp(r'[\s.]'), ''),
+              candidate.replaceAll(RegExp(r'[\s.]'), ''),
+            ),
+      );
     }
 
     String name;
