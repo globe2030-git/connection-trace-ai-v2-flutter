@@ -845,6 +845,62 @@ void main() {
     });
   });
 
+  // 2026-08-14 (backlog 추가 183). "확신하지 못하면 비운다" — 약한 폴백에
+  // 이름/회사명 모양인 후보만 넣고, 없으면 빈 값으로 둔다. 예전에는 남은 줄
+  // 맨 앞을 그냥 써서, 쓰레기를 하나 걸러내면 다음 쓰레기가 그 자리를 채웠다.
+  group('확신하지 못하면 비운다 (2026-08-14)', () {
+    test('이메일 주소는 이름이 되지 않는다', () {
+      final r = parse(['duke@hanbit.co.kr', '(주)한빛정보기술', '010-0000-0000']);
+      expect(r.name, isNot(contains('@')));
+    });
+
+    test('영문 주소는 이름이 되지 않는다 — 쉼표·숫자', () {
+      final r = parse([
+        '704, SK V1 TOWER, 25, Yeonmujang 5ga-gil',
+        '(주)한빛정보기술',
+        '010-0000-0000',
+      ]);
+      expect(r.name, isNot(contains('TOWER')));
+    });
+
+    test('영문 슬로건은 이름이 되지 않는다 — 단어 수', () {
+      final r = parse(["I'm a Voyager of value", '(주)한빛정보기술', '010-0000-0000']);
+      expect(r.name, isNot(contains('Voyager')));
+    });
+
+    test('서술형 한글 문장은 이름이 되지 않는다', () {
+      final r = parse(['설계, 제작 및 납품 E-mail.', '(주)한빛정보기술', '010-0000-0000']);
+      expect(r.name, isNot(contains('설계')));
+    });
+
+    test('직함이 붙은 긴 영문 줄은 이름이 되지 않는다', () {
+      final r = parse([
+        'Head of R&D Dept. Ko Byoung Ho',
+        '(주)한빛정보기술',
+        '010-0000-0000',
+      ]);
+      expect(r.name, isNot(contains('Dept')));
+    });
+
+    test('웹사이트 주소는 회사명이 되지 않는다', () {
+      final r = parse(['www.hanbit.co.kr', '남궁현', '상무']);
+      expect(r.company, isNot(contains('www')));
+    });
+
+    test('정상 한글 이름·영문 이름은 그대로 통과한다 — 회귀 확인', () {
+      expect(parse(['(주)한빛정보기술', '남궁현', '상무']).name, '남궁현');
+      expect(
+        parse(['ABC Company', 'David Kim', 'Sales Manager']).name,
+        'David Kim',
+      );
+    });
+
+    test('음절을 띄운 한글 이름도 통과한다 — 회귀 확인', () {
+      final r = parse(['한국도로공사서비스', '최 태 웅', '경영지원실 인사팀 | 팀장']);
+      expect(r.name, '최태웅');
+    });
+  });
+
   // 2026-08-13 (backlog 추가 178). rawLines를 파서가 안 채워서 명함 등록
   // 화면의 터치 퀵 매핑 UI가 조용히 안 뜨던 결함(실기기 확인)의 회귀 방지.
   // 필드가 "존재하지만 비어 있는" 상태는 화면을 열어보기 전에는 안 드러난다.
