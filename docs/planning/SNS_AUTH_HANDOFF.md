@@ -32,6 +32,7 @@
     "displayName": "홍길동",          // SNS 최초 수신 실명/닉네임
     "email": "hong@kakao.com",       // SNS 수신 이메일
     "photoUrl": "http://...",        // 프로필 사진 URL
+    "mobile": "010-1234-5678",       // 전화번호 (네이버 등 제공 시)
     "firstSignedInAt": "2026-08-13T18:50:00Z"
   },
   "profile": {
@@ -58,6 +59,15 @@ function isInitialAuthProfileWrite() {
 
 ---
 
+### 2-3. 프로필 사진(아바타) 내 명함 자동 매핑 메커니즘 (`login_view.dart`)
+
+- **구글/카카오/네이버 프로필 사진 자동 적용**:
+  - `login_view.dart`의 `_prefillAvatarFromGoogle(auth.photoUrl)`이 이미 구현되어 있음.
+  - 로그인 성공 시 SNS에서 프로필 사진 URL(`photoUrl`)을 내려받아, 사용자의 내 명함 프로필 사진(`profile.avatarPath`)이 비어있는 경우 자동으로 다운로드하여 `my_profile_avatar.jpg`에 보관하고 프로필 사진으로 자동 설정됨.
+  - 카카오/네이버 연동 시 `_prefillAvatarFromSns(auth.photoUrl)`로 공통화하여 호출하면 동일하게 자동 적용됨.
+
+---
+
 ## 3. 카카오 vs 네이버 연동 비교 및 사전 준비 사항
 
 ### 🥇 1) 카카오 (Kakao) — 추천 (속도 빠름 ⭐⭐⭐⭐⭐)
@@ -77,7 +87,23 @@ function isInitialAuthProfileWrite() {
   2. **Client ID** & **Client Secret** 발급.
   3. iOS Bundle ID & Scheme 이름 (영문 소문자/숫자) 설정.
   4. Android Package Name 설정 및 `strings.xml` 설정.
-  5. **제공 항목 설정**: 회원이름, 이메일, 별명, 프로필 사진.
+  5. **제공 항목 설정**: 회원이름, 이메일, 별명, 프로필 사진, 휴대전화번호.
+
+---
+
+### 📋 3-3. 네이버 로그인 수신 가능 전체 항목 명세
+
+| 수신 항목 (API 필드) | 설명 | 내 명함 자동 매핑 및 활용 |
+| :--- | :--- | :--- |
+| `id` | 네이버 회원 고유 식별자 | 계정 고유 UID 식별 |
+| `name` | 네이버 회원 실명 (예: "홍길동") | 명함 이름 & `authProfile.displayName` |
+| `nickname` | 별명/닉네임 | 닉네임 기본값 |
+| `email` | 계정 이메일 (예: "user@naver.com") | 명함 이메일 & `authProfile.email` |
+| `profile_image` | 프로필 사진 URL | 내 명함 프로필 아바타 이미지 자동다운로드 |
+| `mobile` | 휴대전화번호 (예: "010-1234-5678") | 내 명함 연락처 자동 채움 |
+| `mobile_e164` | E.164 국제 표준 전화번호 | 국가 코드 포함 번호 |
+| `gender` | 성별 (`M`/`F`/`U`) | 성별 정보 |
+| `birthday` / `birthyear`| 생일(`MM-DD`) 및 출생년도(`YYYY`) | 생년월일 / 연령 정보 |
 
 ---
 
@@ -86,5 +112,6 @@ function isInitialAuthProfileWrite() {
 - [ ] `kakao_flutter_sdk_user` 및 `flutter_naver_login` 패키지 `pubspec.yaml` 추가
 - [ ] `SnsAuthProvider` Enum에 `kakao`, `naver` 추가
 - [ ] `AuthRepository` 내 `signInWithKakao()`, `signInWithNaver()` 구현
-- [ ] 로그인 성공 시 `users/{uid}.authProfile` 기록 로직 추가
+- [ ] `login_view.dart` 내 `_prefillAvatarFromSns()` 카카오/네이버 프로필 사진 자동다운로드 확장
+- [ ] 로그인 성공 시 `users/{uid}.authProfile` (실명, 이메일, 프로필사진, 전화번호) 기록 로직 추가
 - [ ] `AdminInquiryManagementView`에서 `authProfile`과 `inquiry.userName` 대조 표시 UI 연결
