@@ -27,6 +27,7 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 import 'ocr_stats_view.dart';
+import 'admin_inquiry_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -402,6 +403,20 @@ class SettingsView extends StatelessWidget {
                     subtitle: '자동 인식 품질을 값 없이 형태로만 확인',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(builder: (_) => const OcrStatsView()),
+                    ),
+                  ),
+                  _SettingsRow(
+                    icon: const Icon(
+                      Icons.admin_panel_settings_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
+                    title: '관리자 1:1 문의 관리',
+                    subtitle: '사용자 이름 및 이메일로 문의 검색·답변',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const AdminInquiryManagementView(),
+                      ),
                     ),
                   ),
                   _SettingsRow(

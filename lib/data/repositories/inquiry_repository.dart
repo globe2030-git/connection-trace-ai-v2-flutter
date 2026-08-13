@@ -68,4 +68,35 @@ class InquiryRepository {
           'createdAt': FieldValue.serverTimestamp(),
         });
   }
+
+  /// 관리자가 전체 문의 내역을 구독한다(firestore.rules의 isAdmin() 권한 필요).
+  Stream<List<InquiryModel>> watchAllInquiriesForAdmin() {
+    return _db
+        .collection('inquiries')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map(InquiryModel.fromFirestore).toList());
+  }
+
+  /// 관리자가 사용자 문의에 답변을 등록하고 상태를 '답변완료(answered)'로 업데이트한다.
+  Future<void> addAdminReply({
+    required String inquiryId,
+    required String message,
+  }) async {
+    final batch = _db.batch();
+    final inquiryRef = _db.collection('inquiries').doc(inquiryId);
+    final replyRef = inquiryRef.collection('replies').doc();
+
+    batch.set(replyRef, {
+      'from': 'admin',
+      'message': message,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(inquiryRef, {
+      'status': 'answered',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
 }
