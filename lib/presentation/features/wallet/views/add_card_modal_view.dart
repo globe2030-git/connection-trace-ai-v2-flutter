@@ -127,6 +127,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _selectedAvatarUrl;
   bool _isPickingAvatar = false;
   String? _scannedRawText;
+  List<String> _scannedRawLines = [];
   bool _isScanningOcr = false;
   bool _showRawTextCard = false;
   bool _isSavingCard = false;
@@ -384,6 +385,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
+      _scannedRawLines = result.rawLines;
       if (overwrite) {
         // 다른 명함으로 새로 시작하는 것이므로 이전 명함의 스캔 이미지는
         // 대표 후보에서 제거한다.
@@ -475,6 +477,101 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         onAction: () => _performOcrScan(isFromCamera: isFromCamera),
       );
     }
+  }
+
+  void _showQuickFieldMapperSheet(String text) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgBase,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.touch_app, color: AppColors.accentText, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '\'$text\' 텍스트 세팅',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '터치하면 해당 입력 칸으로 즉시 채워집니다.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _quickMapTile('👤 성명 (이름)', () {
+                      _setTextFromStart(_nameController, text);
+                    }),
+                    _quickMapTile('🏢 회사명', () {
+                      _setTextFromStart(_companyController, text);
+                    }),
+                    _quickMapTile('💼 직함', () {
+                      _setTextFromStart(_titleController, text);
+                    }),
+                    _quickMapTile('📞 휴대폰 번호', () {
+                      _setTextFromStart(_phoneController, text);
+                    }),
+                    _quickMapTile('✉️ 이메일', () {
+                      _setTextFromStart(_emailController, text);
+                    }),
+                    _quickMapTile('📍 주소', () {
+                      _setTextFromStart(_addressController, text);
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _quickMapTile(String label, VoidCallback onSelect) {
+    return ActionChip(
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+      ),
+      backgroundColor: AppColors.bgBase,
+      side: const BorderSide(color: AppColors.borderSubtle),
+      onPressed: () {
+        setState(() {
+          onSelect();
+        });
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $label 항목에 세팅되었습니다!'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: AppColors.accentText,
+          ),
+        );
+      },
+    );
   }
 
   /// 이름이 이미 채워진 상태에서 다른 이름의 명함을 스캔했을 때 묻는다.
@@ -1919,19 +2016,77 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     if (_showRawTextCard) ...[
                       const SizedBox(height: 6),
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: AppColors.bgBase,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: AppColors.borderSubtle),
                         ),
-                        child: Text(
-                          _scannedRawText!,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.textSecondary,
-                            fontFamily: 'monospace',
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '💡 텍스트 칩을 터치하면 해당 항목으로 1초 세팅돼요:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accentText,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_scannedRawLines.isNotEmpty)
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: _scannedRawLines.map((line) {
+                                  return InkWell(
+                                    onTap: () => _showQuickFieldMapperSheet(line),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.accent.withValues(alpha: 0.3),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            line,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.touch_app_outlined,
+                                            size: 13,
+                                            color: AppColors.accentText,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              )
+                            else
+                              Text(
+                                _scannedRawText!,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textSecondary,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],

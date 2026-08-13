@@ -108,6 +108,9 @@ class OcrScanResult {
   final String? avatarUrl;
   final String? imagePath;
 
+  /// 스캔된 원문 줄 목록 (터치 퀵 매핑 UI 지원용)
+  final List<String> rawLines;
+
   /// 이 결과가 "어떻게" 만들어졌는지에 대한 형태 정보(내용 없음). 인식 품질
   /// 측정용이라 앱 화면에는 안 쓴다. 테스트에서 만든 결과 등에는 없을 수 있어
   /// nullable.
@@ -115,6 +118,7 @@ class OcrScanResult {
 
   const OcrScanResult({
     required this.rawText,
+    this.rawLines = const [],
     required this.name,
     required this.company,
     required this.title,
@@ -172,7 +176,23 @@ class OcrScannerService {
       final recognizedText = await recognizer
           .processImage(inputImage)
           .timeout(const Duration(seconds: 20));
-      final orderedLines = _extractOrderedLines(recognizedText);
+      var orderedLines = _extractOrderedLines(recognizedText);
+
+      // Dual-Pass OCR: 마진 크롭으로 텍스트가 극히 일부만 읽혔거나 잘린 경우
+      // (인식된 총 길이 < 8), 원본 이미지 전체로 2차 풀 스캔을 시도한다.
+      final totalLen = orderedLines.fold<int>(0, (sum, l) => sum + l.text.length);
+      if (totalLen < 8) {
+        debugPrint('OCR 1차 크롭 결과 부족($totalLen자) -> 2차 풀 스캔 자동 실행');
+        final rawInput = InputImage.fromFilePath(imageFile.path);
+        final rawRecognized = await recognizer
+            .processImage(rawInput)
+            .timeout(const Duration(seconds: 15));
+        final rawOrdered = _extractOrderedLines(rawRecognized);
+        if (rawOrdered.fold<int>(0, (sum, l) => sum + l.text.length) > totalLen) {
+          orderedLines = rawOrdered;
+        }
+      }
+
       return _parse(orderedLines, imageFile.path);
     } finally {
       await recognizer.close();
@@ -281,8 +301,26 @@ class OcrScannerService {
     'Director',
     'Manager',
     'Founder',
+    'Co-Founder',
     'VP',
     'Lead',
+    'PO',
+    'PM',
+    'Head',
+    'Leader',
+    'Tech Lead',
+    'Design Lead',
+    'Principal',
+    'Fellow',
+    'Senior',
+    'Junior',
+    'Consultant',
+    '전문위원',
+    '자문위원',
+    '연구소장',
+    '파트장',
+    '셀장',
+    '그룹장',
   ];
 
   static const _companyKeywords = [
@@ -300,19 +338,38 @@ class OcrScannerService {
     'Group',
     '컴퍼니',
     'Company',
-    // 2026-08-07: 실제 명함 샘플(장애인기업종합지원센터 등)로 확인된
-    // 비영리·공공 법인 표기 — 영리법인 접미사 위주였던 목록에 추가.
     '(재)',
     '재단법인',
     '사단법인',
     '유한회사',
     '협동조합',
-    // 2026-08-11: 공공기관 명함에서 흔한 기관 접미사 — 다른 단어와 겹칠
-    // 여지가 거의 없는 것만 추가(공사/공단/진흥원). "연구원"은 직함 키워드와
-    // 겹쳐서 넣지 않는다.
     '공사',
     '공단',
     '진흥원',
+    'Lab',
+    'Labs',
+    'Studio',
+    '스튜디오',
+    '연구소',
+    '센터',
+    '홀딩스',
+    'Holdings',
+    'Ventures',
+    '벤처스',
+    'Partners',
+    '파트너스',
+    'Solution',
+    'Solutions',
+    '솔루션',
+    'Tech',
+    '테크',
+    'Systems',
+    '시스템즈',
+    'AI',
+    'Bio',
+    '바이오',
+    'Global',
+    '글로벌',
   ];
 
   // 회사명에 위 키워드가 하나도 안 걸릴 때(예: "Sovargen", "SSiS
