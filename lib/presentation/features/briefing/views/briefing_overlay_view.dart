@@ -1097,7 +1097,6 @@ class _SendChannelRow extends StatelessWidget {
     // 그래서 복사 후 앱만 열어 주고 붙여넣도록 안내한다 — 되는 척하는 것보다
     // 실제 동작을 그대로 알리는 편이 낫다.
     await _copyPoint();
-    final uri = Uri.parse('kakaotalk://');
 
     // ⚠️ `canLaunchUrl`로 먼저 확인하지 않는다. 이 조회는 Android 11+의
     // `<queries>` 선언과 iOS의 `LSApplicationQueriesSchemes`에 의존하는데,
@@ -1106,12 +1105,30 @@ class _SendChannelRow extends StatelessWidget {
     // (사용자 보고, 2026-08-10). 두 선언을 추가했지만, 여는 것 자체는 조회
     // 권한과 무관하게 되므로 **바로 시도하고 실패했을 때만** 안내한다.
     // 조회에 기대지 않는 편이 선언이 또 빠져도 안전하다.
+    //
+    // ⚠️ **주소를 여러 개 시도한다.** 예전에는 `kakaotalk://` 하나만 썼는데,
+    // Android에서 그 형태는 **해석되지 않는다**(카카오톡이 설치돼 있어도
+    // `unable to resolve Intent`). 그래서 늘 실패 안내만 떴다 —
+    // 테스터 제보 "카카오톡을 열지 못했습니다"의 원인이다(빌드6·7 통합본 E-09).
+    // 기기에서 후보를 하나씩 넣어 보고 `kakaotalk://launch`가 카카오톡
+    // 메인 화면을 여는 것을 확인했다(갤럭시 폴드, 2026-08-14).
+    //
+    // `kakaotalk://`를 지우지 않고 뒤에 남겨 둔다 — iOS에서 오래 쓰인 형태이고,
+    // 카카오톡 업데이트로 어느 한쪽이 막혀도 다른 쪽이 받아 준다.
+    const candidates = ['kakaotalk://launch', 'kakaotalk://'];
     var opened = false;
-    try {
-      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // 앱이 없으면 플랫폼에 따라 예외가 나기도 하고 false가 오기도 한다.
-      opened = false;
+    for (final candidate in candidates) {
+      try {
+        opened = await launchUrl(
+          Uri.parse(candidate),
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (_) {
+        // 앱이 없거나 그 주소를 못 열면 플랫폼에 따라 예외가 나기도 하고
+        // false가 오기도 한다. 다음 후보로 넘어간다.
+        opened = false;
+      }
+      if (opened) break;
     }
     if (opened) {
       _toast(messenger, '대화 포인트를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.');
