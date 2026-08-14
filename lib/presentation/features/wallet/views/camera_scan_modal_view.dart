@@ -1,14 +1,26 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/frame_contrast.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class CameraScanModalView extends StatefulWidget {
-  const CameraScanModalView({super.key});
+  /// 지금 찍는 면("앞면"/"뒷면"). 화면 아래에 항상 띄운다.
+  ///
+  /// 명함 한 장은 앞면과 뒷면까지가 최대인데(추가 189), 카메라 화면에는 지금
+  /// 무엇을 찍는 중인지 표시가 없어서 뒷면 스캔을 고르고 들어와도 알 수 없었다.
+  /// 다른 명함 앱들이 공통으로 이 라벨을 두고 있다(2026-08-14 참고 자료).
+  final String sideLabel;
+
+  const CameraScanModalView({super.key, this.sideLabel = '앞면'});
 
   @override
   State<CameraScanModalView> createState() => _CameraScanModalViewState();
@@ -46,13 +58,101 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 좁혔다 — 실제로 카드-가이드 겹침 비율을 픽셀 단위로 재는 건 아니고
   // (별도의 문서 경계 검출이 필요한 더 큰 작업), 전체 화면 흔들림
   // 허용치를 좁혀서 더 정확히 멈춰야만 "안정"으로 인정되게 하는 근사치.
-  static const _stabilityDiffThreshold = 8.0;
+  /// ⚠️ **실측으로 고쳤다.** 폰을 손도 대지 않고 거치한 상태에서 이 값이
+  /// **5.2~8.4**로 나왔다(로그 측정 2026-08-14). 기준이 8.0이었으니 **가만히
+  /// 둔 폰조차 절반은 "불안정"으로 판정**됐고, 손에 들면 더 자주 넘었다 —
+  /// 사용자 제보 "명함에 가이드를 제대로 놓은 것 같은데 파란색이 잘 보이지
+  /// 않아"의 주된 원인이다.
+  ///
+  /// 이 값은 과거에 *"가이드 안에 훨씬 정확히 들어와야 촬영되면 좋겠다"*는
+  /// 요청으로 좁혔던 것인데, 좁힌 대상이 **"명함이 잘 맞춰졌는가"가 아니라
+  /// "폰이 안 흔들리는가"**였다. 의도한 효과는 못 얻고 촬영만 어려워졌다.
+  ///
+  /// 처음엔 14로 넓혔더니 이번엔 **계속 자동 촬영**됐다(제보 "계속 자동촬영이
+  /// 되"). 거치 상태가 5.2~8.4니 14는 웬만한 움직임까지 "정지"로 봤다.
+  ///
+  /// **측정한 잡음 바닥(8.4) 바로 위인 10으로 잡는다.** 진짜 멈췄을 때만
+  /// 통과하고, 8.0처럼 잡음에 파묻히지도 않는다. 흐린 사진이 늘 위험은 촬영
+  /// 직후 **"글자가 또렷한가요?" 확인 화면**이 받아 준다.
+  static const _stabilityDiffThreshold = 10.0;
   static const _requiredStableDuration = Duration(milliseconds: 200);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
   // 카메라는 초당 30~60프레임을 보내지만 흔들림 판단에는 8fps면
   // 충분하다. 나머지 프레임은 즉시 버려 CPU·배터리 사용을 줄인다.
   static const _frameAnalysisInterval = Duration(milliseconds: 125);
+  /// 가이드 프레임 안쪽 밝기의 **표준편차** 하한. 이 아래면 "볼 것이 없다"로
+  /// 보고 자동 촬영하지 않는다.
+  ///
+  /// 왜 필요한가: 예전 자동 촬영 조건은 **"화면이 흔들리지 않으면"** 하나뿐이라
+  /// **명함이 있는지는 보지 않았다.** 그래서 빈 벽이나 책상을 향해 가만히 들고
+  /// 있으면 — 오히려 가장 안정적이라 — 자동으로 찍혔다(테스터 E-01
+  /// "촬영 버튼을 누르지 않았는데 빈 공간이 촬영됨"). 역설적으로 빈 공간이 더
+  /// 잘 찍히는 구조였다.
+  ///
+  /// 글자가 있는 명함은 밝고 어두운 픽셀이 섞여 표준편차가 크고(대개 25 이상),
+  /// 민무늬 벽·책상은 거의 평평하다(10 미만). **낮게 잡아 명백히 빈 장면만**
+  /// 막는다 — 임계값을 높이면 진짜 명함까지 자동 촬영이 안 되는데, 그쪽이 더
+  /// 나쁜 고장이다(셔터는 언제든 직접 누를 수 있다).
+  /// ⚠️ **이 값은 추측으로 정하면 안 된다.** 처음 10.0으로 잡았다가 진짜 명함이
+  /// 자동 촬영되지 않는 회귀를 냈다(사용자 제보 2026-08-14 "조절하고 나니까
+  /// 명함을 가이드가 파란색으로 변하지를 않아").
+  ///
+  /// 원인: 격자가 24×24로 거칠어서 **명함 글자를 거의 밟지 못한다.** 대부분의
+  /// 샘플이 바탕에 떨어져 표준편차가 생각보다 훨씬 작다. 촘촘한 체커보드로
+  /// 만든 테스트가 실제 샘플링 밀도를 반영하지 못했다 — 숫자만 보고 세운
+  /// 가설이 틀린 또 하나의 사례다.
+  ///
+  /// 그래서 **민무늬 면만 겨우 걸러낼 만큼** 낮춘다. 실기기에서 실제 값을 읽어
+  /// 본 뒤에 다시 조인다(디버그 빌드에 값이 화면에 뜬다).
+  /// **실측으로 정했다.** 명함을 가이드에 맞췄을 때 26~39가 나왔다(사용자
+  /// 측정 2026-08-14). 민무늬 벽은 센서 잡음 수준이라 한 자릿수다. 그 사이인
+  /// 15로 잡아 **빈 면만 막고 명함은 넉넉히 통과**시킨다.
+  ///
+  /// ⚠️ 처음 10.0으로 짐작했을 때 명함이 안 찍힌다는 제보가 있었는데,
+  /// **막은 것은 대비가 아니라 톤 비율이었다**(아래 참고). 숫자를 받기 전에
+  /// 원인을 단정한 것이 잘못이었다.
+  static const _minCenterContrast = 15.0;
+  /// 가이드 안쪽에서 **한쪽 톤이 차지해야 하는 최소 비율**.
+  ///
+  /// 명함은 바탕이 지배적이라 대개 0.75 이상이다. 책상·벽 **모서리**는 밝은
+  /// 면과 어두운 면이 반반이라 0.5 근처에 머문다 — 대비만 보면 오히려 커서
+  /// 걸러지지 않던 장면이다. 밝은 명함과 어두운 명함을 모두 받으려고
+  /// **더 많은 쪽**을 본다.
+  /// 같은 이유로 느슨하게 잡는다. 모서리(0.5)와 명함을 가르되, 실측 전까지는
+  /// **막지 않는 쪽**으로 기운다.
+  /// ⚠️ **지금은 꺼져 있다(0 = 항상 통과).**
+  ///
+  /// 0.65로 잡았을 때 진짜 명함이 자동 촬영되지 않았다. 명함의 대비는 26~39로
+  /// 넉넉했으므로 **막은 것은 이 톤 비율**이다 — 명함의 실제 톤 값이 0.65보다
+  /// 작았다는 뜻인데, 그 값을 아직 재지 못했다.
+  ///
+  /// **재보니 이 방법으로는 못 가른다.**
+  ///
+  /// | 장면 | 대비 | 톤 |
+  /// |---|---|---|
+  /// | 명함 | 26~39 | **0.653** |
+  /// | 평범한 책상 | 20.3~20.5 | **0.604~0.611** |
+  ///
+  /// 톤 차이가 **0.04**뿐이다. "명함은 바탕이 지배적이라 0.75 이상"이라는 내
+  /// 가설이 틀렸다 — 실제 명함은 0.65 근처다. 기준을 0.63에 두면 이론상
+  /// 갈리지만 여유가 0.02라 조명·각도가 조금만 달라져도 뒤집혀 **또 명함을
+  /// 막는다.**
+  ///
+  /// 그래서 **켜지 않는다.** 각이 진 빈 곳을 가르려면 밝기가 아니라
+  /// **문서 경계 검출**이 필요하다(통합본 R-02) — 별도 작업이다.
+  static const _minDominantToneRatio = 0.0;
+
+  /// "볼 것이 있는가" 게이트를 **실제로 막는 데 쓸지**.
+  ///
+  /// 켜져 있지만 **대비 조건만** 작동한다(톤 비율은 0이라 항상 통과).
+  ///
+  /// 임계값을 두 번 짐작으로 정했고 두 번 다 **진짜 명함을 막았다**(제보
+  /// "파란색으로 변하지를 않아", "자동 촬영 잘 안됨"). 그래서 지금은 **실측한
+  /// 값이 있는 조건만** 켠다 — 명함 대비 26~39를 재고 나서 15로 잡았다.
+  ///
+  /// 모서리를 가르는 톤 조건은 명함의 톤 값을 읽은 뒤에 켠다.
+  static const _contentGateEnabled = true;
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -62,6 +162,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isCapturing = false;
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
+  /// 디버그 빌드에서만 화면에 띄우는 "대비 / 지배톤" 실측값.
+  ///
+  /// ⚠️ **매 프레임 갱신하면 읽을 수 없다** — 초당 8번 바뀌어 사용자가 값을
+  /// 못 봤다(제보 "숫자가 계속 바뀌니까 못봤어"). 그래서 **본 값의 범위를
+  /// 누적**하고 갱신을 0.7초에 한 번으로 늦춘다. 한 장면을 2~3초 비추면
+  /// 그 장면의 대표값이 범위로 남는다. 화면의 숫자를 누르면 범위를 지운다.
+  String? _debugMetrics;
+  double? _debugContrastMin, _debugContrastMax;
+  double? _debugToneMin, _debugToneMax;
+  DateTime? _debugShownAt;
   DateTime? _stableSince;
   List<int>? _previousLumaSample;
   DateTime? _streamStartedAt;
@@ -71,6 +181,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 이 화면은 **세로 전용**이다. 안내부터가 "명함을 시계 방향으로 90° 돌려서
+    // 넣어주세요"이고, 가이드 프레임의 긴 변을 **화면 폭** 기준으로 잡는다.
+    // 가로로 돌리면 폭이 높이보다 커져 가이드가 화면 밖으로 넘친다 — 실기기에서
+    // `BOTTOM OVERFLOWED BY 52 PIXELS`가 떴다(사용자 제보 2026-08-14
+    // "핸드폰을 90도 돌리니까 아래에 노란색이 보여").
+    //
+    // ⚠️ 그 노란 줄무늬는 **debug 빌드에서만** 보인다. release에서는 경고 없이
+    // 촬영 버튼 아래 안내가 잘린다 — 보이지 않을 뿐 더 나쁘다.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _laserController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -182,6 +301,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // 이 화면을 벗어나면 회전 제한을 반드시 푼다 — 안 그러면 앱 전체가 세로로
+    // 묶인다.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _laserController.dispose();
     _controller?.dispose();
     super.dispose();
@@ -256,7 +378,66 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     }
     final avgDiff = diffSum / sample.length;
 
-    if (avgDiff < _stabilityDiffThreshold) {
+    // 흔들리지 않는 것만으로는 부족하다 — **가이드 안에 볼 것이 있어야** 한다.
+    // 대비 하나로는 모자랐다. 책상·벽 모서리처럼 **각이 진 빈 곳**은 밝은 면과
+    // 어두운 면이 반반이라 대비가 오히려 크다(사용자 제보 "빈공간을 찍지는
+    // 않는데 각이진 빈곳은 자동 촬영되").
+    //
+    // 명함은 **바탕이 지배적**이고 글자가 소수다 — 밝든 어둡든 한쪽 톤이
+    // 대부분이다. 모서리 장면은 대략 반반이라 여기서 갈린다.
+    final contrast = centerFrameContrast(sample, gridSize: _sampleGridSize);
+    final dominantTone = centerDominantToneRatio(
+      sample,
+      gridSize: _sampleGridSize,
+    );
+    final wouldBlock =
+        contrast < _minCenterContrast ||
+        dominantTone < _minDominantToneRatio;
+    // 게이트가 꺼져 있으면 판단만 하고 막지는 않는다 — 위 상수 주석 참고.
+    final hasContent = _contentGateEnabled ? !wouldBlock : true;
+
+    // 임계값을 추측으로 정했다가 진짜 명함을 막는 회귀를 냈다. 실기기에서
+    // **실제 장면의 값을 읽을 수 있어야** 제대로 정할 수 있다 — 디버그
+    // 빌드에서만 화면에 띄운다(테스터 배포는 release라 보이지 않는다).
+    if (kDebugMode) {
+      _debugContrastMin = _debugContrastMin == null
+          ? contrast
+          : math.min(_debugContrastMin!, contrast);
+      _debugContrastMax = _debugContrastMax == null
+          ? contrast
+          : math.max(_debugContrastMax!, contrast);
+      _debugToneMin = _debugToneMin == null
+          ? dominantTone
+          : math.min(_debugToneMin!, dominantTone);
+      _debugToneMax = _debugToneMax == null
+          ? dominantTone
+          : math.max(_debugToneMax!, dominantTone);
+      final shownAt = _debugShownAt;
+      if (shownAt == null ||
+          now.difference(shownAt) >= const Duration(milliseconds: 700)) {
+        _debugShownAt = now;
+        final text =
+            '대비 ${_debugContrastMin!.toStringAsFixed(1)}'
+            '~${_debugContrastMax!.toStringAsFixed(1)} · '
+            '톤 ${_debugToneMin!.toStringAsFixed(2)}'
+            '~${_debugToneMax!.toStringAsFixed(2)}'
+            '${wouldBlock ? ' · 지금이면 막힘' : ''}';
+        if (text != _debugMetrics) setState(() => _debugMetrics = text);
+        // 화면의 작은 글씨는 읽기 어렵다는 제보가 있었다. 같은 값을 로그로도
+        // 남겨 `adb logcat`으로 뽑을 수 있게 한다 — 사람이 카메라를 향하게
+        // 하고, 값은 기계가 읽는 쪽이 정확하다.
+        //
+        // ⚠️ 숫자만 남긴다. 명함 내용은 찍지 않는다(개인정보, CLAUDE.md 4절).
+        debugPrint(
+          '[CARDGATE] contrast=${contrast.toStringAsFixed(1)} '
+          'tone=${dominantTone.toStringAsFixed(3)} '
+          'stableDiff=${avgDiff.toStringAsFixed(1)} '
+          'wouldBlock=$wouldBlock',
+        );
+      }
+    }
+
+    if (avgDiff < _stabilityDiffThreshold && hasContent) {
       _stableSince ??= now;
     } else {
       _stableSince = null;
@@ -296,6 +477,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     return result;
   }
 
+  /// 촬영은 했지만 아직 인식(OCR)을 돌리지 않은 사진.
+  ///
+  /// 예전에는 셔터를 누르면 곧바로 인식까지 하고 화면을 닫았다. 그래서 **초점이
+  /// 나간 사진도 그대로 인식**됐고(테스터 E-04), 사용자는 결과를 본 뒤에야
+  /// 잘못 찍은 걸 알았다. 인식 전에 한 번 보여주고 [다시 찍기]/[확인]을 받는다.
+  XFile? _pendingShot;
+
   Future<void> _capturePhoto() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _isCapturing)
@@ -316,9 +504,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       if (!mounted) return;
       final screenSize = MediaQuery.of(context).size;
       final croppedFile = await _cropToGuideFrame(rawFile, screenSize);
-      final scanResult = await OcrScannerService.scanBusinessCard(croppedFile);
       if (!mounted) return;
-      Navigator.pop(context, scanResult);
+      // 바로 인식하지 않고 먼저 보여준다 — 흐린 사진으로 인식을 돌리는 낭비와
+      // "결과를 봐야 잘못 찍은 걸 아는" 문제를 없앤다.
+      setState(() {
+        _pendingShot = croppedFile;
+        _isCapturing = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isCapturing = false);
@@ -332,6 +524,40 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // 감지를 다시 시작한다.
       await _startAutoCaptureStream();
     }
+  }
+
+  /// 보여준 사진으로 인식을 진행한다.
+  Future<void> _confirmPendingShot() async {
+    final shot = _pendingShot;
+    if (shot == null) return;
+    setState(() => _isCapturing = true);
+    try {
+      final scanResult = await OcrScannerService.scanBusinessCard(shot);
+      if (!mounted) return;
+      Navigator.pop(context, scanResult);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCapturing = false;
+        _pendingShot = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ 명함 인식에 실패했습니다: $e'),
+          backgroundColor: AppColors.destructive,
+        ),
+      );
+      await _startAutoCaptureStream();
+    }
+  }
+
+  /// 방금 찍은 사진을 버리고 다시 촬영 상태로 돌아간다.
+  Future<void> _retakePendingShot() async {
+    setState(() {
+      _pendingShot = null;
+      _isCapturing = false;
+    });
+    await _startAutoCaptureStream();
   }
 
   /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
@@ -348,7 +574,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 세로 공간을 넘칠 때만 안전장치로 줄인다.
   Size _guideFrameSizeFor(Size screenSize) {
     var longEdge = screenSize.width * 0.86;
-    final maxLongEdge = screenSize.height * 0.8;
+    // 화면이 낮으면(가로 방향, 폴더블 펼침) 가이드가 세로로 넘친다. 위아래
+    // 안내 문구와 촬영 버튼이 함께 들어가야 하므로 **높이의 0.72까지만** 쓴다.
+    //
+    // ⚠️ 예전 상한은 0.8이었는데, 그것만으로는 모자라 가로에서
+    // `BOTTOM OVERFLOWED BY 52 PIXELS`가 떴다(사용자 제보 "핸드폰을 90도
+    // 돌리니까 아래에 노란색이 보여"). 세로 고정(`setPreferredOrientations`)도
+    // 함께 걸었지만 **Android는 큰 화면에서 앱의 방향 제한을 무시한다** —
+    // 폴더블 펼친 화면에서는 여전히 가로가 되므로 크기 자체를 맞춰야 한다.
+    final maxLongEdge = screenSize.height * 0.72;
     if (longEdge > maxLongEdge) longEdge = maxLongEdge;
     final shortEdge = longEdge * _cardAspectRatio;
     return Size(shortEdge, longEdge);
@@ -385,7 +619,28 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final offsetX = (imgW - visibleImgW) / 2;
       final offsetY = (imgH - visibleImgH) / 2;
 
-      const margin = 1.3;
+      // 가이드 프레임보다 **넓게** 잘라낸다.
+      //
+      // ⚠️ 이 값은 한 번 되돌아간 적이 있다. `db605ef`가 **"명함 주변 텍스트
+      // 잘림을 방지하기 위해"** 1.5로 넓혔는데, 뒤이은 스타일 커밋 `8fb5ff3`이
+      // 배경 노이즈를 없애려고 **1.0(여유 없음)**으로 바꿨다. 그러자 1.5가
+      // 막고 있던 결함이 그대로 돌아왔다 — 사용자 제보 "가이드에 맞춰 자동으로
+      // 찍힌 명함의 양쪽 끝 글씨가 30~40% 잘린다"(2026-08-14).
+      //
+      // **잘린 글자는 되찾을 수 없고, 섞인 배경은 파서가 걸러낸다.** 어느
+      // 쪽으로 틀릴지 골라야 한다면 넓게 자르는 쪽이다. 배경 글자가 필드를
+      // 침범하던 문제는 그 뒤 파싱 규칙에서 많이 잡혔다(추가 199~201).
+      //
+      // **값은 실측으로 정했다.** 1.5로 자동 촬영한 실물 사진을 열어 보니 글자는
+      // 온전했고 명함이 이미지의 약 74%를 차지했다(상하좌우 배경 각 ~13%).
+      // 사용자가 그 여백을 줄이기로 결정해 1.3으로 좁혔고, 그 결과를 다시
+      // 재보니 좌우 여백이 각 8~12%였다("아직 주변이 많이 보여"). 한 단계 더
+      // 좁혀 1.2로 둔다 — 여백이 각 5~7% 정도가 된다.
+      //
+      // ⚠️ **이 값을 더 줄이려면 먼저 재라.** 0으로 만든 적이 있고(`8fb5ff3`)
+      // 그때 글자가 30~40% 잘렸다. 줄이기 전에 **자동 촬영한 실물 사진을 열어
+      // 네 귀퉁이가 온전한지** 확인할 것.
+      const margin = 1.2;
       final guideSize = _guideFrameSizeFor(screenSize);
       final guideW = guideSize.width * margin;
       final guideH = guideSize.height * margin;
@@ -454,7 +709,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
             // Camera Viewfinder — 실제 후면 카메라 실시간 프리뷰.
             Positioned.fill(
               child: Container(
-                color: AppColors.bgBase,
+                // ⚠️ 카메라 자리는 **검정**이어야 한다. 예전에는 밝은
+                // `AppColors.bgBase`(0xFFF7F8FA)라, 카메라가 준비되는 동안
+                // 화면이 통째로 하얬다 — 사용자 제보 "카메라가 하얀색이다가
+                // 좀 늦게 화면이 보여". Android는 초기화가 더 느려서 그 흰
+                // 화면이 더 오래 노출된다(통합본 E-01·E-06 관련).
+                //
+                // 아래 워터마크 아이콘이 `white.withValues(alpha: 0.04)`인
+                // 것이 원래 어두운 배경을 전제했다는 증거다 — 흰 배경에서는
+                // 보이지도 않았다.
+                color: Colors.black,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -465,9 +729,24 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         size: 180,
                         color: Colors.white.withValues(alpha: 0.04),
                       ),
+                    // 기다리는 동안 "고장난 것"처럼 보이지 않게 무엇을 하는
+                    // 중인지 알린다. 카메라 초기화는 기기에 따라 몇 초
+                    // 걸리는데(Android가 더 느리다), 안내가 없으면 그 시간이
+                    // 통째로 오류처럼 읽힌다.
                     if (_isInitializing)
-                      const CircularProgressIndicator(
-                        color: AppColors.accentText,
+                      const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(height: 14),
+                          Text(
+                            '카메라를 준비하는 중이에요',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     if (_initError != null)
                       Padding(
@@ -498,7 +777,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                   label: const Text('설정 열기'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
-                                    side: const BorderSide(color: Colors.white54),
+                                    side: const BorderSide(
+                                      color: Colors.white54,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -532,7 +813,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               ),
                               SizedBox(height: 16),
                               Text(
-                                '📸 명함 촬영 완료! AI 텍스트 추출 중...',
+                                '📸 촬영한 사진을 다듬는 중…',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 15,
@@ -655,9 +936,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: _isFrameStable
-                            ? AppColors.accent
-                            : Colors.white,
+                        color: _isFrameStable ? AppColors.accent : Colors.white,
                         width: _isFrameStable ? 3 : 1.5,
                       ),
                     ),
@@ -712,54 +991,194 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      _isFrameStable
-                          ? '고정됨 · 자동으로 촬영합니다'
-                          : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
-                      style: TextStyle(
-                        color: _isFrameStable
-                            ? AppColors.accent
-                            : AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _isFrameStable
+                              ? '고정됨 · 자동으로 촬영합니다'
+                              : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                          style: TextStyle(
+                            color: _isFrameStable
+                                ? AppColors.accent
+                                : AppColors.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        // 디버그 빌드에서만 보이는 실측값(대비 / 지배톤).
+                        // 자동 촬영 임계값을 **추측으로 정했다가 진짜 명함을
+                        // 막는 회귀**를 냈다. 실제 장면의 숫자를 읽을 수 있어야
+                        // 제대로 정할 수 있다. release 빌드에는 안 나온다.
+                        if (kDebugMode && _debugMetrics != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            // 누르면 범위를 지우고 다시 잰다 — 장면을 바꿔
+                            // 가며 값을 읽을 때 쓴다.
+                            child: GestureDetector(
+                              onTap: () => setState(() {
+                                _debugContrastMin = null;
+                                _debugContrastMax = null;
+                                _debugToneMin = null;
+                                _debugToneMax = null;
+                                _debugMetrics = null;
+                              }),
+                              child: Text(
+                                '$_debugMetrics '
+                                '(기준 $_minCenterContrast / '
+                                '$_minDominantToneRatio · '
+                                '${_contentGateEnabled ? "적용중" : "관찰만"}'
+                                ' · 눌러서 초기화)',
+                                style: const TextStyle(
+                                  color: Colors.amberAccent,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
 
-            // Bottom Shutter Controls
-            Positioned(
-              bottom: 30,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                    ),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isReady ? AppColors.accent : AppColors.textMuted,
-                        shape: BoxShape.circle,
+            // 방금 찍은 사진 확인 — 인식 전에 [다시 찍기]/[확인]을 받는다.
+            if (_pendingShot != null)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: Image.file(
+                            File(_pendingShot!.path),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.camera_alt,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${widget.sideLabel} · 글자가 또렷한가요?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _isCapturing
+                                        ? null
+                                        : _retakePendingShot,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: const BorderSide(
+                                        color: Colors.white54,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: const Text('다시 찍기'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isCapturing
+                                        ? null
+                                        : _confirmPendingShot,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.accent,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: Text(_isCapturing ? '인식 중…' : '확인'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // 지금 찍는 면 — 셔터 위에 항상 보인다.
+            if (_pendingShot == null)
+              Positioned(
+                bottom: 118,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      widget.sideLabel,
+                      style: const TextStyle(
                         color: Colors.white,
-                        size: 36,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+
+            // Bottom Shutter Controls
+            if (_pendingShot == null)
+              Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 4),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isReady
+                              ? AppColors.accent
+                              : AppColors.textMuted,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

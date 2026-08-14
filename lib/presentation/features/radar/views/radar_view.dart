@@ -32,6 +32,18 @@ class _RadarViewState extends State<RadarView> {
   bool _initialConsentPromptScheduled = false;
   bool _consentSheetVisible = false;
 
+  /// 검색 입력칸. 지우기(X) 버튼을 두려면 컨트롤러가 있어야 한다 —
+  /// 예전에는 `onChanged`만 있어서 **입력한 글자를 한 자씩 지워야 했다**
+  /// (테스터 빌드6 피드백, backlog B6-01). 관리자 문의 화면엔 이미 있는데
+  /// 여기만 빠져 있었다.
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
@@ -76,9 +88,7 @@ class _RadarViewState extends State<RadarView> {
                       opacity: 0.06,
                       child: RepaintBoundary(
                         child: Image(
-                          image: AssetImage(
-                            'assets/images/brand/splash.png',
-                          ),
+                          image: AssetImage('assets/images/brand/splash.png'),
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -306,7 +316,13 @@ class _RadarViewState extends State<RadarView> {
                             children: [
                               Expanded(
                                 child: TextField(
-                                  onChanged: viewModel.setSearchTerm,
+                                  controller: _searchController,
+                                  onChanged: (value) {
+                                    viewModel.setSearchTerm(value);
+                                    // 지우기 버튼이 나타나고 사라지는 것만
+                                    // 반영하면 되므로 값 자체는 뷰모델이 갖는다.
+                                    setState(() {});
+                                  },
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: AppColors.capsuleInputText,
@@ -336,11 +352,33 @@ class _RadarViewState extends State<RadarView> {
                                   ),
                                 ),
                               ),
-                              const Icon(
-                                Icons.search,
-                                color: AppColors.capsuleInputText,
-                                size: 22,
-                              ),
+                              if (_searchController.text.isNotEmpty)
+                                Semantics(
+                                  button: true,
+                                  label: '검색어 지우기',
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(999),
+                                    onTap: () {
+                                      _searchController.clear();
+                                      viewModel.setSearchTerm('');
+                                      setState(() {});
+                                    },
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(
+                                        Icons.close,
+                                        color: AppColors.textMuted,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                const Icon(
+                                  Icons.search,
+                                  color: AppColors.capsuleInputText,
+                                  size: 22,
+                                ),
                             ],
                           ),
                         ),
@@ -1111,36 +1149,51 @@ class RadiusSelector extends StatelessWidget {
       context: context,
       showDragHandle: true,
       backgroundColor: AppColors.cardSurface,
+      // 내용이 화면 높이를 넘으면 **잘리지 않고 스크롤되게** 한다.
+      //
+      // 예전에는 고정 높이라 마지막 항목("제한 없음")이 5픽셀 넘쳐 오버플로
+      // 줄무늬에 가려졌다(2026-08-14 실기기 제보). 5픽셀이라 "거의 맞는" 상태로
+      // 보이지만, 글자 크기를 키운 기기나 항목이 하나만 더 늘어도 그대로
+      // 깨진다 — 여유를 두는 대신 스크롤이 되게 고쳤다.
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '감지 반경',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '주변 인맥 목록에 표시할 최대 거리를 선택하세요. 고른 값은 기기에 저장돼 다음에 열어도 그대로 유지됩니다.',
-                style: TextStyle(color: AppColors.textSecondary, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              for (final option in options)
-                ListTile(
-                  minTileHeight: 52,
-                  title: Text(sheetLabel(option)),
-                  trailing: radiusMeters == option
-                      ? const Icon(Icons.check_circle, color: AppColors.accent)
-                      : const Icon(
-                          Icons.circle_outlined,
-                          color: AppColors.textMuted,
-                        ),
-                  onTap: () => Navigator.of(sheetContext).pop(option),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '감지 반경',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
                 ),
-            ],
+                const SizedBox(height: 8),
+                const Text(
+                  '주변 인맥 목록에 표시할 최대 거리를 선택하세요. 고른 값은 기기에 저장돼 다음에 열어도 그대로 유지됩니다.',
+                  style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+                ),
+                const SizedBox(height: 12),
+                for (final option in options)
+                  ListTile(
+                    minTileHeight: 52,
+                    title: Text(sheetLabel(option)),
+                    trailing: radiusMeters == option
+                        ? const Icon(
+                            Icons.check_circle,
+                            color: AppColors.accent,
+                          )
+                        : const Icon(
+                            Icons.circle_outlined,
+                            color: AppColors.textMuted,
+                          ),
+                    onTap: () => Navigator.of(sheetContext).pop(option),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

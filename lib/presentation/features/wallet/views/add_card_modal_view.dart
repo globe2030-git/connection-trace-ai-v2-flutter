@@ -14,11 +14,13 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/scan_conflict.dart';
 import '../../../../core/services/ocr_stats_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/address_search_view.dart';
+import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
 import 'camera_scan_modal_view.dart';
@@ -127,6 +129,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _selectedAvatarUrl;
   bool _isPickingAvatar = false;
   String? _scannedRawText;
+  List<String> _scannedRawLines = [];
   bool _isScanningOcr = false;
   bool _showRawTextCard = false;
   bool _isSavingCard = false;
@@ -137,6 +140,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 입력칸이 그대로면(직접 다시 고치지 않았다면) 도로명 변환창을 또
   // 띄우지 않는다 — 저장할 때마다 변환창이 계속 다시 뜨던 문제.
   String? _confirmedRoadNameAddress;
+
+  /// 좌표 조회가 실패했을 때 다시 시도할 **같은 위치의 다른 표기**(도로명↔지번).
+  /// 우편번호 검색에서 받아 둔다 — OS 지오코더가 한쪽 표기로는 좌표를 못 찾는
+  /// 경우가 있고 방향은 둘 다 가능하다(2026-08-14 실사용 확인).
+  String? _addressGeocodeFallback;
 
   // X 버튼으로 닫으려 할 때 "정말 취소할지" 물을지 판단하는 기준값 — 화면을
   // 열었을 때(수정이면 기존 명함 값, 신규면 빈 값) 스냅샷을 떠 두고, 닫기
@@ -163,11 +171,35 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _cardImagePath;
   final List<({String path, bool hadName})> _scannedCardImages = [];
   int _selectedScanIndex = -1;
+
+  /// **직전 스캔이 실제로 채운 입력칸**들. 재촬영에서 그 칸만 비우고 다시
+  /// 채우기 위해 기억한다.
+  ///
+  /// 초점이 안 맞거나 잘못 찍어서 **같은 면을 다시 찍고 싶은 경우**가 흔한데
+  /// (사용자 제보 2026-08-14), 이걸 모르면 재촬영이 그냥 한 번 더 스캔한 것이
+  /// 되어 값이 누적된다. 앞면 값은 지키고 방금 것만 되돌리려면 어느 칸이
+  /// 방금 채워졌는지 알아야 한다.
+  final Set<String> _lastScanFilledKeys = {};
+
+  /// 이 명함을 지금까지 몇 번 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대 행동**이다(사용자 정의 2026-08-14).
+  /// 그 전에는 횟수 개념이 없어 세 번, 네 번 찍으면 계속 누적됐고 "여기서
+  /// 끝났다"는 지점도 없었다. 이 값으로 안내 문구와 초기화 시점을 정한다.
+  int _scanCount = 0;
+  /// "여기서 완료"로 스캔 흐름을 **끝냈는지**.
+  ///
+  /// 끝낸 뒤 사용자가 다시 촬영을 시작하면 그것은 **새 스캔 흐름**이다. 이
+  /// 표시가 없으면 `_scanCount`가 그대로 남아 다음 촬영이 자동으로 "뒷면"으로
+  /// 계산되고, 그래서 **뒷면 선택지가 사라진다** — 사용자 제보 "사진찍기 →
+  /// 다시찍기 → 여기서완료 → 사진찍기 → 뒷면찍기가 없어짐"(2026-08-14).
+  bool _scanSessionClosed = false;
   bool _useCardAsAvatar = false;
 
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
   String? get _scannedCardImageSourcePath =>
-      (_selectedScanIndex >= 0 && _selectedScanIndex < _scannedCardImages.length)
+      (_selectedScanIndex >= 0 &&
+          _selectedScanIndex < _scannedCardImages.length)
       ? _scannedCardImages[_selectedScanIndex].path
       : null;
 
@@ -187,10 +219,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       ContactImageService()
           .findExistingCardImagePath(widget.contactToEdit!.id)
           .then((path) {
-        if (path != null && mounted) {
-          setState(() => _cardImagePath = path);
-        }
-      });
+            if (path != null && mounted) {
+              setState(() => _cardImagePath = path);
+            }
+          });
     }
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
@@ -203,9 +235,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
-    _tagsController = TextEditingController(
-      text: c != null ? c.tags.join(', ') : 'AI, IT',
-    );
+    // ⚠️ 신규 등록의 기본값은 **빈 값**이어야 한다. 예전에는 `'AI, IT'`가
+    // 박혀 있어서, 회계사 명함을 등록해도 태그에 `AI`·`IT`가 그대로 저장됐다
+    // (테스터 제보 — 통합본 E-08). 데모용 더미값이 그대로 남아 있던 것이고,
+    // "가짜 데이터를 만들지 않는다"(CLAUDE.md 4절)에 정면으로 걸린다.
+    //
+    // 태그가 틀리면 인맥 분류·검색·추천이 전부 어긋나는데, 사용자는 자기가
+    // 넣은 값인 줄 알고 지우지 않는다. 무엇을 적는 칸인지는 입력칸 안내
+    // 문구(`예: AI, 바이오, C-Level`)가 이미 알려 준다.
+    _tagsController = TextEditingController(text: c?.tags.join(', ') ?? '');
     _interestsController = TextEditingController(
       text: c != null ? c.interests.join(', ') : '',
     );
@@ -302,14 +340,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   }
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
-  Future<void> _performOcrScan({required bool isFromCamera}) async {
+  Future<void> _performOcrScan({
+    required bool isFromCamera,
+
+    /// 지금 찍는 면. 카메라 화면에 그대로 표시된다(추가 191).
+    String sideLabel = '앞면',
+  }) async {
     OcrScanResult? result;
 
     if (isFromCamera) {
       // Open camera scanner view with viewfinder shutter
       result = await Navigator.push<OcrScanResult>(
         context,
-        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+        MaterialPageRoute(
+          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+        ),
       );
     } else {
       // Open interactive gallery / file explorer picker view
@@ -317,7 +362,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const FilePickerModalView(),
+        builder: (_) => FilePickerModalView(sideLabel: sideLabel),
       );
     }
 
@@ -331,10 +376,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 물어본다.
     final existingName = _nameController.text.trim();
     final scannedName = result.name.trim();
-    final looksLikeDifferentCard =
-        existingName.isNotEmpty &&
-        scannedName.isNotEmpty &&
-        existingName != scannedName;
+    // 이름만 보면 앞면에서 이름을 못 읽었을 때 감지가 아예 안 된다 —
+    // 휴대폰·이메일까지 본다(ScanConflict 주석 참고, backlog 추가 189).
+    final looksLikeDifferentCard = ScanConflict.looksLikeDifferentCard(
+      existingName: existingName,
+      scannedName: scannedName,
+      existingPhone: _phoneController.text,
+      scannedPhone: result.phone,
+      existingEmail: _emailController.text,
+      scannedEmail: result.email,
+    );
 
     var overwrite = false;
     if (looksLikeDifferentCard) {
@@ -370,6 +421,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final landed = (overwrite || wasEmpty) && parsedValue.trim().isNotEmpty;
       if (landed) _ocrParsedSnapshot[key] = parsedValue.trim();
     });
+
+    // 이번 스캔이 어느 칸을 채웠는지 기억해 둔다(재촬영에서 되돌릴 대상).
+    _lastScanFilledKeys
+      ..clear()
+      ..addAll(
+        fieldSources.entries
+            .where((e) {
+              final (controller, parsedValue) = e.value;
+              return (overwrite || controller.text.trim().isEmpty) &&
+                  parsedValue.trim().isNotEmpty;
+            })
+            .map((e) => e.key),
+      );
     // 파싱 형태(내용 없음)를 집계에 더한다 — fire-and-forget.
     final shape = result.parseShape;
     if (shape != null) {
@@ -384,11 +448,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
+      _scannedRawLines = result.rawLines;
       if (overwrite) {
-        // 다른 명함으로 새로 시작하는 것이므로 이전 명함의 스캔 이미지는
-        // 대표 후보에서 제거한다.
+        // 다른 명함으로 새로 시작하는 것이므로 **이전 명함의 흔적을 전부**
+        // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
+        // 명함을 저장하는데 **좌표가 이전 명함 주소로 잡히는** 일이 가능했다
+        // (backlog 추가 189).
         _scannedCardImages.clear();
         _selectedScanIndex = -1;
+        _ocrParsedSnapshot.clear();
+        _confirmedRoadNameAddress = null;
+        _addressGeocodeFallback = null;
+        _addressGeoFailed = false;
+        _interestsController.clear();
+        _scanCount = 0;
+        _scanSessionClosed = false;
       }
       // 스캔한 명함 이미지를 대표 후보 목록에 쌓는다(추가 133). 기본 대표는
       // "이름이 읽힌 면"(보통 앞면) — 예전에는 무조건 마지막 스캔이 대표가
@@ -459,22 +533,273 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ];
 
     if (!mounted) return;
-
-    if (missingFields.isEmpty) {
-      _showInlineNotice(
-        isFromCamera
-            ? '📸 명함 촬영 스캔이 완료되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.'
-            : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.',
-        isError: false,
-      );
-    } else {
-      _showInlineNotice(
-        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
-        isError: true,
-        actionLabel: '뒷면 스캔',
-        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
-      );
+    // "여기서 완료" 뒤에 다시 찍기 시작했다면 새 흐름이다 — 앞면부터 다시 센다.
+    if (_scanSessionClosed) {
+      _scanCount = 0;
+      _scanSessionClosed = false;
     }
+    _scanCount = overwrite ? 1 : _scanCount + 1;
+
+    _showInlineNotice(
+      missingFields.isEmpty
+          ? '📸 스캔한 내용으로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 아래 정보를 확인해 주세요.'
+          : '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요.',
+      isError: missingFields.isNotEmpty,
+    );
+
+    await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
+  }
+
+  /// 스캔 한 번이 끝날 때마다 **다음에 무엇을 할지** 묻는다.
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대 행동**이다(사용자 정의 2026-08-14).
+  /// 예전에는 이 물음이 없어서 "여기서 끝났다"는 지점이 없었고, 필수 항목이
+  /// 비었을 때만 "뒷면도 스캔해 보세요" 안내가 떴다. 다 채워졌으면 아무것도
+  /// 묻지 않아 사용자가 뒷면을 찍어야 할지 판단할 근거가 없었다.
+  ///
+  /// **재촬영**도 여기 있다 — 초점이 안 맞거나 잘못 찍는 일이 흔한데, 그냥 다시
+  /// 찍으면 값이 **누적**됐다(사용자 제보). 재촬영은 방금 스캔이 채운 칸만
+  /// 되돌리고 다시 채운다.
+  Future<void> _askNextScanStep({
+    required bool isFromCamera,
+    required List<String> missing,
+  }) async {
+    final isBackDone = _scanCount >= 2;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.cardSurface,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isBackDone ? '앞면과 뒷면을 모두 스캔했습니다' : '다음으로 무엇을 할까요?',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  missing.isEmpty
+                      ? '명함 한 장은 앞면과 뒷면까지 스캔할 수 있습니다.'
+                      : '${_withObjectParticle(missing.join(', '))} 찾지 못했습니다. 뒷면에 있을 수 있습니다.',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!isBackDone)
+                  ListTile(
+                    minTileHeight: 56,
+                    leading: const Icon(
+                      Icons.flip_to_back,
+                      color: AppColors.accentText,
+                    ),
+                    title: Text(isFromCamera ? '뒷면 촬영' : '뒷면 이미지 선택'),
+                    subtitle: const Text('지금 채워진 값은 그대로 두고 빈 칸만 채웁니다'),
+                    onTap: () => Navigator.of(sheetContext).pop('back'),
+                  ),
+                ListTile(
+                  minTileHeight: 56,
+                  leading: const Icon(
+                    Icons.refresh,
+                    color: AppColors.accentText,
+                  ),
+                  // 촬영으로 들어왔는지 업로드로 들어왔는지에 따라 말이 다르다 —
+                  // 업로드인데 "다시 찍기"라고 하면 사용자는 카메라가 열릴 줄 안다.
+                  title: Text(isFromCamera ? '다시 찍기' : '다른 이미지 선택'),
+                  subtitle: Text(
+                    isFromCamera
+                        ? '방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'
+                        : '방금 스캔으로 채워진 값을 지우고 이미지를 다시 고릅니다',
+                  ),
+                  onTap: () => Navigator.of(sheetContext).pop('retake'),
+                ),
+                ListTile(
+                  minTileHeight: 56,
+                  leading: const Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.accentText,
+                  ),
+                  title: const Text('여기서 완료'),
+                  subtitle: const Text('스캔을 끝내고 내용을 확인·수정합니다'),
+                  onTap: () => Navigator.of(sheetContext).pop('done'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (choice == 'done') _scanSessionClosed = true;
+    if (!mounted || choice == null || choice == 'done') return;
+
+    // 뒷면을 고르면 카메라 화면도 "뒷면"으로 연다. 재촬영은 방금 찍던 면을
+    // 그대로 다시 찍는 것이므로 현재 면 라벨을 유지한다.
+    final nextLabel = choice == 'back' ? '뒷면' : _currentSideLabel;
+
+    if (choice == 'retake') {
+      setState(() {
+        // 방금 스캔이 채운 칸만 비운다 — 앞면에서 읽은 값은 지킨다.
+        for (final key in _lastScanFilledKeys) {
+          _controllerFor(key)?.clear();
+          _ocrParsedSnapshot.remove(key);
+        }
+        _lastScanFilledKeys.clear();
+        // 방금 찍은 사진도 후보에서 뺀다.
+        if (_scannedCardImages.isNotEmpty) {
+          _scannedCardImages.removeLast();
+          _selectedScanIndex = _scannedCardImages.isEmpty
+              ? -1
+              : _scannedCardImages.length - 1;
+        }
+        _scanCount = _scanCount > 0 ? _scanCount - 1 : 0;
+      });
+    }
+    await _performOcrScan(isFromCamera: isFromCamera, sideLabel: nextLabel);
+  }
+
+  /// 지금 찍고 있는 면. 스캔 횟수로 판단한다 — 아직 한 번도 안 찍었거나
+  /// 재촬영이면 앞면, 앞면을 마쳤으면 뒷면이다.
+  String get _currentSideLabel => _scanCount >= 1 ? '뒷면' : '앞면';
+
+  /// 목적격 조사를 받침에 맞춰 붙인다("주소를", "이메일을").
+  ///
+  /// "주소을(를)"처럼 괄호로 두 개를 다 보여주면 기계가 쓴 문장처럼 읽힌다.
+  /// 마지막 글자의 받침만 보면 되므로 규칙이 단순하다 — 한글이 아니면
+  /// 판단할 근거가 없어 "를"을 쓴다(영문 단어 뒤에는 그쪽이 자연스럽다).
+  static String _withObjectParticle(String word) {
+    if (word.isEmpty) return word;
+    final last = word.characters.last;
+    final code = last.runes.first;
+    if (code < 0xAC00 || code > 0xD7A3) return '$word를';
+    final hasBatchim = (code - 0xAC00) % 28 != 0;
+    return '$word${hasBatchim ? '을' : '를'}';
+  }
+
+  /// 스캔 결과 키(`name`·`company` …)에 해당하는 입력칸. 재촬영에서 되돌릴 때
+  /// 쓴다.
+  TextEditingController? _controllerFor(String key) => switch (key) {
+    'name' => _nameController,
+    'company' => _companyController,
+    'title' => _titleController,
+    'address' => _addressController,
+    'addressDetail' => _addressDetailController,
+    'postal' => _postalCodeController,
+    'mobile' => _phoneController,
+    'office' => _officePhoneController,
+    'email' => _emailController,
+    _ => null,
+  };
+
+  void _showQuickFieldMapperSheet(String text) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgBase,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.touch_app,
+                      color: AppColors.accentText,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '\'$text\' 텍스트 세팅',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '터치하면 해당 입력 칸으로 즉시 채워집니다.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _quickMapTile('👤 성명 (이름)', () {
+                      _setTextFromStart(_nameController, text);
+                    }),
+                    _quickMapTile('🏢 회사명', () {
+                      _setTextFromStart(_companyController, text);
+                    }),
+                    _quickMapTile('💼 직함', () {
+                      _setTextFromStart(_titleController, text);
+                    }),
+                    _quickMapTile('📞 휴대폰 번호', () {
+                      _setTextFromStart(_phoneController, text);
+                    }),
+                    _quickMapTile('✉️ 이메일', () {
+                      _setTextFromStart(_emailController, text);
+                    }),
+                    _quickMapTile('📍 주소', () {
+                      _setTextFromStart(_addressController, text);
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _quickMapTile(String label, VoidCallback onSelect) {
+    return ActionChip(
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+      ),
+      backgroundColor: AppColors.bgBase,
+      side: const BorderSide(color: AppColors.borderSubtle),
+      onPressed: () {
+        setState(() {
+          onSelect();
+        });
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $label 항목에 세팅되었습니다!'),
+            duration: const Duration(seconds: 2),
+            backgroundColor: AppColors.accentText,
+          ),
+        );
+      },
+    );
   }
 
   /// 이름이 이미 채워진 상태에서 다른 이름의 명함을 스캔했을 때 묻는다.
@@ -575,6 +900,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 않는다 — 그 제안은 오히려 구 단위가 빠진 짧은 주소를 만든다
       // (backlog 추가 83, 사용자 제보).
       _confirmedRoadNameAddress = picked;
+      _addressGeocodeFallback = result.geocodeFallback;
 
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
@@ -654,11 +980,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     final uid = context.read<AuthRepository>().firebaseUid;
 
+    // 누르면 전체 화면으로 크게 열린다 — 미리보기 높이(180px)로는 눕혀 찍은
+    // 명함의 글자를 읽을 수 없다(사용자 제보, 2026-08-14).
     Widget preview;
     if (hasFresh) {
-      preview = Image.file(
-        File(_scannedCardImageSourcePath!),
-        fit: BoxFit.contain,
+      preview = ZoomableCardImage(
+        image: FileImage(File(_scannedCardImageSourcePath!)),
       );
     } else if (uid != null) {
       preview = FutureBuilder<Uint8List?>(
@@ -675,7 +1002,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           }
           final bytes = snap.data;
           if (bytes == null) return const SizedBox.shrink();
-          return Image.memory(bytes, fit: BoxFit.contain);
+          return ZoomableCardImage(image: MemoryImage(bytes));
         },
       );
     } else {
@@ -704,13 +1031,28 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ],
         ),
         const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 180),
-            color: AppColors.bgBase,
-            child: preview,
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppColors.borderSubtle.withValues(alpha: 0.8),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(maxHeight: 180),
+              color: AppColors.bgBase,
+              child: preview,
+            ),
           ),
         ),
         // 앞/뒷면처럼 여러 장을 스캔한 경우 — 어느 면을 대표로 저장할지
@@ -870,6 +1212,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     setState(() => _isSavingCard = true);
     final addressResult = await AddressGeocodingService.validateAndConvert(
       rawAddress,
+      fallbackAddress: _addressGeocodeFallback,
     );
     if (!mounted) return;
     setState(() => _isSavingCard = false);
@@ -1661,7 +2004,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
+          // 여러 줄 메모 칸이 있는 화면이다. Android에서 멀티라인 입력칸은
+          // 키보드에 완료 키 대신 **줄바꿈 키**가 떠서 키보드를 닫을 방법이
+          // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
+          // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
           child: SingleChildScrollView(
+            keyboardDismissBehavior:
+                ScrollViewKeyboardDismissBehavior.onDrag,
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -1919,19 +2268,82 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     if (_showRawTextCard) ...[
                       const SizedBox(height: 6),
                       Container(
+                        width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: AppColors.bgBase,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(color: AppColors.borderSubtle),
                         ),
-                        child: Text(
-                          _scannedRawText!,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.textSecondary,
-                            fontFamily: 'monospace',
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '💡 텍스트 칩을 터치하면 해당 항목으로 1초 세팅돼요:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.accentText,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_scannedRawLines.isNotEmpty)
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: _scannedRawLines.map((line) {
+                                  return InkWell(
+                                    onTap: () =>
+                                        _showQuickFieldMapperSheet(line),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.accent.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.accent.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            line,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.touch_app_outlined,
+                                            size: 13,
+                                            color: AppColors.accentText,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              )
+                            else
+                              Text(
+                                _scannedRawText!,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: AppColors.textSecondary,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],

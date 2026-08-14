@@ -1,0 +1,188 @@
+// 정답지와 대조해 **필드별 정확도**를 낸다.
+//
+// 왜 필요한가: 그동안 잴 수 있는 것이 **채움률**뿐이었다. 값이 들어갔는지만
+// 세고 맞는지는 보지 않아서, "오분류 0장"이라고 적어 둔 수치가 사실은 정확도가
+// 아니었다(backlog 추가 198에서 정정). 정답지가 생겨야 정확도로 잴 수 있고,
+// 이 파일이 그 정답지를 읽는 쪽이다.
+//
+// 정답지는 `tool/ocr_review/index.html`(검수 도구)이 만든다.
+//
+// ## 쓰는 법
+//
+// ```bash
+// TSV=~/Downloads/scan_result.tsv \
+// TRUTH=~/Downloads/ocr_truth.tsv \
+// flutter test test/ocr_accuracy_score_test.dart
+// ```
+//
+// ⚠️ 두 파일이 없으면 **조용히 건너뛴다** — CI에는 개인정보인 이 파일들이
+// 없기 때문이다. 그래서 이 테스트는 "실패하지 않는 것"이 목적이 아니라
+// **숫자를 뽑는 것**이 목적이다. 통과 여부가 아니라 출력을 봐야 한다.
+//
+// ## 무엇을 재는가
+//
+// | 판정 | 뜻 |
+// |---|---|
+// | 일치 | 추출값 = 정답 |
+// | 틀림 | 둘 다 값이 있는데 다름 |
+// | 미검출 | 명함에는 있는데 못 찾음 |
+// | 오검출 | 명함에 없는데 값이 들어감 |
+// | 둘 다 빔 | 명함에 없고 인식도 안 함 → **분모에서 제외** |
+//
+// "둘 다 빔"을 빼는 이유: 명함에 원래 전화가 없는 경우(card_134)까지 "맞혔다"고
+// 세면 정확도가 부풀려진다. 없는 것을 못 찾은 것은 공도 과도 아니다.
+import 'dart:io';
+
+import 'package:connection_trace_ai_flutter/core/services/ocr_scanner_service.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+const _fields = [
+  '이름',
+  '회사',
+  '직함',
+  '휴대폰',
+  '사무실',
+  '이메일',
+  '우편번호',
+  '주소',
+  '상세주소',
+];
+
+/// 비교 전 정규화. 앞뒤 공백과 연속 공백만 정리한다 — 그 이상 손대면
+/// "맞다고 쳐 주는" 범위가 슬금슬금 넓어져 정확도가 부풀려진다.
+String _norm(String v) => v.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+Map<String, Map<String, String>> _readTsv(File file, String keyColumn) {
+  final lines = file.readAsLinesSync().where((l) => l.trim().isNotEmpty);
+  if (lines.isEmpty) return {};
+  final header = lines.first.split('\t');
+  final out = <String, Map<String, String>>{};
+  for (final line in lines.skip(1)) {
+    final cells = line.split('\t');
+    final row = <String, String>{};
+    for (var i = 0; i < header.length; i++) {
+      row[header[i]] = i < cells.length ? cells[i] : '';
+    }
+    final key = row[keyColumn] ?? '';
+    if (key.isNotEmpty) out[key] = row;
+  }
+  return out;
+}
+
+void main() {
+  test('정답지 대비 필드별 정확도', () {
+    final scanPath = Platform.environment['TSV'];
+    final truthPath = Platform.environment['TRUTH'];
+    if (scanPath == null || truthPath == null) {
+      // ignore: avoid_print
+      print(
+        '건너뜀 — 환경변수 TSV(일괄 스캔 결과)와 TRUTH(정답지)가 필요합니다.\n'
+        '예: TSV=~/Downloads/scan_result.tsv TRUTH=~/Downloads/ocr_truth.tsv',
+      );
+      return;
+    }
+    final scanFile = File(scanPath);
+    final truthFile = File(truthPath);
+    if (!scanFile.existsSync() || !truthFile.existsSync()) {
+      // ignore: avoid_print
+      print('건너뜀 — 파일을 찾지 못했습니다: $scanPath / $truthPath');
+      return;
+    }
+
+    final scans = _readTsv(scanFile, '파일명');
+    final truths = _readTsv(truthFile, '파일명');
+
+    // 검수를 마친 명함만 센다. 안 본 것을 정답으로 쓰면 그게 다시 추측이다.
+    final checked = truths.entries
+        .where((e) => (e.value['확인함'] ?? '').trim() == 'Y')
+        .map((e) => e.key)
+        .where(scans.containsKey)
+        .toList();
+
+    // ignore: avoid_print
+    print('\n검수 완료 ${checked.length}장 / 정답지 ${truths.length}장');
+    if (checked.isEmpty) {
+      // ignore: avoid_print
+      print('아직 확인 완료(Y)한 명함이 없습니다.');
+      return;
+    }
+
+    var totalOk = 0, totalJudged = 0;
+    final rows = <String>[];
+    final wrong = <String>[];
+
+    for (final field in _fields) {
+      var ok = 0, bad = 0, missed = 0, over = 0, both = 0;
+      for (final name in checked) {
+        final raw = (scans[name]!['원문'] ?? '')
+            .split(' ⏐ ')
+            .where((l) => l.trim().isNotEmpty)
+            .toList();
+        if (raw.isEmpty) continue;
+        final parsed = OcrScannerService.parseLinesForTesting(raw);
+        final got = _norm(switch (field) {
+          '이름' => parsed.name,
+          '회사' => parsed.company,
+          '직함' => parsed.title,
+          '휴대폰' => parsed.phone,
+          '사무실' => parsed.officePhone,
+          '이메일' => parsed.email,
+          '우편번호' => parsed.postalCode,
+          '주소' => parsed.address,
+          _ => parsed.addressDetail,
+        });
+        final want = _norm(truths[name]!['정답_$field'] ?? '');
+
+        if (got.isEmpty && want.isEmpty) {
+          both++;
+        } else if (got == want) {
+          ok++;
+        } else if (got.isEmpty) {
+          missed++;
+          wrong.add('  미검출 $name [$field] 정답="$want"');
+        } else if (want.isEmpty) {
+          over++;
+          wrong.add('  오검출 $name [$field] 넣음="$got"');
+        } else {
+          bad++;
+          wrong.add('  틀림  $name [$field] "$got" ≠ "$want"');
+        }
+      }
+      final judged = ok + bad + missed + over;
+      totalOk += ok;
+      totalJudged += judged;
+      final rate = judged == 0
+          ? '—'
+          : '${(100 * ok / judged).round()}%';
+      rows.add(
+        '${field.padRight(5)} 일치$ok 틀림$bad 미검출$missed 오검출$over '
+        '둘다빔$both → $rate',
+      );
+    }
+
+    // ignore: avoid_print
+    print('\n=== 필드별 정확도 ===');
+    for (final r in rows) {
+      // ignore: avoid_print
+      print(r);
+    }
+    // ignore: avoid_print
+    print(
+      '\n전체 정확도: '
+      '${totalJudged == 0 ? '—' : '${(100 * totalOk / totalJudged).round()}%'}'
+      ' ($totalOk / $totalJudged)',
+    );
+    if (wrong.isNotEmpty) {
+      // ignore: avoid_print
+      print('\n=== 틀린 것 ${wrong.length}건 ===');
+      for (final w in wrong.take(60)) {
+        // ignore: avoid_print
+        print(w);
+      }
+      if (wrong.length > 60) {
+        // ignore: avoid_print
+        print('  … 외 ${wrong.length - 60}건');
+      }
+    }
+  });
+}

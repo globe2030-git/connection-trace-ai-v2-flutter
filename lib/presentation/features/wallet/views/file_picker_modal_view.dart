@@ -6,7 +6,13 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class FilePickerModalView extends StatefulWidget {
-  const FilePickerModalView({super.key});
+  /// 지금 고르는 면("앞면"/"뒷면"). 제목 옆에 표시한다.
+  ///
+  /// 카메라 화면과 같은 이유다(추가 191) — 뒷면 스캔을 골라 들어와도 화면에
+  /// 표시가 없으면 지금 무엇을 넣는 중인지 알 수 없다.
+  final String sideLabel;
+
+  const FilePickerModalView({super.key, this.sideLabel = '앞면'});
 
   @override
   State<FilePickerModalView> createState() => _FilePickerModalViewState();
@@ -85,17 +91,17 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    AppIcon(
+                    const AppIcon(
                       AppIconId.galleryUpload,
                       color: AppColors.accentText,
                       size: 22,
                     ),
-                    SizedBox(width: 8),
+                    const SizedBox(width: 8),
                     Text(
-                      '갤러리에서 명함 이미지 선택',
-                      style: TextStyle(
+                      '${widget.sideLabel} 이미지 선택',
+                      style: const TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary,

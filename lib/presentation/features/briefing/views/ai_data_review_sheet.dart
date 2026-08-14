@@ -156,273 +156,326 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
         ),
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
-                child: Row(
-                  children: [
-                    const AppIcon(
-                      AppIconId.aiDataInfo,
-                      color: AppColors.accentText,
-                    ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text(
-                        'AI에 보낼 정보 확인',
-                        style: TextStyle(
-                          fontSize: 19,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '닫기',
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(
-                        Icons.close,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          // 빈 곳을 눌러도 키보드가 닫히게 한다. 멀티라인 입력칸은 키보드에
+          // 완료 키가 없어서, 스크롤 말고도 빠져나올 길을 하나 더 둔다
+          // (통합본 E-10). `translucent`라 아래 버튼들의 터치는 그대로 간다.
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 8, 8),
+                  child: Row(
                     children: [
-                      // 설명은 한 줄로 줄이고 상세는 방침으로 넘긴다(사용자
-                      // 요청, 2026-08-10). 이 화면의 본체는 설명이 아니라
-                      // **무엇이 나가는지 보여 주고 고르게 하는 것**이라,
-                      // 긴 문단이 목록을 밀어내면 오히려 확인을 방해한다.
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '아래 항목만 전송됩니다. 자동 전송은 없습니다.',
-                              style: TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 13,
-                                height: 1.45,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => showLegalDocument(
-                              context,
-                              LegalDocument.privacy,
-                            ),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              minimumSize: const Size(0, 32),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            child: const Text(
-                              '자세히',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.accentText,
-                              ),
-                            ),
-                          ),
-                        ],
+                      const AppIcon(
+                        AppIconId.aiDataInfo,
+                        color: AppColors.accentText,
                       ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        '항상 포함되는 기본 정보',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _InfoCard(
-                        lines: [
-                          '내 정보: ${widget.myProfile.name}, ${widget.myProfile.title}, ${widget.myProfile.company}',
-                          '상대방: ${widget.contact.name}, ${widget.contact.title}, ${widget.contact.company}',
-                          if (widget.contact.tags.isNotEmpty)
-                            '태그: ${widget.contact.tags.join(', ')}',
-                          if (widget.contact.interests.isNotEmpty)
-                            '관심사: ${widget.contact.interests.join(', ')}',
-                          if ((widget.contact.memo ?? '').trim().isNotEmpty)
-                            '메모: ${widget.contact.memo}',
-                          if (_isLoadingWeather) '오늘 날씨: 조회 중…',
-                          if (_weatherSummary != null)
-                            '오늘 상대방 지역 날씨: $_weatherSummary',
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              '포함할 소통 기록',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '${_selectedIds.length}개 선택',
-                            style: const TextStyle(
-                              color: AppColors.accentText,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if (_availableLogs.isEmpty)
-                        const _InfoCard(lines: ['소통 기록 없이 기본 정보만 전송합니다.'])
-                      else
-                        ..._availableLogs.map(
-                          (log) => Semantics(
-                            label: '${_channelLabel(log.type)} ${log.summary}',
-                            checked: _selectedIds.contains(log.id),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: CheckboxListTile(
-                                value: _selectedIds.contains(log.id),
-                                onChanged: (selected) {
-                                  setState(() {
-                                    if (selected ?? false) {
-                                      _selectedIds.add(log.id);
-                                    } else {
-                                      _selectedIds.remove(log.id);
-                                    }
-                                  });
-                                },
-                                controlAffinity:
-                                    ListTileControlAffinity.leading,
-                                contentPadding: EdgeInsets.zero,
-                                activeColor: AppColors.accent,
-                                title: Text(
-                                  _channelLabel(log.type),
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  log.summary,
-                                  maxLines: 3,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    height: 1.35,
-                                  ),
-                                ),
-                              ),
-                            ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'AI에 보낼 정보 확인',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
                           ),
                         ),
-                      const SizedBox(height: 18),
-                      const Text(
-                        '직접 남길 메모 (선택)',
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
                       ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        '통화·문자·카카오톡이 자동으로 연동되지 않는 경우, 최근 나눈 대화나'
-                        ' 참고할 내용을 몇 줄 적어두면 AI가 반영합니다.',
-                        style: TextStyle(
+                      IconButton(
+                        tooltip: '닫기',
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                          Icons.close,
                           color: AppColors.textSecondary,
-                          fontSize: 12,
-                          height: 1.4,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _extraNoteController,
-                        maxLines: 3,
-                        maxLength: 300,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 13,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '예: 지난주에 신제품 출시 준비로 바쁘다고 하셨음',
-                          hintStyle: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 12.5,
-                          ),
-                          filled: true,
-                          fillColor: AppColors.bgBase,
-                          contentPadding: const EdgeInsets.all(12),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(
-                              color: AppColors.borderFunctional,
+                    ],
+                  ),
+                ),
+                Flexible(
+                  // 여러 줄 메모 칸이 있는 화면이다. Android에서 멀티라인 입력칸은
+                  // 키보드에 완료 키 대신 **줄바꿈 키**가 떠서 키보드를 닫을 방법이
+                  // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
+                  // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 설명은 한 줄로 줄이고 상세는 방침으로 넘긴다(사용자
+                        // 요청, 2026-08-10). 이 화면의 본체는 설명이 아니라
+                        // **무엇이 나가는지 보여 주고 고르게 하는 것**이라,
+                        // 긴 문단이 목록을 밀어내면 오히려 확인을 방해한다.
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                '아래 항목만 전송됩니다. 자동 전송은 없습니다.',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                  height: 1.45,
+                                ),
+                              ),
                             ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(
-                              color: AppColors.borderFunctional,
+                            TextButton(
+                              onPressed: () => showLegalDocument(
+                                context,
+                                LegalDocument.privacy,
+                              ),
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: const Text(
+                                '자세히',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.accentText,
+                                ),
+                              ),
                             ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(
-                              color: AppColors.accent,
-                            ),
-                          ),
-                          counterStyle: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
+                          ],
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          '항상 포함되는 기본 정보',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: AppColors.bgBase,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: AppColors.borderFunctional),
+                        const SizedBox(height: 8),
+                        _InfoCard(
+                          lines: [
+                            '내 정보: ${widget.myProfile.name}, ${widget.myProfile.title}, ${widget.myProfile.company}',
+                            '상대방: ${widget.contact.name}, ${widget.contact.title}, ${widget.contact.company}',
+                            if (widget.contact.tags.isNotEmpty)
+                              '태그: ${widget.contact.tags.join(', ')}',
+                            if (widget.contact.interests.isNotEmpty)
+                              '관심사: ${widget.contact.interests.join(', ')}',
+                            if ((widget.contact.memo ?? '').trim().isNotEmpty)
+                              '메모: ${widget.contact.memo}',
+                            if (_isLoadingWeather) '오늘 날씨: 조회 중…',
+                            if (_weatherSummary != null)
+                              '오늘 상대방 지역 날씨: $_weatherSummary',
+                          ],
                         ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: CheckboxListTile(
-                            value: _consented,
-                            onChanged: (value) {
-                              setState(() => _consented = value ?? false);
-                            },
-                            controlAffinity: ListTileControlAffinity.leading,
-                            activeColor: AppColors.accent,
-                            title: const Text(
-                              '위 정보가 회사 서버를 거쳐 AI로 전송되는 데 동의합니다.',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 13,
+                        const SizedBox(height: 18),
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                '포함할 소통 기록',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${_selectedIds.length}개 선택',
+                              style: const TextStyle(
+                                color: AppColors.accentText,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                height: 1.35,
                               ),
                             ),
-                            subtitle: const Text(
-                              '동의는 이 화면을 여는 동안(다시 시도 포함) 유지되며, 화면을 닫으면 사라집니다.',
-                              style: TextStyle(
-                                color: AppColors.textMuted,
-                                fontSize: 11.5,
-                                height: 1.4,
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (_availableLogs.isEmpty)
+                          const _InfoCard(lines: ['소통 기록 없이 기본 정보만 전송합니다.'])
+                        else
+                          ..._availableLogs.map(
+                            (log) => Semantics(
+                              label:
+                                  '${_channelLabel(log.type)} ${log.summary}',
+                              checked: _selectedIds.contains(log.id),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: CheckboxListTile(
+                                  value: _selectedIds.contains(log.id),
+                                  onChanged: (selected) {
+                                    setState(() {
+                                      if (selected ?? false) {
+                                        _selectedIds.add(log.id);
+                                      } else {
+                                        _selectedIds.remove(log.id);
+                                      }
+                                    });
+                                  },
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
+                                  contentPadding: EdgeInsets.zero,
+                                  activeColor: AppColors.accent,
+                                  title: Text(
+                                    _channelLabel(log.type),
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    log.summary,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                ),
                               ),
+                            ),
+                          ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          '직접 남길 메모 (선택)',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '통화·문자·카카오톡이 자동으로 연동되지 않는 경우, 최근 나눈 대화나'
+                          ' 참고할 내용을 몇 줄 적어두면 AI가 반영합니다.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _extraNoteController,
+                          maxLines: 3,
+                          maxLength: 300,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 13,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: '예: 지난주에 신제품 출시 준비로 바쁘다고 하셨음',
+                            hintStyle: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 12.5,
+                            ),
+                            filled: true,
+                            fillColor: AppColors.bgBase,
+                            contentPadding: const EdgeInsets.all(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: AppColors.borderFunctional,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: AppColors.borderFunctional,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(
+                                color: AppColors.accent,
+                              ),
+                            ),
+                            counterStyle: const TextStyle(
+                              color: AppColors.textMuted,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.bgBase,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: AppColors.borderFunctional,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: CheckboxListTile(
+                              value: _consented,
+                              onChanged: (value) {
+                                setState(() => _consented = value ?? false);
+                              },
+                              controlAffinity: ListTileControlAffinity.leading,
+                              activeColor: AppColors.accent,
+                              title: const Text(
+                                '위 정보가 회사 서버를 거쳐 AI로 전송되는 데 동의합니다.',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
+                              ),
+                              subtitle: const Text(
+                                '동의는 이 화면을 여는 동안(다시 시도 포함) 유지되며, 화면을 닫으면 사라집니다.',
+                                style: TextStyle(
+                                  color: AppColors.textMuted,
+                                  fontSize: 11.5,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_usage != null) ...[
+                        _UsageRemainingLine(usage: _usage!),
+                        const SizedBox(height: 10),
+                      ],
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed: _consented ? _submit : null,
+                          icon: const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white,
+                          ),
+                          label: const Text(
+                            '동의하고 AI 가이드 만들기',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            disabledBackgroundColor: AppColors.borderSubtle,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
                         ),
@@ -430,45 +483,8 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
                     ],
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_usage != null) ...[
-                      _UsageRemainingLine(usage: _usage!),
-                      const SizedBox(height: 10),
-                    ],
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton.icon(
-                        onPressed: _consented ? _submit : null,
-                        icon: const Icon(
-                          Icons.auto_awesome,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          '동의하고 AI 가이드 만들기',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          disabledBackgroundColor: AppColors.borderSubtle,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

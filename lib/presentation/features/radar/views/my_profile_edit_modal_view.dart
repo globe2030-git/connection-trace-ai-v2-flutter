@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -51,6 +52,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   late final TextEditingController _addressController;
   late final TextEditingController _addressDetailController;
 
+  /// 생일(월·일). 저장은 "MM-DD" 한 문자열이지만 입력은 두 목록으로 받는다.
+  int? _birthMonth;
+  int? _birthDay;
+
   // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
   // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 안 보이고,
   // Scaffold로 감싸면 시트 높이 계산과 충돌해 레이아웃이 깨진다(add_card_modal_view.dart
@@ -74,6 +79,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _phoneController = TextEditingController(text: profile.phone);
     _emailController = TextEditingController(text: profile.email);
     _addressController = TextEditingController(text: profile.address);
+    _birthMonth = profile.birthMonth;
+    _birthDay = profile.birthDay;
     _addressDetailController = TextEditingController(
       text: profile.addressDetail ?? '',
     );
@@ -210,6 +217,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   /// image_picker가 주는 경로는 임시 캐시라 앱 재시작 시 사라질 수 있어서,
   /// 영구 보관하려면 직접 복사해야 한다. 매번 같은 파일명으로 덮어써서
   /// 이전 사진 파일이 버려지지 않게 한다.
+  ///
+  /// ⚠️ 그 대가로 **이미지 캐시를 직접 비워야 한다.** `FileImage`는 경로로
+  /// 캐시 키를 잡아서, 내용이 바뀌어도 경로가 같으면 옛 사진을 그대로 보여준다
+  /// (통합본 E-07 — `evictImageFileCache` 주석 참고).
   Future<void> _pickAvatarPhoto() async {
     setState(() => _isPickingAvatar = true);
     try {
@@ -221,6 +232,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       final docsDir = await getApplicationDocumentsDirectory();
       final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
       await File(picked.path).copy(savedPath);
+      await evictImageFileCache(savedPath);
       if (!mounted) return;
       setState(() {
         _avatarPath = savedPath;
@@ -255,6 +267,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
           ? null
           : _addressDetailController.text.trim(),
       avatarPath: _avatarCleared ? null : _avatarPath,
+      // 월만 고르고 일을 안 고른 상태는 저장하지 않는다(formatMonthDay가 null).
+      birthMonthDay: MyProfileModel.formatMonthDay(_birthMonth, _birthDay),
     );
 
     context.read<MyProfileRepository>().updateProfile(updated);
@@ -469,6 +483,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     label: '상세주소 (선택)',
                     hint: '예: 5층 501호',
                   ),
+                  const SizedBox(height: 12),
+                  _buildBirthdayField(),
 
                   const SizedBox(height: 22),
 
@@ -641,6 +657,125 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       ],
     );
   }
+
+  /// 생일 입력 — 월/일 선택 목록 두 개.
+  ///
+  /// **자유 입력이 아닌 이유**: 저장 형식이 `"MM-DD"`로 0을 채운 두 자리여야
+  /// 한다("이번 달 생일자"를 문자열 범위로 뽑기 때문). 텍스트로 받으면
+  /// "10-1"·"10/1"·"10월 1일"이 섞여 들어와 그 규칙이 깨진다.
+  ///
+  /// **연도를 안 받는 이유**: 생일 축하·혜택에는 월일이면 충분한데, 연도가
+  /// 붙으면 생년월일 전체가 되어 식별력이 크게 올라간다.
+  Widget _buildBirthdayField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: _birthMonth,
+                isExpanded: true,
+                decoration: _birthdayDecoration('생일 월 (선택)'),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+                dropdownColor: AppColors.cardSurface,
+                items: [
+                  const DropdownMenuItem<int>(
+                    value: null,
+                    child: Text('지정 안 함'),
+                  ),
+                  for (var m = 1; m <= 12; m++)
+                    DropdownMenuItem<int>(value: m, child: Text('$m월')),
+                ],
+                onChanged: (value) => setState(() {
+                  _birthMonth = value;
+                  if (value == null) {
+                    _birthDay = null;
+                  } else if (_birthDay != null &&
+                      _birthDay! > _daysInMonth(value)) {
+                    // 2월을 골랐는데 31일이 남아 있는 상태를 막는다.
+                    _birthDay = _daysInMonth(value);
+                  }
+                }),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: _birthDay,
+                isExpanded: true,
+                decoration: _birthdayDecoration('생일 일 (선택)'),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
+                dropdownColor: AppColors.cardSurface,
+                items: [
+                  const DropdownMenuItem<int>(
+                    value: null,
+                    child: Text('지정 안 함'),
+                  ),
+                  for (var d = 1; d <= _daysInMonth(_birthMonth); d++)
+                    DropdownMenuItem<int>(value: d, child: Text('$d일')),
+                ],
+                // 월을 안 고르면 일만 저장할 수 없으므로 비활성화한다.
+                onChanged: _birthMonth == null
+                    ? null
+                    : (value) => setState(() => _birthDay = value),
+              ),
+            ),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6, left: 4),
+          child: Text(
+            '연도는 받지 않습니다. 생일 축하와 혜택 안내에만 사용됩니다.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 윤년은 따지지 않고 2월을 29일까지 허용한다 — 연도를 안 받으므로 판단할
+  /// 근거가 없고, 2월 29일생을 못 고르게 막을 이유도 없다.
+  int _daysInMonth(int? month) => switch (month) {
+    2 => 29,
+    4 || 6 || 9 || 11 => 30,
+    _ => 31,
+  };
+
+  InputDecoration _birthdayDecoration(String label) => InputDecoration(
+    labelText: label,
+    labelStyle: const TextStyle(
+      fontSize: 13.5,
+      fontWeight: FontWeight.w600,
+      color: AppColors.textSecondary,
+    ),
+    floatingLabelStyle: const TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.bold,
+      color: AppColors.textSecondary,
+    ),
+    filled: true,
+    fillColor: AppColors.bgBase,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: AppColors.borderFunctional),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: AppColors.borderFunctional),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: AppColors.accentText, width: 1.5),
+    ),
+  );
 
   Widget _buildField({
     required TextEditingController controller,

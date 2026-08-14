@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
@@ -28,6 +29,7 @@ import 'inquiry_view.dart';
 import 'notices_view.dart';
 import 'ocr_stats_view.dart';
 import 'admin_inquiry_view.dart';
+import 'ocr_batch_scan_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -422,6 +424,32 @@ class SettingsView extends StatelessWidget {
                           builder: (_) => const AdminInquiryManagementView(),
                         ),
                       ),
+                    ),
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.grid_view_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '명함 일괄 스캔 (관리자)',
+                      subtitle: '여러 장을 한 번에 스캔해 인식 결과를 표로 확인',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OcrBatchScanView(),
+                        ),
+                      ),
+                    ),
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '잘못 채워진 태그 정리 (관리자)',
+                      subtitle: '기본값 "AI, IT"만 그대로 남은 명함의 태그를 비움',
+                      onTap: () => _confirmSeededTagCleanup(context),
                     ),
                   _SettingsRow(
                     icon: const Icon(
@@ -1058,6 +1086,68 @@ Future<void> _performAccountDeletion(
     dismissLoading();
     _showAccountDeletionError(messenger, e);
   }
+}
+
+/// 예전 기본값(`AI, IT`)이 그대로 남은 명함의 태그를 비운다 — **관리자 전용,
+/// 일회성 정리**(빌드6·7 통합본 E-08, backlog 추가 204).
+///
+/// **왜 앱 시작 시 자동 마이그레이션으로 하지 않았나**: 그러면 일반 사용자
+/// 기기에서도 돌아, **진짜 AI·IT 업계 사람이 그 태그를 그대로 둔 경우까지
+/// 지운다.** 둘을 구별할 방법이 없다. 잘못 채워진 값을 지우려다 맞는 값을
+/// 지우는 쪽이 더 나쁘다 — 그래서 사람이 눌러서 실행하는 경로로 두었다.
+///
+/// **대상을 좁게 잡는다**: 태그가 **정확히 `AI`와 `IT` 둘뿐**인 명함만 본다.
+/// 하나라도 다른 태그를 직접 넣었다면 사용자가 이 칸을 의식했다는 뜻이라
+/// 건드리지 않는다.
+Future<void> _confirmSeededTagCleanup(BuildContext context) async {
+  final repo = context.read<ContactsRepository>();
+  // 어떤 명함을 고르는지가 이 기능의 전부다 — 판정 규칙은 따로 빼서
+  // 테스트한다(`seeded_tag_cleanup.dart`).
+  final targets = repo.contacts
+      .where((c) => isSeededDefaultTagSet(c.tags))
+      .toList();
+
+  final messenger = ScaffoldMessenger.of(context);
+  if (targets.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('기본값만 남은 명함이 없습니다.')),
+    );
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${targets.length}건의 태그를 비울까요?'),
+      content: Text(
+        '태그가 "AI, IT" 둘뿐인 명함 ${targets.length}건입니다.\n'
+        '예전 입력칸 기본값이 그대로 저장된 것으로 봅니다.\n\n'
+        '되돌릴 수 없습니다. 실제로 AI·IT 태그를 쓰던 명함이 섞여 있다면 '
+        '먼저 그 명함에 다른 태그를 추가해 대상에서 빼 주세요.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '태그 비우기',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+
+  for (final contact in targets) {
+    repo.updateContact(contact.copyWith(tags: const []));
+  }
+  messenger.showSnackBar(
+    SnackBar(content: Text('${targets.length}건의 태그를 비웠습니다.')),
+  );
 }
 
 void _showLoadingDialog(BuildContext context) {

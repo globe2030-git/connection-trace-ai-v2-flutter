@@ -50,7 +50,7 @@ gh pr create --base main
 
 ```
 flutter analyze   # info 19건은 기존 잔재라 통과, error·warning은 반드시 0
-flutter test      # 현재 39건
+flutter test      # 현재 225건
 ```
 
 `analyze`는 CI에서 `--no-fatal-infos`로 돈다. 남아 있는 info를 늘리지 말 것.

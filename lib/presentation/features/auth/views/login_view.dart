@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -75,6 +76,9 @@ class _LoginViewState extends State<LoginView> {
       final docsDir = await getApplicationDocumentsDirectory();
       final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
       await File(savedPath).writeAsBytes(response.bodyBytes);
+      // 파일명이 고정이라 캐시를 비우지 않으면 **다른 계정으로 로그인해도 옛
+      // 사진이 그대로 보인다.** 본인 프로필 사진 선택과 같은 함정이다(E-07).
+      await evictImageFileCache(savedPath);
 
       await profileRepo.updateProfile(
         profile.copyWith(avatarPath: savedPath),

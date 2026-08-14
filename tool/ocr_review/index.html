@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>명함 인식 검수 — 실물 대조로 정답지 만들기</title>
+<!--
+  로컬 전용 검수 도구. 네트워크를 쓰지 않는다.
+
+  왜 로컬인가: 명함 이미지와 추출값은 **이용자 본인이 아닌 제3자의 개인정보**다
+  (CLAUDE.md 4절). 어딘가에 올려 두면 그 자체가 위험이라, 파일을 브라우저 안에서만
+  읽고 아무 데도 보내지 않는다. 외부 스크립트·폰트·이미지도 불러오지 않는다.
+
+  쓰는 법은 같은 폴더의 README.md 참고.
+-->
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #1a1d21;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --accent: #2563eb;
+    --ok: #15803d;
+    --ok-bg: #dcfce7;
+    --edit: #b45309;
+    --edit-bg: #fef3c7;
+    --empty: #b91c1c;
+    --empty-bg: #fee2e2;
+    --chip: #eef2f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a;
+      --panel: #1d2126;
+      --ink: #e8eaed;
+      --muted: #9aa3ad;
+      --line: #2f353c;
+      --accent: #60a5fa;
+      --ok: #86efac;
+      --ok-bg: #14532d;
+      --edit: #fcd34d;
+      --edit-bg: #4a3410;
+      --empty: #fca5a5;
+      --empty-bg: #4c1d1d;
+      --chip: #262b31;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+      "Noto Sans KR", "Malgun Gothic", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  button, input, select { font: inherit; color: inherit; }
+
+  header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 700; }
+  .btn {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 7px;
+    padding: 6px 11px;
+    cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .spacer { flex: 1; }
+  .counter { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar { flex: none; height: 3px; background: var(--line); }
+  .bar > i { display: block; height: 100%; background: var(--ok); width: 0; }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  #intro {
+    margin: auto;
+    max-width: 620px;
+    padding: 28px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  #intro h2 { margin-top: 0; font-size: 17px; }
+  #intro ol { padding-left: 20px; }
+  #intro li { margin: 7px 0; }
+  .note {
+    margin-top: 16px;
+    padding: 11px 13px;
+    background: var(--chip);
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  #work { display: none; flex: 1; min-height: 0; }
+  #work.on { display: flex; }
+
+  /* 이미지 칸 너비는 사람이 정한다. 명함마다 가로/세로가 제각각이라 고정
+     비율로는 어느 쪽이든 짤린다 — 실제로 "명함이 크게 나와서 오른쪽 입력항목이
+     짤린다"는 제보가 있었다. 정한 너비는 다음에도 유지된다. */
+  .pane-img {
+    flex: 0 0 var(--imgw, 46%);
+    min-width: 160px;
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+  }
+  .splitter {
+    flex: 0 0 7px;
+    cursor: col-resize;
+    background: var(--line);
+    position: relative;
+    touch-action: none;
+  }
+  .splitter::after {
+    content: '';
+    position: absolute;
+    inset: 0 -4px;
+  }
+  .splitter:hover, .splitter.dragging { background: var(--accent); }
+  body.dragging { cursor: col-resize; user-select: none; }
+  .imgbar {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .imgwrap {
+    flex: 1;
+    overflow: auto;
+    display: grid;
+    place-items: center;
+    padding: 10px;
+  }
+  .imgwrap img { max-width: 100%; max-height: 100%; transition: transform .12s; }
+  .imgwrap.zoom img { max-width: none; max-height: none; }
+  .imgwrap .none { color: var(--muted); text-align: center; }
+
+  .pane-form { flex: 1 1 0; min-width: 280px; overflow: auto; padding: 12px 14px 40px; }
+
+  .raw { margin-bottom: 14px; }
+  .raw h3, .fields h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 700; letter-spacing: .04em; }
+  /* 원문은 **낱말 단위로 눌러 넣는다.** 검수는 장수가 많아 타이핑을 줄이는
+     것이 전부다 — `Molecule 박병건 | Andy Park`에서 `박병건`만 집어야 한다. */
+  .rawrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 3px 4px;
+    margin-bottom: 3px;
+    flex-wrap: wrap;
+  }
+  .tok {
+    border: 1px solid transparent;
+    background: var(--chip);
+    border-radius: 5px;
+    padding: 2px 7px;
+    cursor: pointer;
+    font-size: 13px;
+    word-break: break-all;
+  }
+  .tok:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .tok.whole { background: transparent; color: var(--muted); font-size: 11px; }
+  .tok.whole:hover { color: #fff; }
+  .target {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+  .target b { color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 4px 6px 4px 0; vertical-align: middle; }
+  th { width: 68px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .got {
+    width: 34%;
+    color: var(--muted);
+    font-size: 13px;
+    word-break: break-all;
+    cursor: pointer;
+    border-radius: 5px;
+    padding: 3px 5px;
+  }
+  .got:hover { background: var(--chip); color: var(--ink); }
+  .got.blank { font-style: italic; opacity: .6; }
+  td.ansc { width: 40%; }
+  .ans {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 5px 8px;
+    background: var(--bg);
+  }
+  .ans:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ansc { position: relative; }
+  .clear {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 3px;
+    line-height: 1;
+  }
+  .clear:hover { color: var(--empty); }
+  .tag {
+    display: inline-block;
+    min-width: 44px;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .tag.ok { color: var(--ok); background: var(--ok-bg); }
+  .tag.edit { color: var(--edit); background: var(--edit-bg); }
+  .tag.empty { color: var(--empty); background: var(--empty-bg); }
+  .tag.none { color: var(--muted); background: var(--chip); }
+
+  .actions { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  kbd {
+    font: 11px ui-monospace, monospace;
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    background: var(--chip);
+  }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  #summary { display: none; padding: 16px; overflow: auto; }
+  #summary.on { display: block; }
+  #summary table { max-width: 560px; }
+  #summary th, #summary td { border-bottom: 1px solid var(--line); padding: 6px 10px 6px 0; }
+  #summary td { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>명함 인식 검수</h1>
+  <button class="btn" id="btnTsv">TSV 불러오기</button>
+  <button class="btn" id="btnImgs">이미지 폴더</button>
+  <span class="counter" id="counter"></span>
+  <span class="spacer"></span>
+  <button class="btn" id="btnSaveWork" disabled>진행 저장</button>
+  <button class="btn" id="btnLoadWork">진행 불러오기</button>
+  <button class="btn" id="btnSummary" disabled>집계</button>
+  <button class="btn primary" id="btnExport" disabled>정답지 내보내기</button>
+</header>
+<div id="warn" style="display:none;padding:8px 14px;background:var(--edit-bg);color:var(--edit);font-size:13px">
+  ⚠️ 이 브라우저는 <b>자동 저장이 막혀 있습니다</b>(<code>file://</code>에서 흔합니다).
+  중간중간 <b>진행 저장</b>을 눌러 파일로 남기세요 — 창을 닫으면 검수한 내용이 사라집니다.
+</div>
+<div class="bar"><i id="progress"></i></div>
+
+<main>
+  <section id="intro">
+    <h2>실물과 인식 결과를 나란히 놓고 정답을 남기는 도구</h2>
+    <ol>
+      <li><b>TSV 불러오기</b> — 관리자 화면의 일괄 스캔에서 저장한 <code>scan_result.tsv</code>
+        (<code>원문</code> 칸이 있어야 합니다)</li>
+      <li><b>이미지 폴더</b> — <code>card_01.png</code> 같은 원본이 든 폴더 (건너뛰어도 됩니다)</li>
+      <li>한 장씩 보면서 틀린 칸만 고치고 <kbd>Ctrl</kbd>+<kbd>Enter</kbd>로 다음 장</li>
+      <li>끝나면 <b>정답지 내보내기</b></li>
+    </ol>
+    <div class="note">
+      <b>이 도구는 네트워크를 쓰지 않습니다.</b> 명함은 제3자의 개인정보라, 파일을
+      브라우저 안에서만 읽고 아무 데도 보내지 않습니다. 진행 상황은 이 브라우저에만
+      저장됩니다. 검수가 끝나면 내보낸 정답지를 안전한 곳에 두세요.
+    </div>
+  </section>
+
+  <section id="work">
+    <div class="pane-img">
+      <div class="imgbar">
+        <button class="btn" data-rot="-90" title="왼쪽으로 회전">⟲</button>
+        <button class="btn" data-rot="90" title="오른쪽으로 회전">⟳</button>
+        <button class="btn" id="btnZoom">원본 크기</button>
+        <span class="counter" id="fileName"></span>
+      </div>
+      <div class="imgwrap" id="imgwrap"><div class="none">이미지 없음</div></div>
+    </div>
+
+    <div class="splitter" id="splitter" title="좌우로 끌어 너비 조절 (두 번 누르면 초기화)"></div>
+
+    <div class="pane-form">
+      <div class="raw">
+        <h3>인식 원문 — 낱말을 누르면 정답 칸에 들어갑니다</h3>
+        <p class="target" id="target">먼저 아래에서 <b>채울 칸</b>을 누르세요.</p>
+        <div id="rawLines"></div>
+      </div>
+      <div class="fields">
+        <h3>칸별 확인 — 왼쪽 회색값을 누르면 그대로 정답이 됩니다</h3>
+        <table><tbody id="rows"></tbody></table>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btnOk">확인 완료 · 다음 <kbd>Ctrl</kbd>+<kbd>↵</kbd></button>
+        <button class="btn" id="btnPrev">← 이전</button>
+        <button class="btn" id="btnNext">다음 →</button>
+        <span class="hint" id="doneMark"></span>
+      </div>
+      <p class="hint" style="margin-top:14px">
+        비어 있는 게 맞으면(명함에 그 값이 없으면) 정답 칸을 비운 채 두세요 —
+        “인식이 못 찾은 것”과 “명함에 없는 것”은 다른 문제입니다.
+      </p>
+    </div>
+  </section>
+
+  <section id="summary"></section>
+</main>
+
+<script>
+'use strict';
+
+// 검수 대상 칸. TSV 머리글 이름과 같아야 한다.
+const FIELDS = ['이름','회사','직함','휴대폰','사무실','이메일','우편번호','주소','상세주소'];
+const STORE_KEY = 'ocr-review-v1';
+
+// 자동 저장이 되는 브라우저인지 먼저 확인한다.
+//
+// Chrome은 `file://`에서 localStorage를 막는다. 그걸 모른 채 한 시간 검수하면
+// 창을 닫는 순간 전부 사라진다 — 그래서 **되는지 먼저 시험하고**, 안 되면
+// 화면 위에 경고를 띄우고 파일로 저장하는 길을 안내한다.
+//
+// ⚠️ 이 선언은 아래 `let answers = load()`보다 **위에** 있어야 한다. 아래에
+// 두었더니 `load()`가 초기화 전인 이 상수를 건드려 스크립트가 통째로 죽었다.
+const canStore = (() => {
+  try {
+    localStorage.setItem('__t', '1');
+    localStorage.removeItem('__t');
+    return true;
+  } catch { return false; }
+})();
+
+let rows = [];          // [{파일명, 이름, ..., 원문}]
+let images = new Map(); // 파일명(확장자 제외) → objectURL
+let idx = 0;
+let rot = 0;
+let answers = load();
+let lastFocused = null;
+
+function load() {
+  if (!canStore) return {};
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch { return {}; }
+}
+function save() {
+  if (!canStore) return;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(answers)); } catch {}
+}
+
+function download(text, filename, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+const $ = (s) => document.querySelector(s);
+
+/* ── 파일 읽기 ─────────────────────────────────────────────── */
+
+function pick(accept, multiple, dir) {
+  return new Promise((resolve) => {
+    const el = document.createElement('input');
+    el.type = 'file';
+    if (accept) el.accept = accept;
+    if (multiple) el.multiple = true;
+    if (dir) { el.webkitdirectory = true; el.directory = true; }
+    el.onchange = () => resolve([...el.files]);
+    el.click();
+  });
+}
+
+function parseTsv(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== '');
+  if (!lines.length) return [];
+  const head = lines[0].split('\t');
+  return lines.slice(1).map((l) => {
+    const cells = l.split('\t');
+    const o = {};
+    head.forEach((h, i) => { o[h] = cells[i] ?? ''; });
+    return o;
+  });
+}
+
+$('#btnTsv').onclick = async () => {
+  const [file] = await pick('.tsv,.txt,text/*', false, false);
+  if (!file) return;
+  rows = parseTsv(await file.text());
+  if (!rows.length) { alert('내용이 없습니다.'); return; }
+  if (!('원문' in rows[0])) {
+    alert('이 TSV에는 "원문" 칸이 없습니다.\n앱을 최신 빌드로 올린 뒤 다시 저장해 주세요.');
+  }
+  idx = firstUndone();
+  $('#intro').style.display = 'none';
+  $('#work').classList.add('on');
+  $('#btnExport').disabled = false;
+  $('#btnSummary').disabled = false;
+  $('#btnSaveWork').disabled = false;
+  render();
+};
+
+$('#btnImgs').onclick = async () => {
+  const files = await pick('image/*', true, true);
+  images.forEach((u) => URL.revokeObjectURL(u));
+  images = new Map();
+  for (const f of files) {
+    if (!/^image\//.test(f.type)) continue;
+    images.set(f.name.replace(/\.[^.]+$/, ''), URL.createObjectURL(f));
+  }
+  if (rows.length) render();
+};
+
+/* ── 화면 그리기 ───────────────────────────────────────────── */
+
+function key(row) { return row['파일명'] || ''; }
+function firstUndone() {
+  const i = rows.findIndex((r) => !answers[key(r)]?.done);
+  return i === -1 ? 0 : i;
+}
+
+function render() {
+  const row = rows[idx];
+  if (!row) return;
+  const name = key(row);
+  const saved = answers[name] || {};
+  rot = 0;
+
+  $('#counter').textContent = `${idx + 1} / ${rows.length}`;
+  $('#fileName').textContent = name;
+  const doneCount = rows.filter((r) => answers[key(r)]?.done).length;
+  $('#progress').style.width = `${(doneCount / rows.length) * 100}%`;
+  $('#doneMark').textContent = saved.done ? '✓ 확인함' : '';
+
+  // 이미지
+  const wrap = $('#imgwrap');
+  wrap.innerHTML = '';
+  const url = images.get(name.replace(/\.[^.]+$/, ''));
+  if (url) {
+    const img = new Image();
+    img.src = url;
+    img.style.transform = 'rotate(0deg)';
+    wrap.appendChild(img);
+  } else {
+    const d = document.createElement('div');
+    d.className = 'none';
+    d.textContent = images.size ? '이 이름의 이미지를 못 찾았습니다' : '이미지 폴더를 지정하면 여기 보입니다';
+    wrap.appendChild(d);
+  }
+
+  // 원문
+  const raw = $('#rawLines');
+  raw.innerHTML = '';
+  const segs = (row['원문'] || '').split(' ⏐ ').filter((s) => s.trim());
+  if (!segs.length) {
+    const d = document.createElement('div');
+    d.className = 'hint';
+    d.textContent = '원문 없음';
+    raw.appendChild(d);
+  }
+  // 낱말 단위로 넣는다 — 줄 전체가 필요한 경우가 오히려 드물다.
+  const put = (text) => {
+    const t = lastFocused;
+    if (!t) {
+      $('#target').innerHTML = '먼저 아래에서 <b>채울 칸</b>을 누르세요.';
+      return;
+    }
+    t.value = t.value ? `${t.value} ${text}` : text;
+    t.dispatchEvent(new Event('input'));
+    t.focus();
+  };
+  for (const seg of segs) {
+    const row = document.createElement('div');
+    row.className = 'rawrow';
+
+    const whole = document.createElement('button');
+    whole.className = 'tok whole';
+    whole.textContent = '줄 전체';
+    whole.title = '이 줄을 통째로 넣기';
+    whole.onclick = () => put(seg);
+    row.appendChild(whole);
+
+    // 구분자만 있는 토큰(`|`, `/`)은 넣을 일이 없어 버린다.
+    for (const tok of seg.split(/\s+/).filter((t) => /[\w가-힣@]/.test(t))) {
+      const b = document.createElement('button');
+      b.className = 'tok';
+      b.textContent = tok;
+      b.onclick = () => put(tok);
+      row.appendChild(b);
+    }
+    raw.appendChild(row);
+  }
+
+  // 칸별
+  const body = $('#rows');
+  body.innerHTML = '';
+  for (const f of FIELDS) {
+    const got = (row[f] || '').trim();
+    const tr = document.createElement('tr');
+
+    const th = document.createElement('th');
+    th.textContent = f;
+
+    const tdGot = document.createElement('td');
+    tdGot.className = 'got' + (got ? '' : ' blank');
+    tdGot.textContent = got || '(비어 있음)';
+    tdGot.title = got ? '눌러서 이 값을 정답으로' : '';
+
+    const tdAns = document.createElement('td');
+    tdAns.className = 'ansc';
+    const input = document.createElement('input');
+    input.className = 'ans';
+    input.value = saved.fields ? (saved.fields[f] ?? got) : got;
+    input.dataset.field = f;
+    tdAns.appendChild(input);
+
+    // "명함에 이 값이 없다"를 한 번에 — 지우려고 드래그·백스페이스를 쓰지
+    // 않게 한다.
+    const clear = document.createElement('button');
+    clear.className = 'clear';
+    clear.textContent = '✕';
+    clear.title = '비우기 (명함에 없음)';
+    clear.onclick = () => {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    };
+    tdAns.appendChild(clear);
+
+    const tdTag = document.createElement('td');
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tdTag.appendChild(tag);
+
+    const paint = () => {
+      const a = input.value.trim();
+      if (a === got && a === '') { tag.className = 'tag none'; tag.textContent = '둘 다 빔'; }
+      else if (a === got) { tag.className = 'tag ok'; tag.textContent = '일치'; }
+      else if (got === '') { tag.className = 'tag empty'; tag.textContent = '미검출'; }
+      else if (a === '') { tag.className = 'tag empty'; tag.textContent = '오검출'; }
+      else { tag.className = 'tag edit'; tag.textContent = '수정'; }
+    };
+    input.oninput = paint;
+    input.onfocus = () => {
+      lastFocused = input;
+      $('#target').innerHTML = `원문 낱말을 누르면 <b>${f}</b> 칸에 들어갑니다.`;
+    };
+    tdGot.onclick = () => { input.value = got; paint(); input.focus(); };
+    paint();
+
+    tr.append(th, tdGot, tdAns, tdTag);
+    body.appendChild(tr);
+  }
+  // 장을 넘기면 대개 **이름부터** 손대므로 미리 골라 둔다 — 클릭 한 번을 줄인다.
+  lastFocused = body.querySelector('.ans');
+  $('#target').innerHTML =
+    `원문 낱말을 누르면 <b>${FIELDS[0]}</b> 칸에 들어갑니다.`;
+}
+
+function collect() {
+  const out = {};
+  document.querySelectorAll('#rows .ans').forEach((i) => {
+    out[i.dataset.field] = i.value.trim();
+  });
+  return out;
+}
+
+function commit(done) {
+  const row = rows[idx];
+  if (!row) return;
+  answers[key(row)] = { fields: collect(), done: done };
+  save();
+}
+
+function go(delta) {
+  commit(answers[key(rows[idx])]?.done || false);
+  idx = Math.min(rows.length - 1, Math.max(0, idx + delta));
+  render();
+}
+
+// 앞으로 넘어가는 것은 "이 장은 봤다"는 뜻이라 **확인함(Y)으로 기록**한다.
+// 예전에는 오직 '전부 맞음' 버튼만 Y로 기록해서, 값을 고치고 '다음'을 누른
+// 사용자의 검수가 통째로 사라졌다(17장을 검수했는데 3장만 Y). 채점기는 Y만
+// 세므로 검수한 명함이 집계에서 빠졌다. 뒤로 가기(←)는 재확인이라 Y를
+// 강제하지 않는다.
+function goForward() {
+  commit(true);
+  if (idx < rows.length - 1) idx += 1;
+  render();
+}
+
+$('#btnNext').onclick = goForward;
+$('#btnPrev').onclick = () => go(-1);
+$('#btnOk').onclick = goForward;
+
+document.querySelectorAll('[data-rot]').forEach((b) => {
+  b.onclick = () => {
+    rot = (rot + Number(b.dataset.rot) + 360) % 360;
+    const img = $('#imgwrap img');
+    if (img) img.style.transform = `rotate(${rot}deg)`;
+  };
+});
+$('#btnZoom').onclick = () => $('#imgwrap').classList.toggle('zoom');
+
+if (!canStore) $('#warn').style.display = '';
+
+/* ── 좌우 너비 조절 ────────────────────────────────────────────
+ * 명함마다 가로/세로가 제각각이라 고정 비율로는 어느 한쪽이 반드시 짤린다 —
+ * 세로로 찍힌 명함에서 "오른쪽 입력항목이 짤린다"는 제보가 실제로 있었다.
+ * 정한 너비는 다음 검수에도 유지된다(자동 저장이 되는 브라우저에서만).
+ */
+const WIDTH_KEY = 'ocr-review-imgw';
+const setImgWidth = (pct) => {
+  const clamped = Math.min(78, Math.max(14, pct));
+  $('#work').style.setProperty('--imgw', `${clamped}%`);
+  if (canStore) { try { localStorage.setItem(WIDTH_KEY, String(clamped)); } catch {} }
+};
+if (canStore) {
+  const saved = Number(localStorage.getItem(WIDTH_KEY));
+  if (saved) setImgWidth(saved);
+}
+
+const splitter = $('#splitter');
+splitter.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  splitter.setPointerCapture(e.pointerId);
+  splitter.classList.add('dragging');
+  document.body.classList.add('dragging');
+});
+splitter.addEventListener('pointermove', (e) => {
+  if (!splitter.hasPointerCapture(e.pointerId)) return;
+  const box = $('#work').getBoundingClientRect();
+  setImgWidth(((e.clientX - box.left) / box.width) * 100);
+});
+const endDrag = (e) => {
+  if (splitter.hasPointerCapture(e.pointerId)) {
+    splitter.releasePointerCapture(e.pointerId);
+  }
+  splitter.classList.remove('dragging');
+  document.body.classList.remove('dragging');
+};
+splitter.addEventListener('pointerup', endDrag);
+splitter.addEventListener('pointercancel', endDrag);
+splitter.addEventListener('dblclick', () => setImgWidth(46));
+
+// 검수 중 실수로 창을 닫는 것을 막는다. 자동 저장이 되는 브라우저에서도
+// 내보내기 전이면 정답지 파일이 없다.
+window.addEventListener('beforeunload', (e) => {
+  if (!rows.length) return;
+  if (!Object.keys(answers).length) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
+document.addEventListener('keydown', (e) => {
+  if (!rows.length) return;
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); $('#btnOk').click(); return; }
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight') goForward();
+  if (e.key === 'ArrowLeft') go(-1);
+});
+
+/* ── 내보내기 · 집계 ───────────────────────────────────────── */
+
+$('#btnExport').onclick = () => {
+  commit(answers[key(rows[idx])]?.done || false);
+  const head = ['파일명', ...FIELDS.map((f) => `정답_${f}`), '확인함'];
+  const body = rows.map((r) => {
+    const a = answers[key(r)] || {};
+    return [
+      key(r),
+      ...FIELDS.map((f) => ((a.fields?.[f] ?? r[f] ?? '')).replace(/[\t\n]/g, ' ')),
+      a.done ? 'Y' : '',
+    ].join('\t');
+  });
+  download([head.join('\t'), ...body].join('\n'), 'ocr_truth.tsv',
+    'text/tab-separated-values');
+};
+
+// 검수 도중 상태를 파일로 남긴다 — 자동 저장이 막힌 브라우저에서 유일한
+// 안전장치이고, 되는 브라우저에서도 다른 컴퓨터로 옮길 때 쓴다.
+$('#btnSaveWork').onclick = () => {
+  commit(answers[key(rows[idx])]?.done || false);
+  download(JSON.stringify(answers, null, 1), 'ocr_review_progress.json',
+    'application/json');
+};
+
+$('#btnLoadWork').onclick = async () => {
+  const [file] = await pick('.json,application/json', false, false);
+  if (!file) return;
+  try {
+    const loaded = JSON.parse(await file.text());
+    answers = { ...answers, ...loaded };
+    save();
+    if (rows.length) { idx = firstUndone(); render(); }
+    alert(`${Object.keys(loaded).length}장 분량을 불러왔습니다.`);
+  } catch {
+    alert('진행 파일을 읽지 못했습니다.');
+  }
+};
+
+$('#btnSummary').onclick = () => {
+  commit(answers[key(rows[idx])]?.done || false);
+  const s = $('#summary');
+  const on = s.classList.toggle('on');
+  $('#work').style.display = on ? 'none' : '';
+  if (!on) return;
+
+  const checked = rows.filter((r) => answers[key(r)]?.done);
+  const stat = FIELDS.map((f) => {
+    let ok = 0, wrong = 0, missed = 0, over = 0, both = 0;
+    for (const r of checked) {
+      const got = (r[f] || '').trim();
+      const ans = (answers[key(r)].fields?.[f] || '').trim();
+      if (!got && !ans) both++;
+      else if (got === ans) ok++;
+      else if (!got) missed++;
+      else if (!ans) over++;
+      else wrong++;
+    }
+    const judged = ok + wrong + missed + over;
+    return { f, ok, wrong, missed, over, both,
+      rate: judged ? Math.round((ok / judged) * 100) : null };
+  });
+
+  s.innerHTML =
+    `<h2 style="font-size:16px">집계 — 확인 완료 ${checked.length} / ${rows.length}장</h2>` +
+    (checked.length === 0
+      ? '<p class="hint">아직 확인한 명함이 없습니다.</p>'
+      : `<table><thead><tr><th>칸</th><th>일치</th><th>틀림</th><th>미검출</th>
+         <th>오검출</th><th>둘 다 빔</th><th>정확도</th></tr></thead><tbody>` +
+        stat.map((x) => `<tr><td>${x.f}</td><td>${x.ok}</td><td>${x.wrong}</td>
+          <td>${x.missed}</td><td>${x.over}</td><td>${x.both}</td>
+          <td><b>${x.rate === null ? '—' : x.rate + '%'}</b></td></tr>`).join('') +
+        `</tbody></table>
+         <p class="hint" style="max-width:640px">
+         <b>정확도 = 일치 ÷ (일치+틀림+미검출+오검출)</b>입니다.
+         “둘 다 빔”(명함에 원래 없는 값)은 분모에서 뺍니다 — 없는 것을 못 찾았다고
+         점수를 깎으면 안 되기 때문입니다. <b>미검출</b>은 인식이 못 찾은 것,
+         <b>오검출</b>은 명함에 없는데 값이 들어간 것입니다.</p>`) +
+    `<p><button class="btn" onclick="document.getElementById('summary').classList.remove('on');
+      document.getElementById('work').style.display='';">검수로 돌아가기</button></p>`;
+};
+</script>
+</body>
+</html>
