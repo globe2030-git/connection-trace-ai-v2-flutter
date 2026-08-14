@@ -38,3 +38,29 @@ double centerFrameContrast(List<int> sample, {required int gridSize}) {
   }
   return math.sqrt(squared / count);
 }
+
+/// 가운데 절반에서 **한쪽 톤이 차지하는 비율**(0.5~1.0).
+///
+/// 대비만으로는 **각이 진 빈 곳**을 못 거른다 — 책상이나 벽 모서리는 밝은 면과
+/// 어두운 면이 반반이라 대비가 오히려 크다(사용자 제보 "빈공간을 찍지는 않는데
+/// 각이진 빈곳은 자동 촬영되").
+///
+/// 명함은 **바탕이 지배적**이고 글자가 소수다. 밝은 명함이든 어두운 명함이든
+/// 한쪽 톤이 대부분을 차지한다. 반면 모서리 장면은 대략 반반이라 0.5 근처다.
+/// 그래서 밝은 쪽·어두운 쪽 중 **더 많은 쪽**의 비율을 돌려준다.
+double centerDominantToneRatio(List<int> sample, {required int gridSize}) {
+  final lo = gridSize ~/ 4;
+  final hi = gridSize - lo;
+  final values = <int>[];
+  for (var y = lo; y < hi; y++) {
+    for (var x = lo; x < hi; x++) {
+      final i = y * gridSize + x;
+      if (i < sample.length) values.add(sample[i]);
+    }
+  }
+  if (values.isEmpty) return 0;
+  final mean = values.reduce((a, b) => a + b) / values.length;
+  final bright = values.where((v) => v > mean).length;
+  final ratio = bright / values.length;
+  return math.max(ratio, 1 - ratio);
+}

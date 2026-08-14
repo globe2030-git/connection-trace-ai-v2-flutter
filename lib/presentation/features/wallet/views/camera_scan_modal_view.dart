@@ -75,6 +75,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 막는다 — 임계값을 높이면 진짜 명함까지 자동 촬영이 안 되는데, 그쪽이 더
   /// 나쁜 고장이다(셔터는 언제든 직접 누를 수 있다).
   static const _minCenterContrast = 10.0;
+  /// 가이드 안쪽에서 **한쪽 톤이 차지해야 하는 최소 비율**.
+  ///
+  /// 명함은 바탕이 지배적이라 대개 0.75 이상이다. 책상·벽 **모서리**는 밝은
+  /// 면과 어두운 면이 반반이라 0.5 근처에 머문다 — 대비만 보면 오히려 커서
+  /// 걸러지지 않던 장면이다. 밝은 명함과 어두운 명함을 모두 받으려고
+  /// **더 많은 쪽**을 본다.
+  static const _minDominantToneRatio = 0.65;
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -279,7 +286,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final avgDiff = diffSum / sample.length;
 
     // 흔들리지 않는 것만으로는 부족하다 — **가이드 안에 볼 것이 있어야** 한다.
-    final hasContent = centerFrameContrast(sample, gridSize: _sampleGridSize) >= _minCenterContrast;
+    // 대비 하나로는 모자랐다. 책상·벽 모서리처럼 **각이 진 빈 곳**은 밝은 면과
+    // 어두운 면이 반반이라 대비가 오히려 크다(사용자 제보 "빈공간을 찍지는
+    // 않는데 각이진 빈곳은 자동 촬영되").
+    //
+    // 명함은 **바탕이 지배적**이고 글자가 소수다 — 밝든 어둡든 한쪽 톤이
+    // 대부분이다. 모서리 장면은 대략 반반이라 여기서 갈린다.
+    final hasContent =
+        centerFrameContrast(sample, gridSize: _sampleGridSize) >=
+            _minCenterContrast &&
+        centerDominantToneRatio(sample, gridSize: _sampleGridSize) >=
+            _minDominantToneRatio;
 
     if (avgDiff < _stabilityDiffThreshold && hasContent) {
       _stableSince ??= now;
@@ -455,8 +472,18 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final offsetX = (imgW - visibleImgW) / 2;
       final offsetY = (imgH - visibleImgH) / 2;
 
-      // 명함 사각형 틀 자체만 깔끔하게 크롭하여 주변 바닥/배경 노이즈를 완전 제거한다.
-      const margin = 1.0;
+      // 가이드 프레임보다 **넓게** 잘라낸다.
+      //
+      // ⚠️ 이 값은 한 번 되돌아간 적이 있다. `db605ef`가 **"명함 주변 텍스트
+      // 잘림을 방지하기 위해"** 1.5로 넓혔는데, 뒤이은 스타일 커밋 `8fb5ff3`이
+      // 배경 노이즈를 없애려고 **1.0(여유 없음)**으로 바꿨다. 그러자 1.5가
+      // 막고 있던 결함이 그대로 돌아왔다 — 사용자 제보 "가이드에 맞춰 자동으로
+      // 찍힌 명함의 양쪽 끝 글씨가 30~40% 잘린다"(2026-08-14).
+      //
+      // **잘린 글자는 되찾을 수 없고, 섞인 배경은 파서가 걸러낸다.** 어느
+      // 쪽으로 틀릴지 골라야 한다면 넓게 자르는 쪽이다. 배경 글자가 필드를
+      // 침범하던 문제는 그 뒤 파싱 규칙에서 많이 잡혔다(추가 199~201).
+      const margin = 1.5;
       final guideSize = _guideFrameSizeFor(screenSize);
       final guideW = guideSize.width * margin;
       final guideH = guideSize.height * margin;
