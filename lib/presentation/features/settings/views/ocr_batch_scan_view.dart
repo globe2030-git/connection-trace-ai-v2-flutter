@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -170,6 +170,50 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
     }
   }
 
+  /// 표와 원본 이미지를 **기기 밖으로 내보낸다**(검수 도구에서 쓰려고).
+  ///
+  /// 예전에는 `adb shell run-as`로만 꺼낼 수 있어서, 검수를 하려면 맥에 개발
+  /// 환경이 있어야 했다. 검수는 개발자가 아니어도 하는 일이라 공유 시트로
+  /// 넘길 수 있게 한다(AirDrop·메일·파일 앱 등).
+  ///
+  /// ⚠️ 내보내는 파일에는 **명함 주인(제3자)의 실명·전화·이메일·주소**가 그대로
+  /// 들어 있다. 그래서 어디로 보낼지는 반드시 사용자가 공유 시트에서 고르게
+  /// 하고, 앱이 목적지를 정하지 않는다.
+  Future<void> _shareTsv({required bool withImages}) async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory('${docs.path}/card_samples');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final tsv = File('${dir.path}/scan_result.tsv');
+      tsv.writeAsStringSync(_buildTsv());
+
+      final files = <XFile>[XFile(tsv.path)];
+      if (withImages) {
+        final images =
+            dir
+                .listSync()
+                .whereType<File>()
+                .where(
+                  (f) => RegExp(
+                    r'\.(png|jpe?g)$',
+                    caseSensitive: false,
+                  ).hasMatch(f.path),
+                )
+                .toList()
+              ..sort((a, b) => a.path.compareTo(b.path));
+        files.addAll(images.map((f) => XFile(f.path)));
+      }
+      await SharePlus.instance.share(
+        ShareParams(
+          files: files,
+          subject: '명함 인식 검수 자료',
+        ),
+      );
+    } catch (e) {
+      _toast('내보내지 못했습니다(${e.runtimeType}).');
+    }
+  }
+
   Future<void> _copyAsTsv() async {
     await Clipboard.setData(ClipboardData(text: _buildTsv()));
     if (!mounted) return;
@@ -254,6 +298,16 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
               icon: const Icon(Icons.copy_all_outlined),
               tooltip: '표를 클립보드로 복사',
               onPressed: _copyAsTsv,
+            ),
+          if (_rows.isNotEmpty && !_running)
+            PopupMenuButton<bool>(
+              icon: const Icon(Icons.ios_share_outlined),
+              tooltip: '검수용으로 내보내기',
+              onSelected: (withImages) => _shareTsv(withImages: withImages),
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: false, child: Text('표(TSV)만 내보내기')),
+                PopupMenuItem(value: true, child: Text('표 + 명함 이미지 내보내기')),
+              ],
             ),
         ],
       ),
