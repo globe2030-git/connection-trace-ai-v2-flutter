@@ -1473,6 +1473,34 @@ class _NearbyContactTile extends StatelessWidget {
                     color: AppColors.textMuted,
                   ),
                 ),
+                // 주소 한 줄(F-12) — 이 화면의 목적이 "지금 어디쯤 가까이 있는가"라
+                // 회사명만으로는 부족했다. 주소가 없는 명함은 애초에 좌표가 없어
+                // 이 목록에 뜨지 않지만, 혹시 비어 있으면 줄 자체를 숨긴다.
+                if ((contact.address ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.location_on_outlined,
+                        size: 12.5,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 3),
+                      Expanded(
+                        child: Text(
+                          contact.address!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
