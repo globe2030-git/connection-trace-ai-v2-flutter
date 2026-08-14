@@ -619,6 +619,46 @@ class OcrScannerService {
     return null;
   }
 
+  /// 뭉친 줄에서 **회사 키워드 주변만** 잘라낸다.
+  ///
+  /// OCR이 여러 줄을 하나로 붙이면 그 안에 회사 키워드가 있어 **줄 전체가
+  /// 회사명**이 된다. 103장 실측에서 남은 회사명 오분류 7장이 전부 이 형태였고,
+  /// 그중 4장은 **줄 안에 정답이 들어 있었다**(추가 195):
+  ///
+  /// - `… (주)온에이드 ONADInc Hello!` → `(주)온에이드`
+  /// - `Global GTM & M&A Advisor 모멘텀메이커 주식회사` → `모멘텀메이커 주식회사`
+  /// - `NELSON SPORTS, INC. 1644-1708 www.nelson.co.kr ARCTERYX` → `NELSON SPORTS, INC.`
+  ///
+  /// 규칙은 두 가지뿐이다.
+  /// 1. 키워드가 **다른 글자와 붙어 있으면** 그 토큰이 곧 회사명이다
+  ///    (`크림하우스(주)`, `(주)온에이드`).
+  /// 2. 키워드가 **단독 토큰이면** 앞 토큰을 하나 붙인다. 그 앞 토큰이 쉼표로
+  ///    끝나면(`SPORTS,`) 이름이 이어지는 중이므로 하나 더 붙인다.
+  ///
+  /// ⚠️ **짧은 줄은 건드리지 않는다.** 정상적으로 인식된 회사명까지 잘라내면
+  /// 손해가 크다 — 뭉친 줄(25자 초과·토큰 4개 이상)에만 적용한다.
+  static String _trimCompanyAroundKeyword(String line, String keyword) {
+    final trimmed = line.trim();
+    if (trimmed.length <= 25) return trimmed;
+    final tokens = trimmed
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (tokens.length < 4) return trimmed;
+
+    final idx = tokens.indexWhere((t) => _containsCi(t, keyword));
+    if (idx < 0) return trimmed;
+
+    String lettersOf(String v) => v.replaceAll(RegExp(r'[^A-Za-z가-힣]'), '');
+    if (lettersOf(tokens[idx]).length > lettersOf(keyword).length) {
+      return tokens[idx];
+    }
+
+    var start = idx > 0 ? idx - 1 : idx;
+    if (start > 0 && tokens[start].endsWith(',')) start -= 1;
+    return tokens.sublist(start, idx + 1).join(' ');
+  }
+
   /// 줄에서 이메일과 URL을 걷어낸다. 키워드 판정 전에 쓴다 — 도메인 문자열이
   /// 회사 키워드에 우연히 걸리는 것을 막기 위해서다(`elancer.**co**.kr` ⊂ `Co.`).
   static String _stripContacts(String line) => line
@@ -1221,7 +1261,13 @@ class OcrScannerService {
       // 실제 명함에서 확인됐다 — 키워드 목록의 "Inc."/"Co."는 대소문자가
       // 섞여 있어 그대로 비교하면 놓친다. 대소문자를 구분하지 않고 검사.
       if (companyLine == null && isCompanyLine) {
-        companyLine = line;
+        final matchedCompanyKeyword = _companyKeywords.firstWhere(
+          (k) => _containsCi(lineWithoutContacts, k),
+          orElse: () => '',
+        );
+        companyLine = matchedCompanyKeyword.isEmpty
+            ? line
+            : _trimCompanyAroundKeyword(line, matchedCompanyKeyword);
         companySource = OcrCompanySource.keyword;
         continue;
       }
