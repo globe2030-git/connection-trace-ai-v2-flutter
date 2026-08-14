@@ -317,7 +317,7 @@
         <table><tbody id="rows"></tbody></table>
       </div>
       <div class="actions">
-        <button class="btn primary" id="btnOk">전부 맞음 <kbd>Ctrl</kbd>+<kbd>↵</kbd></button>
+        <button class="btn primary" id="btnOk">확인 완료 · 다음 <kbd>Ctrl</kbd>+<kbd>↵</kbd></button>
         <button class="btn" id="btnPrev">← 이전</button>
         <button class="btn" id="btnNext">다음 →</button>
         <span class="hint" id="doneMark"></span>
@@ -603,12 +603,20 @@ function go(delta) {
   render();
 }
 
-$('#btnNext').onclick = () => go(1);
-$('#btnPrev').onclick = () => go(-1);
-$('#btnOk').onclick = () => {
+// 앞으로 넘어가는 것은 "이 장은 봤다"는 뜻이라 **확인함(Y)으로 기록**한다.
+// 예전에는 오직 '전부 맞음' 버튼만 Y로 기록해서, 값을 고치고 '다음'을 누른
+// 사용자의 검수가 통째로 사라졌다(17장을 검수했는데 3장만 Y). 채점기는 Y만
+// 세므로 검수한 명함이 집계에서 빠졌다. 뒤로 가기(←)는 재확인이라 Y를
+// 강제하지 않는다.
+function goForward() {
   commit(true);
-  if (idx < rows.length - 1) { idx += 1; render(); } else { render(); }
-};
+  if (idx < rows.length - 1) idx += 1;
+  render();
+}
+
+$('#btnNext').onclick = goForward;
+$('#btnPrev').onclick = () => go(-1);
+$('#btnOk').onclick = goForward;
 
 document.querySelectorAll('[data-rot]').forEach((b) => {
   b.onclick = () => {
@@ -673,7 +681,7 @@ document.addEventListener('keydown', (e) => {
   if (!rows.length) return;
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); $('#btnOk').click(); return; }
   if (e.target.tagName === 'INPUT') return;
-  if (e.key === 'ArrowRight') go(1);
+  if (e.key === 'ArrowRight') goForward();
   if (e.key === 'ArrowLeft') go(-1);
 });
 
