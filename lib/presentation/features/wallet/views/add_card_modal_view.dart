@@ -1135,11 +1135,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
+    // 주소는 선택 입력이다(F-02, 테스터 요청). 명함에 주소가 아예 없는 경우가
+    // 흔한데 예전에는 주소가 비면 저장 자체가 막혀 등록을 못 했다. 주소를 비우면
+    // 좌표를 못 얻어 '주변' 목록에는 안 뜨지만, 명함 등록·조회는 정상 동작한다.
+    // (빈 주소일 때의 저장 경로는 아래 지오코딩 단계에서 분기한다.)
     final rawAddress = _addressController.text.trim();
-    if (rawAddress.isEmpty) {
-      _focusAndShowError(_addressFocusNode, '⚠️ 회사 주소를 입력해 주세요.');
-      return;
-    }
 
     final phoneVal = _phoneController.text.trim();
     final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
@@ -1206,6 +1206,42 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         }
         if (!mounted) return;
       }
+    }
+
+    // 주소가 비어 있으면 지오코딩할 대상이 없다 — 건너뛰고 좌표 없이 저장한다.
+    // 빈 문자열을 validateAndConvert에 넘기면 "주소를 못 찾았다" 다이얼로그가
+    // 잘못 뜨므로 여기서 먼저 걸러낸다(F-02).
+    //
+    // 단, 침묵 저장은 하지 않는다 — 명함 뒷면에 주소가 있는데 앞면만 보고
+    // 등록해 버리는 실수를 막기 위해 한 번 확인한다(사용자 실기기 피드백,
+    // 2026-08-14). 중복 전화번호 확인과 같은 패턴. 주소가 채워져 있으면 이
+    // 확인은 뜨지 않고 기존대로 바로 지오코딩·저장으로 넘어간다.
+    if (rawAddress.isEmpty) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogCtx) => AlertDialog(
+          title: const Text('주소 없이 저장할까요?'),
+          content: const Text(
+            '주소가 비어 있어요. 명함 뒷면에 주소가 있을 수 있어요.\n'
+            '주소 없이 저장하면 \'주변\'에는 표시되지 않아요.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('취소'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: const Text('그래도 저장'),
+            ),
+          ],
+        ),
+      );
+      // 취소(또는 바깥 탭으로 닫음)면 저장하지 않고 폼으로 돌아간다 —
+      // 주소를 입력하거나 뒷면을 스캔할 수 있게.
+      if (proceed != true || !mounted) return;
+      _executeFinalSave('', null);
+      return;
     }
 
     // 2. Address Geocoding & Road Name Address Conversion Dialog
@@ -2402,14 +2438,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     focusNode: _addressFocusNode,
                     order: 4,
                     nextFocusNode: _addressDetailFocusNode,
-                    label: '회사 주소 (도로명) *',
-                    hint: '예: 서울특별시 강남구 테헤란로 123',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '회사 주소를 입력해 주세요.';
-                      }
-                      return null;
-                    },
+                    label: '회사 주소 (도로명)',
+                    hint: '예: 서울특별시 강남구 테헤란로 123 (선택)',
                     suffixIcon: IconButton(
                       icon: const Icon(
                         Icons.search,
