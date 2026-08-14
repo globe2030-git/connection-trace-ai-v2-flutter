@@ -40,7 +40,7 @@ request.auth.token.email in ['connectionsense@creamhouse.net', 'globe@creamhouse
 
 ### ⚠️ "Rules만 고치면 된다"는 더 이상 사실이 아니다 (2026-08-14)
 
-`getUserUsage`·`grantBonusCredits` 같은 관리자 전용 Cloud Functions는
+`getUserUsage`·`grantSupportCredits`(2026-08-14 개명 — 舊 grantBonusCredits) 같은 관리자 전용 Cloud Functions는
 Firestore Rules를 거치지 않고 Admin SDK로 직접 접근하기 때문에, **Rules의
 `isAdmin()` 배열만 바꾸고 Functions 쪽을 빠뜨리면 해제된 관리자가 Callable을
 계속 호출할 수 있다**(ADMIN-VULN-001). 그래서 관리자 이메일은 이제 두 곳에
