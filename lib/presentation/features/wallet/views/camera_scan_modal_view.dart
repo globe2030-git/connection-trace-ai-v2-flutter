@@ -8,7 +8,14 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class CameraScanModalView extends StatefulWidget {
-  const CameraScanModalView({super.key});
+  /// 지금 찍는 면("앞면"/"뒷면"). 화면 아래에 항상 띄운다.
+  ///
+  /// 명함 한 장은 앞면과 뒷면까지가 최대인데(추가 189), 카메라 화면에는 지금
+  /// 무엇을 찍는 중인지 표시가 없어서 뒷면 스캔을 고르고 들어와도 알 수 없었다.
+  /// 다른 명함 앱들이 공통으로 이 라벨을 두고 있다(2026-08-14 참고 자료).
+  final String sideLabel;
+
+  const CameraScanModalView({super.key, this.sideLabel = '앞면'});
 
   @override
   State<CameraScanModalView> createState() => _CameraScanModalViewState();
@@ -296,6 +303,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     return result;
   }
 
+  /// 촬영은 했지만 아직 인식(OCR)을 돌리지 않은 사진.
+  ///
+  /// 예전에는 셔터를 누르면 곧바로 인식까지 하고 화면을 닫았다. 그래서 **초점이
+  /// 나간 사진도 그대로 인식**됐고(테스터 E-04), 사용자는 결과를 본 뒤에야
+  /// 잘못 찍은 걸 알았다. 인식 전에 한 번 보여주고 [다시 찍기]/[확인]을 받는다.
+  XFile? _pendingShot;
+
   Future<void> _capturePhoto() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _isCapturing)
@@ -316,9 +330,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       if (!mounted) return;
       final screenSize = MediaQuery.of(context).size;
       final croppedFile = await _cropToGuideFrame(rawFile, screenSize);
-      final scanResult = await OcrScannerService.scanBusinessCard(croppedFile);
       if (!mounted) return;
-      Navigator.pop(context, scanResult);
+      // 바로 인식하지 않고 먼저 보여준다 — 흐린 사진으로 인식을 돌리는 낭비와
+      // "결과를 봐야 잘못 찍은 걸 아는" 문제를 없앤다.
+      setState(() {
+        _pendingShot = croppedFile;
+        _isCapturing = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isCapturing = false);
@@ -332,6 +350,40 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // 감지를 다시 시작한다.
       await _startAutoCaptureStream();
     }
+  }
+
+  /// 보여준 사진으로 인식을 진행한다.
+  Future<void> _confirmPendingShot() async {
+    final shot = _pendingShot;
+    if (shot == null) return;
+    setState(() => _isCapturing = true);
+    try {
+      final scanResult = await OcrScannerService.scanBusinessCard(shot);
+      if (!mounted) return;
+      Navigator.pop(context, scanResult);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isCapturing = false;
+        _pendingShot = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ 명함 인식에 실패했습니다: $e'),
+          backgroundColor: AppColors.destructive,
+        ),
+      );
+      await _startAutoCaptureStream();
+    }
+  }
+
+  /// 방금 찍은 사진을 버리고 다시 촬영 상태로 돌아간다.
+  Future<void> _retakePendingShot() async {
+    setState(() {
+      _pendingShot = null;
+      _isCapturing = false;
+    });
+    await _startAutoCaptureStream();
   }
 
   /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
@@ -499,7 +551,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                   label: const Text('설정 열기'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: Colors.white,
-                                    side: const BorderSide(color: Colors.white54),
+                                    side: const BorderSide(
+                                      color: Colors.white54,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -533,7 +587,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               ),
                               SizedBox(height: 16),
                               Text(
-                                '📸 명함 촬영 완료! AI 텍스트 추출 중...',
+                                '📸 촬영한 사진을 다듬는 중…',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 15,
@@ -656,9 +710,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: _isFrameStable
-                            ? AppColors.accent
-                            : Colors.white,
+                        color: _isFrameStable ? AppColors.accent : Colors.white,
                         width: _isFrameStable ? 3 : 1.5,
                       ),
                     ),
@@ -730,37 +782,142 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
               ),
             ),
 
-            // Bottom Shutter Controls
-            Positioned(
-              bottom: 30,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
-                  onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
-                  child: Container(
-                    width: 76,
-                    height: 76,
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                    ),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isReady ? AppColors.accent : AppColors.textMuted,
-                        shape: BoxShape.circle,
+            // 방금 찍은 사진 확인 — 인식 전에 [다시 찍기]/[확인]을 받는다.
+            if (_pendingShot != null)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: Image.file(
+                            File(_pendingShot!.path),
+                            fit: BoxFit.contain,
+                          ),
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.camera_alt,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '${widget.sideLabel} · 글자가 또렷한가요?',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: _isCapturing
+                                        ? null
+                                        : _retakePendingShot,
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: const BorderSide(
+                                        color: Colors.white54,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: const Text('다시 찍기'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: _isCapturing
+                                        ? null
+                                        : _confirmPendingShot,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.accent,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    child: Text(_isCapturing ? '인식 중…' : '확인'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // 지금 찍는 면 — 셔터 위에 항상 보인다.
+            if (_pendingShot == null)
+              Positioned(
+                bottom: 118,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      widget.sideLabel,
+                      style: const TextStyle(
                         color: Colors.white,
-                        size: 36,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
+
+            // Bottom Shutter Controls
+            if (_pendingShot == null)
+              Positioned(
+                bottom: 30,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 4),
+                      ),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: isReady
+                              ? AppColors.accent
+                              : AppColors.textMuted,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt,
+                          color: Colors.white,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

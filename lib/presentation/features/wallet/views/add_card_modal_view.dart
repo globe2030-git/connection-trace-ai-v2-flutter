@@ -190,7 +190,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
   String? get _scannedCardImageSourcePath =>
-      (_selectedScanIndex >= 0 && _selectedScanIndex < _scannedCardImages.length)
+      (_selectedScanIndex >= 0 &&
+          _selectedScanIndex < _scannedCardImages.length)
       ? _scannedCardImages[_selectedScanIndex].path
       : null;
 
@@ -210,10 +211,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       ContactImageService()
           .findExistingCardImagePath(widget.contactToEdit!.id)
           .then((path) {
-        if (path != null && mounted) {
-          setState(() => _cardImagePath = path);
-        }
-      });
+            if (path != null && mounted) {
+              setState(() => _cardImagePath = path);
+            }
+          });
     }
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
@@ -325,14 +326,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   }
 
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
-  Future<void> _performOcrScan({required bool isFromCamera}) async {
+  Future<void> _performOcrScan({
+    required bool isFromCamera,
+
+    /// 지금 찍는 면. 카메라 화면에 그대로 표시된다(추가 191).
+    String sideLabel = '앞면',
+  }) async {
     OcrScanResult? result;
 
     if (isFromCamera) {
       // Open camera scanner view with viewfinder shutter
       result = await Navigator.push<OcrScanResult>(
         context,
-        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+        MaterialPageRoute(
+          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+        ),
       );
     } else {
       // Open interactive gallery / file explorer picker view
@@ -610,6 +618,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
     if (!mounted || choice == null || choice == 'done') return;
 
+    // 뒷면을 고르면 카메라 화면도 "뒷면"으로 연다. 재촬영은 방금 찍던 면을
+    // 그대로 다시 찍는 것이므로 현재 면 라벨을 유지한다.
+    final nextLabel = choice == 'back' ? '뒷면' : _currentSideLabel;
+
     if (choice == 'retake') {
       setState(() {
         // 방금 스캔이 채운 칸만 비운다 — 앞면에서 읽은 값은 지킨다.
@@ -628,8 +640,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _scanCount = _scanCount > 0 ? _scanCount - 1 : 0;
       });
     }
-    await _performOcrScan(isFromCamera: isFromCamera);
+    await _performOcrScan(isFromCamera: isFromCamera, sideLabel: nextLabel);
   }
+
+  /// 지금 찍고 있는 면. 스캔 횟수로 판단한다 — 아직 한 번도 안 찍었거나
+  /// 재촬영이면 앞면, 앞면을 마쳤으면 뒷면이다.
+  String get _currentSideLabel => _scanCount >= 1 ? '뒷면' : '앞면';
 
   /// 목적격 조사를 받침에 맞춰 붙인다("주소를", "이메일을").
   ///
@@ -677,7 +693,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.touch_app, color: AppColors.accentText, size: 20),
+                    const Icon(
+                      Icons.touch_app,
+                      color: AppColors.accentText,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -986,7 +1006,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.borderSubtle.withValues(alpha: 0.8)),
+            border: Border.all(
+              color: AppColors.borderSubtle.withValues(alpha: 0.8),
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.3),
@@ -2237,7 +2259,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                 runSpacing: 6,
                                 children: _scannedRawLines.map((line) {
                                   return InkWell(
-                                    onTap: () => _showQuickFieldMapperSheet(line),
+                                    onTap: () =>
+                                        _showQuickFieldMapperSheet(line),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(
@@ -2245,10 +2268,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: AppColors.accent.withValues(alpha: 0.1),
+                                        color: AppColors.accent.withValues(
+                                          alpha: 0.1,
+                                        ),
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(
-                                          color: AppColors.accent.withValues(alpha: 0.3),
+                                          color: AppColors.accent.withValues(
+                                            alpha: 0.3,
+                                          ),
                                         ),
                                       ),
                                       child: Row(
