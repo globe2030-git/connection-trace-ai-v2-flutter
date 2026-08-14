@@ -227,9 +227,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
-    _tagsController = TextEditingController(
-      text: c != null ? c.tags.join(', ') : 'AI, IT',
-    );
+    // ⚠️ 신규 등록의 기본값은 **빈 값**이어야 한다. 예전에는 `'AI, IT'`가
+    // 박혀 있어서, 회계사 명함을 등록해도 태그에 `AI`·`IT`가 그대로 저장됐다
+    // (테스터 제보 — 통합본 E-08). 데모용 더미값이 그대로 남아 있던 것이고,
+    // "가짜 데이터를 만들지 않는다"(CLAUDE.md 4절)에 정면으로 걸린다.
+    //
+    // 태그가 틀리면 인맥 분류·검색·추천이 전부 어긋나는데, 사용자는 자기가
+    // 넣은 값인 줄 알고 지우지 않는다. 무엇을 적는 칸인지는 입력칸 안내
+    // 문구(`예: AI, 바이오, C-Level`)가 이미 알려 준다.
+    _tagsController = TextEditingController(text: c?.tags.join(', ') ?? '');
     _interestsController = TextEditingController(
       text: c != null ? c.interests.join(', ') : '',
     );
