@@ -160,7 +160,7 @@ Gemini 과금 단가(`functions/src/index.ts` 주석, `gemini-3.6-flash`,
 5. **반영**: 관리자 콘솔 "충전 관리" 탭에서 `config/billing.tiers` 값을
    갱신(코드 배포 불필요, 이미 있는 화면 그대로 사용).
 6. **문서화**: backlog에 "추가 N"으로 실측 결과 기록,
-   `docs/admin/reports/pnl-analysis-freemium.html`에 실측 반영한 새 절
+   `docs/planning/business/pnl-analysis-freemium.html`에 실측 반영한 새 절
    추가(15절 이후 16절로) — 이 갱신은 리포트 문서 성격이라 `docs/admin/`
    제약(디자인 세션 영역)과는 별개로 PM이 직접 써도 되는 영역이나, 혹시
    그 세션이 동시에 이 파일을 만지고 있을 수 있으니 실행 시점에

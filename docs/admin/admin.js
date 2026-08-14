@@ -160,16 +160,18 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ---------- 경영 리포트 ----------
-// 공지/문의/법적문서와 달리 Firestore가 아니라 docs/admin/reports/ 아래
-// 정적 HTML 파일 그대로 서빙한다 — 임원 보고용 문서라 편집 UI 없이,
-// 파일을 고치고 `firebase deploy --only hosting:admin`으로 재배포하면
-// 이 목록에서 항상 최신 버전이 열린다(새로고침만 하면 됨, 별도 동기화
-// 절차 없음).
+// (2026-08-14, ADMIN-VULN-008로 정정) 예전에는 이 목록의 파일들을
+// docs/admin/reports/ 아래 정적 HTML로 두고 admin hosting 타겟과 함께
+// 그대로 배포했다 — 그런데 admin hosting 타겟에는 인증이 없어서 임원용
+// 손익보고서가 로그인 없이 누구나 열람 가능한 URL로 공개돼 버렸다(취약점
+// ADMIN-VULN-008). 그래서 해당 문서를 docs/planning/business/ 아래
+// 저장소 전용 위치로 되돌렸다 — Hosting에는 올라가지 않고, 이 화면에는
+// 링크 대신 "저장소에서 직접 열람하라"는 안내만 보여준다.
 const REPORTS = [
   {
-    file: "reports/pnl-analysis-freemium.html",
     title: "프리미엄 구독 손익분석",
     desc: "무료:유료 전환 시나리오, 규모별 손익, AI 파싱 도입 영향 등",
+    repoPath: "docs/planning/business/pnl-analysis-freemium.html",
   },
 ];
 
@@ -178,9 +180,8 @@ function loadReports() {
   panel.innerHTML = `
     <div class="card">
       <p class="hint" style="margin-top:0;">
-        여기 목록은 정적 문서라 이 화면에서 직접 편집할 수 없습니다.
-        내용을 갱신하려면 해당 HTML 파일을 고치고 다시 배포해야 합니다 —
-        배포만 되면 아래 링크는 항상 최신 버전을 엽니다.
+        경영 리포트는 비공개 내부 문서라 Hosting에 배포하지 않습니다.
+        아래 목록의 저장소 경로에서 직접 열어 확인하세요.
       </p>
       <div id="reportList"></div>
     </div>
@@ -195,7 +196,10 @@ function loadReports() {
         <div class="title">${escapeHtml(r.title)}</div>
         <div class="meta">${escapeHtml(r.desc)}</div>
       </div>
-      <a class="btn-ghost" style="text-decoration:none; display:inline-block;" href="${r.file}" target="_blank" rel="noopener">열기 →</a>
+      <div class="meta" style="text-align:right; max-width:60%;">
+        이 문서는 Hosting에 배포하지 않는 비공개 내부 문서입니다.<br/>
+        저장소 <code>${escapeHtml(r.repoPath)}</code>에서 직접 열람하세요.
+      </div>
     `;
     list.appendChild(item);
   }

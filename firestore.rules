@@ -129,9 +129,119 @@ service cloud.firestore {
     // 소유자 쓰기를 허용한다: 여기 값은 곧 돈·한도가 아니라 통계라, 조작해도
     // 관리자 화면만 지저분해질 뿐 보안·비용 영향이 없다(aiUsage와 대비되는
     // 지점 — 그건 서버 전용이다). 읽기는 관리자만.
+    //
+    // ⚠️ 2026-08-14(ADMIN-VULN-009): 쓰기가 스키마 검증 없이 전면 허용돼 있어
+    // 임의의 최상위 필드·비정상 타입·과대한 카운터 값을 끼워 넣을 수 있었다.
+    // isValidOcrStats()로 필드·타입·범위를 고정한다.
     match /ocrStats/{uid} {
       allow read: if isAdmin();
-      allow write: if isOwner(uid);
+      // 감소(이전 값보다 작은 값)는 검증하지 말고 허용한다 — 설정 화면의
+      // "측정값 초기화" 버튼(ocr_stats_view.dart, _service.reset())이 로컬
+      // 저장소만 지우고 서버 문서(ocrStats/{uid})는 그대로 두기 때문에,
+      // 초기화 후 다음 스캔에서는 로컬 카운트가 0부터 다시 시작해 서버의
+      // 이전(더 큰) 값보다 작은 값이 정상적으로 올라온다. 여기서 감소를
+      // 막으면 이 정상 초기화 플로우 자체가 깨진다. 이 데이터는 돈·한도가
+      // 아니라 통계라 감소 허용의 보안·비용 영향은 없다(2026-08-14,
+      // ADMIN-VULN-009).
+      allow write: if isOwner(uid) && isValidOcrStats(request.resource.data);
+    }
+
+    // ocrStats 쓰기 스키마 검증. Firestore rules는 재귀 함수를 지원하지
+    // 않으므로 맵 타입별로 고정된 키 목록을 나열하는 명시적 검증 함수를 쓴다
+    // (isValidAppUpdateConfig와 같은 스타일 — 필드별 옵셔널 체크
+    // `(!('key' in m) || isOcrCount(m.key))` 패턴). 모든 카운터는
+    // 0~1,000,000 범위의 정수만 허용한다(상한은 실사용으로 도달 불가능한
+    // 안전판, 임의의 과대 카운터 차단용) — **상한 검증**이지 단조 증가
+    // 강제가 아니다(감소는 허용, 위 주석 참고).
+    function isOcrCount(v) {
+      return v is int && v >= 0 && v <= 1000000;
+    }
+
+    // OcrParseShape 9개 필드(lib/core/services/ocr_scanner_service.dart)와
+    // 일치하는 키만 허용.
+    function isValidOcrFilledMap(m) {
+      return m.keys().hasOnly([
+        'name', 'company', 'title', 'mobile', 'office',
+        'email', 'address', 'addressDetail', 'postal'
+      ]) &&
+        (!('name' in m) || isOcrCount(m.name)) &&
+        (!('company' in m) || isOcrCount(m.company)) &&
+        (!('title' in m) || isOcrCount(m.title)) &&
+        (!('mobile' in m) || isOcrCount(m.mobile)) &&
+        (!('office' in m) || isOcrCount(m.office)) &&
+        (!('email' in m) || isOcrCount(m.email)) &&
+        (!('address' in m) || isOcrCount(m.address)) &&
+        (!('addressDetail' in m) || isOcrCount(m.addressDetail)) &&
+        (!('postal' in m) || isOcrCount(m.postal));
+    }
+
+    // OcrNameSource enum 11종(ocr_scanner_service.dart)과 일치하는 키만 허용.
+    function isValidOcrNameSourceMap(m) {
+      return m.keys().hasOnly([
+        'keywordSplit', 'koreanStripped', 'mixedTokenFront', 'mixedTokenLast',
+        'leftoverFallback', 'fontSizePreferred', 'mergedWithAddress',
+        'splitFromTitle', 'hangulTokenPreferred', 'rawLineRecheck', 'none'
+      ]) &&
+        (!('keywordSplit' in m) || isOcrCount(m.keywordSplit)) &&
+        (!('koreanStripped' in m) || isOcrCount(m.koreanStripped)) &&
+        (!('mixedTokenFront' in m) || isOcrCount(m.mixedTokenFront)) &&
+        (!('mixedTokenLast' in m) || isOcrCount(m.mixedTokenLast)) &&
+        (!('leftoverFallback' in m) || isOcrCount(m.leftoverFallback)) &&
+        (!('fontSizePreferred' in m) || isOcrCount(m.fontSizePreferred)) &&
+        (!('mergedWithAddress' in m) || isOcrCount(m.mergedWithAddress)) &&
+        (!('splitFromTitle' in m) || isOcrCount(m.splitFromTitle)) &&
+        (!('hangulTokenPreferred' in m) || isOcrCount(m.hangulTokenPreferred)) &&
+        (!('rawLineRecheck' in m) || isOcrCount(m.rawLineRecheck)) &&
+        (!('none' in m) || isOcrCount(m.none));
+    }
+
+    // OcrCompanySource enum 3종(ocr_scanner_service.dart)과 일치하는 키만 허용.
+    function isValidOcrCompanySourceMap(m) {
+      return m.keys().hasOnly(['keyword', 'leftoverPick', 'none']) &&
+        (!('keyword' in m) || isOcrCount(m.keyword)) &&
+        (!('leftoverPick' in m) || isOcrCount(m.leftoverPick)) &&
+        (!('none' in m) || isOcrCount(m.none));
+    }
+
+    // corrections 하위 맵 — {unchanged/edited/cleared: count} 형태만 허용.
+    function isValidOcrCorrectionEntry(v) {
+      return v is map && v.keys().hasOnly(['unchanged', 'edited', 'cleared']) &&
+        (!('unchanged' in v) || isOcrCount(v.unchanged)) &&
+        (!('edited' in v) || isOcrCount(v.edited)) &&
+        (!('cleared' in v) || isOcrCount(v.cleared));
+    }
+
+    // corrections — 키는 OcrParseShape 9개 필드명과 동일
+    // (add_card_modal_view.dart의 finalValues), 값은 위 하위 맵.
+    function isValidOcrCorrectionsMap(m) {
+      return m.keys().hasOnly([
+        'name', 'company', 'title', 'mobile', 'office',
+        'email', 'address', 'addressDetail', 'postal'
+      ]) &&
+        (!('name' in m) || isValidOcrCorrectionEntry(m.name)) &&
+        (!('company' in m) || isValidOcrCorrectionEntry(m.company)) &&
+        (!('title' in m) || isValidOcrCorrectionEntry(m.title)) &&
+        (!('mobile' in m) || isValidOcrCorrectionEntry(m.mobile)) &&
+        (!('office' in m) || isValidOcrCorrectionEntry(m.office)) &&
+        (!('email' in m) || isValidOcrCorrectionEntry(m.email)) &&
+        (!('address' in m) || isValidOcrCorrectionEntry(m.address)) &&
+        (!('addressDetail' in m) || isValidOcrCorrectionEntry(m.addressDetail)) &&
+        (!('postal' in m) || isValidOcrCorrectionEntry(m.postal));
+    }
+
+    function isValidOcrStats(d) {
+      return d.keys().hasOnly([
+        'scans', 'correctedCards', 'filled', 'nameSource', 'companySource',
+        'corrections', 'platform', 'updatedAt'
+      ]) &&
+        (!('scans' in d) || isOcrCount(d.scans)) &&
+        (!('correctedCards' in d) || isOcrCount(d.correctedCards)) &&
+        (!('filled' in d) || (d.filled is map && isValidOcrFilledMap(d.filled))) &&
+        (!('nameSource' in d) || (d.nameSource is map && isValidOcrNameSourceMap(d.nameSource))) &&
+        (!('companySource' in d) || (d.companySource is map && isValidOcrCompanySourceMap(d.companySource))) &&
+        (!('corrections' in d) || (d.corrections is map && isValidOcrCorrectionsMap(d.corrections))) &&
+        (!('platform' in d) || (d.platform is string && d.platform.size() <= 20)) &&
+        (!('updatedAt' in d) || d.updatedAt == request.time);
     }
 
     // 공지사항 — published=true인 것만 일반 사용자에게 공개, 초안은 관리자만.
@@ -142,21 +252,66 @@ service cloud.firestore {
 
     // 1:1 문의 — 본인 문의만 읽고 쓸 수 있고, 관리자는 전체를 본다. 작성 후
     // 사용자가 원문을 고치지 못하게 update는 관리자만 허용(상태 변경 등).
+    //
+    // ⚠️ 2026-08-14(ADMIN-VULN-005): create/replies.create가 스키마 검증
+    // 없이 userId(문의)/from(답변) 외 필드를 자유롭게 허용해서, 일반
+    // 사용자가 status를 'answered'로 위조하거나 답변 서브컬렉션에
+    // `from: 'admin'`을 끼워 넣어 관리자 답변을 위조할 수 있었다.
+    // isValidInquiryCreate()/isValidInquiryReplyCreate()로 앱이 실제로
+    // 보내는 필드(toCreatePayload/addUserReply/addAdminReply)만 고정한다.
     match /inquiries/{inquiryId} {
       allow read: if isAdmin() ||
         (request.auth != null && resource.data.userId == request.auth.uid);
       allow create: if request.auth != null &&
-        request.resource.data.userId == request.auth.uid;
+        isValidInquiryCreate(request.resource.data);
       allow update: if isAdmin();
       allow delete: if false;
 
       match /replies/{replyId} {
         allow read: if isAdmin() || (request.auth != null &&
           get(/databases/$(database)/documents/inquiries/$(inquiryId)).data.userId == request.auth.uid);
-        allow create: if isAdmin() || (request.auth != null &&
-          get(/databases/$(database)/documents/inquiries/$(inquiryId)).data.userId == request.auth.uid);
+        allow create: if isValidInquiryReplyCreate(inquiryId, request.resource.data);
         allow update, delete: if false;
       }
+    }
+
+    // inquiries 생성 스키마 검증. lib/data/models/inquiry_model.dart의
+    // toCreatePayload()가 보내는 정확히 7개 필드만 허용한다. userId·userEmail은
+    // 요청자 본인 것과 일치해야 하고(로그인 성립 시 앱이 항상 그렇게 보낸다),
+    // status는 항상 'pending' 고정, createdAt은 서버 시각과 같아야 한다(클라
+    // 시각 위조 방지).
+    function isValidInquiryCreate(d) {
+      return d.keys().hasOnly(
+        ['userId', 'userName', 'userEmail', 'subject', 'message', 'status', 'createdAt']
+      ) &&
+        'userId' in d && d.userId is string && d.userId == request.auth.uid &&
+        'userEmail' in d && d.userEmail is string &&
+        d.userEmail == request.auth.token.email &&
+        (!('userName' in d) || (d.userName is string && d.userName.size() <= 100)) &&
+        'subject' in d && d.subject is string &&
+        d.subject.size() > 0 && d.subject.size() <= 200 &&
+        'message' in d && d.message is string &&
+        d.message.size() > 0 && d.message.size() <= 5000 &&
+        'status' in d && d.status == 'pending' &&
+        'createdAt' in d && d.createdAt == request.time;
+    }
+
+    // inquiries/{id}/replies 생성 스키마 검증. inquiry_repository.dart의
+    // addUserReply()/addAdminReply()가 보내는 정확히 3개 필드만 허용한다.
+    // 관리자가 쓰면 from은 반드시 'admin', 문의 소유자 본인이 쓰면 from은
+    // 반드시 'user'다 — 그 외(타인이 from='user'로 쓰거나, 일반 사용자가
+    // from='admin'으로 위조)는 모두 거부된다.
+    function isValidInquiryReplyCreate(inquiryId, d) {
+      return d.keys().hasOnly(['from', 'message', 'createdAt']) &&
+        'message' in d && d.message is string &&
+        d.message.size() > 0 && d.message.size() <= 5000 &&
+        'createdAt' in d && d.createdAt == request.time &&
+        (
+          (isAdmin() && d.from == 'admin') ||
+          (request.auth != null &&
+            get(/databases/$(database)/documents/inquiries/$(inquiryId)).data.userId == request.auth.uid &&
+            d.from == 'user')
+        );
     }
 
     // `users/{uid}` 문서에 클라이언트가 직접 쓸 수 있는 필드.

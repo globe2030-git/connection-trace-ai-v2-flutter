@@ -363,7 +363,7 @@ mode without Flutter tooling or Xcode"). 실기기 확인을 위해 devicectl로
 
 ### 타겟 시장 문서 보강
 
-`docs/admin/reports/pnl-analysis-freemium.html`의 타겟 시장 섹션에
+`docs/planning/business/pnl-analysis-freemium.html`의 타겟 시장 섹션에
 "관계 유지가 곧 매출"인 대표 영업직군으로 보험설계사(71.2만 명,
 2025년 말 생명보험협회 집계)·자동차 영업사원(약 3만 명, 업계 추정)을
 실제 통계와 함께 추가. 기존 577만 명(경영·회계 사무직+매장판매직)과는
