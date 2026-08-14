@@ -1,0 +1,237 @@
+<title>커넥션센스 그로스 플랜</title>
+<style>
+  :root{
+    --bg:#f7f9fc; --surface:#ffffff; --surface-2:#eef3fb;
+    --ink:#0e1729; --muted:#5b6b86; --faint:#8494ad;
+    --line:#dde5f1;
+    --brand:#2563eb; --brand-deep:#1d4ed8; --brand-soft:#e8f0fe;
+    --paid:#0e9f6e; --paid-soft:#dcf5ea;
+    --warn:#b45309; --warn-soft:#fbe7cf;
+    --shadow:0 1px 2px rgba(14,23,41,.04),0 8px 24px rgba(14,23,41,.06);
+  }
+  :root:not([data-theme="light"]){}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0a1120; --surface:#111b2e; --surface-2:#16233b;
+      --ink:#eaf1fb; --muted:#9fb0c9; --faint:#6d7f9c;
+      --line:#24344f;
+      --brand:#5b8cff; --brand-deep:#7aa2ff; --brand-soft:#17253f;
+      --paid:#34d399; --paid-soft:#123026;
+      --warn:#fbbf24; --warn-soft:#3a2c12;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0a1120; --surface:#111b2e; --surface-2:#16233b;
+    --ink:#eaf1fb; --muted:#9fb0c9; --faint:#6d7f9c;
+    --line:#24344f;
+    --brand:#5b8cff; --brand-deep:#7aa2ff; --brand-soft:#17253f;
+    --paid:#34d399; --paid-soft:#123026;
+    --warn:#fbbf24; --warn-soft:#3a2c12;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",system-ui,-apple-system,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+    font-feature-settings:"tnum";
+  }
+  .wrap{max-width:1000px;margin:0 auto;padding:clamp(20px,4vw,52px) clamp(16px,4vw,40px)}
+  .eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--brand);font-weight:700}
+  h1{font-size:clamp(28px,5vw,46px);line-height:1.08;margin:.35em 0 .3em;font-weight:800;letter-spacing:-.02em;text-wrap:balance}
+  h2{font-size:clamp(19px,2.6vw,24px);font-weight:750;letter-spacing:-.01em;margin:0 0 4px}
+  .lead{font-size:clamp(16px,2.2vw,19px);color:var(--muted);max-width:60ch;text-wrap:pretty}
+  .sub{color:var(--muted);font-size:14px;margin:2px 0 0}
+  section{margin-top:clamp(30px,5vw,52px)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px;border-bottom:1px solid var(--line);padding-bottom:10px}
+  .sec-head .n{font-size:13px;font-weight:800;color:var(--faint);font-variant-numeric:tabular-nums}
+
+  /* goal band */
+  .goal{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:26px}
+  .stat{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;box-shadow:var(--shadow)}
+  .stat .k{font-size:clamp(26px,4.5vw,38px);font-weight:800;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:13px;color:var(--muted);margin-top:8px}
+  .stat.brand .k{color:var(--brand)}
+  .stat.paid .k{color:var(--paid)}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}
+  .card p{margin:.5em 0 0;color:var(--muted);font-size:14.5px}
+  .card p strong{color:var(--ink);font-weight:650}
+
+  .wedge{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-deep) 100%);color:#fff;border-radius:16px;padding:clamp(22px,3.5vw,32px);box-shadow:var(--shadow)}
+  .wedge .eyebrow{color:#cfe0ff}
+  .wedge h2{color:#fff;font-size:clamp(20px,3vw,27px)}
+  .wedge p{color:#e6eeff;margin:.5em 0 0;max-width:62ch}
+  .wedge .vs{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  .wedge .vs span{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:6px 13px;font-size:13px}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow)}
+  th,td{padding:11px 14px;text-align:left;white-space:nowrap}
+  thead th{font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);font-weight:700;border-bottom:1px solid var(--line)}
+  tbody tr+tr td{border-top:1px solid var(--line)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .free{color:var(--brand);font-weight:700}
+  .paidc{color:var(--paid);font-weight:700}
+
+  /* ramp chart */
+  .ramp{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;align-items:end;height:200px;margin-top:4px;padding:0 2px}
+  .ramp .col{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%}
+  .ramp .bar{width:100%;max-width:54px;background:linear-gradient(180deg,var(--brand),var(--brand-deep));border-radius:7px 7px 3px 3px;position:relative;min-height:4px}
+  .ramp .v{font-size:12px;font-weight:700;color:var(--brand);font-variant-numeric:tabular-nums}
+  .ramp .m{font-size:11px;color:var(--faint);margin-top:2px}
+  .ramp .p{position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--paid);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+  /* channel mix */
+  .mix{margin-top:6px}
+  .mix .row{display:grid;grid-template-columns:130px 1fr 42px;align-items:center;gap:12px;padding:6px 0}
+  .mix .name{font-size:13.5px;color:var(--ink)}
+  .mix .track{background:var(--surface-2);border-radius:999px;height:16px;overflow:hidden}
+  .mix .fill{height:100%;background:linear-gradient(90deg,var(--brand-deep),var(--brand));border-radius:999px}
+  .mix .pct{font-size:13px;font-weight:700;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  @media(max-width:560px){.mix .row{grid-template-columns:104px 1fr 38px;gap:8px}}
+
+  /* pricing */
+  .tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:14px}
+  .tier{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .tier .price{font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
+  .tier .cnt{color:var(--brand);font-weight:700;font-size:14px;margin-top:3px}
+  .tier .per{color:var(--faint);font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;background:var(--paid-soft);color:var(--paid);border-radius:999px;padding:3px 11px;font-size:12.5px;font-weight:700}
+
+  .callout{border-left:4px solid var(--warn);background:var(--warn-soft);border-radius:0 12px 12px 0;padding:16px 20px;margin-top:16px}
+  .callout h2{font-size:16px;color:var(--warn)}
+  .callout p{margin:.4em 0 0;font-size:14px;color:var(--ink)}
+
+  ul.clean{list-style:none;padding:0;margin:10px 0 0}
+  ul.clean li{padding:7px 0 7px 26px;position:relative;font-size:14.5px;color:var(--muted);border-top:1px solid var(--line)}
+  ul.clean li:first-child{border-top:0}
+  ul.clean li::before{content:"";position:absolute;left:4px;top:14px;width:7px;height:7px;border-radius:2px;background:var(--brand)}
+  ul.clean li strong{color:var(--ink);font-weight:650}
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px}
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow">커넥션센스 · 실행 마케팅 제안 · 2026-08-14</div>
+  <h1>6개월, 예산 0원에서<br>무료 10,000 · 유료 100.</h1>
+  <p class="lead">명함앱으로 리멤버와 싸우지 않는다. <strong style="color:var(--ink)">"다시 연락할 말을 만들어주는" AI</strong>라는 아무도 안 판 문제를, 재연락이 곧 매출인 보험설계사부터 뾰족하게 뚫는다.</p>
+
+  <div class="goal">
+    <div class="stat brand"><div class="k">10,000</div><div class="l">무료 회원 (6개월)</div></div>
+    <div class="stat paid"><div class="k">100</div><div class="l">유료 회원 · 전환 1%</div></div>
+    <div class="stat"><div class="k">0.14%</div><div class="l">손익분기 전환율 — 목표는 그 7배 여유</div></div>
+    <div class="stat"><div class="k">₩0</div><div class="l">시작 예산 · 검증 후 증액</div></div>
+  </div>
+
+  <section>
+    <div class="wedge">
+      <div class="eyebrow">포지셔닝 — 쐐기</div>
+      <h2>"연락처는 있는데, 뭐라고 다시 연락하죠?"</h2>
+      <p>명함 정리·검색은 리멤버가 이긴다. 우리는 그 위, <strong style="color:#fff">오래 연락 못 한 고객에게 걸 첫 문장을 AI가 만들어 주는</strong> 재연락 도구를 판다. 명함첩이 아니라 관계 재활성화 도구.</p>
+      <div class="vs">
+        <span>① 스캔 → 자동 정리 (안심표)</span>
+        <span>② 주변 인맥 레이더 (발견)</span>
+        <span>③ AI 대화 브리핑 (전환·우리만)</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>시장 — 규모는 제약이 아니다</h2></div>
+    <div class="grid2">
+      <div class="card">
+        <h2 style="font-size:17px">비치헤드: 보험설계사</h2>
+        <p><strong>71.2만 명</strong> (2025년 말, 전년비 9.4%↑). 목표 10,000명은 이 직군의 <strong>1.4%</strong>. "오래 연락 못 한 고객 재연락 한마디"가 곧 실적이라 우리 핵심 가치와 정확히 겹치고, 네이버 카페·지점 단톡이 촘촘해 0원 채널 타겟 정확도가 최고.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size:17px">확장 경로</h2>
+        <p>보험설계사에서 <strong>자동차·부동산·PB·웨딩</strong> 등 관계영업으로, 그다음 <strong>스타트업·IT 영업/BD</strong>로. 핵심 타겟(사무·영업·판매) 577만 = 목표의 0.17%. <strong>병목은 시장이 아니라 유입·전환 실행.</strong></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>6개월 램프 — 월별 목표</h2></div>
+    <p class="sub">막대 = 무료 회원 누적 · 위 초록 숫자 = 유료 회원 누적</p>
+    <div class="card" style="margin-top:14px">
+      <div class="ramp" role="img" aria-label="월별 무료·유료 회원 누적 목표: M1 무료 300 유료 2, M2 1000/8, M3 2500/20, M4 4500/40, M5 7000/68, M6 10000/100">
+        <div class="col"><div class="v">300</div><div class="bar" style="height:6%"><span class="p">유료 2</span></div><div class="m">M1</div></div>
+        <div class="col"><div class="v">1,000</div><div class="bar" style="height:12%"><span class="p">8</span></div><div class="m">M2</div></div>
+        <div class="col"><div class="v">2,500</div><div class="bar" style="height:27%"><span class="p">20</span></div><div class="m">M3</div></div>
+        <div class="col"><div class="v">4,500</div><div class="bar" style="height:48%"><span class="p">40</span></div><div class="m">M4</div></div>
+        <div class="col"><div class="v">7,000</div><div class="bar" style="height:72%"><span class="p">68</span></div><div class="m">M5</div></div>
+        <div class="col"><div class="v">10,000</div><div class="bar" style="height:100%"><span class="p">100</span></div><div class="m">M6</div></div>
+      </div>
+    </div>
+    <div class="callout">
+      <h2>돈을 켜는 시점 (M3 go/no-go)</h2>
+      <p><strong>0원 유지</strong>: 누적 무료 ≥ 2,500 그리고 리퍼럴 k-factor ≥ 0.4, 또는 시딩 CPI ≈ 0. &nbsp;·&nbsp; <strong>소액광고 ON</strong>: M3 누적 &lt; 2,000이면 월 30~50만원으로 당근·네이버·메타 중 CPI 최저 하나에 2주 A/B. 증액은 CAC &lt; LTV/3일 때만.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>성장 엔진 — 10,000 구성</h2></div>
+    <p class="sub">전부 현금이 아니라 "AI 회차 증정"으로 굴린다 — 회차 원가는 판매가의 3~5%뿐</p>
+    <div class="card" style="margin-top:14px">
+      <div class="mix">
+        <div class="row"><span class="name">리퍼럴 바이럴</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="pct">35%</span></div>
+        <div class="row"><span class="name">커뮤니티 시딩</span><div class="track"><div class="fill" style="width:71%"></div></div><span class="pct">25%</span></div>
+        <div class="row"><span class="name">지점 챔피언</span><div class="track"><div class="fill" style="width:43%"></div></div><span class="pct">15%</span></div>
+        <div class="row"><span class="name">ASO 유기검색</span><div class="track"><div class="fill" style="width:29%"></div></div><span class="pct">10%</span></div>
+        <div class="row"><span class="name">콘텐츠</span><div class="track"><div class="fill" style="width:29%"></div></div><span class="pct">10%</span></div>
+        <div class="row"><span class="name">보도자료·PR</span><div class="track"><div class="fill" style="width:14%"></div></div><span class="pct">5%</span></div>
+      </div>
+    </div>
+    <ul class="clean">
+      <li><strong>리퍼럴</strong> — 초대자·피초대자 각 +5회. 가치 체감 직후 요청. 목표 k ≥ 0.4</li>
+      <li><strong>커뮤니티 시딩</strong> — 보험 카페·단톡에 광고 아닌 "후기·꿀팁"으로. 운영진 협의 필수</li>
+      <li><strong>지점 챔피언</strong> — 지점장 1명 → 지점 20~100명 조직 단위 온보딩. 씨앗은 크림하우스 B2B망</li>
+    </ul>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>과금 제안 — 충전형(E2)</h2></div>
+    <div class="grid2">
+      <div class="card">
+        <h2 style="font-size:17px">왜 충전형인가</h2>
+        <p><strong>다운사이드가 없는 유일한 구조</strong> — 사용이 곧 매출(평균 +$3,349 / 최악 +$6,017). 구독의 갱신·해지·사전고지 부담이 통째로 빠진다. 매월 리셋은 안 함(자기잠식 → 순이익 3.2배 차이).</p>
+        <p style="margin-top:12px"><span class="pill">성장기 프로모션</span> &nbsp;가입 체험 <strong>5 → 10회</strong>. 추가 원가 1인당 ~₩16. 아하 모먼트를 여러 인맥에서 겪게 하는 게 입소문·전환의 진짜 레버.</p>
+      </div>
+      <div class="card">
+        <h2 style="font-size:17px">충전 사다리</h2>
+        <div class="tiers">
+          <div class="tier"><div class="price">₩1,000</div><div class="cnt">10회</div><div class="per">₩100/회</div></div>
+          <div class="tier"><div class="price">₩3,000</div><div class="cnt">33회</div><div class="per">₩90.9/회</div></div>
+          <div class="tier"><div class="price">₩5,000</div><div class="cnt">60회</div><div class="per">₩83.3/회</div></div>
+          <div class="tier"><div class="price">₩10,000</div><div class="cnt">130회</div><div class="per">₩76.9/회</div></div>
+        </div>
+        <p style="margin-top:12px">프로모션은 <strong>할인이 아니라 회차 증정으로</strong>. 최초 충전 시 +5회 보너스로 첫 결제 장벽 넘김.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="n">00</span><h2>선행조건 — 이게 안 되면 위 전부 무의미</h2></div>
+    <div class="card">
+      <p style="margin-top:0"><strong>지금 병목은 예산이 아니라 "출시 자체"다.</strong> 앱이 스토어에 없으면 어떤 유입도 착지할 곳이 없다. 마케팅 실행의 0단계로 관리한다.</p>
+      <ul class="clean">
+        <li>iOS App Store Connect 업로드 403 해소 (P0-1)</li>
+        <li>Android 릴리스 정식 키스토어 서명 — 현재 debug 키 (P1-19)</li>
+        <li>ASO 문안·스크린샷·미리보기 영상 + 랜딩페이지 게시</li>
+        <li>리퍼럴·최초충전보너스 회차 로직 + 사용량 표시 개편</li>
+        <li>측정 세팅 — 설치 소스 태깅 · aiAuditLogs 대시보드 · 리뷰 모니터링</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    근거: pnl-analysis-freemium.html(손익·타겟·채널) · HANDOFF.md(제품·출시 상태). 과금·정책·배포는 사용자 결정 게이트로 권장안 상신. 미실측 수치·과장 표현은 마케팅에 쓰지 않음(방침·구현 일치).
+  </footer>
+
+</div>
