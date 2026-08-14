@@ -2,6 +2,72 @@
 
 ## 작업 로그
 
+### 2026-08-14 (추가 215) — 세션 정리: 64커밋 3분할 PR + 테스터 피드백 워드 문서
+
+이 세션은 코드보다 **정리·전달** 작업이 컸다. 시간순:
+
+1. **테스터 피드백(빌드6·7 통합본 38건) 조치결과 워드 문서** 생성 — 각 항목의
+   **조치·수정 내용을 빨간 글씨**, 상태색(종결/부분/남음)으로 표기. 사용자
+   전달용 산출물이라 저장소에는 넣지 않았다(내용 자체는 추가 203·211 +
+   `tester-feedback-resolution-2026-08-14.md`에 이미 있음).
+
+2. **`feat/ocr-phone-labels` 64커밋을 기능영역별 3개 PR로 분할.** 통짜 PR
+   하나(#142)는 리뷰가 어렵고 되돌리기도 나쁘다. 시간순으로 얽힌 사슬이라
+   타입별(docs/fix/feat) 분할은 충돌 없이 불가능해서 **기능영역**으로 갈랐다:
+   - #143 `docs/sns-auth-handoff` — SNS 로그인 문서(독립, main 병합됨).
+   - #144 `feat/admin-inquiry-management` — 관리자 1:1 문의 관리(6커밋, 병합됨).
+   - #145 `feat/ocr-scan-tester-fixes` — 명함 OCR·촬영·테스터 조치(대부분, 병합됨).
+   - **#145를 #144에 스택**했다 — 일괄스캔·태그정리가 #144에서 신설한
+     `AuthRepository.isAdmin`에 의존하기 때문. 병합 순서 #144→#145로 관리.
+   - 검증: **세 브랜치 합집합이 원본 브랜치 tip과 정확히 일치**(트리 diff=SNS
+     문서 1개뿐)함을 확인 — 내용 손실·변형 0. `settings_view.dart` 겹침은
+     일괄스캔 행만 #145에, admin 행은 #144로 갈라 해결.
+   - 처분: #142(통짜)·#141(`ocr-and-scan-flow`, 38커밋 전부 #145에 포함) **close**,
+     #137(build7 처리계획 문서, 성격 다름) **유지**.
+
+3. **명함인식팀 OCR 3커밋(정확도 89→94%, 추가 212·213)을 #145에 cherry-pick.**
+   다른 세션이 `origin/feat/ocr-phone-labels`에 올린 것을 충돌 없이 얹었다.
+
+**다세션 동시 작업**: 이날 여러 세션이 같은 저장소를 worktree로 나눠 동시에
+작업했다(명함인식·기능개선·관리자·지갑·PM). CLAUDE.md 교훈대로 **공유 작업
+트리는 전혀 건드리지 않고** 격리 worktree에서만 cherry-pick/커밋했다. PM 세션이
+`functions/src/index.ts` 충돌 구역의 병합 순서를 조율했다(관리자→F-07→지갑).
+
+### 2026-08-14 (추가 214) — F-07 대화 포인트 재생성 다양성 (구현 완료 · 배포 대기)
+
+**증상**: 브리핑에서 "새로 생성"을 눌러도 대화 포인트가 매번 거의 같다
+(테스터 피드백 F-07).
+
+**원인**(읽기 전용 조사로 확정): 생성은 100% 서버(`functions/src/index.ts`의
+`generateBriefing`)에서 일어난다. 재생성의 실체는 **같은 페이로드로 다시 호출**
+할 뿐(`briefing_overlay_view.dart`)이라 프롬프트가 완전히 동일했고,
+`generationConfig`에 **temperature/topP가 없어** 같은 입력에 가장 안전한 답으로
+수렴했다(mode collapse). 동일 프롬프트 반복이라 Gemini 암묵적 캐싱까지 겹쳤다.
+**클라이언트 단독으로는 불가** — 서버가 프롬프트를 만들고 모르는 필드는 무시하므로
+다양성 레버는 서버에만 있다.
+
+**해결(두 축, 승인안)**:
+- **previousPoints 제외**: 클라가 "새로 생성" 시점 화면의 포인트를 넘기면
+  (`generateTalkingPoints`의 새 파라미터 → 페이로드, 비어 있으면 생략) 서버
+  `buildPrompt`가 "이 문장들을 피해 다른 각도로" 지시한다. 최초 생성이면 절 생략.
+- **생성 파라미터**: `generationConfig`에 `temperature=1.0`/`topP=0.95`(사용자
+  승인 범위 0.9~1.1) 명시 + 매 호출 **회차 시드(variationSeed)**로 프롬프트를
+  미세하게 흔들어 응답 고착·캐싱을 막는다.
+
+**파일**: `functions/src/index.ts`(인터페이스·TEMPERATURE/TOP_P·buildPrompt·
+generationConfig·핸들러), `ai_briefing_service.dart`, `briefing_overlay_view.dart`.
+금지 파일(radar_view·add_card_modal)은 미변경. **PR #147 병합됨**(merge `d74207d`,
+관리자 #149 위에 rebase 후).
+
+**검증**: 서버 TypeScript 빌드(tsc) 통과, 클라 `flutter analyze` 무이슈 +
+전체 `flutter test` 통과. ⚠️ **실제 다양성 효과는 Cloud Functions 배포 후에만
+화면으로 확인 가능**(temperature·프롬프트가 서버측). 지금은 **미배포**.
+
+**남은 것**: ① Cloud Functions 배포(Blaze, `firebase deploy --only functions` —
+사용자 게이트) ② 배포 후 "재생성마다 다른 포인트가 나오는지" 눈확인. **방침**:
+previousPoints는 이미 동의받아 전송하는 명함·소통기록의 파생물(AI 생성 포인트)
+이라 신규 수집 항목이 아니라고 판단 — 방침 개정 불요로 보나 최종은 사용자 확인.
+
 ### 2026-08-14 (추가 213) — 채점 루프로 파서·정답지 교정: 89% → **94%** (132/140)
 
 추가 212의 첫 채점(89%)을 출발점으로, **고칠 때마다 재생 채점기로 재는 루프**를
