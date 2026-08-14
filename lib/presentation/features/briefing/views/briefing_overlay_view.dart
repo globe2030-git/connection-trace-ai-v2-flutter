@@ -125,6 +125,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
         communicationLogs: selection.communicationLogs,
         weatherSummary: selection.weatherSummary,
         extraNote: selection.extraNote,
+        // F-07: "새로 생성"을 누른 시점 화면에 있던 포인트를 넘겨, 서버가 그
+        // 문장들을 피해 다른 각도로 만들게 한다. 최초 생성이면 _points가 비어
+        // 있어(또는 캐시된 이전 결과) 그대로 넘긴다 — 서버가 알아서 처리한다.
+        previousPoints: _points,
       );
       if (!mounted) return;
       setState(() {

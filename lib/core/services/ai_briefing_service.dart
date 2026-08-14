@@ -95,6 +95,10 @@ class AiBriefingService {
     // 통화/문자/카카오톡 자동 연동이 없는 상황을 보완하기 위해 동의 화면에서
     // 사용자가 직접 적어 넣은 메모(선택). 비어 있으면 null.
     String? extraNote,
+    // F-07(재생성 다양성): "새로 생성"을 누르기 직전 화면에 떠 있던 대화 포인트.
+    // 서버(buildPrompt)가 이 문장들을 피해 다른 각도로 만들도록 지시한다.
+    // 최초 생성이면 비어 있거나 null — 그때는 제외 지시가 붙지 않는다.
+    List<String>? previousPoints,
   }) async {
     if (!kAiServiceDeployed) {
       throw AiServiceUnavailableException();
@@ -115,6 +119,10 @@ class AiBriefingService {
             'weatherSummary': ?weatherSummary,
             'extraNote': ?extraNote,
             'interests': contact.interests.join(', '),
+            // 비어 있으면 아예 보내지 않는다 — 서버는 없는 값으로 취급해
+            // 제외 지시를 생략한다(입력 토큰도 아낀다).
+            if ((previousPoints ?? const <String>[]).isNotEmpty)
+              'previousPoints': previousPoints,
           })
           .timeout(_timeout);
 
