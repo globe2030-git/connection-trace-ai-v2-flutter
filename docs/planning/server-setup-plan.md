@@ -1093,7 +1093,7 @@ generateBriefing({
 >
 > 사고량을 `LOW`로 낮춘 뒤에는 설계 추정보다도 싸다. 다만 **모델이나 사고
 > 설정을 바꾸면 이 단가가 몇 배로 움직인다** — 손익 모델
-> (`docs/admin/reports/pnl-analysis-freemium.html`)이 이 값을 쓰므로 함께
+> (`docs/planning/business/pnl-analysis-freemium.html`)이 이 값을 쓰므로 함께
 > 재검토할 것.
 
 #### thinkingLevel 단계별 단가표 (2026-08-08 실측)
