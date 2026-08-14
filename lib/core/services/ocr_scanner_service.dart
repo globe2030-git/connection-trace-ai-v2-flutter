@@ -586,6 +586,39 @@ class OcrScannerService {
     return out.join(' ');
   }
 
+  /// 전화번호 줄에 붙은 **라벨**의 종류.
+  ///
+  /// 번호 패턴만 보면 `H.P 070-…`(휴대폰 라벨인데 070)은 사무실로 가고,
+  /// `TEL. 010-…`(소상공인 명함에 흔한 대표전화)은 휴대폰으로 간다. 뒤 경우가
+  /// 특히 나쁘다 — 같은 명함에 진짜 휴대폰이 따로 있으면 **먼저 잡힌 대표전화가
+  /// 휴대폰 칸을 차지하고 진짜 번호는 버려진다**(2026-08-14 재현, 테스터 E-03).
+  ///
+  /// 명함에 적힌 라벨은 **작성자가 직접 밝힌 정보**라 패턴 추정보다 정확하다.
+  static const _mobileLabelPattern =
+      r'\b(H\.?P|M\.?P|C\.?P|MOBILE|CELL)\b|\bH\.|\bM\.|휴대폰|휴대전화|핸드폰';
+  static const _officeLabelPattern =
+      r'\b(TEL|PHONE|OFFICE)\b|\bT\.|대표전화|전화';
+
+  /// 한 줄에 **한 종류의 라벨만** 있을 때 그 종류를 돌려준다. 두 종류가 섞여
+  /// 있으면(`M.010-… T.02-…`) 어느 번호가 어느 라벨인지 이 방식으로는 못
+  /// 가리므로 null을 돌려 기존 패턴 판정에 맡긴다.
+  ///
+  /// ⚠️ 휴대폰 라벨을 **먼저 걷어낸 뒤** 사무실 라벨을 본다. `휴대전화` 안에
+  /// `전화`가 들어 있어서, 순서를 바꾸면 한 줄이 두 종류로 잡힌다.
+  static bool? _isMobileLabelLine(String line) {
+    final upper = line.toUpperCase();
+    final mobileRe = RegExp(_mobileLabelPattern, caseSensitive: false);
+    final hasMobile = mobileRe.hasMatch(upper);
+    final withoutMobile = upper.replaceAll(mobileRe, ' ');
+    final hasOffice = RegExp(
+      _officeLabelPattern,
+      caseSensitive: false,
+    ).hasMatch(withoutMobile);
+    if (hasMobile && !hasOffice) return true;
+    if (hasOffice && !hasMobile) return false;
+    return null;
+  }
+
   /// 줄에서 이메일과 URL을 걷어낸다. 키워드 판정 전에 쓴다 — 도메인 문자열이
   /// 회사 키워드에 우연히 걸리는 것을 막기 위해서다(`elancer.**co**.kr` ⊂ `Co.`).
   static String _stripContacts(String line) => line
@@ -864,6 +897,9 @@ class OcrScannerService {
     );
 
     String? mobile;
+    // 지금 [mobile]에 들어 있는 번호가 **사무실 라벨** 줄에서 왔는지.
+    // 나중에 휴대폰 라벨이 붙은 다른 01X 번호가 나오면 자리를 바꾸기 위해 둔다.
+    var mobileCameFromOfficeLabel = false;
     String? office;
     String? email;
     String? address;
@@ -916,9 +952,36 @@ class OcrScannerService {
       // 적용한다 — 원본 line은 그대로 둬서 이메일/주소/이름 판별에는 영향을
       // 주지 않는다(글자 수가 같은 치환이라 매칭 위치는 원본과 동일하다).
       final phoneLookup = _normalizePhoneLookalikes(line);
+
+      // ⚠️ **번호 대역이 라벨보다 확실하다.** `01X`는 통신사 휴대폰 대역이고
+      // `02`·`0XX`·`070`은 유선/인터넷전화 대역이라 바뀔 수 없다. 반면 한국
+      // 명함의 `T.`는 "사무실"이 아니라 그냥 "전화"의 관용 표기인 경우가 많다 —
+      // 실제로 `T. 010-4729-3390` 하나만 적힌 명함이 있었다(크몽, 103장 표본).
+      // 라벨을 무조건 따르게 했더니 그 휴대폰이 사무실 칸으로 갔다.
+      //
+      // 그래서 라벨은 **대역이 같아 구분이 안 될 때만** 쓴다 — 같은 명함에
+      // `TEL. 010-…`(대표전화)과 `H.P 010-…`(휴대폰)이 함께 있는 경우다.
+      // 예전에는 먼저 잡힌 대표전화가 휴대폰 칸을 차지하고 진짜 휴대폰은
+      // 버려졌다(테스터 E-03).
+      final isMobileLabel = _isMobileLabelLine(line);
+
       final mobileMatch = mobileRegExp.firstMatch(phoneLookup);
-      if (mobile == null && mobileMatch != null) {
-        mobile = _normalizePhone(mobileMatch.group(0)!);
+      if (mobileMatch != null) {
+        final value = _normalizePhone(mobileMatch.group(0)!);
+        if (mobile == null) {
+          mobile = value;
+          mobileCameFromOfficeLabel = isMobileLabel == false;
+        } else if (value != mobile) {
+          // 휴대폰 대역 번호가 둘째로 나왔다 — 이때만 라벨로 가른다.
+          if (isMobileLabel == false && office == null) {
+            office = value;
+          } else if (isMobileLabel == true && mobileCameFromOfficeLabel) {
+            // 먼저 잡힌 것이 사무실 라벨이었으면 자리를 바꾼다.
+            office ??= mobile;
+            mobile = value;
+            mobileCameFromOfficeLabel = false;
+          }
+        }
         matchedRanges.add((mobileMatch.start, mobileMatch.end));
         matchedContactField = true;
       }
