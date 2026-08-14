@@ -34,6 +34,23 @@ class BillingTier {
   }
 }
 
+/// `config/billing.model`이 가질 수 있는 값. 서버(`functions/src/
+/// walletCredits.ts`의 `resolveBillingModel`)와 이름·기본값을 맞춘다 —
+/// 문서가 없거나 값이 알 수 없으면 항상 [reset]으로 폴백한다(안전한 쪽,
+/// wallet로 잘못 폴백하면 조용히 무제한 과금 모델이 될 위험이 있다).
+enum BillingModel {
+  /// 지금까지의 일/월 한도 + 리셋 방식(기본값).
+  reset,
+
+  /// 2026-08-14 도입, 무료체험 잔액 + 충전 잔액을 합산해 소진하는 방식.
+  /// 리셋 개념이 없다.
+  wallet;
+
+  static BillingModel fromRaw(dynamic raw) {
+    return raw == 'wallet' ? BillingModel.wallet : BillingModel.reset;
+  }
+}
+
 /// `config/billing` 문서 전체.
 class BillingConfig {
   /// 신규 가입 시 무료로 제공하는 AI 사용 횟수.
@@ -43,7 +60,16 @@ class BillingConfig {
   /// active·credits 유효성으로 걸러 가격 오름차순으로 정렬해 돌려준다.
   final List<BillingTier> tiers;
 
-  const BillingConfig({required this.freeCredits, required this.tiers});
+  /// 서버가 사용량을 판정하는 방식. 앱은 이 값으로 사용량 표시 화면을
+  /// 분기한다([AiUsage] 참고) — 아직 어떤 계정도 실제로 wallet이 아니므로
+  /// (2026-08-14 기준) 대부분의 환경에서는 [BillingModel.reset]이다.
+  final BillingModel model;
+
+  const BillingConfig({
+    required this.freeCredits,
+    required this.tiers,
+    this.model = BillingModel.reset,
+  });
 
   factory BillingConfig.fromMap(Map<String, dynamic> map) {
     final rawTiers = map['tiers'];
@@ -58,6 +84,7 @@ class BillingConfig {
     return BillingConfig(
       freeCredits: (map['freeCredits'] as num?)?.toInt() ?? 0,
       tiers: tiers,
+      model: BillingModel.fromRaw(map['model']),
     );
   }
 }

@@ -3,21 +3,46 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import '../../data/models/billing_config_model.dart';
+import '../../data/repositories/billing_config_repository.dart';
 import 'ai_briefing_service.dart';
 
 /// AI 브리핑을 오늘/이번 달 몇 번 더 쓸 수 있는지.
+///
+/// **모드가 둘 있다**(2026-08-14, wallet 전환 U4, ai-credit-wallet-spec.md
+/// §5): `config/billing.model`이 `'wallet'`이면 [isWalletMode]가 참이 되고,
+/// 잔여 계산이 일/월 리셋이 아니라 `freeBalance + paidBalance` 합산으로
+/// 바뀐다. 아직 어떤 계정도 실제로 wallet이 아니므로(2026-08-14 기준) 지금
+/// 실사용 경로는 전부 reset 모드다 — **reset 모드 계산식은 한 글자도
+/// 바뀌지 않았다.** 공개 API(`totalRemaining`/`exhausted`/`lowBalance`)
+/// 이름은 두 모드에서 동일하게 유지해 화면 위젯 수정을 최소화한다.
 class AiUsage {
   final int dailyUsed;
   final int monthlyUsed;
 
   /// 관리자가 `grantBonusCredits`로 지급한 보너스 회차. 일/월 무료 한도를
   /// 다 쓴 뒤에만 소진되는 오버플로우라 만료가 없다(리셋 대상 아님).
+  /// reset 모드에서만 의미가 있다.
   final int bonusCredits;
+
+  /// wallet 모드에서 남은 무료체험 잔액. reset 모드에서는 0(미사용).
+  final int freeBalance;
+
+  /// wallet 모드에서 남은 충전 잔액. reset 모드에서는 0(미사용).
+  final int paidBalance;
+
+  /// `config/billing.model == 'wallet'`이면 참. [BillingConfigRepository]가
+  /// 이미 문서 없음/알 수 없는 값을 `reset`으로 폴백하므로 이 필드도 같은
+  /// 규칙을 따른다(기본값 false = reset).
+  final bool isWalletMode;
 
   const AiUsage({
     required this.dailyUsed,
     required this.monthlyUsed,
     this.bonusCredits = 0,
+    this.freeBalance = 0,
+    this.paidBalance = 0,
+    this.isWalletMode = false,
   });
 
   int get dailyRemaining =>
@@ -26,20 +51,26 @@ class AiUsage {
       (AiBriefingService.monthlyLimit - monthlyUsed).clamp(0, AiBriefingService.monthlyLimit);
 
   /// 오늘 한도와 이번 달 한도 중 **먼저 걸리는 쪽**(무료분만, 보너스 제외).
-  /// 하위 호환을 위해 이름은 유지한다 — 다른 화면이 여전히 이 값을 쓴다.
+  /// reset 모드 전용 값이다 — wallet 모드에는 일/월 한도 개념이 없어서
+  /// 이 값을 그대로 두되(하위 호환), [totalRemaining]에는 쓰지 않는다.
   int get remaining =>
       dailyRemaining < monthlyRemaining ? dailyRemaining : monthlyRemaining;
 
-  /// "앞으로 더 쓸 수 있는 진짜 총 횟수" = 무료 잔여 + 보너스.
-  int get totalRemaining => remaining + bonusCredits;
+  /// wallet 모드: 무료체험 잔액 + 충전 잔액(합산, 두 버킷을 화면에 분리
+  /// 노출하지 않는다 — 스펙 §5).
+  /// reset 모드: 무료 잔여 + 보너스(기존 로직 그대로).
+  int get totalRemaining =>
+      isWalletMode ? freeBalance + paidBalance : remaining + bonusCredits;
 
   bool get isMonthlyBinding => monthlyRemaining < dailyRemaining;
 
-  /// 무료분과 보너스를 모두 소진했을 때만 참이다 — 보너스가 남아 있으면
-  /// 무료 한도를 다 썼어도 서버는 요청을 허용한다.
+  /// wallet 모드: 합산 잔액이 0 이하.
+  /// reset 모드: 무료분과 보너스를 모두 소진했을 때만 참이다 — 보너스가
+  /// 남아 있으면 무료 한도를 다 썼어도 서버는 요청을 허용한다.
   bool get exhausted => totalRemaining <= 0;
 
-  /// 잔여가 얼마 남지 않았음(0은 이미 [exhausted]가 커버).
+  /// 잔여가 얼마 남지 않았음(0은 이미 [exhausted]가 커버). 두 모드 모두
+  /// 같은 기준(5회 미만, 확정 파라미터)을 쓴다.
   bool get lowBalance => totalRemaining > 0 && totalRemaining < 5;
 }
 
@@ -129,16 +160,22 @@ class AiUsageService {
           .collection('users')
           .doc(uid)
           .get();
+      final isWalletMode = await _fetchIsWalletMode();
       final usage = snap.data()?['aiUsage'] as Map<String, dynamic>?;
       final result = usage == null
           // 아직 한 번도 안 썼으면 문서에 필드가 없다 — 0회로 본다.
-          ? const AiUsage(dailyUsed: 0, monthlyUsed: 0, bonusCredits: 0)
+          ? AiUsage(dailyUsed: 0, monthlyUsed: 0, isWalletMode: isWalletMode)
           : AiUsage(
               dailyUsed: _countIfNotExpired(usage, 'dailyCount', 'dailyResetAt'),
               monthlyUsed:
                   _countIfNotExpired(usage, 'monthlyCount', 'monthlyResetAt'),
               // 보너스는 리셋 로직 대상이 아니다 — 만료 없이 그대로 읽는다.
               bonusCredits: (usage['bonusCredits'] as num?)?.toInt() ?? 0,
+              // wallet 모드 잔액도 만료가 없다 — 그대로 읽는다(reset 모드
+              // 계정에는 이 필드가 아예 없으므로 0으로 폴백해도 무해하다).
+              freeBalance: (usage['freeBalance'] as num?)?.toInt() ?? 0,
+              paidBalance: (usage['paidBalance'] as num?)?.toInt() ?? 0,
+              isWalletMode: isWalletMode,
             );
       latest.value = result; // 구독 중인 칩들에 방송.
       return result;
@@ -209,5 +246,19 @@ class AiUsageService {
     final resetAt = (usage[resetKey] as Timestamp?)?.toDate();
     if (resetAt == null || !resetAt.isAfter(DateTime.now())) return 0;
     return (usage[countKey] as num?)?.toInt() ?? 0;
+  }
+
+  /// `config/billing.model`을 읽어 wallet 모드인지 판정한다. 서버의
+  /// `resolveBillingModel`과 같은 안전 규칙을 따른다 — 문서가 없거나 읽기
+  /// 자체가 실패해도 항상 reset(false)으로 폴백한다. 이 실패가 [fetch]
+  /// 전체를 막지 않도록 별도 try/catch로 감싼다.
+  static Future<bool> _fetchIsWalletMode() async {
+    try {
+      final config = await BillingConfigRepository().fetchConfig();
+      return config?.model == BillingModel.wallet;
+    } catch (e) {
+      debugPrint('billing 모델 조회 실패: ${e.runtimeType}');
+      return false;
+    }
   }
 }
