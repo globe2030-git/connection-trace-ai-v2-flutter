@@ -3,7 +3,7 @@
 
 왜 필요한가: `firestore.rules`의 `isAdmin()`과 `functions/src/index.ts`(현재는
 `functions/src/adminEmails.ts`)가 관리자 이메일을 각자 따로 갖고 있었다.
-Rules에서만 관리자를 지워도 `getUserUsage`·`grantBonusCredits` Cloud
+Rules에서만 관리자를 지워도 `getUserUsage`·`grantSupportCredits` Cloud
 Functions는 Admin SDK로 직접 접근하므로 그 계정이 계속 관리자 권한을 쓸 수
 있었다(ADMIN-VULN-001). 진짜 단일 원본(`config/admins` Firestore 문서 +
 Rules `get()`)은 운영 Firestore에 그 문서가 실제로 있어야 검증 가능해 이번

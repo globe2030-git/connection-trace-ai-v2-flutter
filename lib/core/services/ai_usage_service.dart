@@ -20,7 +20,7 @@ class AiUsage {
   final int dailyUsed;
   final int monthlyUsed;
 
-  /// 관리자가 `grantBonusCredits`로 지급한 보너스 회차. 일/월 무료 한도를
+  /// 관리자가 `grantSupportCredits`로 지급한 보너스 회차. 일/월 무료 한도를
   /// 다 쓴 뒤에만 소진되는 오버플로우라 만료가 없다(리셋 대상 아님).
   /// reset 모드에서만 의미가 있다.
   final int bonusCredits;

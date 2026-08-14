@@ -792,7 +792,7 @@ async function ensureReferralCode(
  * `aiUsage.freeGrantedAt`/`users/{uid}.referralCode` 존재 여부로 멱등
  * 가드를 걸므로, 두 번째 호출부터는 아무 것도 쓰지 않고 기존 값만 반환한다.
  *
- * ⚠️ `grantBonusCredits`(관리자의 고객응대 무료 지급)와는 완전히 독립된
+ * ⚠️ `grantSupportCredits`(관리자의 고객응대 무료 지급)와는 완전히 독립된
  * 트랜잭션이다 — 코드도 공유하지 않는다(다른 세션이 그 함수를 하드닝
  * 중이라 이번 작업 지시서가 명시적으로 분리를 요구함).
  */
@@ -1186,7 +1186,7 @@ export const getUserUsage = onCall<GetUserUsageRequest>(
   }
 );
 
-interface GrantBonusCreditsRequest {
+interface GrantSupportCreditsRequest {
   email: string;
   amount: number;
   // 지급 사유 — 나중에 "왜 줬는지" 감사할 수 있어야 한다(ADMIN-VULN-002·010).
@@ -1217,7 +1217,7 @@ interface GrantBonusCreditsRequest {
  *   `creditGrantAudits`에 트랜잭션으로 함께 기록한다(클라이언트는 그 컬렉션에
  *   쓸 수 없다 — firestore.rules 참고).
  */
-export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
+export const grantSupportCredits = onCall<GrantSupportCreditsRequest>(
   {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
   async (request): Promise<{uid: string; bonusCredits: number}> => {
     if (!isAdminRequest(request.auth)) {

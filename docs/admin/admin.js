@@ -44,7 +44,7 @@ const db = getFirestore(app);
 // httpsCallable이 기본(us-central1)으로 호출해 not-found가 난다.
 const functions = getFunctions(app, "asia-northeast3");
 const getUserUsageFn = httpsCallable(functions, "getUserUsage");
-const grantBonusCreditsFn = httpsCallable(functions, "grantBonusCredits");
+const grantSupportCreditsFn = httpsCallable(functions, "grantSupportCredits");
 
 const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
@@ -666,7 +666,7 @@ async function loadUsageLogs() {
         grantBtn.disabled = true;
         out.innerHTML = `<p class="hint">지급 중…</p>`;
         try {
-          const gr = await grantBonusCreditsFn({ email, amount, reason, operationId });
+          const gr = await grantSupportCreditsFn({ email, amount, reason, operationId });
           $("#bonusBalance").textContent = `${gr.data.bonusCredits}회`;
           $("#grantAmount").value = "";
           $("#grantReason").value = "";
