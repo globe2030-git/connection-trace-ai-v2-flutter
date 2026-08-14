@@ -117,11 +117,28 @@ class AppUpdateService {
     return (cfg[key] as num?)?.toInt() ?? 0;
   }
 
+  /// 서버(`config/appUpdate`)가 이미 Rules의 `isValidAppUpdateConfig`로
+  /// 공식 스토어 host만 저장하도록 강제되지만(ADMIN-VULN-003), 클라이언트도
+  /// 방어적으로 한 번 더 검증한다 — Rules가 어떤 이유로든 비어 있거나 낡은
+  /// 배포가 남아 있어도, 강제/권장 업데이트 버튼이 임의 URL(피싱 사이트,
+  /// 커스텀 스킴 등)을 열지 않게 하기 위함이다. 검증에 실패하면 안내 화면
+  /// 자체는 그대로 뜨되(닫기 불가 상태는 유지) 버튼이 아무것도 열지 않는
+  /// "안전한 실패"로 처리한다.
   static String? _storeUrlFor(Map<String, dynamic> cfg, bool isIos) {
     final ios = (cfg['iosUrl'] as String?)?.trim();
     final android = (cfg['androidUrl'] as String?)?.trim();
     final url = isIos ? ios : android;
-    return (url != null && url.isNotEmpty) ? url : null;
+    if (url == null || url.isEmpty) return null;
+    try {
+      final uri = Uri.parse(url);
+      final expectedHost = isIos ? 'apps.apple.com' : 'play.google.com';
+      if (uri.scheme == 'https' && uri.host == expectedHost) {
+        return url;
+      }
+      return null;
+    } on FormatException {
+      return null;
+    }
   }
 
   static Future<int> _readCurrentBuild() async {

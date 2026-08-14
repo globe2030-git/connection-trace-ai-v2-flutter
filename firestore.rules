@@ -16,7 +16,17 @@ service cloud.firestore {
     // 하는 방식(2026-08-06 전환). 이메일 인증까지 요구하는 이유: 이메일 자체가
     // 사실상 비밀번호 역할이라(가입 시점엔 소유 확인이 없음), 인증 메일을
     // 실제로 받을 수 있는 사람만 관리자가 되도록 막는 마지막 방어선이다.
-    // 관리자를 추가하려면 이 배열에 이메일만 추가하면 됨(Firebase 콘솔 불필요).
+    //
+    // ⚠️ 2026-08-14(ADMIN-VULN-001): `getUserUsage`·`grantBonusCredits`
+    // Cloud Functions는 이 Rules를 거치지 않고 Admin SDK로 직접 접근하므로,
+    // 자체 이메일 목록(`functions/src/adminEmails.ts`의 ADMIN_EMAILS)을 따로
+    // 갖는다. Rules는 외부 파일을 import할 수 없어(리터럴만 가능) 진짜 단일
+    // 원본으로 합칠 수 없다 — 대신 **아래 배열은 adminEmails.ts의
+    // ADMIN_EMAILS와 내용이 정확히 같아야 한다.** 관리자를 추가/제거할 때는
+    // 두 곳을 함께 고치고 `python3 tool/check_admin_sync.py`로 확인한 뒤
+    // `firebase deploy --only firestore:rules,functions`로 동시에 배포한다
+    // (docs/admin/README.md "관리자 판별 방식" 참고). 이 방식은 임시 조치이며
+    // 진짜 단일 원본(config/admins 문서 + Rules get()) 전환이 후속 과제다.
     function isAdmin() {
       return request.auth != null &&
         request.auth.token.email_verified == true &&
@@ -55,9 +65,31 @@ service cloud.firestore {
     // 앱 업데이트 게이트(config/appUpdate, P1-45) — 최소지원/최신 빌드번호,
     // 스토어 URL, 안내문구. 앱이 시작 시(로그인 전에도) 읽어 강제/권장 업데이트를
     // 판단해야 하므로 공개 읽기, 편집은 관리자만. 비밀이 아니다.
+    //
+    // ⚠️ 2026-08-14(ADMIN-VULN-003): 관리자가 여기 저장하는 URL을 앱이 그대로
+    // 외부 실행한다(강제 업데이트는 닫기 불가). 탈취/오조작된 관리자 세션이
+    // 임의 URL을 넣으면 전 사용자를 피싱 사이트로 보내거나 앱을 soft-brick할
+    // 수 있어, 공식 스토어 host만 허용하는 스키마 검증을 Rules에서 강제한다.
     match /config/appUpdate {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() && isValidAppUpdateConfig(request.resource.data);
+    }
+
+    // config/appUpdate 쓰기 스키마 검증. 공식 스토어 URL(또는 빈 문자열 —
+    // 아직 URL을 안 정한 초기 상태)만 허용하고, 빌드 번호는 모두 음이 아닌
+    // 정수, 최소 지원 빌드는 최신 빌드를 넘을 수 없다. message는 있으면
+    // 문자열이고 300자 이하만 허용(옵션 필드).
+    function isValidAppUpdateConfig(d) {
+      return
+        (d.iosUrl == '' || d.iosUrl.matches('^https://apps\\.apple\\.com/.+$')) &&
+        (d.androidUrl == '' || d.androidUrl.matches('^https://play\\.google\\.com/.+$')) &&
+        d.minSupportedBuildIos is int && d.minSupportedBuildIos >= 0 &&
+        d.minSupportedBuildAndroid is int && d.minSupportedBuildAndroid >= 0 &&
+        d.latestBuildIos is int && d.latestBuildIos >= 0 &&
+        d.latestBuildAndroid is int && d.latestBuildAndroid >= 0 &&
+        d.minSupportedBuildIos <= d.latestBuildIos &&
+        d.minSupportedBuildAndroid <= d.latestBuildAndroid &&
+        (!('message' in d) || (d.message is string && d.message.size() <= 300));
     }
 
     // 충전(결제) 기록 — 고객응대·정산용. 영수증 검증을 통과한 서버(P1-4,
@@ -70,6 +102,16 @@ service cloud.firestore {
     // AI 호출 감사 로그 — 불만 처리·비용 추적용. 관리자만 읽는다. 클라이언트는
     // 절대 쓰지 못하고(위조 방지), 서버(generateBriefing)만 Admin SDK로 기록한다.
     match /aiAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // 무료 크레딧 지급 감사 원장(2026-08-14, ADMIN-VULN-002) — 누가·언제·왜·
+    // 얼마를·어떤 잔액에서 어떤 잔액으로 바꿨는지 기록하는 불변 원장이자
+    // operationId 멱등성 체크용 문서. 클라이언트는 절대 쓰지 못하고(위조·삭제
+    // 방지) grantBonusCredits(Admin SDK)만 트랜잭션 안에서 기록한다. 관리자만
+    // 읽는다.
+    match /creditGrantAudits/{opId} {
       allow read: if isAdmin();
       allow write: if false;
     }

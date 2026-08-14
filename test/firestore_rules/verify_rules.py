@@ -46,21 +46,55 @@ def access_token() -> str:
     return json.load(urllib.request.urlopen(req, timeout=30))["access_token"]
 
 
-def case(name, expect, *, uid, method, path=DOC, before=None, after=None):
+def case(name, expect, *, uid, method, path=DOC, before=None, after=None, token=None):
     """규칙 테스트 케이스 하나.
 
     before = 이미 저장돼 있는 문서(rules의 `resource`)
     after  = 쓰기가 끝난 뒤의 문서 상태(rules의 `request.resource`)
+    token  = request.auth.token에 넣을 커스텀 클레임(예: 이메일 인증 상태로
+             관리자 판별을 태우는 케이스). isAdmin()은 request.auth.token.email과
+             email_verified를 보므로, 관리자 여부를 검증하려면 이 값이 필요하다.
     """
     request = {"method": method, "path": path, "time": NOW}
     if uid:
-        request["auth"] = {"uid": uid}
+        auth = {"uid": uid}
+        if token is not None:
+            auth["token"] = token
+        request["auth"] = auth
     if after is not None:
         request["resource"] = {"data": after}
     tc = {"expectation": expect, "request": request}
     if before is not None:
         tc["resource"] = {"data": before}
     return name, tc
+
+
+# 관리자 판별용 토큰 — firestore.rules의 isAdmin() 허용목록과 같은 값이어야
+# 한다(functions/src/adminEmails.ts와도 동기화됨, tool/check_admin_sync.py).
+ADMIN_TOKEN = {
+    "email": "connectionsense@creamhouse.net",
+    "email_verified": True,
+}
+NON_ADMIN_TOKEN = {
+    "email": "someone@example.com",
+    "email_verified": True,
+}
+APP_UPDATE_PATH = "/databases/(default)/documents/config/appUpdate"
+
+
+def app_update_doc(**overrides):
+    base = {
+        "minSupportedBuildIos": 5,
+        "minSupportedBuildAndroid": 5,
+        "latestBuildIos": 10,
+        "latestBuildAndroid": 10,
+        "iosUrl": "https://apps.apple.com/app/id123",
+        "androidUrl": "https://play.google.com/store/apps/details?id=x",
+        "minSupportedBuild": 5,
+        "latestBuild": 10,
+    }
+    base.update(overrides)
+    return base
 
 
 KEY = "ORIGINAL_KEY"
@@ -128,6 +162,33 @@ CASES = [
     case("계정 삭제를 위해 본인 문서를 지울 수 있다", "ALLOW",
          uid=OWNER, method="delete",
          before={"encryptionKeyB64": KEY, "aiUsage": {"dailyCount": 3}}),
+
+    # ── 강제 업데이트 URL 허용목록 (ADMIN-VULN-003) ──────────────────────
+    case("관리자가 정상 스토어 URL과 min<=latest로 쓰면 허용된다", "ALLOW",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc()),
+    case("관리자가 http(비-https)로 apps.apple.com을 쓰면 거부된다", "DENY",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc(iosUrl="http://apps.apple.com/app/id123")),
+    case("관리자가 커스텀 스킴 URL을 쓰면 거부된다", "DENY",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc(androidUrl="myapp://update")),
+    case("관리자가 비공식 host를 쓰면 거부된다", "DENY",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc(androidUrl="https://evil.example.com/app")),
+    case("관리자가 minSupportedBuildIos > latestBuildIos로 쓰면 거부된다", "DENY",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc(minSupportedBuildIos=20, latestBuildIos=10)),
+    case("관리자가 빈 URL + min<=latest(초기값 0/0)로 쓰면 허용된다", "ALLOW",
+         uid="admin1", method="update", path=APP_UPDATE_PATH, token=ADMIN_TOKEN,
+         before={}, after=app_update_doc(
+             iosUrl="", androidUrl="",
+             minSupportedBuildIos=0, minSupportedBuildAndroid=0,
+             latestBuildIos=0, latestBuildAndroid=0,
+             minSupportedBuild=0, latestBuild=0)),
+    case("관리자가 아닌 로그인 사용자는 정상 값이어도 거부된다", "DENY",
+         uid="user1", method="update", path=APP_UPDATE_PATH, token=NON_ADMIN_TOKEN,
+         before={}, after=app_update_doc()),
 ]
 
 

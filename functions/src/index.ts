@@ -30,6 +30,8 @@ import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
+import {ADMIN_EMAILS} from "./adminEmails";
+import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 
 initializeApp();
 
@@ -419,14 +421,6 @@ async function isAllowlistedTester(
   const target = email.toLowerCase();
   return emails.some((e) => String(e).toLowerCase() === target);
 }
-
-// 관리자 이메일 — firestore.rules의 isAdmin() 허용목록과 같은 값을 둔다.
-// (커스텀 클레임을 안 쓰므로 규칙과 함수가 각자 이메일로 판별한다. 관리자를
-// 바꾸면 두 곳을 함께 고칠 것.)
-const ADMIN_EMAILS = [
-  "connectionsense@creamhouse.net",
-  "globe@creamhouse.net",
-];
 
 function isAdminRequest(auth: {token: {email?: string; email_verified?: boolean}} | undefined): boolean {
   const token = auth?.token;
@@ -845,6 +839,14 @@ export const getUserUsage = onCall<GetUserUsageRequest>(
 interface GrantBonusCreditsRequest {
   email: string;
   amount: number;
+  // 지급 사유 — 나중에 "왜 줬는지" 감사할 수 있어야 한다(ADMIN-VULN-002·010).
+  // 사유 원문은 감사 문서(creditGrantAudits)에만 남고 Cloud Logging에는
+  // 남기지 않는다(아래 logger.info 참고 — 자유서술 텍스트를 로그에 남기지
+  // 않는다는 CLAUDE.md 원칙).
+  reason: string;
+  // 재시도/중복 클릭을 구분하는 멱등성 키. 클라이언트(admin.js)가 지급
+  // 버튼을 누른 그 자리에서 crypto.randomUUID()로 1회 생성해 보낸다.
+  operationId: string;
 }
 
 /**
@@ -854,6 +856,16 @@ interface GrantBonusCreditsRequest {
  *
  * bonusCredits는 일/월 한도를 다 쓴 뒤 소진되는 오버플로우다(generateBriefing
  * 참고). 지급 즉시 반영되며, 앞으로 충전(IAP) 크레딧도 같은 필드로 얹을 수 있다.
+ *
+ * 2026-08-14(ADMIN-VULN-002) 안전장치 추가:
+ * - 금액 검증(상한·안전정수)은 순수 함수 `validateGrantAmount`로 분리해
+ *   Firestore 없이 `node --test`로 경계값을 검증한다(creditGrant.ts).
+ * - `operationId`로 멱등성을 보장한다 — 같은 operationId가 이미
+ *   `creditGrantAudits/{operationId}`에 기록돼 있으면 재적용하지 않고 그때
+ *   결과 잔액을 그대로 반환한다(재시도·중복 클릭 방어).
+ * - 모든 지급에 행위자(actorEmail/actorUid)·사유·변경 전후 잔액을
+ *   `creditGrantAudits`에 트랜잭션으로 함께 기록한다(클라이언트는 그 컬렉션에
+ *   쓸 수 없다 — firestore.rules 참고).
  */
 export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
   {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
@@ -861,14 +873,28 @@ export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
     if (!isAdminRequest(request.auth)) {
       throw new HttpsError("permission-denied", "관리자만 지급할 수 있어요.");
     }
+    // isAdminRequest가 true를 반환했다는 것은 request.auth와
+    // request.auth.token.email이 이미 검증됐다는 뜻이다(non-null assertion은
+    // 그 사실에 근거한다 — TS는 isAdminRequest를 타입가드로 인식하지 못한다).
+    const auth = request.auth!;
+    const actorUid = auth.uid;
+    const actorEmail = auth.token.email as string;
+
     const email = (request.data?.email ?? "").trim().toLowerCase();
-    const amount = Math.trunc(Number(request.data?.amount));
     if (!email) {
       throw new HttpsError("invalid-argument", "이메일을 입력해 주세요.");
     }
-    if (!Number.isFinite(amount) || amount === 0) {
-      throw new HttpsError("invalid-argument", "지급할 회차(0이 아닌 정수)를 입력해 주세요.");
+
+    const metaCheck = validateGrantMetadata(
+      request.data?.reason,
+      request.data?.operationId,
+    );
+    if (!metaCheck.ok) {
+      throw new HttpsError("invalid-argument", metaCheck.error);
     }
+    const reason = (request.data.reason as string).trim();
+    const operationId = (request.data.operationId as string).trim();
+    const rawAmount = request.data?.amount;
 
     let userRecord;
     try {
@@ -879,17 +905,56 @@ export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
 
     const db = getFirestore();
     const userRef = db.collection("users").doc(userRecord.uid);
-    // 트랜잭션으로 현재 잔액에 더한다. 음수 지급(회수)도 허용하되 0 밑으로는
-    // 안 내려가게 막는다.
+    const auditRef = db.collection("creditGrantAudits").doc(operationId);
+
     const newBalance = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(userRef);
-      const current = (snap.data()?.aiUsage?.bonusCredits as number | undefined) ?? 0;
-      const next = Math.max(0, current + amount);
+      // 멱등성 확인 — Firestore 트랜잭션 규칙상 모든 get()은 write보다
+      // 먼저여야 하므로 감사 문서를 가장 먼저 읽는다. 이미 있으면 같은
+      // operationId로 재시도/중복 클릭된 것이니 다시 적용하지 않고 그때
+      // 기록해 둔 결과 잔액을 그대로 돌려준다.
+      const auditSnap = await tx.get(auditRef);
+      if (auditSnap.exists) {
+        const existing = auditSnap.data() as {after?: number};
+        return existing.after ?? 0;
+      }
+
+      const userSnap = await tx.get(userRef);
+      const current = (userSnap.data()?.aiUsage?.bonusCredits as number | undefined) ?? 0;
+
+      const check = validateGrantAmount(rawAmount, current);
+      if (!check.ok) {
+        throw new HttpsError("invalid-argument", check.error);
+      }
+
+      // 음수 지급(회수)도 허용하되 0 밑으로는 안 내려가게 막는다(기존 동작
+      // 유지). validateGrantAmount는 "상한을 넘지 않는지"만 보고, 0 미만
+      // 클램프는 이 트랜잭션의 책임이다.
+      const next = Math.max(0, current + check.amount);
       tx.set(userRef, {aiUsage: {bonusCredits: next}}, {merge: true});
+      tx.set(auditRef, {
+        actorUid,
+        actorEmail,
+        targetUid: userRecord.uid,
+        targetEmail: userRecord.email ?? email,
+        amount: check.amount,
+        reason,
+        before: current,
+        after: next,
+        at: FieldValue.serverTimestamp(),
+      });
       return next;
     });
 
-    logger.info("무료 회차 지급", {uid: userRecord.uid, amount, newBalance});
+    // ⚠️ reason(자유서술 텍스트) 원문은 Cloud Logging에 남기지 않는다 —
+    // 완전한 기록은 creditGrantAudits(Firestore, 관리자만 읽음)에 있다.
+    logger.info("무료 회차 지급", {
+      actorUid,
+      actorEmail,
+      targetUid: userRecord.uid,
+      amount: rawAmount,
+      newBalance,
+      operationId,
+    });
     return {uid: userRecord.uid, bonusCredits: newBalance};
   }
 );

@@ -65,6 +65,57 @@ void main() {
     expect(s.level, AppUpdateLevel.recommended); // 5 >= min(5), < latest(10)
   });
 
+  group('스토어 URL 방어적 재검증(ADMIN-VULN-003)', () {
+    // Rules가 이미 공식 스토어 host만 저장하도록 강제하지만, 클라이언트도
+    // 한 번 더 검증해 낡은 배포·데이터 불일치로 임의 URL이 들어와도 버튼이
+    // 아무것도 열지 않게 한다. 안내 자체(forced/recommended)는 그대로 뜬다.
+    test('공식 host가 아니면 storeUrl이 null — 안내는 그대로 뜬다', () async {
+      final s = await service(
+        build: 4,
+        config: {
+          'minSupportedBuild': 5,
+          'latestBuild': 10,
+          'iosUrl': 'https://evil.example.com/app',
+          'androidUrl': 'https://evil.example.com/app',
+        },
+      ).check();
+      expect(s.level, AppUpdateLevel.forced);
+      expect(s.storeUrl, isNull);
+    });
+
+    test('http(비-https) 스킴이면 storeUrl이 null', () async {
+      final s = await service(
+        build: 4,
+        config: {
+          'minSupportedBuild': 5,
+          'latestBuild': 10,
+          'androidUrl': 'http://play.google.com/store/apps/details?id=x',
+        },
+      ).check();
+      expect(s.level, AppUpdateLevel.forced);
+      expect(s.storeUrl, isNull);
+    });
+
+    test('커스텀 스킴이면 storeUrl이 null', () async {
+      final s = await service(
+        build: 4,
+        config: {
+          'minSupportedBuild': 5,
+          'latestBuild': 10,
+          'androidUrl': 'myapp://update',
+        },
+      ).check();
+      expect(s.level, AppUpdateLevel.forced);
+      expect(s.storeUrl, isNull);
+    });
+
+    test('공식 host면 storeUrl이 그대로 반환된다', () async {
+      final s = await service(build: 4, config: config, isIos: true).check();
+      expect(s.level, AppUpdateLevel.forced);
+      expect(s.storeUrl, 'https://apps.apple.com/app/id0');
+    });
+  });
+
   group('플랫폼별 빌드 필드(추가 165 후속)', () {
     const platformConfig = {
       'minSupportedBuild': 1, // 레거시(둘 중 낮은 값) — 있어도 플랫폼 필드가 우선
