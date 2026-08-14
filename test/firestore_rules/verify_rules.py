@@ -46,7 +46,28 @@ def access_token() -> str:
     return json.load(urllib.request.urlopen(req, timeout=30))["access_token"]
 
 
-def case(name, expect, *, uid, method, path=DOC, before=None, after=None, token=None):
+def get_mock(path, data):
+    """rules 안의 get(...) 호출을 가로채 고정된 문서를 돌려주게 하는 목(mock).
+
+    `inquiries/{id}/replies/{id}` 규칙처럼 부모 문서를 get()으로 조회해야
+    하는 규칙은, 실제 운영 Firestore에 그 문서가 없으면 get()이 그냥 실패해
+    항상 DENY로 떨어진다(회귀 방지 테스트로 쓸모없어짐) — 그렇다고 테스트를
+    위해 운영 Firestore에 실제 문서를 심는 것도 원치 않는다. firebaserules
+    테스트 API가 지원하는 `functionMocks`로 get() 호출 자체를 가짜 데이터로
+    대체한다(2026-08-14, ADMIN-VULN-005 검증용으로 조사해 확인한 API 동작 —
+    exactValue에 `/databases/(default)/documents/...` 형태의 경로 문자열을
+    넣고 result.value에 `{"data": {...}}`를 주면 get(...).data가 그 값으로
+    평가된다).
+    """
+    return {
+        "function": "get",
+        "args": [{"exactValue": path}],
+        "result": {"value": {"data": data}},
+    }
+
+
+def case(name, expect, *, uid, method, path=DOC, before=None, after=None,
+         token=None, mocks=None):
     """규칙 테스트 케이스 하나.
 
     before = 이미 저장돼 있는 문서(rules의 `resource`)
@@ -54,6 +75,8 @@ def case(name, expect, *, uid, method, path=DOC, before=None, after=None, token=
     token  = request.auth.token에 넣을 커스텀 클레임(예: 이메일 인증 상태로
              관리자 판별을 태우는 케이스). isAdmin()은 request.auth.token.email과
              email_verified를 보므로, 관리자 여부를 검증하려면 이 값이 필요하다.
+    mocks  = get_mock(...)으로 만든 functionMocks 리스트. get()으로 다른
+             문서를 조회하는 규칙(예: inquiries/{id}/replies)을 테스트할 때 쓴다.
     """
     request = {"method": method, "path": path, "time": NOW}
     if uid:
@@ -66,6 +89,8 @@ def case(name, expect, *, uid, method, path=DOC, before=None, after=None, token=
     tc = {"expectation": expect, "request": request}
     if before is not None:
         tc["resource"] = {"data": before}
+    if mocks:
+        tc["functionMocks"] = mocks
     return name, tc
 
 
@@ -99,6 +124,45 @@ def app_update_doc(**overrides):
 
 KEY = "ORIGINAL_KEY"
 PROFILE = {"encrypted": "CIPHER", "schemaVersion": 2}
+
+# ── OCR 통계 스키마 검증용 (ADMIN-VULN-009) ─────────────────────────────
+OCR_PATH = f"/databases/(default)/documents/ocrStats/{OWNER}"
+NORMAL_OCR = {
+    "scans": 42,
+    "correctedCards": 5,
+    "filled": {"name": 40, "company": 35, "mobile": 38},
+    "nameSource": {"keywordSplit": 20, "koreanStripped": 15, "none": 2},
+    "companySource": {"keyword": 30, "none": 5},
+    "corrections": {
+        "name": {"unchanged": 30, "edited": 5, "cleared": 1},
+        "mobile": {"unchanged": 38},
+    },
+    "platform": "android",
+    "updatedAt": NOW,
+}
+
+# ── 1:1 문의 스키마 검증용 (ADMIN-VULN-005) ─────────────────────────────
+INQ_ID = "INQ1"
+INQ_PATH = f"/databases/(default)/documents/inquiries/{INQ_ID}"
+REPLY_PATH = f"/databases/(default)/documents/inquiries/{INQ_ID}/replies/REPLY1"
+INQUIRER = "user_inquirer"
+INQUIRER_EMAIL = "inquirer@example.com"
+INQUIRER_TOKEN = {"email": INQUIRER_EMAIL, "email_verified": True}
+
+
+def inquiry_create_doc(**overrides):
+    base = {
+        "userId": INQUIRER,
+        "userName": "홍길동",
+        "userEmail": INQUIRER_EMAIL,
+        "subject": "로그인이 안 돼요",
+        "message": "재설치했는데도 로그인이 안 됩니다.",
+        "status": "pending",
+        "createdAt": NOW,
+    }
+    base.update(overrides)
+    return base
+
 
 CASES = [
     # ── 소유권 ────────────────────────────────────────────────────────
@@ -189,6 +253,63 @@ CASES = [
     case("관리자가 아닌 로그인 사용자는 정상 값이어도 거부된다", "DENY",
          uid="user1", method="update", path=APP_UPDATE_PATH, token=NON_ADMIN_TOKEN,
          before={}, after=app_update_doc()),
+
+    # ── OCR 통계 스키마 검증 (ADMIN-VULN-009) ──────────────────────────
+    case("OCR 통계 정상 페이로드는 허용된다", "ALLOW",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after=NORMAL_OCR),
+    case("⭐ 감소하는 값도 정상으로 허용된다(초기화 버튼 플로우)", "ALLOW",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={**NORMAL_OCR, "scans": 999},
+         after={**NORMAL_OCR, "scans": 3}),
+    case("정의되지 않은 최상위 키를 끼워 넣으면 거부된다", "DENY",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after={**NORMAL_OCR, "hacked": True}),
+    case("scans가 문자열이면 거부된다", "DENY",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after={**NORMAL_OCR, "scans": "42"}),
+    case("scans가 음수면 거부된다", "DENY",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after={**NORMAL_OCR, "scans": -1}),
+    case("scans가 100만을 초과하면 거부된다", "DENY",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after={**NORMAL_OCR, "scans": 999999999}),
+    case("filled에 정의되지 않은 키가 있으면 거부된다", "DENY",
+         uid=OWNER, method="update", path=OCR_PATH,
+         before={}, after={**NORMAL_OCR, "filled": {"ssn": 1}}),
+    case("⭐ 다른 사용자의 ocrStats 문서에는 쓸 수 없다", "DENY",
+         uid=OTHER, method="update", path=OCR_PATH,
+         before={}, after=NORMAL_OCR),
+
+    # ── 1:1 문의 스키마 검증 (ADMIN-VULN-005) ──────────────────────────
+    case("toCreatePayload() 그대로의 정상 문의 생성은 허용된다", "ALLOW",
+         uid=INQUIRER, method="create", path=INQ_PATH, token=INQUIRER_TOKEN,
+         after=inquiry_create_doc()),
+    case("⭐ addUserReply() 그대로의 정상 사용자 답장은 허용된다", "ALLOW",
+         uid=INQUIRER, method="create", path=REPLY_PATH,
+         after={"from": "user", "message": "답장입니다", "createdAt": NOW},
+         mocks=[get_mock(INQ_PATH, {"userId": INQUIRER})]),
+    case("관리자의 정상 답변은 허용된다", "ALLOW",
+         uid="admin1", method="create", path=REPLY_PATH, token=ADMIN_TOKEN,
+         after={"from": "admin", "message": "확인했습니다", "createdAt": NOW},
+         mocks=[get_mock(INQ_PATH, {"userId": INQUIRER})]),
+    case("⭐ 일반 사용자가 from:'admin'으로 답변을 위조할 수 없다", "DENY",
+         uid=INQUIRER, method="create", path=REPLY_PATH,
+         after={"from": "admin", "message": "가짜 관리자 답변", "createdAt": NOW},
+         mocks=[get_mock(INQ_PATH, {"userId": INQUIRER})]),
+    case("⭐ 문의 생성 시 status를 'answered'로 위조할 수 없다", "DENY",
+         uid=INQUIRER, method="create", path=INQ_PATH, token=INQUIRER_TOKEN,
+         after=inquiry_create_doc(status="answered")),
+    case("⭐ 문의 생성 시 타인 이메일을 userEmail로 위조할 수 없다", "DENY",
+         uid=INQUIRER, method="create", path=INQ_PATH, token=INQUIRER_TOKEN,
+         after=inquiry_create_doc(userEmail="other@example.com")),
+    case("문의 생성 시 정의되지 않은 추가 필드는 거부된다", "DENY",
+         uid=INQUIRER, method="create", path=INQ_PATH, token=INQUIRER_TOKEN,
+         after=inquiry_create_doc(internalNote="VIP 고객")),
+    case("⭐ 다른 사용자가 남의 문의에 from:'user'로 답장할 수 없다", "DENY",
+         uid=OTHER, method="create", path=REPLY_PATH,
+         after={"from": "user", "message": "몰래 답장", "createdAt": NOW},
+         mocks=[get_mock(INQ_PATH, {"userId": INQUIRER})]),
 ]
 
 
