@@ -19,17 +19,30 @@ class BillingTier {
   /// 관리자 콘솔에서 판매 중으로 켠 티어인지.
   final bool active;
 
+  /// 스토어(App Store Connect/Play Console) 소모성 상품 ID. **아직 실제
+  /// 상품이 등록되지 않았다**(2026-08-15 기준, 사용자 게이트 — 스토어
+  /// 콘솔에서 사용자만 할 수 있는 작업). 그 전까지는 관리자 콘솔이 비워
+  /// 두거나 placeholder 문자열을 저장한다. 앱은 이 필드를 읽기만 하고
+  /// 구매 트리거에 쓰지 않는다(`IapService.kIapEnabled`가 false인 동안은
+  /// 애초에 구매 흐름 자체가 시작되지 않는다) — U7 "뼈대만" 라운드 산출물.
+  final String? productId;
+
   const BillingTier({
     required this.priceKrw,
     required this.credits,
     required this.active,
+    this.productId,
   });
 
   factory BillingTier.fromMap(Map<String, dynamic> map) {
+    final rawProductId = map['productId'];
     return BillingTier(
       priceKrw: (map['priceKrw'] as num?)?.toInt() ?? 0,
       credits: (map['credits'] as num?)?.toInt() ?? 0,
       active: (map['active'] as bool?) ?? false,
+      productId: (rawProductId is String && rawProductId.trim().isNotEmpty)
+          ? rawProductId
+          : null,
     );
   }
 }

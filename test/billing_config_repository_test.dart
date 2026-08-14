@@ -99,4 +99,37 @@ void main() {
     final typo = await repo({'freeCredits': 3, 'model': 'wallett'}).fetchConfig();
     expect(typo!.model, BillingModel.reset);
   });
+
+  // productId(2026-08-15, U7 "뼈대만" — 스토어 상품ID를 나중에 채울 자리).
+  // 스토어에 아직 등록되지 않았으므로 대부분 null이거나 placeholder
+  // 문자열이다 — 어느 쪽이든 필터링(active+credits)을 거치는 동안 값이
+  // 사라지지 않아야 한다(billing_config_repository는 파싱된 BillingTier를
+  // 재구성 없이 필터만 하므로 회귀 위험은 낮지만, 명시적으로 고정한다).
+  test('productId가 있으면 필터를 거쳐도 그대로 보존된다', () async {
+    final config = await repo({
+      'freeCredits': 3,
+      'tiers': [
+        {
+          'priceKrw': 1000,
+          'credits': 10,
+          'active': true,
+          'productId': 'credit_1000_placeholder',
+        },
+      ],
+    }).fetchConfig();
+
+    expect(config!.tiers.single.productId, 'credit_1000_placeholder');
+  });
+
+  test('productId가 없거나 빈 문자열이면 null로 파싱된다', () async {
+    final config = await repo({
+      'freeCredits': 3,
+      'tiers': [
+        {'priceKrw': 1000, 'credits': 10, 'active': true},
+        {'priceKrw': 3000, 'credits': 30, 'active': true, 'productId': '  '},
+      ],
+    }).fetchConfig();
+
+    expect(config!.tiers.every((t) => t.productId == null), isTrue);
+  });
 }

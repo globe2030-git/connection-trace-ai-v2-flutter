@@ -42,6 +42,13 @@ import {
 import {DEFAULT_FREE_CREDITS, planFreeGrant} from "./freeGrant";
 import {generateReferralCode} from "./referralCode";
 import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
+import {
+  BillingTierRaw,
+  isNonEmptyString,
+  isValidIapPlatform,
+  isValidTransactionId,
+  resolveTierByProductId,
+} from "./purchases";
 
 initializeApp();
 
@@ -60,6 +67,24 @@ const appleSignInKey = defineSecret("APPLE_SIGNIN_KEY");
 // deviceId를 받은 요청을 처리할 때)에만 시크릿이 필요하다. 설계 근거:
 // docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4-2.
 const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
+
+// IAP(인앱결제) 영수증 검증용 시크릿 2개(U7, 뼈대만). **값은 아직 설정하지
+// 않는다** — 스토어 상품ID가 아직 등록되지 않았고(사용자 게이트, P1-1)
+// 실제 검증 로직도 이번 라운드엔 없다(`verifyAndGrantPurchase` 참고). 값이
+// 없어도 `npm run build`(tsc)는 통과한다 — `defineSecret`는 선언 시점엔
+// 값을 요구하지 않고, `.value()`를 실제로 호출하는 시점(배포된 함수가
+// 검증 요청을 처리할 때)에만 필요하다. 설계 근거:
+// docs/planning/monetization-referral-engineering-spec-2026-08-14.md §2-1.
+//
+// - APPLE_IAP_SHARED_SECRET: App Store Connect의 "앱 전용 공유 비밀"
+//   (legacy verifyReceipt) 또는 향후 App Store Server API 키로 대체될 수
+//   있다 — 실제 검증 로직을 채울 때 어느 쪽을 쓸지 그때 결정한다.
+// - GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: Google Play Developer API 호출용
+//   서비스 계정 JSON 원문.
+const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
+const googlePlayServiceAccountJson = defineSecret(
+  "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+);
 const APPLE_TEAM_ID = "77L7BH2M2W";
 const APPLE_KEY_ID = "UUYAKPD4S7";
 // 네이티브 iOS Sign in with Apple의 client_id는 앱 번들 ID다(웹 Services ID 아님).
@@ -1422,5 +1447,163 @@ export const grantSupportCredits = onCall<GrantSupportCreditsRequest>(
       operationId,
     });
     return {uid: userRecord.uid, bonusCredits: newBalance};
+  }
+);
+
+interface VerifyAndGrantPurchaseRequest {
+  platform?: "ios" | "android";
+  productId?: string;
+  transactionId?: string;
+  /** iOS는 영수증 base64, Android는 purchaseToken 등 — 플랫폼마다 형태가
+   * 달라 문자열로만 받는다. 실제 검증 로직이 채워질 때 플랫폼별로
+   * 파싱한다. */
+  receiptData?: string;
+}
+
+interface VerifyAndGrantPurchaseResponse {
+  credits: number;
+  newPaidBalance: number;
+}
+
+/**
+ * IAP(인앱결제) 영수증 검증 → 크레딧 지급 콜러블 — **U7 "뼈대만" 라운드
+ * 산출물이다.**
+ *
+ * ⚠️ 이 함수는 아직 실제로 크레딧을 지급하지 않는다. 인증 확인·요청 형태
+ * 검증·`purchases/{transactionId}` 멱등 조회까지만 실제로 동작하고, 그
+ * 다음(실제 영수증 검증)은 명시적으로 `unimplemented`를 던져 막는다 —
+ * 아래 TODO 블록 참고. 스토어 상품ID 등록(P1-1)과 Apple/Google 검증
+ * 자격증명 발급이 모두 사용자 게이트라 이번 라운드에 구현할 수 없다
+ * (docs/planning/monetization-referral-engineering-spec-2026-08-14.md §7).
+ *
+ * 완성될 때(다음 라운드)의 계약은 ai-credit-wallet-spec.md §3-4 그대로다:
+ * `purchases` 문서 ID로 `transactionId`를 그대로 쓰고 `tx.create()`로
+ * 동시 재시도 경합을 막으며, `paidBalance`(무료 아님)에 가산한다.
+ */
+export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: [appleIapSharedSecret, googlePlayServiceAccountJson],
+  },
+  async (request): Promise<VerifyAndGrantPurchaseResponse> => {
+    // 인증 확인 — 이번 라운드에 실제로 구현하는 유일한 보안 검사(작업
+    // 지시서 명시). 나머지(영수증 진위 확인)는 아래에서 unimplemented로
+    // 막는다.
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? null;
+
+    const platform = request.data?.platform;
+    const productId = request.data?.productId;
+    const transactionId = request.data?.transactionId;
+    const receiptData = request.data?.receiptData;
+
+    if (!isValidIapPlatform(platform)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "platform은 'ios' 또는 'android'여야 해요."
+      );
+    }
+    if (!isValidTransactionId(transactionId)) {
+      throw new HttpsError("invalid-argument", "transactionId가 올바르지 않아요.");
+    }
+    if (!isNonEmptyString(productId)) {
+      throw new HttpsError("invalid-argument", "productId가 필요해요.");
+    }
+    if (!isNonEmptyString(receiptData)) {
+      throw new HttpsError("invalid-argument", "receiptData가 필요해요.");
+    }
+
+    const db = getFirestore();
+    const purchaseRef = db.collection("purchases").doc(transactionId);
+
+    // 멱등 조회 — 같은 transactionId로 이미 처리된 적이 있으면(다음 라운드가
+    // 실제 지급 로직을 채운 뒤에만 이 문서가 생긴다) 그 결과를 그대로
+    // 반환한다. 지금은 어떤 경로로도 이 문서를 생성하지 않으므로(아래에서
+    // 항상 unimplemented) 실질적으로 이 분기는 아직 타지 않지만, 재시도
+    // 요청이 왔을 때 안전하게 동작하도록 미리 넣어 둔다.
+    const existingSnap = await purchaseRef.get();
+    if (existingSnap.exists) {
+      const data = existingSnap.data() as
+        | {credits?: number; paidBalanceAfter?: number}
+        | undefined;
+      return {
+        credits: data?.credits ?? 0,
+        newPaidBalance: data?.paidBalanceAfter ?? 0,
+      };
+    }
+
+    // productId가 판매 중인 티어와 실제로 매칭되는지는 미리 확인해 둔다
+    // (이건 "우리 카탈로그 조회"일 뿐 영수증 진위 검증이 아니라 이번
+    // 라운드에도 안전하게 넣을 수 있다). 스토어 상품ID가 아직 등록되지
+    // 않았으므로(P1-1) 지금은 모든 productId가 매칭 실패할 것이다 — 이건
+    // 버그가 아니라 정상 상태다.
+    const billingSnap = await db.collection("config").doc("billing").get();
+    const tiers = billingSnap.data()?.tiers as BillingTierRaw[] | undefined;
+    const tierLookup = resolveTierByProductId(tiers, productId);
+    if (!tierLookup.ok) {
+      throw new HttpsError("failed-precondition", tierLookup.error);
+    }
+
+    logger.warn(
+      "verifyAndGrantPurchase 호출됨 — 실제 영수증 검증 미구현(U7 뼈대만)",
+      {uid, platform, hasEmail: Boolean(email), hasReceiptData: true}
+    );
+
+    // ⚠️⚠️⚠️ TODO(다음 라운드가 채울 자리): 여기서부터 실제 영수증 검증.
+    //
+    //   - platform === "ios": App Store Server API(JWS 트랜잭션 검증) 또는
+    //     레거시 verifyReceipt 호출. `appleIapSharedSecret.value()`로 공유
+    //     비밀을 얻어 요청에 싣는다. 응답의 transactionId·productId가 이
+    //     요청값과 일치하는지, 환경(sandbox/production)이 기대와 맞는지
+    //     확인해야 한다.
+    //   - platform === "android": Google Play Developer API
+    //     `purchases.products.get` 호출. `googlePlayServiceAccountJson
+    //     .value()`를 파싱해 서비스 계정으로 인증하고, `purchaseState`가
+    //     결제완료(0)인지, `consumptionState`가 아직 소비 전인지 확인한다.
+    //
+    //   검증에 성공한 뒤에만 아래 트랜잭션(ai-credit-wallet-spec.md §3-4
+    //   그대로)을 실행해 `paidBalance`에 가산해야 한다 — email 등의 개인
+    //   식별정보를 purchases 문서에 남기는 것은 관리자 콘솔의 "충전 내역
+    //   조회(고객응대)" 기능이 이미 그렇게 하고 있으므로(§2-2 참고) 유지:
+    //
+    //   await db.runTransaction(async (tx) => {
+    //     const again = await tx.get(purchaseRef);
+    //     if (again.exists) return again.data();
+    //     const userSnap = await tx.get(db.collection("users").doc(uid));
+    //     const currentPaid =
+    //       (userSnap.data()?.aiUsage?.paidBalance as number | undefined) ?? 0;
+    //     const nextPaid = currentPaid + tierLookup.credits;
+    //     tx.create(purchaseRef, {
+    //       priceKrw: tierLookup.priceKrw, credits: tierLookup.credits,
+    //       status: "paid", purchasedAt: FieldValue.serverTimestamp(),
+    //       platform, transactionId, uid, email, paidBalanceAfter: nextPaid,
+    //     });
+    //     tx.set(db.collection("users").doc(uid),
+    //       {aiUsage: {paidBalance: nextPaid}}, {merge: true});
+    //     const grantRef = db.collection("creditGrants").doc();
+    //     tx.create(grantRef, {
+    //       type: "purchase", amount: tierLookup.credits, bucket: "paid",
+    //       uid, email, grantedAt: FieldValue.serverTimestamp(), by: null,
+    //       reason: null, note: transactionId,
+    //       balanceAfter: {
+    //         free: userSnap.data()?.aiUsage?.freeBalance ?? 0,
+    //         paid: nextPaid,
+    //       },
+    //     });
+    //   });
+    //
+    //   최초 충전 보너스(AC-4, freeBalance += 5, 1회성)도 이 트랜잭션 성공
+    //   직후 `aiUsage.firstChargeBonusGrantedAt` 멱등 가드로 판정해 채운다
+    //   (그 uid의 purchases 문서가 이번이 처음인지 확인 필요).
+    //
+    // 검증이 없는 지금은 절대 이 지점을 지나 크레딧을 지급하지 않는다.
+    throw new HttpsError(
+      "unimplemented",
+      "결제 기능은 아직 준비 중이에요."
+    );
   }
 );

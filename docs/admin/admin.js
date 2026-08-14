@@ -272,7 +272,18 @@ async function getBillingConfig() {
     freeCredits: data.freeCredits ?? 10,
     tiers: TIER_PRICES.map((price) => {
       const found = (data.tiers ?? []).find((t) => t.priceKrw === price);
-      return { priceKrw: price, credits: found?.credits ?? null, active: found?.active ?? false };
+      return {
+        priceKrw: price,
+        credits: found?.credits ?? null,
+        active: found?.active ?? false,
+        // 스토어(App Store Connect/Play Console) 소모성 상품 ID. 아직 실제
+        // 상품이 등록되지 않았다(2026-08-15 기준, 스토어 등록은 사용자만
+        // 할 수 있는 작업) — 등록 전까지는 비워 두거나 placeholder 문자열을
+        // 넣어 둔다. 서버(functions/src/purchases.ts)가 나중에 이 값으로
+        // 결제 상품↔크레딧을 매칭한다(U7 "뼈대만", 실제 영수증 검증은
+        // 아직 미구현).
+        productId: found?.productId ?? "",
+      };
     }),
   };
 }
@@ -286,6 +297,13 @@ async function loadBilling() {
         가격 7단계는 확정, <strong>제공 회수는 테스트 기간 AI 비용 실측 후 확정</strong>
         (미정이면 비워 두세요). 여기 저장한 값은 영수증 검증 서버가 크레딧 지급량으로,
         앱이 충전 화면 표시용으로 읽습니다 — 회수 조정에 앱 배포가 필요 없습니다.
+      </p>
+      <p class="hint">
+        <strong>상품ID</strong>는 App Store Connect/Play Console에 실제 소모성 상품을
+        등록한 뒤 그 상품ID를 그대로 붙여넣는 칸입니다. <strong>아직 스토어에 상품이
+        등록되지 않았으므로 지금은 비워 두세요</strong> — 비워 두면 결제 검증 서버가
+        이 티어를 결제와 매칭하지 못해 크레딧을 지급하지 않습니다(의도된 동작, 결제
+        기능 자체가 아직 준비 중입니다).
       </p>
       <div id="tierRows"></div>
       <label style="margin-top:12px;">무료 제공 횟수 (신규 가입 시)</label>
@@ -365,6 +383,8 @@ async function loadBilling() {
       <label style="margin:0; display:flex; align-items:center; gap:4px;">
         <input type="checkbox" id="tierActive${i}"> 판매
       </label>
+      <input type="text" id="tierProductId${i}" placeholder="상품ID (스토어 등록 전엔 비워둠)"
+        value="${escapeHtml(t.productId ?? "")}" style="flex:1; min-width:160px;">
     </div>
   `).join("");
   cfg.tiers.forEach((t, i) => {
@@ -379,6 +399,10 @@ async function loadBilling() {
         priceKrw: price,
         credits: raw === "" ? null : Math.max(1, parseInt(raw, 10) || 0),
         active: $(`#tierActive${i}`).checked,
+        // 스토어 상품ID — 등록 전이면 빈 문자열 그대로 저장(placeholder,
+        // 서버는 이 값이 실제 판매 중인 productId와 매칭될 때만 크레딧을
+        // 지급한다, functions/src/purchases.ts 참고).
+        productId: $(`#tierProductId${i}`).value.trim(),
       };
     });
     const bad = tiers.find((t) => t.active && !t.credits);
