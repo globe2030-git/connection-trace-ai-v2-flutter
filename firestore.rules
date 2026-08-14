@@ -57,9 +57,43 @@ service cloud.firestore {
     // 충전 상품 설정(config/billing) — 티어별 제공 회수·무료 횟수. 관리자
     // 콘솔에서 편집하고, 앱은 충전 화면에서 읽는다(IAP 구현 시). 값 자체는
     // 비밀이 아니라 로그인 사용자 누구나 읽어도 된다. 쓰기는 관리자만.
+    //
+    // ⚠️ 2026-08-15(ADMIN-VULN-004): 예전에는 스키마 검증 없이 관리자 쓰기를
+    // 전면 허용했다. 원인은 이 문서 자체가 아니라 admin.js의 loadBilling()
+    // 템플릿이 Firestore에서 읽은 t.credits/t.active 값을 HTML 속성
+    // (value="...", checked) 안에 이스케이프 없이 그대로 삽입한 것이었다 —
+    // 탈취/오조작된 관리자 세션이 credits에 `"><script>...` 같은 문자열을
+    // 넣으면 다음 관리자 로그인 때 속성탈출 XSS가 실행됐다. admin.js도 값을
+    // DOM 프로퍼티로 안전하게 채우도록 고쳤지만, 방어는 한 겹으로 끝내지
+    // 않고 Rules에서도 스키마 자체를 강제한다.
     match /config/billing {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isAdmin() && isValidBillingConfig(request.resource.data);
+    }
+
+    // config/billing 쓰기 스키마 검증. 가격 7단계는 docs/admin/admin.js의
+    // TIER_PRICES와 정확히 같아야 한다(admin.js가 항상 이 7개 가격으로
+    // tiers 배열을 구성해서 보낸다 — billingSaveBtn 핸들러 참고).
+    function isValidBillingTier(t) {
+      return t is map &&
+        t.keys().hasOnly(['priceKrw', 'credits', 'active']) &&
+        'priceKrw' in t &&
+        t.priceKrw in [1000, 3000, 5000, 10000, 30000, 50000, 100000] &&
+        (!('credits' in t) || t.credits == null ||
+          (t.credits is int && t.credits >= 1 && t.credits <= 1000000)) &&
+        'active' in t && t.active is bool;
+    }
+
+    function isValidBillingConfig(d) {
+      return d.keys().hasOnly(['freeCredits', 'tiers', 'updatedAt']) &&
+        'freeCredits' in d && d.freeCredits is int &&
+        d.freeCredits >= 0 && d.freeCredits <= 100000 &&
+        'tiers' in d && d.tiers is list && d.tiers.size() == 7 &&
+        isValidBillingTier(d.tiers[0]) && isValidBillingTier(d.tiers[1]) &&
+        isValidBillingTier(d.tiers[2]) && isValidBillingTier(d.tiers[3]) &&
+        isValidBillingTier(d.tiers[4]) && isValidBillingTier(d.tiers[5]) &&
+        isValidBillingTier(d.tiers[6]) &&
+        (!('updatedAt' in d) || d.updatedAt == request.time);
     }
 
     // 앱 업데이트 게이트(config/appUpdate, P1-45) — 최소지원/최신 빌드번호,
@@ -114,6 +148,45 @@ service cloud.firestore {
     match /creditGrantAudits/{opId} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // 관리자 콘솔 감사 로그(2026-08-15, ADMIN-VULN-010, 인터림 조치) — 공지·
+    // 문의답변·과금설정·테스터·앱업데이트 게이트처럼 파급력이 큰 관리자
+    // 조작을 누가·언제·무엇을 했는지 기록한다. append-only(update/delete 금지)
+    // 이고, actorUid/actorEmail은 요청자 본인 것과 일치해야 해 "다른 관리자
+    // 행세"를 막는다.
+    //
+    // ⚠️ 이건 **완전한 위조 방지가 아니다.** 대상 문서 쓰기(예: config/billing
+    // 저장)와 이 감사 기록 생성이 같은 트랜잭션이 아니라서, 악성/탈취 관리자가
+    // 대상 문서만 쓰고 감사 기록 호출(admin.js의 logAdminAudit)을 의도적으로
+    // 생략하면 아무것도 안 남는다. 완전한 원자성은 grantBonusCredits
+    // (creditGrantAudits 패턴)처럼 해당 변경 자체를 Callable Function으로
+    // 옮겨 같은 트랜잭션에서 감사 기록까지 함께 쓰도록 전환해야 하며, 이는
+    // 후속 과제다(비용/위험이 큰 billing·testers·appUpdate부터 우선 전환 추천).
+    match /adminAuditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isValidAdminAuditEntry(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // adminAuditLogs 생성 스키마 검증. action은 admin.js의 logAdminAudit
+    // 호출 9곳과 정확히 일치하는 고정 목록만 허용한다.
+    function isValidAdminAuditEntry(d) {
+      return d.keys().hasOnly(
+        ['actorUid', 'actorEmail', 'action', 'target', 'summary', 'at']
+      ) &&
+        'actorUid' in d && d.actorUid is string &&
+        d.actorUid == request.auth.uid &&
+        'actorEmail' in d && d.actorEmail is string &&
+        d.actorEmail == request.auth.token.email &&
+        'action' in d && d.action in [
+          'billing.save', 'testers.add', 'testers.remove', 'appUpdate.save',
+          'notice.create', 'notice.toggle', 'notice.delete',
+          'inquiry.reply', 'inquiry.markAnswered'
+        ] &&
+        'target' in d && d.target is string && d.target.size() <= 200 &&
+        'summary' in d && d.summary is string && d.summary.size() <= 500 &&
+        'at' in d && d.at == request.time;
     }
 
     // Apple refresh_token 보관(탈퇴 시 폐기용, P1-38). 민감 토큰이라 클라이언트는
