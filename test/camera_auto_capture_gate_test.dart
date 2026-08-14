@@ -1,0 +1,52 @@
+// "빈 공간인데 자동으로 찍힌다"(테스터 E-01)를 막는 판정의 회귀 방지.
+//
+// 예전 자동 촬영 조건은 **"화면이 흔들리지 않으면"** 하나뿐이라 명함이 있는지는
+// 보지 않았다. 빈 벽을 향해 가만히 들고 있으면 오히려 가장 안정적이라 찍혔다.
+//
+// ⚠️ 이 계산이 틀리면 **자동 촬영이 통째로 멈춘다** — 빈 장면을 막으려다 진짜
+// 명함까지 막는 쪽이 더 나쁜 고장이라 경계를 고정해 둔다.
+import 'package:connection_trace_ai_flutter/core/utils/frame_contrast.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// 24x24 격자 샘플을 만든다(`_sampleGridSize`와 같은 크기).
+List<int> grid(int Function(int x, int y) value) => [
+  for (var y = 0; y < 24; y++)
+    for (var x = 0; x < 24; x++) value(x, y),
+];
+
+void main() {
+  test('민무늬 장면은 대비가 거의 0 — 빈 벽·책상', () {
+    expect(
+      centerFrameContrast(gridSize: 24, grid((_, _) => 200)),
+      lessThan(1),
+    );
+  });
+
+  test('약간의 잡음만 있는 장면도 임계값(10) 아래로 남는다', () {
+    // 카메라 센서 노이즈 정도로는 "볼 것이 있다"고 보면 안 된다.
+    final noisy = grid((x, y) => 200 + ((x + y) % 3));
+    expect(centerFrameContrast(gridSize: 24, noisy), lessThan(10));
+  });
+
+  test('글자가 있는 명함처럼 명암이 섞이면 대비가 크다', () {
+    // 흰 바탕에 검은 글자 → 밝고 어두운 픽셀이 섞인다.
+    final card = grid((x, y) => (x ~/ 2 + y ~/ 2) % 2 == 0 ? 240 : 30);
+    expect(
+      centerFrameContrast(gridSize: 24, card),
+      greaterThan(10),
+    );
+  });
+
+  test('가장자리만 복잡하고 가운데가 비면 걸러진다 — 가운데만 본다', () {
+    // 가이드 프레임은 화면 중앙이다. 배경이 어수선해도 명함이 안 들어왔으면
+    // 찍으면 안 된다.
+    final edgesOnly = grid((x, y) {
+      final inCenter = x >= 6 && x < 18 && y >= 6 && y < 18;
+      return inCenter ? 200 : (x % 2 == 0 ? 255 : 0);
+    });
+    expect(
+      centerFrameContrast(gridSize: 24, edgesOnly),
+      lessThan(10),
+    );
+  });
+}

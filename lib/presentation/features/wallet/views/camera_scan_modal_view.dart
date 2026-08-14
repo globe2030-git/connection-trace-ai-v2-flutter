@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/frame_contrast.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class CameraScanModalView extends StatefulWidget {
@@ -60,6 +61,20 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 카메라는 초당 30~60프레임을 보내지만 흔들림 판단에는 8fps면
   // 충분하다. 나머지 프레임은 즉시 버려 CPU·배터리 사용을 줄인다.
   static const _frameAnalysisInterval = Duration(milliseconds: 125);
+  /// 가이드 프레임 안쪽 밝기의 **표준편차** 하한. 이 아래면 "볼 것이 없다"로
+  /// 보고 자동 촬영하지 않는다.
+  ///
+  /// 왜 필요한가: 예전 자동 촬영 조건은 **"화면이 흔들리지 않으면"** 하나뿐이라
+  /// **명함이 있는지는 보지 않았다.** 그래서 빈 벽이나 책상을 향해 가만히 들고
+  /// 있으면 — 오히려 가장 안정적이라 — 자동으로 찍혔다(테스터 E-01
+  /// "촬영 버튼을 누르지 않았는데 빈 공간이 촬영됨"). 역설적으로 빈 공간이 더
+  /// 잘 찍히는 구조였다.
+  ///
+  /// 글자가 있는 명함은 밝고 어두운 픽셀이 섞여 표준편차가 크고(대개 25 이상),
+  /// 민무늬 벽·책상은 거의 평평하다(10 미만). **낮게 잡아 명백히 빈 장면만**
+  /// 막는다 — 임계값을 높이면 진짜 명함까지 자동 촬영이 안 되는데, 그쪽이 더
+  /// 나쁜 고장이다(셔터는 언제든 직접 누를 수 있다).
+  static const _minCenterContrast = 10.0;
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -263,7 +278,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     }
     final avgDiff = diffSum / sample.length;
 
-    if (avgDiff < _stabilityDiffThreshold) {
+    // 흔들리지 않는 것만으로는 부족하다 — **가이드 안에 볼 것이 있어야** 한다.
+    final hasContent = centerFrameContrast(sample, gridSize: _sampleGridSize) >= _minCenterContrast;
+
+    if (avgDiff < _stabilityDiffThreshold && hasContent) {
       _stableSince ??= now;
     } else {
       _stableSince = null;
@@ -507,7 +525,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
             // Camera Viewfinder — 실제 후면 카메라 실시간 프리뷰.
             Positioned.fill(
               child: Container(
-                color: AppColors.bgBase,
+                // ⚠️ 카메라 자리는 **검정**이어야 한다. 예전에는 밝은
+                // `AppColors.bgBase`(0xFFF7F8FA)라, 카메라가 준비되는 동안
+                // 화면이 통째로 하얬다 — 사용자 제보 "카메라가 하얀색이다가
+                // 좀 늦게 화면이 보여". Android는 초기화가 더 느려서 그 흰
+                // 화면이 더 오래 노출된다(통합본 E-01·E-06 관련).
+                //
+                // 아래 워터마크 아이콘이 `white.withValues(alpha: 0.04)`인
+                // 것이 원래 어두운 배경을 전제했다는 증거다 — 흰 배경에서는
+                // 보이지도 않았다.
+                color: Colors.black,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -518,9 +545,24 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         size: 180,
                         color: Colors.white.withValues(alpha: 0.04),
                       ),
+                    // 기다리는 동안 "고장난 것"처럼 보이지 않게 무엇을 하는
+                    // 중인지 알린다. 카메라 초기화는 기기에 따라 몇 초
+                    // 걸리는데(Android가 더 느리다), 안내가 없으면 그 시간이
+                    // 통째로 오류처럼 읽힌다.
                     if (_isInitializing)
-                      const CircularProgressIndicator(
-                        color: AppColors.accentText,
+                      const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Colors.white),
+                          SizedBox(height: 14),
+                          Text(
+                            '카메라를 준비하는 중이에요',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     if (_initError != null)
                       Padding(
