@@ -20,6 +20,7 @@ import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/address_search_view.dart';
+import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
 import 'camera_scan_modal_view.dart';
@@ -965,11 +966,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     final uid = context.read<AuthRepository>().firebaseUid;
 
+    // 누르면 전체 화면으로 크게 열린다 — 미리보기 높이(180px)로는 눕혀 찍은
+    // 명함의 글자를 읽을 수 없다(사용자 제보, 2026-08-14).
     Widget preview;
     if (hasFresh) {
-      preview = Image.file(
-        File(_scannedCardImageSourcePath!),
-        fit: BoxFit.contain,
+      preview = ZoomableCardImage(
+        image: FileImage(File(_scannedCardImageSourcePath!)),
       );
     } else if (uid != null) {
       preview = FutureBuilder<Uint8List?>(
@@ -986,7 +988,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           }
           final bytes = snap.data;
           if (bytes == null) return const SizedBox.shrink();
-          return Image.memory(bytes, fit: BoxFit.contain);
+          return ZoomableCardImage(image: MemoryImage(bytes));
         },
       );
     } else {
@@ -1988,7 +1990,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
+          // 여러 줄 메모 칸이 있는 화면이다. Android에서 멀티라인 입력칸은
+          // 키보드에 완료 키 대신 **줄바꿈 키**가 떠서 키보드를 닫을 방법이
+          // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
+          // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
           child: SingleChildScrollView(
+            keyboardDismissBehavior:
+                ScrollViewKeyboardDismissBehavior.onDrag,
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,

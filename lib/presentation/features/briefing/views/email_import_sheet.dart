@@ -127,7 +127,13 @@ class _EmailImportSheetState extends State<EmailImportSheet> {
               ),
             ),
             Flexible(
+              // 여러 줄 메모 칸이 있는 화면이다. Android에서 멀티라인 입력칸은
+              // 키보드에 완료 키 대신 **줄바꿈 키**가 떠서 키보드를 닫을 방법이
+              // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
+              // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
               child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
