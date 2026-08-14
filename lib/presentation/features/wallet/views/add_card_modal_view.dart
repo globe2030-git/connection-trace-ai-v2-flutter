@@ -14,6 +14,7 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/scan_conflict.dart';
 import '../../../../core/services/ocr_stats_service.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -169,6 +170,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _cardImagePath;
   final List<({String path, bool hadName})> _scannedCardImages = [];
   int _selectedScanIndex = -1;
+
+  /// **직전 스캔이 실제로 채운 입력칸**들. 재촬영에서 그 칸만 비우고 다시
+  /// 채우기 위해 기억한다.
+  ///
+  /// 초점이 안 맞거나 잘못 찍어서 **같은 면을 다시 찍고 싶은 경우**가 흔한데
+  /// (사용자 제보 2026-08-14), 이걸 모르면 재촬영이 그냥 한 번 더 스캔한 것이
+  /// 되어 값이 누적된다. 앞면 값은 지키고 방금 것만 되돌리려면 어느 칸이
+  /// 방금 채워졌는지 알아야 한다.
+  final Set<String> _lastScanFilledKeys = {};
+
+  /// 이 명함을 지금까지 몇 번 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대 행동**이다(사용자 정의 2026-08-14).
+  /// 그 전에는 횟수 개념이 없어 세 번, 네 번 찍으면 계속 누적됐고 "여기서
+  /// 끝났다"는 지점도 없었다. 이 값으로 안내 문구와 초기화 시점을 정한다.
+  int _scanCount = 0;
   bool _useCardAsAvatar = false;
 
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
@@ -337,10 +354,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 물어본다.
     final existingName = _nameController.text.trim();
     final scannedName = result.name.trim();
-    final looksLikeDifferentCard =
-        existingName.isNotEmpty &&
-        scannedName.isNotEmpty &&
-        existingName != scannedName;
+    // 이름만 보면 앞면에서 이름을 못 읽었을 때 감지가 아예 안 된다 —
+    // 휴대폰·이메일까지 본다(ScanConflict 주석 참고, backlog 추가 189).
+    final looksLikeDifferentCard = ScanConflict.looksLikeDifferentCard(
+      existingName: existingName,
+      scannedName: scannedName,
+      existingPhone: _phoneController.text,
+      scannedPhone: result.phone,
+      existingEmail: _emailController.text,
+      scannedEmail: result.email,
+    );
 
     var overwrite = false;
     if (looksLikeDifferentCard) {
@@ -376,6 +399,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final landed = (overwrite || wasEmpty) && parsedValue.trim().isNotEmpty;
       if (landed) _ocrParsedSnapshot[key] = parsedValue.trim();
     });
+
+    // 이번 스캔이 어느 칸을 채웠는지 기억해 둔다(재촬영에서 되돌릴 대상).
+    _lastScanFilledKeys
+      ..clear()
+      ..addAll(
+        fieldSources.entries
+            .where((e) {
+              final (controller, parsedValue) = e.value;
+              return (overwrite || controller.text.trim().isEmpty) &&
+                  parsedValue.trim().isNotEmpty;
+            })
+            .map((e) => e.key),
+      );
     // 파싱 형태(내용 없음)를 집계에 더한다 — fire-and-forget.
     final shape = result.parseShape;
     if (shape != null) {
@@ -392,10 +428,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _scannedRawText = result!.rawText;
       _scannedRawLines = result.rawLines;
       if (overwrite) {
-        // 다른 명함으로 새로 시작하는 것이므로 이전 명함의 스캔 이미지는
-        // 대표 후보에서 제거한다.
+        // 다른 명함으로 새로 시작하는 것이므로 **이전 명함의 흔적을 전부**
+        // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
+        // 명함을 저장하는데 **좌표가 이전 명함 주소로 잡히는** 일이 가능했다
+        // (backlog 추가 189).
         _scannedCardImages.clear();
         _selectedScanIndex = -1;
+        _ocrParsedSnapshot.clear();
+        _confirmedRoadNameAddress = null;
+        _addressGeocodeFallback = null;
+        _addressGeoFailed = false;
+        _interestsController.clear();
+        _scanCount = 0;
       }
       // 스캔한 명함 이미지를 대표 후보 목록에 쌓는다(추가 133). 기본 대표는
       // "이름이 읽힌 면"(보통 앞면) — 예전에는 무조건 마지막 스캔이 대표가
@@ -466,23 +510,155 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ];
 
     if (!mounted) return;
+    _scanCount = overwrite ? 1 : _scanCount + 1;
 
-    if (missingFields.isEmpty) {
-      _showInlineNotice(
-        isFromCamera
-            ? '📸 명함 촬영 스캔이 완료되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.'
-            : '🖼️ 선택한 파일의 명함 텍스트가 스캔되었습니다! AI 인식이 완벽하지 않을 수 있으니 아래 정보를 한 번 확인해 주세요.',
-        isError: false,
-      );
-    } else {
-      _showInlineNotice(
-        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
-        isError: true,
-        actionLabel: '뒷면 스캔',
-        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
-      );
-    }
+    _showInlineNotice(
+      missingFields.isEmpty
+          ? '📸 스캔한 내용으로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 아래 정보를 확인해 주세요.'
+          : '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요.',
+      isError: missingFields.isNotEmpty,
+    );
+
+    await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
   }
+
+  /// 스캔 한 번이 끝날 때마다 **다음에 무엇을 할지** 묻는다.
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대 행동**이다(사용자 정의 2026-08-14).
+  /// 예전에는 이 물음이 없어서 "여기서 끝났다"는 지점이 없었고, 필수 항목이
+  /// 비었을 때만 "뒷면도 스캔해 보세요" 안내가 떴다. 다 채워졌으면 아무것도
+  /// 묻지 않아 사용자가 뒷면을 찍어야 할지 판단할 근거가 없었다.
+  ///
+  /// **재촬영**도 여기 있다 — 초점이 안 맞거나 잘못 찍는 일이 흔한데, 그냥 다시
+  /// 찍으면 값이 **누적**됐다(사용자 제보). 재촬영은 방금 스캔이 채운 칸만
+  /// 되돌리고 다시 채운다.
+  Future<void> _askNextScanStep({
+    required bool isFromCamera,
+    required List<String> missing,
+  }) async {
+    final isBackDone = _scanCount >= 2;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: AppColors.cardSurface,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isBackDone ? '앞면과 뒷면을 모두 스캔했습니다' : '다음으로 무엇을 할까요?',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  missing.isEmpty
+                      ? '명함 한 장은 앞면과 뒷면까지 스캔할 수 있습니다.'
+                      : '${_withObjectParticle(missing.join(', '))} 찾지 못했습니다. 뒷면에 있을 수 있습니다.',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!isBackDone)
+                  ListTile(
+                    minTileHeight: 56,
+                    leading: const Icon(
+                      Icons.flip_to_back,
+                      color: AppColors.accentText,
+                    ),
+                    title: const Text('뒷면 스캔'),
+                    subtitle: const Text('지금 채워진 값은 그대로 두고 빈 칸만 채웁니다'),
+                    onTap: () => Navigator.of(sheetContext).pop('back'),
+                  ),
+                ListTile(
+                  minTileHeight: 56,
+                  leading: const Icon(
+                    Icons.refresh,
+                    color: AppColors.accentText,
+                  ),
+                  title: const Text('다시 찍기'),
+                  subtitle: const Text('방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'),
+                  onTap: () => Navigator.of(sheetContext).pop('retake'),
+                ),
+                ListTile(
+                  minTileHeight: 56,
+                  leading: const Icon(
+                    Icons.check_circle_outline,
+                    color: AppColors.accentText,
+                  ),
+                  title: const Text('여기서 완료'),
+                  subtitle: const Text('스캔을 끝내고 내용을 확인·수정합니다'),
+                  onTap: () => Navigator.of(sheetContext).pop('done'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null || choice == 'done') return;
+
+    if (choice == 'retake') {
+      setState(() {
+        // 방금 스캔이 채운 칸만 비운다 — 앞면에서 읽은 값은 지킨다.
+        for (final key in _lastScanFilledKeys) {
+          _controllerFor(key)?.clear();
+          _ocrParsedSnapshot.remove(key);
+        }
+        _lastScanFilledKeys.clear();
+        // 방금 찍은 사진도 후보에서 뺀다.
+        if (_scannedCardImages.isNotEmpty) {
+          _scannedCardImages.removeLast();
+          _selectedScanIndex = _scannedCardImages.isEmpty
+              ? -1
+              : _scannedCardImages.length - 1;
+        }
+        _scanCount = _scanCount > 0 ? _scanCount - 1 : 0;
+      });
+    }
+    await _performOcrScan(isFromCamera: isFromCamera);
+  }
+
+  /// 목적격 조사를 받침에 맞춰 붙인다("주소를", "이메일을").
+  ///
+  /// "주소을(를)"처럼 괄호로 두 개를 다 보여주면 기계가 쓴 문장처럼 읽힌다.
+  /// 마지막 글자의 받침만 보면 되므로 규칙이 단순하다 — 한글이 아니면
+  /// 판단할 근거가 없어 "를"을 쓴다(영문 단어 뒤에는 그쪽이 자연스럽다).
+  static String _withObjectParticle(String word) {
+    if (word.isEmpty) return word;
+    final last = word.characters.last;
+    final code = last.runes.first;
+    if (code < 0xAC00 || code > 0xD7A3) return '$word를';
+    final hasBatchim = (code - 0xAC00) % 28 != 0;
+    return '$word${hasBatchim ? '을' : '를'}';
+  }
+
+  /// 스캔 결과 키(`name`·`company` …)에 해당하는 입력칸. 재촬영에서 되돌릴 때
+  /// 쓴다.
+  TextEditingController? _controllerFor(String key) => switch (key) {
+    'name' => _nameController,
+    'company' => _companyController,
+    'title' => _titleController,
+    'address' => _addressController,
+    'addressDetail' => _addressDetailController,
+    'postal' => _postalCodeController,
+    'mobile' => _phoneController,
+    'office' => _officePhoneController,
+    'email' => _emailController,
+    _ => null,
+  };
 
   void _showQuickFieldMapperSheet(String text) {
     showModalBottomSheet(
