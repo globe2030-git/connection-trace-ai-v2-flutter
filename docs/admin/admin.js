@@ -16,7 +16,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
-  setDoc, query, where, orderBy, limit, serverTimestamp, Timestamp,
+  setDoc, query, where, orderBy, limit, startAfter, serverTimestamp, Timestamp,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import {
   getFunctions, httpsCallable,
@@ -42,6 +42,26 @@ const grantBonusCreditsFn = httpsCallable(functions, "grantBonusCredits");
 const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
 const dashboard = $("#dashboard");
+
+// ---------- 관리자 감사 로그 (ADMIN-VULN-010, 인터림) ----------
+// 대상 문서 쓰기(예: config/billing 저장)와 이 기록 생성이 같은 트랜잭션이
+// 아니라서, 악성/탈취 관리자가 대상 문서만 쓰고 이 호출을 의도적으로
+// 생략하면 감사에 안 남는다 — 완전한 위조 방지가 아니라 인터림 조치다
+// (firestore.rules의 adminAuditLogs 주석 참고). 그래서 주 작업이 이미
+// 성공한 직후에만 호출하고, 이 기록 자체의 실패는 조용히 흡수해 주 작업을
+// 되돌리지 않는다. summary에는 절대 이메일·문의 본문 등 개인정보를 넣지 않는다.
+async function logAdminAudit(action, target, summary) {
+  try {
+    await addDoc(collection(db, "adminAuditLogs"), {
+      actorUid: auth.currentUser.uid,
+      actorEmail: auth.currentUser.email,
+      action, target, summary,
+      at: serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn("감사 기록 실패(주 작업은 이미 완료됨):", e.message);
+  }
+}
 
 // ---------- 로그인 / 회원가입 ----------
 
@@ -285,19 +305,30 @@ async function loadBilling() {
   `;
 
   // ① 상품 설정 — 현재값 로드
+  // ⚠️ 2026-08-15(ADMIN-VULN-004): 예전에는 여기서 Firestore 값(t.credits,
+  // t.active)을 innerHTML 템플릿의 HTML 속성(value="...", checked) 안에
+  // 이스케이프 없이 그대로 넣었다. firestore.rules의 config/billing 쓰기에
+  // 스키마 검증이 없던 시절엔 관리자 세션(탈취/오조작)이 credits에
+  // `"><script>...` 같은 문자열을 넣으면 다음 로그인 때 속성탈출 XSS가
+  // 실행됐다. 지금은 rules가 스키마를 강제하지만(아래 값들은 안전), 방어
+  // 원칙 자체는 유지한다 — 빈 input/checkbox만 innerHTML로 렌더링하고,
+  // 실제 값은 loadAppUpdate()와 같은 패턴으로 DOM 프로퍼티로 안전하게 채운다.
   const cfg = await getBillingConfig();
   $("#freeCredits").value = cfg.freeCredits;
   $("#tierRows").innerHTML = cfg.tiers.map((t, i) => `
     <div class="row" style="align-items:center; margin-bottom:6px;">
       <div style="width:110px; font-weight:700;">${t.priceKrw.toLocaleString()}원</div>
-      <input type="number" id="tierCredits${i}" min="1" placeholder="회수 미정"
-        value="${t.credits ?? ""}" style="width:120px;">
+      <input type="number" id="tierCredits${i}" min="1" placeholder="회수 미정" style="width:120px;">
       <span class="hint" style="margin:0 4px;">회 제공</span>
       <label style="margin:0; display:flex; align-items:center; gap:4px;">
-        <input type="checkbox" id="tierActive${i}" ${t.active ? "checked" : ""}> 판매
+        <input type="checkbox" id="tierActive${i}"> 판매
       </label>
     </div>
   `).join("");
+  cfg.tiers.forEach((t, i) => {
+    $(`#tierCredits${i}`).value = t.credits ?? "";
+    $(`#tierActive${i}`).checked = !!t.active;
+  });
 
   $("#billingSaveBtn").addEventListener("click", async () => {
     const tiers = TIER_PRICES.map((price, i) => {
@@ -317,6 +348,8 @@ async function loadBilling() {
     const freeCredits = Math.max(0, parseInt($("#freeCredits").value, 10) || 0);
     await setDoc(doc(db, "config", "billing"),
       { freeCredits, tiers, updatedAt: serverTimestamp() }, { merge: true });
+    await logAdminAudit("billing.save", "config/billing",
+      `무료 ${freeCredits}회, 활성 티어 ${tiers.filter((t) => t.active).length}개`);
     $("#billingMsg").innerHTML = `<div class="hint">저장했습니다.</div>`;
   });
 
@@ -461,6 +494,7 @@ async function loadTesters() {
       return;
     }
     await saveTesterEmails([...emails, raw]);
+    await logAdminAudit("testers.add", "config/testers", raw);
     $("#testerEmail").value = "";
     await loadTesters();
   });
@@ -488,6 +522,7 @@ async function loadTesters() {
       if (!confirm(`${email} 을(를) 테스터에서 제거할까요? 제거하면 이 계정은 테스트 빌드에서 AI를 쓸 수 없게 됩니다.`)) return;
       const current = await getTesterEmails();
       await saveTesterEmails(current.filter((e) => String(e).toLowerCase() !== String(email).toLowerCase()));
+      await logAdminAudit("testers.remove", "config/testers", email);
       await loadTesters();
     });
     list.appendChild(item);
@@ -913,6 +948,8 @@ async function loadAppUpdate() {
     };
     try {
       await setDoc(doc(db, "config", "appUpdate"), payload, { merge: true });
+      await logAdminAudit("appUpdate.save", "config/appUpdate",
+        `iOS min=${minIos}/latest=${latestIos}, Android min=${minAndroid}/latest=${latestAndroid}`);
       $("#auMsgOut").innerHTML = `<div class="hint">저장했습니다. 앱을 다시 켜면 반영됩니다.</div>`;
     } catch (e) {
       $("#auMsgOut").innerHTML = `<div class="error">저장 실패: ${escapeHtml(e.message)}</div>`;
@@ -961,7 +998,7 @@ async function loadNotices() {
     const title = $("#noticeTitle").value.trim();
     const bodyMarkdown = $("#noticeBody").value.trim();
     if (!title || !bodyMarkdown) return;
-    await addDoc(collection(db, "notices"), {
+    const ref = await addDoc(collection(db, "notices"), {
       title,
       bodyMarkdown,
       pinned: $("#noticePinned").checked,
@@ -969,6 +1006,7 @@ async function loadNotices() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    await logAdminAudit("notice.create", ref.id, title);
     await loadNotices();
   });
 
@@ -1002,11 +1040,13 @@ async function loadNotices() {
         published: !n.published,
         updatedAt: serverTimestamp(),
       });
+      await logAdminAudit("notice.toggle", docSnap.id, `게시여부 → ${!n.published}`);
       await loadNotices();
     });
     item.querySelector('[data-action="delete"]').addEventListener("click", async () => {
       if (!confirm("이 공지를 삭제할까요?")) return;
       await deleteDoc(doc(db, "notices", docSnap.id));
+      await logAdminAudit("notice.delete", docSnap.id, n.title);
       await loadNotices();
     });
     list.appendChild(item);
@@ -1014,19 +1054,38 @@ async function loadNotices() {
 }
 
 // ---------- 1:1 문의 ----------
+// (2026-08-15, ADMIN-VULN-006) 예전에는 loadInquiries()가 limit 없이 전체
+// 문의를 조회했다 — 목록 렌더 자체는 subject/userEmail/status만 써서 가볍지만
+// (message 원문은 openInquiry()에서 클릭 시에만 읽는 lazy 로드), 문의 건수가
+// 무제한이라 대량 생성 시 관리자 로그인마다 읽기 비용·대기시간이 무한정
+// 커질 수 있었다(관리자 대상 DoS). 50건씩 페이지네이션으로 바꾼다.
+//
+// UID/IP별 문의 "생성" 속도 자체를 제한하는 rate limit은 이번 범위 밖이다.
+// Firestore Rules는 "이미 존재하는 문서 개수"를 세는 내장 기능이 없고,
+// 집계 카운터 문서를 따로 두면 그 카운터 자체가 클라이언트 위조 대상이 되어
+// 오히려 새 취약점이 된다 — 진짜 rate limit은 App Check + 문의 제출을
+// Callable Function으로 옮기는 인프라 변경이 필요해 후속 과제로 남긴다.
+const INQUIRY_PAGE_SIZE = 50;
+let _inquiryLastVisible = null;
 
 async function loadInquiries() {
   const panel = $("#tab-inquiries");
-  panel.innerHTML = `<div class="card"><h3 style="margin-top:0;">문의 목록</h3><div id="inquiryList"></div></div><div id="inquiryDetail"></div>`;
+  panel.innerHTML = `
+    <div class="card">
+      <h3 style="margin-top:0;">문의 목록</h3>
+      <div id="inquiryList"></div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn-ghost" id="inquiryMoreBtn" style="display:none;">더 보기</button>
+      </div>
+    </div>
+    <div id="inquiryDetail"></div>
+  `;
 
-  const snap = await getDocs(query(collection(db, "inquiries"), orderBy("createdAt", "desc")));
   const list = $("#inquiryList");
-  if (snap.empty) {
-    list.innerHTML = `<p class="hint">등록된 문의가 없습니다.</p>`;
-    return;
-  }
-  list.innerHTML = "";
-  snap.forEach((docSnap) => {
+  const moreBtn = $("#inquiryMoreBtn");
+  _inquiryLastVisible = null; // 탭을 새로 열 때마다 페이지네이션 상태 초기화
+
+  const renderInquiryItem = (docSnap) => {
     const inquiry = docSnap.data();
     const item = document.createElement("div");
     item.className = "list-item";
@@ -1040,13 +1099,38 @@ async function loadInquiries() {
     `;
     item.addEventListener("click", () => openInquiry(docSnap.id, inquiry));
     list.appendChild(item);
-  });
+  };
+
+  const loadPage = async (append) => {
+    let q = query(collection(db, "inquiries"), orderBy("createdAt", "desc"), limit(INQUIRY_PAGE_SIZE));
+    if (append && _inquiryLastVisible) {
+      q = query(collection(db, "inquiries"), orderBy("createdAt", "desc"),
+        startAfter(_inquiryLastVisible), limit(INQUIRY_PAGE_SIZE));
+    }
+    const snap = await getDocs(q);
+    if (!append && snap.empty) {
+      list.innerHTML = `<p class="hint">등록된 문의가 없습니다.</p>`;
+      moreBtn.style.display = "none";
+      return;
+    }
+    if (!append) list.innerHTML = "";
+    snap.forEach(renderInquiryItem);
+    if (!snap.empty) _inquiryLastVisible = snap.docs[snap.docs.length - 1];
+    // 이번 페이지가 꽉 찼으면(=더 있을 가능성) "더 보기"를 계속 보여주고,
+    // 꽉 차지 않았으면(마지막 페이지) 숨긴다.
+    moreBtn.style.display = snap.size === INQUIRY_PAGE_SIZE ? "" : "none";
+  };
+
+  moreBtn.addEventListener("click", () => loadPage(true));
+  await loadPage(false);
 }
 
 async function openInquiry(id, inquiry) {
   const detail = $("#inquiryDetail");
+  // limit(200): 극단적으로 큰 답변 스레드에 대한 방어적 상한(ADMIN-VULN-006).
+  // 비용은 거의 안 들지만(문의 하나당 답변 수는 보통 적음) 안전장치로 둔다.
   const repliesSnap = await getDocs(
-    query(collection(db, "inquiries", id, "replies"), orderBy("createdAt")),
+    query(collection(db, "inquiries", id, "replies"), orderBy("createdAt"), limit(200)),
   );
   let thread = `<div class="bubble user">${escapeHtml(inquiry.message)}</div>`;
   repliesSnap.forEach((r) => {
@@ -1077,6 +1161,8 @@ async function openInquiry(id, inquiry) {
       createdAt: serverTimestamp(),
     });
     await updateDoc(doc(db, "inquiries", id), { status: "answered" });
+    // summary에는 답변 내용이나 문의자 이메일을 절대 넣지 않는다(개인정보 원칙).
+    await logAdminAudit("inquiry.reply", id, "답변 등록, 상태 answered로 변경");
     await loadInquiries();
     detail.innerHTML = "";
   });
@@ -1085,6 +1171,7 @@ async function openInquiry(id, inquiry) {
   if (markBtn) {
     markBtn.addEventListener("click", async () => {
       await updateDoc(doc(db, "inquiries", id), { status: "answered" });
+      await logAdminAudit("inquiry.markAnswered", id, "답변 없이 완료 표시만");
       await loadInquiries();
       detail.innerHTML = "";
     });

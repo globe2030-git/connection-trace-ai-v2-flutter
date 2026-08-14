@@ -122,6 +122,38 @@ def app_update_doc(**overrides):
     return base
 
 
+# ── 충전 상품 설정 스키마 검증용 (ADMIN-VULN-004) ───────────────────────
+BILLING_PATH = "/databases/(default)/documents/config/billing"
+TIER_PRICES = [1000, 3000, 5000, 10000, 30000, 50000, 100000]
+
+
+def billing_doc(*, free_credits=10, tiers=None):
+    """docs/admin/admin.js billingSaveBtn 핸들러가 실제로 보내는 것과 같은
+    모양(7개 티어 전부, priceKrw는 TIER_PRICES와 정확히 일치)."""
+    if tiers is None:
+        tiers = [
+            {"priceKrw": p, "credits": 10, "active": True} for p in TIER_PRICES
+        ]
+    return {"freeCredits": free_credits, "tiers": tiers, "updatedAt": NOW}
+
+
+# ── 관리자 감사 로그 스키마 검증용 (ADMIN-VULN-010) ─────────────────────
+ADMIN_AUDIT_PATH = "/databases/(default)/documents/adminAuditLogs/LOG1"
+
+
+def admin_audit_doc(**overrides):
+    base = {
+        "actorUid": "admin1",
+        "actorEmail": ADMIN_TOKEN["email"],
+        "action": "billing.save",
+        "target": "config/billing",
+        "summary": "무료 10회, 활성 티어 3개",
+        "at": NOW,
+    }
+    base.update(overrides)
+    return base
+
+
 KEY = "ORIGINAL_KEY"
 PROFILE = {"encrypted": "CIPHER", "schemaVersion": 2}
 
@@ -310,6 +342,67 @@ CASES = [
          uid=OTHER, method="create", path=REPLY_PATH,
          after={"from": "user", "message": "몰래 답장", "createdAt": NOW},
          mocks=[get_mock(INQ_PATH, {"userId": INQUIRER})]),
+
+    # ── 충전 상품 설정 스키마 검증 (ADMIN-VULN-004) ─────────────────────
+    case("관리자가 정상 billing 설정(7개 티어)을 쓰면 허용된다", "ALLOW",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc()),
+    case("⭐ tier credits에 속성탈출 문자열을 넣으면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(tiers=[
+             {"priceKrw": p,
+              "credits": ('"><script>alert(1)</script>' if p == 1000 else 10),
+              "active": True}
+             for p in TIER_PRICES
+         ])),
+    case("tier에 정의되지 않은 여분 키가 있으면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(tiers=[
+             {"priceKrw": p, "credits": 10, "active": True, "note": "x"}
+             if p == 1000 else {"priceKrw": p, "credits": 10, "active": True}
+             for p in TIER_PRICES
+         ])),
+    case("tiers 배열이 6개면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(tiers=[
+             {"priceKrw": p, "credits": 10, "active": True}
+             for p in TIER_PRICES[:6]
+         ])),
+    case("tiers 배열이 8개면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(tiers=[
+             {"priceKrw": p, "credits": 10, "active": True}
+             for p in TIER_PRICES
+         ] + [{"priceKrw": 1000, "credits": 10, "active": True}])),
+    case("freeCredits가 음수면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(free_credits=-1)),
+    case("freeCredits가 100000을 초과하면 거부된다", "DENY",
+         uid="admin1", method="update", path=BILLING_PATH, token=ADMIN_TOKEN,
+         before={}, after=billing_doc(free_credits=100001)),
+    case("관리자가 아닌 로그인 사용자는 정상값이어도 billing을 쓸 수 없다", "DENY",
+         uid="user1", method="update", path=BILLING_PATH, token=NON_ADMIN_TOKEN,
+         before={}, after=billing_doc()),
+
+    # ── 관리자 감사 로그 스키마 검증 (ADMIN-VULN-010) ───────────────────
+    case("관리자가 정상 스키마로 감사 로그를 생성하면 허용된다", "ALLOW",
+         uid="admin1", method="create", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
+         after=admin_audit_doc()),
+    case("⭐ actorEmail을 자신의 토큰 이메일과 다르게 쓰면(관리자 행세) 거부된다", "DENY",
+         uid="admin1", method="create", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
+         after=admin_audit_doc(actorEmail="other-admin@example.com")),
+    case("action이 허용 목록에 없는 값이면 거부된다", "DENY",
+         uid="admin1", method="create", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
+         after=admin_audit_doc(action="admin.deleteEverything")),
+    case("여분 필드(message)가 있으면 거부된다", "DENY",
+         uid="admin1", method="create", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
+         after=admin_audit_doc(message="여분 필드")),
+    case("관리자가 아닌 사용자는 감사 로그를 생성할 수 없다", "DENY",
+         uid="user1", method="create", path=ADMIN_AUDIT_PATH, token=NON_ADMIN_TOKEN,
+         after=admin_audit_doc(actorUid="user1", actorEmail=NON_ADMIN_TOKEN["email"])),
+    case("⭐ 이미 있는 감사 로그는 관리자도 update할 수 없다(append-only)", "DENY",
+         uid="admin1", method="update", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
+         before=admin_audit_doc(), after=admin_audit_doc(summary="수정 시도")),
 ]
 
 
