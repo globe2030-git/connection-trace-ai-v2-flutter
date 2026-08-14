@@ -86,3 +86,10 @@ key.properties
 # 로컬 환경변수 파일
 .env
 .env.*
+
+# 명함 인식 검수 자료 — 실명·전화번호·주소가 그대로 들어 있는 **제3자
+# 개인정보**다(CLAUDE.md 4절). 일괄 스캔 결과와 검수 도구가 만드는 파일 일체.
+# 한 번 커밋되면 히스토리에서 지우기 어렵다.
+scan_result*.tsv
+ocr_truth*.tsv
+ocr_review_progress*.json
