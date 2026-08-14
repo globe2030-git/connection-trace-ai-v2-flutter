@@ -115,3 +115,11 @@ P0-1). 진짜 게시 경로를 다시 만들기 전까지는 편집 자체를 �
 
 콘솔의 `legalDocs/{slug}` Firestore 문서를 고치거나 지워도 이 경로에는
 아무 영향이 없다.
+
+## 관리자 콘솔 CSP 근거 (2026-08-14, ADMIN-VULN-011)
+
+- script-src: admin.js가 import하는 유일한 외부 origin은 www.gstatic.com(Firebase SDK 모듈). script-src는 잠겨 있다(unsafe-inline 없음).
+- style-src: cdn.jsdelivr.net(Pretendard CSS) + 'unsafe-inline' — admin.js가 innerHTML로 인라인 style 속성을 61곳 쓰고 index.html에도 인라인 <style> 블록이 있어 불가피. 61곳을 CSS 클래스로 리팩터하면 제거 가능(후속 과제).
+- connect-src: https://*.googleapis.com(Firestore/Auth REST — 정확한 서브도메인이 SDK 내부 구현이라 와일드카드로 안전 마진 확보) + asia-northeast3-connection-sense.cloudfunctions.net(Callable Functions, 리전 확인됨).
+- frame-src: connection-sense.firebaseapp.com(Firebase Auth 내부 relay iframe) + accounts.google.com(Google 로그인).
+- ⚠️ 잔여 리스크: 이 CSP는 코드 조사 기반 최선 추정이다. 배포 후 실브라우저로 로그인·Firestore 조회·Functions 호출·Google 로그인이 CSP 위반 없이 도는지 반드시 확인할 것(devtools 콘솔의 CSP violation 로그로 확인). 문제 생기면 connect-src/frame-src를 좁히지 말고 필요한 origin만 추가.
