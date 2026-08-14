@@ -11,8 +11,9 @@ Rules `get()`)은 운영 Firestore에 그 문서가 실제로 있어야 검증 �
 (두 목록이 벌어지는 것)만 잡는 인터림 조치를 대신 넣는다.
 
 **순수 로컬 파일 비교다.** 운영 Firestore나 `firebase login`에 의존하지
-않는다 — 소스 파일들(현재는 `firestore.rules`, `functions/src/adminEmails.ts`)을
-읽어 정규식으로 이메일 배열을 뽑아 집합으로 비교할 뿐이다.
+않는다 — 소스 파일들(현재는 `firestore.rules`, `functions/src/adminEmails.ts`,
+`lib/data/repositories/auth_repository.dart`)을 읽어 정규식으로 이메일 배열을
+뽑아 집합으로 비교할 뿐이다.
 
 실행: python3 tool/check_admin_sync.py
 자체 테스트(가짜 불일치 케이스로 이 스크립트 자체를 검증): python3 tool/check_admin_sync.py --selftest
@@ -29,6 +30,9 @@ import sys
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 RULES_PATH = os.path.join(ROOT, "firestore.rules")
 ADMIN_EMAILS_TS_PATH = os.path.join(ROOT, "functions", "src", "adminEmails.ts")
+AUTH_REPO_DART_PATH = os.path.join(
+    ROOT, "lib", "data", "repositories", "auth_repository.dart"
+)
 
 
 def extract_rules_admin_emails(rules_text: str) -> set[str]:
@@ -56,10 +60,23 @@ def extract_ts_admin_emails(ts_text: str) -> set[str]:
     return set(re.findall(r'"([^"]+)"', m.group(1)))
 
 
+def extract_dart_admin_emails(dart_text: str) -> set[str]:
+    """auth_repository.dart의 `_adminEmails = { ... }` 집합(중괄호)에서
+    작은따옴표 문자열만 뽑는다. 이 목록은 앱-클라이언트가 관리자 메뉴를
+    보여줄지 게이팅하는 용도이고 실제 차단은 서버가 하지만, 세 목록이
+    벌어지면 UX·감사 혼선이 생기므로 동기화 검사에 포함한다(PR #144)."""
+    m = re.search(r"_adminEmails\s*=\s*\{(.*?)\}", dart_text, re.DOTALL)
+    if not m:
+        raise ValueError(
+            "lib/data/repositories/auth_repository.dart에서 _adminEmails "
+            "집합을 찾지 못했습니다 — 이름이나 문법이 바뀌었을 수 있습니다."
+        )
+    return set(re.findall(r"'([^']+)'", m.group(1)))
+
+
 # 관리자 이메일 소스 목록. 여기 등록된 소스가 몇 개든 compare_all()이 동일한
-# 방식으로 전부 비교한다. 3번째 소스(예: 앱의
-# `lib/data/repositories/auth_repository.dart` 관리자 목록, PR #144 반영 후)가
-# 생기면 이 리스트에 `{"name", "path", "extract"}` 항목 하나만 추가하면 된다.
+# 방식으로 전부 비교한다. 소스가 더 생기면 이 리스트에
+# `{"name", "path", "extract"}` 항목 하나만 추가하면 된다.
 SOURCES = [
     {
         "name": "firestore.rules",
@@ -70,6 +87,11 @@ SOURCES = [
         "name": "functions/src/adminEmails.ts",
         "path": ADMIN_EMAILS_TS_PATH,
         "extract": extract_ts_admin_emails,
+    },
+    {
+        "name": "lib/data/repositories/auth_repository.dart",
+        "path": AUTH_REPO_DART_PATH,
+        "extract": extract_dart_admin_emails,
     },
 ]
 
