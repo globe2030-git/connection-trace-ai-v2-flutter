@@ -348,7 +348,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const FilePickerModalView(),
+        builder: (_) => FilePickerModalView(sideLabel: sideLabel),
       );
     }
 
@@ -586,7 +586,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       Icons.flip_to_back,
                       color: AppColors.accentText,
                     ),
-                    title: const Text('뒷면 스캔'),
+                    title: Text(isFromCamera ? '뒷면 촬영' : '뒷면 이미지 선택'),
                     subtitle: const Text('지금 채워진 값은 그대로 두고 빈 칸만 채웁니다'),
                     onTap: () => Navigator.of(sheetContext).pop('back'),
                   ),
@@ -596,8 +596,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     Icons.refresh,
                     color: AppColors.accentText,
                   ),
-                  title: const Text('다시 찍기'),
-                  subtitle: const Text('방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'),
+                  // 촬영으로 들어왔는지 업로드로 들어왔는지에 따라 말이 다르다 —
+                  // 업로드인데 "다시 찍기"라고 하면 사용자는 카메라가 열릴 줄 안다.
+                  title: Text(isFromCamera ? '다시 찍기' : '다른 이미지 선택'),
+                  subtitle: Text(
+                    isFromCamera
+                        ? '방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'
+                        : '방금 스캔으로 채워진 값을 지우고 이미지를 다시 고릅니다',
+                  ),
                   onTap: () => Navigator.of(sheetContext).pop('retake'),
                 ),
                 ListTile(
