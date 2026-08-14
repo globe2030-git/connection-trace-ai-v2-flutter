@@ -49,4 +49,41 @@ void main() {
       lessThan(10),
     );
   });
+
+  // 사용자 제보(2026-08-14): "빈공간을 찍지는 않는데 각이진 빈곳은 자동 촬영되".
+  // 대비만으로는 모서리를 못 거른다 — 밝은 면과 어두운 면이 반반이라 대비가
+  // **오히려 크다.** 그래서 "한쪽 톤이 지배적인가"를 함께 본다.
+  group('각이 진 빈 곳을 명함과 가른다', () {
+    test('화면을 반으로 가르는 모서리 — 대비는 크지만 지배 톤이 없다', () {
+      final edge = grid((x, y) => x < 12 ? 30 : 230);
+      expect(
+        centerFrameContrast(edge, gridSize: 24),
+        greaterThan(10),
+        reason: '모서리는 대비가 커서 대비 검사만으로는 통과한다',
+      );
+      expect(
+        centerDominantToneRatio(edge, gridSize: 24),
+        lessThan(0.65),
+        reason: '반반이라 지배 톤 검사에서 걸러져야 한다',
+      );
+    });
+
+    test('밝은 명함 — 바탕이 지배적이고 글자는 소수', () {
+      final card = grid((x, y) => (x % 5 == 0 && y % 4 == 0) ? 20 : 235);
+      expect(centerFrameContrast(card, gridSize: 24), greaterThan(10));
+      expect(
+        centerDominantToneRatio(card, gridSize: 24),
+        greaterThanOrEqualTo(0.65),
+      );
+    });
+
+    test('어두운 명함도 받는다 — 더 많은 쪽을 본다', () {
+      final darkCard = grid((x, y) => (x % 5 == 0 && y % 4 == 0) ? 235 : 25);
+      expect(centerFrameContrast(darkCard, gridSize: 24), greaterThan(10));
+      expect(
+        centerDominantToneRatio(darkCard, gridSize: 24),
+        greaterThanOrEqualTo(0.65),
+      );
+    });
+  });
 }
