@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
@@ -74,14 +76,27 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 민무늬 벽·책상은 거의 평평하다(10 미만). **낮게 잡아 명백히 빈 장면만**
   /// 막는다 — 임계값을 높이면 진짜 명함까지 자동 촬영이 안 되는데, 그쪽이 더
   /// 나쁜 고장이다(셔터는 언제든 직접 누를 수 있다).
-  static const _minCenterContrast = 10.0;
+  /// ⚠️ **이 값은 추측으로 정하면 안 된다.** 처음 10.0으로 잡았다가 진짜 명함이
+  /// 자동 촬영되지 않는 회귀를 냈다(사용자 제보 2026-08-14 "조절하고 나니까
+  /// 명함을 가이드가 파란색으로 변하지를 않아").
+  ///
+  /// 원인: 격자가 24×24로 거칠어서 **명함 글자를 거의 밟지 못한다.** 대부분의
+  /// 샘플이 바탕에 떨어져 표준편차가 생각보다 훨씬 작다. 촘촘한 체커보드로
+  /// 만든 테스트가 실제 샘플링 밀도를 반영하지 못했다 — 숫자만 보고 세운
+  /// 가설이 틀린 또 하나의 사례다.
+  ///
+  /// 그래서 **민무늬 면만 겨우 걸러낼 만큼** 낮춘다. 실기기에서 실제 값을 읽어
+  /// 본 뒤에 다시 조인다(디버그 빌드에 값이 화면에 뜬다).
+  static const _minCenterContrast = 3.5;
   /// 가이드 안쪽에서 **한쪽 톤이 차지해야 하는 최소 비율**.
   ///
   /// 명함은 바탕이 지배적이라 대개 0.75 이상이다. 책상·벽 **모서리**는 밝은
   /// 면과 어두운 면이 반반이라 0.5 근처에 머문다 — 대비만 보면 오히려 커서
   /// 걸러지지 않던 장면이다. 밝은 명함과 어두운 명함을 모두 받으려고
   /// **더 많은 쪽**을 본다.
-  static const _minDominantToneRatio = 0.65;
+  /// 같은 이유로 느슨하게 잡는다. 모서리(0.5)와 명함을 가르되, 실측 전까지는
+  /// **막지 않는 쪽**으로 기운다.
+  static const _minDominantToneRatio = 0.55;
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -91,6 +106,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isCapturing = false;
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
+  /// 디버그 빌드에서만 화면에 띄우는 "대비 / 지배톤" 실측값.
+  String? _debugMetrics;
   DateTime? _stableSince;
   List<int>? _previousLumaSample;
   DateTime? _streamStartedAt;
@@ -100,6 +117,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 이 화면은 **세로 전용**이다. 안내부터가 "명함을 시계 방향으로 90° 돌려서
+    // 넣어주세요"이고, 가이드 프레임의 긴 변을 **화면 폭** 기준으로 잡는다.
+    // 가로로 돌리면 폭이 높이보다 커져 가이드가 화면 밖으로 넘친다 — 실기기에서
+    // `BOTTOM OVERFLOWED BY 52 PIXELS`가 떴다(사용자 제보 2026-08-14
+    // "핸드폰을 90도 돌리니까 아래에 노란색이 보여").
+    //
+    // ⚠️ 그 노란 줄무늬는 **debug 빌드에서만** 보인다. release에서는 경고 없이
+    // 촬영 버튼 아래 안내가 잘린다 — 보이지 않을 뿐 더 나쁘다.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     _laserController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1800),
@@ -211,6 +237,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // 이 화면을 벗어나면 회전 제한을 반드시 푼다 — 안 그러면 앱 전체가 세로로
+    // 묶인다.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     _laserController.dispose();
     _controller?.dispose();
     super.dispose();
@@ -292,11 +321,25 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     //
     // 명함은 **바탕이 지배적**이고 글자가 소수다 — 밝든 어둡든 한쪽 톤이
     // 대부분이다. 모서리 장면은 대략 반반이라 여기서 갈린다.
+    final contrast = centerFrameContrast(sample, gridSize: _sampleGridSize);
+    final dominantTone = centerDominantToneRatio(
+      sample,
+      gridSize: _sampleGridSize,
+    );
     final hasContent =
-        centerFrameContrast(sample, gridSize: _sampleGridSize) >=
-            _minCenterContrast &&
-        centerDominantToneRatio(sample, gridSize: _sampleGridSize) >=
-            _minDominantToneRatio;
+        contrast >= _minCenterContrast &&
+        dominantTone >= _minDominantToneRatio;
+
+    // 임계값을 추측으로 정했다가 진짜 명함을 막는 회귀를 냈다. 실기기에서
+    // **실제 장면의 값을 읽을 수 있어야** 제대로 정할 수 있다 — 디버그
+    // 빌드에서만 화면에 띄운다(테스터 배포는 release라 보이지 않는다).
+    if (kDebugMode) {
+      final rounded = '${contrast.toStringAsFixed(1)} / '
+          '${dominantTone.toStringAsFixed(2)}';
+      if (rounded != _debugMetrics) {
+        setState(() => _debugMetrics = rounded);
+      }
+    }
 
     if (avgDiff < _stabilityDiffThreshold && hasContent) {
       _stableSince ??= now;
@@ -435,7 +478,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 세로 공간을 넘칠 때만 안전장치로 줄인다.
   Size _guideFrameSizeFor(Size screenSize) {
     var longEdge = screenSize.width * 0.86;
-    final maxLongEdge = screenSize.height * 0.8;
+    // 화면이 낮으면(가로 방향, 폴더블 펼침) 가이드가 세로로 넘친다. 위아래
+    // 안내 문구와 촬영 버튼이 함께 들어가야 하므로 **높이의 0.72까지만** 쓴다.
+    //
+    // ⚠️ 예전 상한은 0.8이었는데, 그것만으로는 모자라 가로에서
+    // `BOTTOM OVERFLOWED BY 52 PIXELS`가 떴다(사용자 제보 "핸드폰을 90도
+    // 돌리니까 아래에 노란색이 보여"). 세로 고정(`setPreferredOrientations`)도
+    // 함께 걸었지만 **Android는 큰 화면에서 앱의 방향 제한을 무시한다** —
+    // 폴더블 펼친 화면에서는 여전히 가로가 되므로 크기 자체를 맞춰야 한다.
+    final maxLongEdge = screenSize.height * 0.72;
     if (longEdge > maxLongEdge) longEdge = maxLongEdge;
     final shortEdge = longEdge * _cardAspectRatio;
     return Size(shortEdge, longEdge);
@@ -834,17 +885,39 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.black.withValues(alpha: 0.6),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      _isFrameStable
-                          ? '고정됨 · 자동으로 촬영합니다'
-                          : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
-                      style: TextStyle(
-                        color: _isFrameStable
-                            ? AppColors.accent
-                            : AppColors.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _isFrameStable
+                              ? '고정됨 · 자동으로 촬영합니다'
+                              : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                          style: TextStyle(
+                            color: _isFrameStable
+                                ? AppColors.accent
+                                : AppColors.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        // 디버그 빌드에서만 보이는 실측값(대비 / 지배톤).
+                        // 자동 촬영 임계값을 **추측으로 정했다가 진짜 명함을
+                        // 막는 회귀**를 냈다. 실제 장면의 숫자를 읽을 수 있어야
+                        // 제대로 정할 수 있다. release 빌드에는 안 나온다.
+                        if (kDebugMode && _debugMetrics != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '대비/지배톤 $_debugMetrics '
+                              '(기준 $_minCenterContrast / '
+                              '$_minDominantToneRatio)',
+                              style: const TextStyle(
+                                color: Colors.amberAccent,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
