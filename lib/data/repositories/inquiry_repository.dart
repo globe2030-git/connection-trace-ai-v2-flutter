@@ -31,6 +31,7 @@ class InquiryRepository {
 
   Future<void> submitInquiry({
     required String userId,
+    String userName = '',
     required String userEmail,
     required String subject,
     required String message,
@@ -38,6 +39,7 @@ class InquiryRepository {
     final model = InquiryModel(
       id: '',
       userId: userId,
+      userName: userName,
       userEmail: userEmail,
       subject: subject,
       message: message,
@@ -66,4 +68,42 @@ class InquiryRepository {
           'createdAt': FieldValue.serverTimestamp(),
         });
   }
+
+  /// 관리자가 전체 문의 내역을 구독한다(firestore.rules의 isAdmin() 권한 필요).
+  Stream<List<InquiryModel>> watchAllInquiriesForAdmin() {
+    return _db
+        .collection('inquiries')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map(InquiryModel.fromFirestore).toList());
+  }
+
+  /// 관리자가 사용자 문의에 답변을 등록하고 상태를 '답변완료(answered)'로 업데이트한다.
+  Future<void> addAdminReply({
+    required String inquiryId,
+    required String message,
+  }) async {
+    final batch = _db.batch();
+    final inquiryRef = _db.collection('inquiries').doc(inquiryId);
+    final replyRef = inquiryRef.collection('replies').doc();
+
+    batch.set(replyRef, {
+      'from': 'admin',
+      'message': message,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(inquiryRef, {
+      'status': 'answered',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+  }
+
+  // 사용자의 AI 사용량 조회는 여기 두지 않는다. `users/{uid}` 문서는
+  // `firestore.rules`에서 본인만 읽을 수 있고(같은 문서에 명함 복호화 키가
+  // 들어 있어 관리자에게 열면 안 된다), 서버에 이미 관리자 전용
+  // `getUserUsage` 함수가 있다 — `AiUsageService.fetchForAdmin`을 쓴다.
+  // 예전에 여기서 Firestore를 직접 읽던 구현은 항상 권한 거부가 났고,
+  // 그 실패를 삼켜 0을 그렸다(backlog 추가 178).
 }

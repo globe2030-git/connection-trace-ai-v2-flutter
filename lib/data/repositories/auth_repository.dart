@@ -62,6 +62,32 @@ class AuthRepository extends ChangeNotifier {
   /// 때만 동작해야 한다.
   String? get firebaseUid => fb_auth.FirebaseAuth.instance.currentUser?.uid;
 
+  /// 관리자 전용 화면(설정 → 관리자 1:1 문의 관리)을 **메뉴에 띄울지 말지**만
+  /// 정하는 값이다. 실제 차단은 서버(`firestore.rules`의 `isAdmin()`)가 하며,
+  /// 이 값을 우회해 화면을 열어도 데이터는 못 읽는다 — 여기서 막는 것은
+  /// "일반 사용자에게 관리자 메뉴가 보이고, 누르면 권한 오류가 뜨는" UX다
+  /// (2026-08-13 실기기 확인, backlog 추가 178).
+  ///
+  /// 판단 기준을 `firestore.rules`와 똑같이 맞춘다 — **Firebase Auth 토큰의
+  /// 이메일 + 이메일 인증 완료**. 로컬 세션의 `email`을 쓰지 않는 이유는
+  /// 카카오/네이버 로그인에서 그 값이 Firebase 토큰 이메일과 다를 수 있어서,
+  /// 앱과 서버의 판단이 갈리면 메뉴는 보이는데 열리지는 않는 상태가 된다.
+  ///
+  /// ⚠️ 이메일 목록이 `firestore.rules`와 두 곳에 나뉜다. 관리자를 추가할 때는
+  /// **규칙이 진짜 관문이므로 규칙을 먼저 고치고** 이 목록도 같이 맞춘다.
+  /// 여기만 고치면 메뉴만 생기고 아무것도 안 보인다.
+  static const _adminEmails = {
+    'connectionsense@creamhouse.net',
+    'globe@creamhouse.net',
+  };
+
+  bool get isAdmin {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null || !user.emailVerified) return false;
+    final email = user.email?.toLowerCase();
+    return email != null && _adminEmails.contains(email);
+  }
+
   Future<void> _load() async {
     try {
       final raw = await _secureStorage.read(key: _sessionKey);

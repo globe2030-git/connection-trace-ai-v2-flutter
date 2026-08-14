@@ -27,6 +27,7 @@ import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
 import 'notices_view.dart';
 import 'ocr_stats_view.dart';
+import 'admin_inquiry_view.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -404,6 +405,24 @@ class SettingsView extends StatelessWidget {
                       MaterialPageRoute(builder: (_) => const OcrStatsView()),
                     ),
                   ),
+                  // 관리자 계정에서만 보인다. 조건 없이 두면 일반 사용자에게도
+                  // 메뉴가 보이고, 눌러도 서버 규칙이 막아 권한 오류만 뜬다
+                  // (2026-08-13 실기기 확인, backlog 추가 178).
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '관리자 1:1 문의 관리',
+                      subtitle: '사용자 이름 및 이메일로 문의 검색·답변',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminInquiryManagementView(),
+                        ),
+                      ),
+                    ),
                   _SettingsRow(
                     icon: const Icon(
                       Icons.info_outline,
