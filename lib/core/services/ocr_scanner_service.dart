@@ -548,6 +548,44 @@ class OcrScannerService {
     return words.every((w) => RegExp(r"^[A-Za-z][A-Za-z.'-]*$").hasMatch(w));
   }
 
+  /// 자간을 벌려 인쇄한 구간의 공백을 붙인다.
+  ///
+  /// 로고체로 `(주) 에 이 치 씨 엔 씨`처럼 **글자마다 공백**을 넣은 명함이
+  /// 흔한데, 그대로 두면 회사명 칸에 공백이 섞인 채 저장된다(2026-08-14
+  /// 실기기 확인, 추가 186). 이름 쪽에는 이미 공백을 떼는 규칙이 있었지만
+  /// (`최 태 웅` → `최태웅`) 회사명에는 없어서 생긴 차이다.
+  ///
+  /// ⚠️ **공백을 전부 없애면 안 된다.** `NELSON SPORTS, INC.`가
+  /// `NELSONSPORTS,INC.`가 되고 `David Kim`도 붙는다. 그래서 **1글자 토큰이
+  /// 3개 이상 잇달아 나오는 구간만** 붙인다 — `커넥션 센스`(2글자 이상)나
+  /// 문장 속에 낀 한 글자(`및`)는 건드리지 않는다.
+  static String _collapseCharSpacing(String line) {
+    // 전각 공백(U+3000)도 명함에서 쓰인다 — 같은 공백으로 취급한다.
+    final tokens = line.split(RegExp(r'[ \u3000]+'));
+    if (tokens.length < 3) return line;
+
+    final out = <String>[];
+    var i = 0;
+    while (i < tokens.length) {
+      if (tokens[i].isEmpty) {
+        i++;
+        continue;
+      }
+      var j = i;
+      while (j < tokens.length && tokens[j].runes.length == 1) {
+        j++;
+      }
+      if (j - i >= 3) {
+        out.add(tokens.sublist(i, j).join());
+        i = j;
+      } else {
+        out.add(tokens[i]);
+        i++;
+      }
+    }
+    return out.join(' ');
+  }
+
   /// 줄에서 이메일과 URL을 걷어낸다. 키워드 판정 전에 쓴다 — 도메인 문자열이
   /// 회사 키워드에 우연히 걸리는 것을 막기 위해서다(`elancer.**co**.kr` ⊂ `Co.`).
   static String _stripContacts(String line) => line
@@ -764,6 +802,12 @@ class OcrScannerService {
     List<({String text, double height})> lineData,
     String imagePath,
   ) {
+    // 자간을 벌려 인쇄한 글자를 먼저 붙인다. 모든 칸이 같은 규칙을 보게 하려고
+    // 파싱 맨 앞에서 한 번만 정리한다(사용자 제안 2026-08-14).
+    lineData = [
+      for (final l in lineData)
+        (text: _collapseCharSpacing(l.text), height: l.height),
+    ];
     final lines = [for (final l in lineData) l.text];
     // 줄 텍스트 → 글자 높이. 같은 텍스트가 여러 번 나오면 가장 큰 값으로.
     // 이름 폴백에서 "가장 크게 인쇄된 줄"을 고르는 데 쓴다.
