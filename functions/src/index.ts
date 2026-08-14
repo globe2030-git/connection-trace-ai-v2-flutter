@@ -32,6 +32,7 @@ import {getAuth} from "firebase-admin/auth";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
+import {chunkArray} from "./chunk";
 
 initializeApp();
 
@@ -637,13 +638,21 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
 );
 
 /**
- * 회원 탈퇴(설정 → 계정 삭제) 시 그 사용자의 AI 호출 로그를 함께 파기한다.
+ * 회원 탈퇴(설정 → 계정 삭제) 시 그 사용자의 AI 호출 로그·1:1 문의를 함께
+ * 파기한다.
  *
  * 왜 트리거인가: 클라이언트는 users/{uid}·contacts를 직접 지우지만,
  * aiAuditLogs는 보안 규칙상 클라이언트가 못 지운다(관리자 읽기 전용, 서버만
  * 기록). 탈퇴 흐름은 users/{uid} 문서를 삭제하는데, 그때 이 트리거가 그 uid의
  * 감사 로그를 batch로 삭제한다. 개인정보처리방침 "회원 탈퇴 시 파기"와 일치
  * (backlog 추가 112).
+ *
+ * ⚠️ 2026-08-15(ADMIN-VULN-007): inquiries(1:1 문의, top-level 컬렉션)도
+ * userId 필드로 소유되는데 여기서 빠져 있어서, 탈퇴 후에도 문의(이메일·제목·
+ * 본문)와 답변이 영구히 남아 관리자에게 계속 노출됐다. inquiries는
+ * users/{uid} 하위가 아니라 별도 top-level 컬렉션이라 클라이언트가 계정
+ * 삭제 시 직접 못 지우고(보안 규칙상 delete 자체가 항상 false), 여기서 함께
+ * 정리한다.
  *
  * v1 auth onDelete는 firebase-functions/v1이 database provider를 끌어와
  * (@firebase/app 미설치) 배포 분석이 깨져서 못 쓴다. 대신 v2 Firestore 트리거를
@@ -801,12 +810,43 @@ export const onUserDeletedCleanup = onDocumentDeleted(
       .collection("aiAuditLogs")
       .where("uid", "==", uid)
       .get();
-    if (snap.empty) return;
-    const docs = snap.docs;
-    for (let i = 0; i < docs.length; i += 400) {
+    if (!snap.empty) {
+      for (const batchDocs of chunkArray(snap.docs, 400)) {
+        const batch = db.batch();
+        batchDocs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+
+    // 1:1 문의·답변 삭제(ADMIN-VULN-007). 쿼리 기반 삭제라 자연히 멱등이다 —
+    // 재실행해도(트리거가 중복 발화하거나 재시도되어도) 이미 지워진 뒤라면
+    // 쿼리 결과가 비어 그냥 끝난다. 이메일·제목·본문 등 개인정보 원문은
+    // 절대 로그에 남기지 않고 개수만 남긴다(CLAUDE.md 개인정보 원칙).
+    const inquiriesSnap = await db
+      .collection("inquiries")
+      .where("userId", "==", uid)
+      .get();
+    let replyCount = 0;
+    for (const inquiryDoc of inquiriesSnap.docs) {
+      const repliesSnap = await inquiryDoc.ref.collection("replies").get();
+      replyCount += repliesSnap.docs.length;
+      for (const batchDocs of chunkArray(repliesSnap.docs, 400)) {
+        const batch = db.batch();
+        batchDocs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+    }
+    for (const batchDocs of chunkArray(inquiriesSnap.docs, 400)) {
       const batch = db.batch();
-      docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      batchDocs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
+    }
+    if (inquiriesSnap.docs.length > 0) {
+      logger.info("탈퇴 사용자 문의 삭제", {
+        uid,
+        inquiryCount: inquiriesSnap.docs.length,
+        replyCount,
+      });
     }
   },
 );
