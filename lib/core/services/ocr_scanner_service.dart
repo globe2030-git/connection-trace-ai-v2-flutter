@@ -635,6 +635,12 @@ class OcrScannerService {
   /// - 지명은 뺀다(`영등포구`·`성수역`) — 이름 규칙에 잘 걸린다.
   static final _placeSuffixRegExp = RegExp(r'(시|도|구|군|읍|면|동|리|로|길|역|층|호|사)$');
 
+  /// 숫자 없는 상세주소(건물명)를 알아보는 접미사. 주소 바로 다음 줄이 이
+  /// 접미사로 끝나면 상세주소로 본다("SK T-타워", card_03). 조직명과 겹치는
+  /// 접미사(센터·관·타운 등)는 이름·회사명을 삼킬 수 있어 넣지 않는다.
+  static final _buildingNameRegExp =
+      RegExp(r'(타워|빌딩|빌|플라자|프라자|스퀘어|캐슬|팰리스)$');
+
   /// 주소로 읽히는 구간만 지운 나머지. 이름 후보를 찾을 때 쓴다 —
   /// 지명이 이름 규칙에 잘 걸려서 주소 구간은 봐서는 안 되지만, 줄 전체를
   /// 버리면 같은 줄에 있는 이름까지 잃는다.
@@ -1440,6 +1446,15 @@ class OcrScannerService {
         if (postalCode == null && RegExp(r'^\d{5}$').hasMatch(beforeAddress)) {
           postalCode = beforeAddress;
         }
+        // 우편번호가 주소 앞에 **다른 토큰과 섞여** 같은 줄에 있는 경우
+        // (card_104: "…644번길 49, 13493 경기도 …"). 앞뒤가 숫자가 아닌
+        // 정확히 5자리 독립 토큰만 받아, 전화·건물번호 조각을 우편번호로
+        // 오인하지 않는다.
+        if (postalCode == null) {
+          final inlinePostal =
+              RegExp(r'(?<!\d)\d{5}(?!\d)').firstMatch(beforeAddress);
+          if (inlinePostal != null) postalCode = inlinePostal.group(0);
+        }
         // 주소 앞에 남은 텍스트가 **사람 이름**인 경우가 실측 103장 중 7장에서
         // 확인됐다("박병훈 서울특별시 은평구 통일로 65길 26, 7층"). 예전에는
         // 우편번호가 아니면 통째로 버려서, 원문에 이름이 멀쩡히 있는데도 이름
@@ -1527,7 +1542,15 @@ class OcrScannerService {
             r'\d+\s*(층|호|동)',
           ).allMatches(addressDetail).toList();
           if (floorMatches.isNotEmpty) {
-            final end = floorMatches.last.end;
+            var end = floorMatches.last.end;
+            // 층·호 바로 뒤에 괄호로 감싼 건물명이 이어지면("2-1216호(가산동
+            // 롯데아이티캐슬)") 그 괄호까지 상세주소로 본다 — 건물명은 상세주소의
+            // 일부이지 떼어낼 꼬리가 아니다(card_101). 예전에는 층·호에서 잘라
+            // 괄호 건물명을 통째로 버렸다.
+            final paren = RegExp(
+              r'^\s*\([^)]*\)',
+            ).firstMatch(addressDetail.substring(end));
+            if (paren != null) end += paren.end;
             if (end < addressDetail.length) {
               addressTail = addressDetail.substring(end).trim();
               addressDetail = addressDetail.substring(0, end).trim();
@@ -1628,6 +1651,17 @@ class OcrScannerService {
           addressLineIndex != null &&
           lineIndex == addressLineIndex + 1 &&
           RegExp(r'\d').hasMatch(line)) {
+        addressDetail = line.trim();
+        continue;
+      }
+      // 다음 줄이 숫자 없는 **건물명**("SK T-타워")인 경우도 상세주소로 본다.
+      // 위 숫자 가드만으로는 숫자가 없는 건물명이 통째로 버려졌다(card_03).
+      // 건물명 접미사(타워/빌딩/…)로 끝나는 줄만 받아 이름·회사명을 삼키지
+      // 않는다 — 접미사 목록은 조직명과 겹치지 않는 것만 보수적으로 둔다.
+      if (addressDetail == null &&
+          addressLineIndex != null &&
+          lineIndex == addressLineIndex + 1 &&
+          _buildingNameRegExp.hasMatch(line.trim())) {
         addressDetail = line.trim();
         continue;
       }
