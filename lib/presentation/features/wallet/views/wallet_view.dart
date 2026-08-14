@@ -34,6 +34,33 @@ class _WalletViewState extends State<WalletView> {
   // 마지막으로 판정에 쓴 명함 목록의 서명 — 바뀔 때만 다시 계산한다.
   String _givenUpSig = '';
 
+  // 선택 삭제 모드(F-06). 평소 목록은 깨끗하게 두고(스와이프 삭제만), "선택"을
+  // 누르면 각 행에 체크박스가 뜨고 하단에 "N개 삭제" 바가 나온다. 과거 "목록에
+  // 삭제 버튼을 두지 않는다"는 결정(2026-08-10)과 부딪히지 않도록, 삭제 UI는
+  // 이 모드에 들어갔을 때만 드러난다.
+  bool _selectionMode = false;
+  final Set<String> _selectedIds = {};
+
+  void _enterSelectionMode() {
+    setState(() {
+      _selectionMode = true;
+      _selectedIds.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelected(String id) {
+    setState(() {
+      if (!_selectedIds.remove(id)) _selectedIds.add(id);
+    });
+  }
+
   /// 명함 목록이 바뀌었을 때만 지오코딩 포기 집합을 다시 구한다. 결과가
   /// 오면 setState로 아이콘을 반영한다(서명은 목록 기준이라 setState가
   /// 루프를 돌지 않는다).
@@ -86,7 +113,9 @@ class _WalletViewState extends State<WalletView> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${viewModel.contacts.length}명의 인맥',
+                          _selectionMode
+                              ? '${_selectedIds.length}개 선택'
+                              : '${viewModel.contacts.length}명의 인맥',
                           style: const TextStyle(
                             fontSize: 13,
                             color: AppColors.textSecondary,
@@ -102,22 +131,55 @@ class _WalletViewState extends State<WalletView> {
                   // 결정, 2026-08-12) — 라벨 없이 아이콘만으로도 같은
                   // 화면 배치에 있는 다른 탭들이 이미 이 스타일을 쓰고 있어
                   // 낯설지 않다.
-                  IconButton(
-                    tooltip: '명함 등록',
-                    style: IconButton.styleFrom(
-                      backgroundColor: AppColors.accentSoftStrong,
-                      shape: const CircleBorder(),
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(40, 40),
-                      maximumSize: const Size(40, 40),
+                  if (_selectionMode)
+                    _buildSelectionHeaderActions(contacts)
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // "선택" 진입점(F-06). 명함이 있을 때만 보인다 — 빈
+                        // 지갑에서는 고를 것이 없다. 스와이프 삭제는 그대로 두고,
+                        // 이 버튼으로 다건 선택 삭제에 들어간다.
+                        if (viewModel.contacts.isNotEmpty)
+                          IconButton(
+                            tooltip: '선택 삭제',
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.cardSurface,
+                              shape: const CircleBorder(),
+                              side: const BorderSide(
+                                color: AppColors.borderSubtle,
+                              ),
+                              padding: EdgeInsets.zero,
+                              minimumSize: const Size(40, 40),
+                              maximumSize: const Size(40, 40),
+                            ),
+                            icon: const Icon(
+                              Icons.checklist_rounded,
+                              color: AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            onPressed: _enterSelectionMode,
+                          ),
+                        if (viewModel.contacts.isNotEmpty)
+                          const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: '명함 등록',
+                          style: IconButton.styleFrom(
+                            backgroundColor: AppColors.accentSoftStrong,
+                            shape: const CircleBorder(),
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(40, 40),
+                            maximumSize: const Size(40, 40),
+                          ),
+                          icon: const AppIcon(
+                            AppIconId.addCard,
+                            color: AppColors.accentText,
+                            size: 20,
+                          ),
+                          onPressed: () => _openCardEditor(context),
+                        ),
+                      ],
                     ),
-                    icon: const AppIcon(
-                      AppIconId.addCard,
-                      color: AppColors.accentText,
-                      size: 20,
-                    ),
-                    onPressed: () => _openCardEditor(context),
-                  ),
                 ],
               ),
               const SizedBox(height: 20),
@@ -181,10 +243,42 @@ class _WalletViewState extends State<WalletView> {
                       )
                     : _buildContactList(context, viewModel, contacts),
               ),
+              if (_selectionMode) _buildDeleteBar(context, viewModel),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 선택 모드일 때 헤더 오른쪽에 뜨는 동작 — 전체 선택/해제 + 취소.
+  /// "전체"는 지금 화면에 보이는(검색·태그로 걸러진) 명함을 기준으로 한다.
+  Widget _buildSelectionHeaderActions(List<ContactModel> contacts) {
+    final allSelected =
+        contacts.isNotEmpty &&
+        contacts.every((c) => _selectedIds.contains(c.id));
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextButton(
+          onPressed: () {
+            setState(() {
+              for (final c in contacts) {
+                if (allSelected) {
+                  _selectedIds.remove(c.id);
+                } else {
+                  _selectedIds.add(c.id);
+                }
+              }
+            });
+          },
+          child: Text(allSelected ? '전체 해제' : '전체 선택'),
+        ),
+        TextButton(
+          onPressed: _exitSelectionMode,
+          child: const Text('취소'),
+        ),
+      ],
     );
   }
 
@@ -249,6 +343,9 @@ class _WalletViewState extends State<WalletView> {
               geoNotFound: _givenUpGeoIds.contains(contact.id),
               cardDate: cardDate.date,
               cardDateLabel: cardDate.label,
+              selectionMode: _selectionMode,
+              selected: _selectedIds.contains(contact.id),
+              onToggleSelected: () => _toggleSelected(contact.id),
               onEdit: () => _openCardEditor(context, contact: contact),
               onCall: () => PhoneCallService.showCallPicker(context, contact),
               onDelete: () => viewModel.deleteContact(contact.id),
@@ -306,6 +403,68 @@ class _WalletViewState extends State<WalletView> {
   String _sortKeyText(WalletViewModel viewModel, ContactModel c) =>
       viewModel.sort == ContactSort.company ? c.company : c.name;
 
+  /// 선택 모드 하단의 삭제 실행 바. 아무것도 안 골랐으면 비활성.
+  Widget _buildDeleteBar(BuildContext context, WalletViewModel viewModel) {
+    final count = _selectedIds.length;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 8),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.destructive,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: AppColors.borderSubtle,
+              disabledForegroundColor: AppColors.textMuted,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+            ),
+            onPressed: count == 0
+                ? null
+                : () => _confirmBulkDelete(context, viewModel),
+            icon: const Icon(Icons.delete_outline, size: 20),
+            label: Text(
+              count == 0 ? '삭제할 명함을 선택하세요' : '$count개 삭제',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 선택한 명함을 한꺼번에 삭제한다 — 실행 전 한 번 확인한다.
+  Future<void> _confirmBulkDelete(
+    BuildContext context,
+    WalletViewModel viewModel,
+  ) async {
+    final count = _selectedIds.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('$count개의 명함을 삭제할까요?'),
+        content: const Text('선택한 명함과 기록이 기기에서 삭제됩니다.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text(
+              '삭제',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    viewModel.deleteContacts(_selectedIds);
+    _exitSelectionMode();
+  }
+
   void _openCardEditor(BuildContext context, {ContactModel? contact}) {
     AddCardModalView.show(context, contact: contact);
   }
@@ -342,6 +501,11 @@ class _ContactCard extends StatelessWidget {
   final VoidCallback onCall;
   final VoidCallback onDelete;
   final VoidCallback onBriefing;
+  // 선택 삭제 모드(F-06). 켜지면 왼쪽에 체크박스가 붙고, 행을 누르면 편집
+  // 대신 선택이 토글되며, 스와이프 삭제·동작 버튼은 잠긴다.
+  final bool selectionMode;
+  final bool selected;
+  final VoidCallback onToggleSelected;
 
   const _ContactCard({
     required this.contact,
@@ -352,13 +516,20 @@ class _ContactCard extends StatelessWidget {
     required this.onCall,
     required this.onDelete,
     required this.onBriefing,
+    required this.selectionMode,
+    required this.selected,
+    required this.onToggleSelected,
   });
 
   @override
   Widget build(BuildContext context) {
     return Dismissible(
       key: ValueKey(contact.id),
-      direction: DismissDirection.endToStart,
+      // 선택 모드에서는 스와이프 삭제를 잠근다 — 체크박스로 골라 하단 바에서
+      // 지운다. 두 삭제 경로가 동시에 열려 있으면 헷갈린다.
+      direction: selectionMode
+          ? DismissDirection.none
+          : DismissDirection.endToStart,
       background: Container(
         // 목록이 카드에서 구분선 방식으로 바뀌면서 바깥 여백과 둥근 모서리를
         // 뺐다 — 남겨 두면 미는 동안 행 아래에 흰 틈이 보인다.
@@ -384,9 +555,9 @@ class _ContactCard extends StatelessWidget {
       confirmDismiss: (_) => _confirmDelete(context),
       onDismissed: (_) => onDelete(),
       child: Material(
-        color: AppColors.cardSurface,
+        color: selected ? AppColors.accentSoft : AppColors.cardSurface,
         child: InkWell(
-          onTap: onEdit,
+          onTap: selectionMode ? onToggleSelected : onEdit,
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 92),
             child: Padding(
@@ -394,6 +565,18 @@ class _ContactCard extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  if (selectionMode) ...[
+                    // 탭은 행 전체(InkWell)가 받으므로 체크박스는 표시용 —
+                    // onChanged도 같은 토글로 연결해 어디를 눌러도 동작 일치.
+                    Checkbox(
+                      value: selected,
+                      onChanged: (_) => onToggleSelected(),
+                      activeColor: AppColors.accent,
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    const SizedBox(width: 6),
+                  ],
                   ContactAvatar(
                     photoPath: contact.avatarUrl,
                     name: contact.name,
@@ -486,9 +669,12 @@ class _ContactCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
+                      // 선택 모드에서는 동작 버튼(전화·AI)을 숨긴다 — 그 줄은
+                      // 선택이 목적이므로 탭이 선택 토글에만 반응해야 한다.
+                      if (!selectionMode)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                           // 동작 버튼은 촘촘하게 — 세 줄짜리 본문이 들어오면서
                           // 예전 크기로는 이름이 들어갈 자리가 남지 않는다.
                           if (contact.phone.trim().isNotEmpty)
