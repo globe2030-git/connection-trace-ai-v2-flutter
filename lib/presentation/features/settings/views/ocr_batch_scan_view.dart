@@ -184,8 +184,21 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
   String _buildTsv() {
     final buffer = StringBuffer()
       ..writeln(
-        ['파일명', '이름', '회사', '직함', '휴대폰', '사무실', '이메일', '우편번호', '주소', '상세주소']
-            .join('\t'),
+        [
+          '파일명',
+          '이름',
+          '회사',
+          '직함',
+          '휴대폰',
+          '사무실',
+          '이메일',
+          '우편번호',
+          '주소',
+          '상세주소',
+          // 인식 원문. "왜 이 값이 들어갔나"를 표만 보고 알 수 없어서 덧붙인다 —
+          // 이름을 왜 버렸는지 같은 판단은 원문 없이는 진단이 안 된다(추가 198).
+          '원문',
+        ].join('\t'),
       );
     for (final row in _rows) {
       final r = row.result;
@@ -201,6 +214,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.postalCode ?? '',
           r?.address ?? '',
           r?.addressDetail ?? '',
+          (r?.rawLines ?? const <String>[]).join(' ⏐ '),
         ].map((s) => s.replaceAll('\t', ' ').replaceAll('\n', ' ')).join('\t'),
       );
     }
