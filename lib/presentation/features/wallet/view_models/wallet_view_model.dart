@@ -223,4 +223,13 @@ class WalletViewModel extends ChangeNotifier {
   void deleteContact(String id) {
     _contactsRepository.deleteContact(id);
   }
+
+  /// 여러 명함을 한 번에 삭제한다(F-06 선택 삭제). 저장소의 단건 삭제를
+  /// 순회 호출한다 — 각 호출이 tombstone·백업 삭제·기기 저장을 처리하므로
+  /// 여기서 따로 할 일은 없다. 순회 중 목록이 바뀌므로 id를 먼저 확정한다.
+  void deleteContacts(Iterable<String> ids) {
+    for (final id in ids.toList()) {
+      _contactsRepository.deleteContact(id);
+    }
+  }
 }
