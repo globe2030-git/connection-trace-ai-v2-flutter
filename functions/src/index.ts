@@ -41,6 +41,7 @@ import {
 } from "./walletCredits";
 import {DEFAULT_FREE_CREDITS, planFreeGrant} from "./freeGrant";
 import {generateReferralCode} from "./referralCode";
+import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
 
 initializeApp();
 
@@ -51,6 +52,14 @@ const geminiApiKey = defineSecret("GEMINI_API_KEY");
 // (-----BEGIN PRIVATE KEY----- 부터 END 까지 통째로). 이 비밀이 없으면 아래
 // 두 함수는 배포되지 않는다.
 const appleSignInKey = defineSecret("APPLE_SIGNIN_KEY");
+
+// 기기 지문(raw device id) 해시용 salt(U5, 재가입×무료체험 무한 루프 방어).
+// `firebase functions:secrets:set DEVICE_HASH_SALT`로 실제 값을 넣는다 —
+// 이 값이 없어도(로컬 빌드·아직 시크릿 미설정) `npm run build`(tsc)는
+// 통과한다. `deviceHashSalt.value()`를 실제로 호출하는 시점(배포된 함수가
+// deviceId를 받은 요청을 처리할 때)에만 시크릿이 필요하다. 설계 근거:
+// docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4-2.
+const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
 const APPLE_TEAM_ID = "77L7BH2M2W";
 const APPLE_KEY_ID = "UUYAKPD4S7";
 // 네이티브 iOS Sign in with Apple의 client_id는 앱 번들 ID다(웹 Services ID 아님).
@@ -717,6 +726,11 @@ interface BootstrapAccountRequest {
   // 사람의 코드를 넣어 보너스를 받는 "redemption"은 다음 라운드(별도 승인
   // 필요) 몫이다. 받아도 무시한다(작업 지시서 명시).
   referralCodeInput?: string;
+  // 재가입×무료체험 무한 루프 방어(U5, 스펙 §4)에 쓰는 raw device id.
+  // 구버전 클라이언트나 기기 식별자를 못 얻은 경우(플랫폼 미지원 등)엔
+  // 아예 안 보낼 수 있다 — 그 경우 기기 가드를 건너뛰고 지금처럼
+  // 동작한다(아래 핸들러, 경고 로그만 남기고 절대 요청 자체를 막지 않음).
+  deviceId?: string;
 }
 
 interface BootstrapAccountResponse {
@@ -795,9 +809,24 @@ async function ensureReferralCode(
  * ⚠️ `grantSupportCredits`(관리자의 고객응대 무료 지급)와는 완전히 독립된
  * 트랜잭션이다 — 코드도 공유하지 않는다(다른 세션이 그 함수를 하드닝
  * 중이라 이번 작업 지시서가 명시적으로 분리를 요구함).
+ *
+ * **기기 가드(U5, 재가입×무료체험 무한 루프 방어)**: 클라이언트가
+ * `deviceId`(raw device id)를 보내면 서버가 `deviceHash()`로 해시해
+ * `deviceLedger/{hash}.trialGrantsIssued`를 확인한다. 이미 이 기기에
+ * 무료체험을 지급한 적이 있으면(`canGrantTrialToDevice`가 false) 이번
+ * uid의 무료체험은 0으로 지급한다 — 단, uid 스코프 멱등 가드
+ * (`freeGrantedAt`)는 그대로 찍어서 재시도가 또 이 분기를 타지 않게 한다.
+ * `deviceId`가 없는 요청(구버전 클라이언트, 식별자 못 얻음)은 기기 가드를
+ * 완전히 건너뛰고 지금까지의 동작 그대로다 — 경고 로그만 남기고 절대
+ * 요청을 실패시키지 않는다(설계 근거:
+ * docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4).
  */
 export const bootstrapAccount = onCall<BootstrapAccountRequest>(
-  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: [deviceHashSalt],
+  },
   async (request): Promise<BootstrapAccountResponse> => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
@@ -828,6 +857,27 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
       });
     }
 
+    // 기기 해시는 트랜잭션 밖(순수 계산, I/O 없음)에서 미리 구한다. raw
+    // device id 자체는 로그에 남기지 않는다 — "값이 있는지 없는지"만
+    // 남긴다(CLAUDE.md 4절).
+    let deviceHashValue: string | null = null;
+    const rawDeviceId = request.data?.deviceId;
+    if (typeof rawDeviceId === "string" && rawDeviceId.trim().length > 0) {
+      try {
+        deviceHashValue = deviceHash(rawDeviceId, deviceHashSalt.value());
+      } catch (err) {
+        logger.warn("기기 해시 계산 실패 — 기기 가드 건너뜀", {
+          hasDeviceId: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        deviceHashValue = null;
+      }
+    } else {
+      logger.warn("deviceId 없는 bootstrapAccount 호출 — 기기 가드 건너뜀", {
+        hasDeviceId: false,
+      });
+    }
+
     let freeGranted = false;
 
     await db.runTransaction(async (tx) => {
@@ -850,8 +900,55 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
 
       if (!plan.shouldGrant) return; // 이미 지급됨 — 멱등, 아무 것도 안 함
 
-      freeGranted = true;
+      // deviceLedger 조회는 이 트랜잭션의 첫 쓰기(tx.set/tx.create)보다
+      // 반드시 먼저 와야 한다(Firestore 트랜잭션 규칙: 모든 get은
+      // set/create보다 선행). deviceHashValue가 없으면(가드 건너뜀) 아예
+      // deviceLedger를 건드리지 않는다.
+      let deviceLedgerRef: FirebaseFirestore.DocumentReference | null = null;
+      let trialGrantsIssued = 0;
+      if (deviceHashValue) {
+        deviceLedgerRef = db.collection("deviceLedger").doc(deviceHashValue);
+        const ledgerSnap = await tx.get(deviceLedgerRef);
+        trialGrantsIssued =
+          (ledgerSnap.data()?.trialGrantsIssued as number | undefined) ?? 0;
+      }
+
       const now = FieldValue.serverTimestamp();
+      const deviceCapped =
+        deviceLedgerRef != null && !canGrantTrialToDevice(trialGrantsIssued);
+
+      if (deviceCapped) {
+        // 이 기기엔 이미 무료체험을 지급한 적이 있다 — 이번 uid는 0회로
+        // 처리한다(스펙 §4-3, §4-5 "완벽 차단이 아니라 사용자를 막지
+        // 않는 것"). uid 스코프 멱등 가드(freeGrantedAt)는 그래도 찍어서
+        // 재시도가 다시 여기로 오지 않게 한다. 잔액은 건드리지 않는다.
+        freeGranted = false;
+        tx.set(
+          userRef,
+          {aiUsage: {freeBalance: usage?.freeBalance ?? 0, freeGrantedAt: now}},
+          {merge: true}
+        );
+
+        const cappedGrantRef = db.collection("creditGrants").doc();
+        tx.create(cappedGrantRef, {
+          type: "signup_free",
+          amount: 0,
+          bucket: "free",
+          uid,
+          email,
+          grantedAt: now,
+          by: null,
+          reason: null,
+          note: "device_capped",
+          balanceAfter: {
+            free: usage?.freeBalance ?? 0,
+            paid: usage?.paidBalance ?? 0,
+          },
+        });
+        return;
+      }
+
+      freeGranted = true;
       tx.set(
         userRef,
         {aiUsage: {freeBalance: plan.newFreeBalance, freeGrantedAt: now}},
@@ -874,6 +971,25 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
           paid: usage?.paidBalance ?? 0,
         },
       });
+
+      if (deviceLedgerRef) {
+        // 이 기기에서 무료체험을 지급했다는 사실만 남긴다 — 계정 삭제 시
+        // users/{uid}는 파기되지만 이 문서는 계정과 무관하게 살아남는다
+        // (onUserDeletedCleanup은 deviceLedger를 건드리지 않음, 스펙 §4-2).
+        // firstSeenAt은 문서가 처음 생길 때(trialGrantsIssued===0)만
+        // 필드를 포함시킨다 — merge:true라 필드를 아예 안 보내면 기존값이
+        // 보존된다(재작성해서 최초 시각을 덮어쓰지 않기 위함).
+        tx.set(
+          deviceLedgerRef,
+          {
+            deviceHash: deviceHashValue,
+            trialGrantsIssued: trialGrantsIssued + 1,
+            lastGrantAt: now,
+            ...(trialGrantsIssued === 0 ? {firstSeenAt: now} : {}),
+          },
+          {merge: true}
+        );
+      }
 
       if (plan.carryOver > 0) {
         const adjustRef = db.collection("creditGrants").doc();

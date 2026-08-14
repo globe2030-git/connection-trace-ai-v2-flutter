@@ -419,6 +419,27 @@ CASES = [
          uid=None, method="get",
          path="/databases/(default)/documents/referralCodes/ABC123",
          before={"uid": OWNER}),
+
+    # ── 기기 단위 무료체험 이력(deviceLedger, U5 — 재가입 무한루프 방어) ──
+    # appleAuth와 같은 패턴: 서버(Admin SDK)만 접근, 클라이언트는 로그인
+    # 여부와 무관하게 읽기/쓰기 모두 거부.
+    case("⭐ deviceLedger는 로그인해도 클라이언트가 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path="/databases/(default)/documents/deviceLedger/HASH123",
+         before={"trialGrantsIssued": 1}),
+    case("⭐ deviceLedger는 클라이언트가 새로 만들 수 없다", "DENY",
+         uid=OWNER, method="create",
+         path="/databases/(default)/documents/deviceLedger/HASH123",
+         after={"trialGrantsIssued": 0}),
+    case("⭐ deviceLedger는 클라이언트가 갱신할 수도 없다(캡 우회 시도 방지)", "DENY",
+         uid=OWNER, method="update",
+         path="/databases/(default)/documents/deviceLedger/HASH123",
+         before={"trialGrantsIssued": 1},
+         after={"trialGrantsIssued": 0}),
+    case("deviceLedger는 로그인 안 해도 당연히 거부", "DENY",
+         uid=None, method="get",
+         path="/databases/(default)/documents/deviceLedger/HASH123",
+         before={"trialGrantsIssued": 1}),
 ]
 
 

@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:android_id/android_id.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 
 /// 로그인 시 1회(사실상 매 로그인마다 불러도 무해하게) 호출하는 서버
@@ -26,14 +30,45 @@ class AccountBootstrapService {
   /// 예정), 호출부가 필요해지면 바로 쓸 수 있게 반환값을 남겨 둔다.
   static Future<String?> call() async {
     try {
+      final deviceId = await _resolveDeviceId();
       final callable = FirebaseFunctions.instanceFor(
         region: region,
       ).httpsCallable('bootstrapAccount');
-      final result = await callable.call<Map<String, dynamic>>();
+      final result = await callable.call<Map<String, dynamic>>(
+        deviceId == null ? null : {'deviceId': deviceId},
+      );
       return result.data['referralCode'] as String?;
     } catch (e) {
       // 개인정보가 섞이지 않도록 예외 타입만 남긴다(다른 서비스와 동일 원칙).
       debugPrint('bootstrapAccount 호출 실패: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  /// 재가입×무료체험 무한 루프 방어(U5)에 쓸 raw device id를 구한다.
+  /// iOS는 `identifierForVendor`(device_info_plus), Android는
+  /// Settings.Secure.ANDROID_ID(`android_id` 패키지 — device_info_plus는
+  /// v9+부터 이 값을 더 이상 제공하지 않아 별도 패키지가 필요하다, 근거는
+  /// pubspec.yaml 주석).
+  ///
+  /// **식별자를 못 구하면(플랫폼 미지원, 시뮬레이터, 권한 문제, 값이 빈
+  /// 문자열 등) 반드시 null을 반환한다** — 절대 예외를 밖으로 던져 로그인/
+  /// 부트스트랩을 막지 않는다(서버는 deviceId가 없으면 기기 가드를 그냥
+  /// 건너뛰도록 설계돼 있다, functions/src/index.ts `bootstrapAccount`).
+  static Future<String?> _resolveDeviceId() async {
+    try {
+      if (Platform.isIOS) {
+        final info = await DeviceInfoPlugin().iosInfo;
+        final id = info.identifierForVendor;
+        return (id == null || id.isEmpty) ? null : id;
+      }
+      if (Platform.isAndroid) {
+        final id = await const AndroidId().getId();
+        return (id == null || id.isEmpty) ? null : id;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('기기 식별자 조회 실패: ${e.runtimeType}');
       return null;
     }
   }

@@ -221,6 +221,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // 기기 단위 무료체험 지급 이력(U5, 재가입×무료체험 무한 루프 방어).
+    // monetization-referral-engineering-spec-2026-08-14.md §4-2: 문서 ID는
+    // 서버가 계산한 deviceHash(raw device id의 HMAC-SHA256)이고, 원문 기기
+    // 식별자·개인정보는 담지 않는다. appleAuth와 동일 패턴 — 클라이언트는
+    // 절대 읽지도 쓰지도 못하고 bootstrapAccount(Admin SDK)만 접근한다.
+    // ⚠️ 계정 삭제(onUserDeletedCleanup)가 이 컬렉션을 건드리지 않는 것이
+    // 이 설계의 핵심이다 — users/{uid}는 탈퇴 시 파기되지만 이 문서는
+    // 계정과 무관하게 남아 재가입 시에도 같은 기기임을 식별한다.
+    match /deviceLedger/{deviceHash} {
+      allow read, write: if false;
+    }
+
     // 명함 인식 품질 통계(2026-08-11). 필드별 인식률·이름 추출 경로·사용자 수정
     // 카운트 등 **형태(숫자)만** 담고 개인정보(이름/전화/이메일/주소 원문)는
     // 담지 않는다 — 관리자 콘솔에서 전 사용자 인식률을 보기 위한 것이다.

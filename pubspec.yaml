@@ -102,6 +102,28 @@ dependencies:
   # 카드 높이가 가변이라 일반 ListView로는 인덱스 오프셋을 계산할 수 없어,
   # 인덱스 기반 스크롤(ItemScrollController.scrollTo)을 제공하는 이 패키지를 쓴다.
   scrollable_positioned_list: ^0.3.8
+  # 재가입(계정 삭제→재가입) 반복으로 무료체험을 무한 재지급받는 루프를
+  # 막기 위해(U5) bootstrapAccount 호출 시 기기 식별자를 서버로 보낸다.
+  # raw 값은 서버가 해시해서만 저장하고(functions/src/deviceLedger.ts),
+  # 식별자를 못 얻으면(플랫폼 미지원 등) 아예 안 보내고 서버가 가드를
+  # 건너뛴다 — 설계 근거: docs/planning/
+  # monetization-referral-engineering-spec-2026-08-14.md §4.
+  # iOS는 이 패키지의 identifierForVendor를 쓴다. ⚠️ Android는 이 패키지가
+  # (v9+부터) androidId 필드를 더 이상 제공하지 않는다 — 실제로 확인한
+  # 결과다(패키지 문서를 추측하지 말고 확인하라는 이 프로젝트 관례,
+  # functions/src/index.ts 86~99행 선례와 동일). 그래서 Android는 아래
+  # `android_id` 패키지(같은 fluttercommunity 계열, Settings.Secure
+  # .ANDROID_ID 전용)를 별도로 쓴다.
+  device_info_plus: ^12.4.0
+  # Android 기기 식별자(Settings.Secure.ANDROID_ID) 전용 — 위 device_info_plus
+  # 주석 참고. 앱 서명키+사용자+기기 조합마다 고유(Android 8+), 공장초기화나
+  # 서명키 교체 시 바뀔 수 있다는 한계는 스펙 §4-5가 이미 명시한 "완벽 차단이
+  # 아니라 비용을 올리는 것"이라는 목표와 일치한다.
+  android_id: ^0.5.2+1
+  # 스토어 소모성 상품(AI 크레딧 충전) 구매 흐름의 뼈대(U7 선행 작업).
+  # 이번 라운드(U5)엔 실제로 이 패키지를 쓰는 코드가 아직 없다 — 스토어
+  # 상품 등록·영수증 검증은 별도 승인이 필요한 U7 범위.
+  in_app_purchase: ^3.3.0
 
 dev_dependencies:
   flutter_test:
