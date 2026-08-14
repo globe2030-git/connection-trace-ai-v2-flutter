@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -216,6 +217,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   /// image_picker가 주는 경로는 임시 캐시라 앱 재시작 시 사라질 수 있어서,
   /// 영구 보관하려면 직접 복사해야 한다. 매번 같은 파일명으로 덮어써서
   /// 이전 사진 파일이 버려지지 않게 한다.
+  ///
+  /// ⚠️ 그 대가로 **이미지 캐시를 직접 비워야 한다.** `FileImage`는 경로로
+  /// 캐시 키를 잡아서, 내용이 바뀌어도 경로가 같으면 옛 사진을 그대로 보여준다
+  /// (통합본 E-07 — `evictImageFileCache` 주석 참고).
   Future<void> _pickAvatarPhoto() async {
     setState(() => _isPickingAvatar = true);
     try {
@@ -227,6 +232,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       final docsDir = await getApplicationDocumentsDirectory();
       final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
       await File(picked.path).copy(savedPath);
+      await evictImageFileCache(savedPath);
       if (!mounted) return;
       setState(() {
         _avatarPath = savedPath;
