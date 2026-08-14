@@ -32,6 +32,18 @@ class _RadarViewState extends State<RadarView> {
   bool _initialConsentPromptScheduled = false;
   bool _consentSheetVisible = false;
 
+  /// 검색 입력칸. 지우기(X) 버튼을 두려면 컨트롤러가 있어야 한다 —
+  /// 예전에는 `onChanged`만 있어서 **입력한 글자를 한 자씩 지워야 했다**
+  /// (테스터 빌드6 피드백, backlog B6-01). 관리자 문의 화면엔 이미 있는데
+  /// 여기만 빠져 있었다.
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
@@ -304,7 +316,13 @@ class _RadarViewState extends State<RadarView> {
                             children: [
                               Expanded(
                                 child: TextField(
-                                  onChanged: viewModel.setSearchTerm,
+                                  controller: _searchController,
+                                  onChanged: (value) {
+                                    viewModel.setSearchTerm(value);
+                                    // 지우기 버튼이 나타나고 사라지는 것만
+                                    // 반영하면 되므로 값 자체는 뷰모델이 갖는다.
+                                    setState(() {});
+                                  },
                                   style: const TextStyle(
                                     fontSize: 13,
                                     color: AppColors.capsuleInputText,
@@ -334,11 +352,33 @@ class _RadarViewState extends State<RadarView> {
                                   ),
                                 ),
                               ),
-                              const Icon(
-                                Icons.search,
-                                color: AppColors.capsuleInputText,
-                                size: 22,
-                              ),
+                              if (_searchController.text.isNotEmpty)
+                                Semantics(
+                                  button: true,
+                                  label: '검색어 지우기',
+                                  child: InkWell(
+                                    borderRadius: BorderRadius.circular(999),
+                                    onTap: () {
+                                      _searchController.clear();
+                                      viewModel.setSearchTerm('');
+                                      setState(() {});
+                                    },
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(
+                                        Icons.close,
+                                        color: AppColors.textMuted,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else
+                                const Icon(
+                                  Icons.search,
+                                  color: AppColors.capsuleInputText,
+                                  size: 22,
+                                ),
                             ],
                           ),
                         ),
