@@ -13,6 +13,7 @@ import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendEmailVerification, onAuthStateChanged, signOut,
   GoogleAuthProvider, signInWithPopup,
+  setPersistence, browserSessionPersistence,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
@@ -32,6 +33,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// 관리자 세션은 탭/브라우저를 닫으면 끝나도록 session persistence로 고정한다
+// (ADMIN-VULN-012). 기본값(browserLocalPersistence)은 브라우저를 껐다 켜도
+// 세션이 복원돼, 공유·타인 단말에 관리자 세션이 남는 위험이 있었다.
+// setPersistence는 이후의 signIn에 적용되므로 로그인보다 먼저 건다.
+setPersistence(auth, browserSessionPersistence).catch((e) =>
+  console.warn("세션 지속성 설정 실패:", e.message));
 const db = getFirestore(app);
 // Cloud Functions는 서울 리전(asia-northeast3)에 배포돼 있다 — 리전을 안 맞추면
 // httpsCallable이 기본(us-central1)으로 호출해 not-found가 난다.
@@ -124,7 +131,16 @@ $("#googleLoginBtn").addEventListener("click", async () => {
   }
 });
 
-$("#logoutBtn").addEventListener("click", () => signOut(auth));
+// 로그아웃은 세션 종료 후 페이지를 새로고침해 렌더된 DOM(문의 이메일·UID·
+// 정산 등)과 메모리 상태를 통째로 버린다(ADMIN-VULN-012). 예전엔 signOut만
+// 호출해 대시보드를 숨기기만 했고, 민감 데이터가 DOM/JS에 그대로 남았다.
+$("#logoutBtn").addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+  } finally {
+    location.reload();
+  }
+});
 
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
