@@ -56,3 +56,11 @@ jobs:
 
       - name: 테스트
         run: flutter test --reporter expanded
+
+      - name: 관리자 이메일 동기화 검사
+        # firestore.rules의 isAdmin()과 functions/src/adminEmails.ts의
+        # ADMIN_EMAILS가 갈라지면 관리자 해제가 일부만 반영되는 사고가 난다
+        # (ADMIN-VULN-001). 표준 라이브러리만 쓰는 순수 로컬 파일 비교라
+        # 운영 Firestore·firebase login 없이 ubuntu-latest 기본 python3로
+        # 바로 돈다.
+        run: python3 tool/check_admin_sync.py

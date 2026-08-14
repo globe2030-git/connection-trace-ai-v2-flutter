@@ -23,6 +23,7 @@
 | `verify_device_local.py` | 기기 저장분이 암호문인지, 좌표가 채워졌는지, 재계산 실패가 남았는지 | `adb` 연결 + **디버그 빌드** |
 | `../test/firestore_rules/verify_rules.py` | 보안 규칙이 의도대로 허용/거부하는지(15건) | `firebase login` |
 | `analyze_ai_cost.py` | `aiAuditLogs`로 AI 호출 1회당 실제 원가(KRW)를 집계 — 충전 티어 회차 실측용 | `firebase login` |
+| `check_admin_sync.py` | 관리자 이메일 목록이 나오는 모든 소스(현재 `firestore.rules`의 `isAdmin()`, `functions/src/adminEmails.ts`)가 서로 일치하는지(순수 로컬 파일 비교, 소스는 스크립트 내 `SOURCES` 리스트에 등록) | 없음(운영 인프라 무의존, CI에도 포함) |
 
 ```bash
 python3 tool/verify_server_privacy.py          # 전체 계정
@@ -32,6 +33,8 @@ python3 test/firestore_rules/verify_rules.py
 python3 tool/analyze_ai_cost.py                                    # 최근 14일(KST)
 python3 tool/analyze_ai_cost.py --from 2026-08-01 --to 2026-08-20  # 기간 지정
 python3 tool/analyze_ai_cost.py --exchange-rate 1400               # 환율 변경(기본 1430)
+python3 tool/check_admin_sync.py             # 관리자 이메일 목록 동기화 확인
+python3 tool/check_admin_sync.py --selftest  # 스크립트 자체의 회귀 검증
 ```
 
 종료 코드는 공통이다 — `0` 통과, `1` 문제 있음, `2` 실행 실패(미연결·인증 실패 등).
@@ -45,6 +48,7 @@ python3 tool/analyze_ai_cost.py --exchange-rate 1400               # 환율 변�
 
 - **저장·암호화·마이그레이션 코드를 고친 뒤** → 서버 + 기기 둘 다
 - **`firestore.rules`를 고친 뒤** → 규칙 검증 (배포 **전에**)
+- **관리자 이메일을 추가/제거한 뒤** → `check_admin_sync.py` (CI에서도 자동 실행됨)
 - **개인정보처리방침 게시 전** → 서버 점검(방침이 사실과 맞는지)
 - **릴리스 후보 빌드** → 셋 다
 - **충전 티어 회차를 실측으로 확정할 때**(베타 테스트 중 매주 1회 정도) →

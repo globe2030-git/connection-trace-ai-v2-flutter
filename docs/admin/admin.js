@@ -3,8 +3,11 @@
 // 관리자 등록 방식(2026-08-06): Firebase 콘솔에 들어가 계정을 만들거나
 // Firestore에 문서를 손으로 추가할 필요가 없다. 이 페이지에서 지정된
 // 이메일(firestore.rules의 isAdmin() 허용목록)로 직접 회원가입하면
-// 이메일 인증 후 그대로 관리자가 된다. 관리자를 추가/제거하려면
-// firestore.rules의 이메일 목록만 고치고 배포하면 된다.
+// 이메일 인증 후 그대로 관리자가 된다.
+// ⚠️ 관리자를 추가/제거하려면 firestore.rules의 isAdmin() 배열과
+// functions/src/adminEmails.ts의 ADMIN_EMAILS를 **둘 다** 고쳐야 한다
+// (2026-08-14, ADMIN-VULN-001) — 자세한 절차는 docs/admin/README.md
+// "관리자 판별 방식" 참고.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
@@ -542,26 +545,45 @@ async function loadUsageLogs() {
         <div class="meta" style="margin-top:8px;">uid: ${escapeHtml(d.uid)}</div>
         <div class="row" style="margin-top:12px; align-items:center;">
           <input type="number" id="grantAmount" placeholder="지급할 회차 (예: 5)" style="width:180px;">
+        </div>
+        <div class="row" style="margin-top:8px; align-items:center;">
+          <input type="text" id="grantReason" placeholder="지급 사유 (필수, 예: 테스터 보상)" style="flex:1;">
+        </div>
+        <div class="row" style="margin-top:8px;">
           <button class="btn-primary" id="grantBtn">무료 회차 지급</button>
         </div>
-        <p class="hint" style="margin-top:6px;">일/월 한도를 다 쓴 뒤 이 잔액이 먼저 소진됩니다. 음수를 넣으면 회수(0 미만으로는 안 내려감).</p>
+        <p class="hint" style="margin-top:6px;">일/월 한도를 다 쓴 뒤 이 잔액이 먼저 소진됩니다. 음수를 넣으면 회수(0 미만으로는 안 내려감). 사유는 감사 기록에 남습니다(필수).</p>
         <div id="grantResult"></div>
       `;
       $("#grantBtn").addEventListener("click", async () => {
         const amount = parseInt($("#grantAmount").value, 10);
+        const reason = $("#grantReason").value.trim();
         const out = $("#grantResult");
         if (!Number.isFinite(amount) || amount === 0) {
           out.innerHTML = `<div class="error">0이 아닌 정수를 입력해 주세요.</div>`;
           return;
         }
+        if (!reason) {
+          out.innerHTML = `<div class="error">지급 사유를 입력해 주세요.</div>`;
+          return;
+        }
+        // 재시도/중복 클릭을 서버가 구분할 수 있도록, 버튼을 누른 그 자리에서
+        // 1회만 생성한다(같은 클릭 안에서 재사용하지 않음 — 실패해도 새로
+        // 누르면 새 operationId로 다시 시도된다).
+        const operationId = crypto.randomUUID();
+        const grantBtn = $("#grantBtn");
+        grantBtn.disabled = true;
         out.innerHTML = `<p class="hint">지급 중…</p>`;
         try {
-          const gr = await grantBonusCreditsFn({ email, amount });
+          const gr = await grantBonusCreditsFn({ email, amount, reason, operationId });
           $("#bonusBalance").textContent = `${gr.data.bonusCredits}회`;
           $("#grantAmount").value = "";
+          $("#grantReason").value = "";
           out.innerHTML = `<div class="hint">완료 — 현재 무료 회차 잔액 ${gr.data.bonusCredits}회.</div>`;
         } catch (e) {
           out.innerHTML = `<div class="error">${escapeHtml(e.message)}</div>`;
+        } finally {
+          grantBtn.disabled = false;
         }
       });
     } catch (e) {
@@ -1078,10 +1100,13 @@ async function loadLegalDocs() {
   const panel = $("#tab-legal");
   panel.innerHTML = `
     <div class="card">
-      <p class="hint" style="margin-top:0;">
-        여기서 수정하면 앱 재배포 없이 바로 반영됩니다. 다만 이 회사의
-        실제 정책 검토 없이 문구를 바꾸는 건 법적 리스크가 있으니, 반드시
-        내부 검토를 거친 문안만 게시하세요.
+      <p class="hint" style="margin-top:0; color:var(--warn); background:var(--warn-soft); border-radius:8px; padding:10px 12px;">
+        ⚠️ <b>이 편집 기능은 현재 비활성화돼 있습니다.</b> 여기서 무엇을
+        바꿔도 앱·스토어 심사가 보는 문서에는 반영되지 않습니다. 아래
+        목록은 Firestore에 저장된 옛 내용을 참고용으로만 보여줍니다.
+        실제 문안을 바꾸려면 저장소 <code>docs/legal/*.html</code>을 고친
+        뒤 <code>firebase deploy --only hosting:legal</code>로 배포해야
+        합니다.
       </p>
       <div id="legalDocList"></div>
     </div>
@@ -1107,40 +1132,23 @@ async function loadLegalDocs() {
   }
 }
 
+// 읽기 전용 뷰어 — 편집/저장/삭제 기능은 없다(2026-08-14 비활성화). 실제
+// 게시 문서는 docs/legal/*.html + Hosting 배포뿐이다. 이 화면은 Firestore
+// legalDocs/{slug}에 남아 있는 옛 내용을 참고용으로 보여주기만 한다.
 async function editLegalDoc(slug, title) {
   const editor = $("#legalDocEditor");
   const snap = await getDoc(doc(db, "legalDocs", slug));
   const data = snap.exists() ? snap.data() : { bodyHtml: "" };
   editor.innerHTML = `
     <div class="card">
-      <h3 style="margin-top:0;">${escapeHtml(title)} 편집</h3>
-      <label>본문 (HTML)</label>
-      <textarea id="legalDocBody" style="min-height:320px;">${escapeHtml(data.bodyHtml ?? "")}</textarea>
-      <div class="hint">docs/legal/${slug}.html의 본문 영역과 같은 HTML 마크업을 그대로 붙여넣으면 됩니다.</div>
-      <div class="row" style="margin-top:14px;">
-        <button class="btn-primary" id="legalDocSaveBtn">저장</button>
-        ${snap.exists() ? '<button class="btn-danger" id="legalDocDeleteBtn" type="button">삭제</button>' : ""}
-      </div>
+      <h3 style="margin-top:0;">${escapeHtml(title)} (읽기 전용)</h3>
+      <p class="hint" style="margin-top:0;">
+        편집·저장 기능이 없습니다. 실제 문안을 바꾸려면
+        <code>docs/legal/${slug}.html</code>을 고친 뒤
+        <code>firebase deploy --only hosting:legal</code>로 배포하세요.
+      </p>
+      <label>참고용 본문 (Firestore에 저장된 옛 내용, HTML)</label>
+      <textarea id="legalDocBody" readonly disabled style="min-height:320px;">${escapeHtml(data.bodyHtml ?? "")}</textarea>
     </div>
   `;
-  $("#legalDocSaveBtn").addEventListener("click", async () => {
-    const bodyHtml = $("#legalDocBody").value;
-    await setDoc(
-      doc(db, "legalDocs", slug),
-      { title, bodyHtml, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
-    await loadLegalDocs();
-    editor.innerHTML = `<div class="card">저장했습니다.</div>`;
-  });
-
-  const deleteBtn = $("#legalDocDeleteBtn");
-  if (deleteBtn) {
-    deleteBtn.addEventListener("click", async () => {
-      if (!confirm(`"${title}" 문서를 삭제할까요? 삭제하면 앱/웹에서 바로 미등록 상태로 보입니다.`)) return;
-      await deleteDoc(doc(db, "legalDocs", slug));
-      await loadLegalDocs();
-      editor.innerHTML = `<div class="card">삭제했습니다.</div>`;
-    });
-  }
 }
