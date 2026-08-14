@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +58,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 좁혔다 — 실제로 카드-가이드 겹침 비율을 픽셀 단위로 재는 건 아니고
   // (별도의 문서 경계 검출이 필요한 더 큰 작업), 전체 화면 흔들림
   // 허용치를 좁혀서 더 정확히 멈춰야만 "안정"으로 인정되게 하는 근사치.
-  static const _stabilityDiffThreshold = 8.0;
+  /// ⚠️ **실측으로 고쳤다.** 폰을 손도 대지 않고 거치한 상태에서 이 값이
+  /// **5.2~8.4**로 나왔다(로그 측정 2026-08-14). 기준이 8.0이었으니 **가만히
+  /// 둔 폰조차 절반은 "불안정"으로 판정**됐고, 손에 들면 더 자주 넘었다 —
+  /// 사용자 제보 "명함에 가이드를 제대로 놓은 것 같은데 파란색이 잘 보이지
+  /// 않아"의 주된 원인이다.
+  ///
+  /// 이 값은 과거에 *"가이드 안에 훨씬 정확히 들어와야 촬영되면 좋겠다"*는
+  /// 요청으로 좁혔던 것인데, 좁힌 대상이 **"명함이 잘 맞춰졌는가"가 아니라
+  /// "폰이 안 흔들리는가"**였다. 의도한 효과는 못 얻고 촬영만 어려워졌다.
+  ///
+  /// 손떨림을 허용하는 14로 넓힌다. 흐린 사진이 늘 위험은 촬영 직후
+  /// **"글자가 또렷한가요?" 확인 화면**이 받아 준다.
+  static const _stabilityDiffThreshold = 14.0;
   static const _requiredStableDuration = Duration(milliseconds: 200);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
@@ -87,7 +101,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   ///
   /// 그래서 **민무늬 면만 겨우 걸러낼 만큼** 낮춘다. 실기기에서 실제 값을 읽어
   /// 본 뒤에 다시 조인다(디버그 빌드에 값이 화면에 뜬다).
-  static const _minCenterContrast = 3.5;
+  /// **실측으로 정했다.** 명함을 가이드에 맞췄을 때 26~39가 나왔다(사용자
+  /// 측정 2026-08-14). 민무늬 벽은 센서 잡음 수준이라 한 자릿수다. 그 사이인
+  /// 15로 잡아 **빈 면만 막고 명함은 넉넉히 통과**시킨다.
+  ///
+  /// ⚠️ 처음 10.0으로 짐작했을 때 명함이 안 찍힌다는 제보가 있었는데,
+  /// **막은 것은 대비가 아니라 톤 비율이었다**(아래 참고). 숫자를 받기 전에
+  /// 원인을 단정한 것이 잘못이었다.
+  static const _minCenterContrast = 15.0;
   /// 가이드 안쪽에서 **한쪽 톤이 차지해야 하는 최소 비율**.
   ///
   /// 명함은 바탕이 지배적이라 대개 0.75 이상이다. 책상·벽 **모서리**는 밝은
@@ -96,7 +117,26 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// **더 많은 쪽**을 본다.
   /// 같은 이유로 느슨하게 잡는다. 모서리(0.5)와 명함을 가르되, 실측 전까지는
   /// **막지 않는 쪽**으로 기운다.
-  static const _minDominantToneRatio = 0.55;
+  /// ⚠️ **지금은 꺼져 있다(0 = 항상 통과).**
+  ///
+  /// 0.65로 잡았을 때 진짜 명함이 자동 촬영되지 않았다. 명함의 대비는 26~39로
+  /// 넉넉했으므로 **막은 것은 이 톤 비율**이다 — 명함의 실제 톤 값이 0.65보다
+  /// 작았다는 뜻인데, 그 값을 아직 재지 못했다.
+  ///
+  /// 각이 진 빈 곳(모서리)을 가르려면 이 조건이 필요하지만, **명함의 톤 값을
+  /// 읽기 전에는 켜지 않는다.** 짐작으로 두 번 막았다.
+  static const _minDominantToneRatio = 0.0;
+
+  /// "볼 것이 있는가" 게이트를 **실제로 막는 데 쓸지**.
+  ///
+  /// 켜져 있지만 **대비 조건만** 작동한다(톤 비율은 0이라 항상 통과).
+  ///
+  /// 임계값을 두 번 짐작으로 정했고 두 번 다 **진짜 명함을 막았다**(제보
+  /// "파란색으로 변하지를 않아", "자동 촬영 잘 안됨"). 그래서 지금은 **실측한
+  /// 값이 있는 조건만** 켠다 — 명함 대비 26~39를 재고 나서 15로 잡았다.
+  ///
+  /// 모서리를 가르는 톤 조건은 명함의 톤 값을 읽은 뒤에 켠다.
+  static const _contentGateEnabled = true;
 
   late AnimationController _laserController;
   CameraController? _controller;
@@ -107,7 +147,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
   /// 디버그 빌드에서만 화면에 띄우는 "대비 / 지배톤" 실측값.
+  ///
+  /// ⚠️ **매 프레임 갱신하면 읽을 수 없다** — 초당 8번 바뀌어 사용자가 값을
+  /// 못 봤다(제보 "숫자가 계속 바뀌니까 못봤어"). 그래서 **본 값의 범위를
+  /// 누적**하고 갱신을 0.7초에 한 번으로 늦춘다. 한 장면을 2~3초 비추면
+  /// 그 장면의 대표값이 범위로 남는다. 화면의 숫자를 누르면 범위를 지운다.
   String? _debugMetrics;
+  double? _debugContrastMin, _debugContrastMax;
+  double? _debugToneMin, _debugToneMax;
+  DateTime? _debugShownAt;
   DateTime? _stableSince;
   List<int>? _previousLumaSample;
   DateTime? _streamStartedAt;
@@ -326,18 +374,50 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       sample,
       gridSize: _sampleGridSize,
     );
-    final hasContent =
-        contrast >= _minCenterContrast &&
-        dominantTone >= _minDominantToneRatio;
+    final wouldBlock =
+        contrast < _minCenterContrast ||
+        dominantTone < _minDominantToneRatio;
+    // 게이트가 꺼져 있으면 판단만 하고 막지는 않는다 — 위 상수 주석 참고.
+    final hasContent = _contentGateEnabled ? !wouldBlock : true;
 
     // 임계값을 추측으로 정했다가 진짜 명함을 막는 회귀를 냈다. 실기기에서
     // **실제 장면의 값을 읽을 수 있어야** 제대로 정할 수 있다 — 디버그
     // 빌드에서만 화면에 띄운다(테스터 배포는 release라 보이지 않는다).
     if (kDebugMode) {
-      final rounded = '${contrast.toStringAsFixed(1)} / '
-          '${dominantTone.toStringAsFixed(2)}';
-      if (rounded != _debugMetrics) {
-        setState(() => _debugMetrics = rounded);
+      _debugContrastMin = _debugContrastMin == null
+          ? contrast
+          : math.min(_debugContrastMin!, contrast);
+      _debugContrastMax = _debugContrastMax == null
+          ? contrast
+          : math.max(_debugContrastMax!, contrast);
+      _debugToneMin = _debugToneMin == null
+          ? dominantTone
+          : math.min(_debugToneMin!, dominantTone);
+      _debugToneMax = _debugToneMax == null
+          ? dominantTone
+          : math.max(_debugToneMax!, dominantTone);
+      final shownAt = _debugShownAt;
+      if (shownAt == null ||
+          now.difference(shownAt) >= const Duration(milliseconds: 700)) {
+        _debugShownAt = now;
+        final text =
+            '대비 ${_debugContrastMin!.toStringAsFixed(1)}'
+            '~${_debugContrastMax!.toStringAsFixed(1)} · '
+            '톤 ${_debugToneMin!.toStringAsFixed(2)}'
+            '~${_debugToneMax!.toStringAsFixed(2)}'
+            '${wouldBlock ? ' · 지금이면 막힘' : ''}';
+        if (text != _debugMetrics) setState(() => _debugMetrics = text);
+        // 화면의 작은 글씨는 읽기 어렵다는 제보가 있었다. 같은 값을 로그로도
+        // 남겨 `adb logcat`으로 뽑을 수 있게 한다 — 사람이 카메라를 향하게
+        // 하고, 값은 기계가 읽는 쪽이 정확하다.
+        //
+        // ⚠️ 숫자만 남긴다. 명함 내용은 찍지 않는다(개인정보, CLAUDE.md 4절).
+        debugPrint(
+          '[CARDGATE] contrast=${contrast.toStringAsFixed(1)} '
+          'tone=${dominantTone.toStringAsFixed(3)} '
+          'stableDiff=${avgDiff.toStringAsFixed(1)} '
+          'wouldBlock=$wouldBlock',
+        );
       }
     }
 
@@ -534,7 +614,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // **잘린 글자는 되찾을 수 없고, 섞인 배경은 파서가 걸러낸다.** 어느
       // 쪽으로 틀릴지 골라야 한다면 넓게 자르는 쪽이다. 배경 글자가 필드를
       // 침범하던 문제는 그 뒤 파싱 규칙에서 많이 잡혔다(추가 199~201).
-      const margin = 1.5;
+      //
+      // **값은 실측으로 정했다.** 1.5로 자동 촬영한 실물 사진을 열어 보니 글자는
+      // 온전했고 명함이 이미지의 약 74%를 차지했다(상하좌우 배경 각 ~13%).
+      // 사용자가 그 여백을 줄이기로 결정해 1.3으로 좁혔고, 그 결과를 다시
+      // 재보니 좌우 여백이 각 8~12%였다("아직 주변이 많이 보여"). 한 단계 더
+      // 좁혀 1.2로 둔다 — 여백이 각 5~7% 정도가 된다.
+      //
+      // ⚠️ **이 값을 더 줄이려면 먼저 재라.** 0으로 만든 적이 있고(`8fb5ff3`)
+      // 그때 글자가 30~40% 잘렸다. 줄이기 전에 **자동 촬영한 실물 사진을 열어
+      // 네 귀퉁이가 온전한지** 확인할 것.
+      const margin = 1.2;
       final guideSize = _guideFrameSizeFor(screenSize);
       final guideW = guideSize.width * margin;
       final guideH = guideSize.height * margin;
@@ -907,13 +997,26 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         if (kDebugMode && _debugMetrics != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              '대비/지배톤 $_debugMetrics '
-                              '(기준 $_minCenterContrast / '
-                              '$_minDominantToneRatio)',
-                              style: const TextStyle(
-                                color: Colors.amberAccent,
-                                fontSize: 11,
+                            // 누르면 범위를 지우고 다시 잰다 — 장면을 바꿔
+                            // 가며 값을 읽을 때 쓴다.
+                            child: GestureDetector(
+                              onTap: () => setState(() {
+                                _debugContrastMin = null;
+                                _debugContrastMax = null;
+                                _debugToneMin = null;
+                                _debugToneMax = null;
+                                _debugMetrics = null;
+                              }),
+                              child: Text(
+                                '$_debugMetrics '
+                                '(기준 $_minCenterContrast / '
+                                '$_minDominantToneRatio · '
+                                '${_contentGateEnabled ? "적용중" : "관찰만"}'
+                                ' · 눌러서 초기화)',
+                                style: const TextStyle(
+                                  color: Colors.amberAccent,
+                                  fontSize: 11,
+                                ),
                               ),
                             ),
                           ),
