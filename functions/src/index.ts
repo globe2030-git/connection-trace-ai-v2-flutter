@@ -33,6 +33,12 @@ import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
+import {
+  BillingModel,
+  WalletExhaustedError,
+  consumeWalletCredit,
+  resolveBillingModel,
+} from "./walletCredits";
 
 initializeApp();
 
@@ -357,11 +363,34 @@ async function callGemini(
  * uid별 일/월 호출량을 Firestore 트랜잭션으로 원자적으로 확인·증가시킨다.
  * 상한 초과 시 HttpsError를 던진다(트랜잭션 안에서 던지면 카운터 증가도
  * 함께 롤백되어 정확하다).
+ *
+ * wallet 모드(2026-08-14, U1, ai-credit-wallet-spec.md §3-2): `config/billing
+ * .model`이 `'wallet'`이면 아래 트랜잭션 맨 앞에서 무료(free)→충전(paid)
+ * 잔액 차감 분기를 타고 `return`한다 — 그 아래 있는 기존 `dailyCount`/
+ * `monthlyCount`/`bonusCredits` 기반 판정(=reset 모드)은 **한 글자도 안
+ * 바뀐 채** 그대로 남아 있고, `model`이 `'reset'`이거나 미설정이면 지금과
+ * 완전히 동일하게 그 경로만 실행된다.
  */
 async function incrementAndCheckUsage(uid: string): Promise<void> {
   const db = getFirestore();
   const userRef = db.collection("users").doc(uid);
   const now = new Date();
+
+  // config/billing.model은 트랜잭션 밖에서 먼저 읽는다(외부 읽기를 트랜잭션
+  // 안에 넣지 않는 게 원칙). 조회 자체가 실패해도(문서 없음 포함)
+  // resolveBillingModel이 반드시 'reset'으로 폴백한다 — wallet로 폴백하면
+  // 장애 시 조용히 무제한 과금 모델이 되는 위험이 있다(스펙 §3-2).
+  let billingModel: BillingModel = "reset";
+  try {
+    const billingSnap = await db.collection("config").doc("billing").get();
+    billingModel = resolveBillingModel(
+      billingSnap.exists ? billingSnap.data() : undefined
+    );
+  } catch (err) {
+    logger.warn("config/billing 조회 실패 — reset 모드로 폴백", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(userRef);
@@ -372,6 +401,8 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
           monthlyCount?: number;
           monthlyResetAt?: FirebaseFirestore.Timestamp;
           bonusCredits?: number;
+          freeBalance?: number;
+          paidBalance?: number;
         }
       | undefined;
 
@@ -384,6 +415,48 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 
     const dailyCount = dailyExpired ? 0 : (usage?.dailyCount ?? 0);
     const monthlyCount = monthlyExpired ? 0 : (usage?.monthlyCount ?? 0);
+
+    if (billingModel === "wallet") {
+      // wallet 분기 — 무료(free) 먼저, 그다음 충전(paid) 소진(스펙 §3-2).
+      // 실제 차감 판정은 순수 함수(walletCredits.ts)에 맡기고 여기서는
+      // Firestore 읽기/쓰기만 한다.
+      let nextBalances;
+      try {
+        nextBalances = consumeWalletCredit({
+          free: usage?.freeBalance ?? 0,
+          paid: usage?.paidBalance ?? 0,
+        });
+      } catch (err) {
+        if (err instanceof WalletExhaustedError) {
+          throw new HttpsError("resource-exhausted", err.message);
+        }
+        throw err;
+      }
+
+      // 표시용 카운터(설정 → AI 사용량의 "오늘 사용 N회")는 게이팅에는 안
+      // 쓰지만 wallet 모드에서도 계속 갱신한다(스펙 §3-3 — 새 필드 없이
+      // 기존 표시 로직을 그대로 재사용하기 위함).
+      const nextMidnight = nextKstMidnight(now);
+      const nextMonth = nextKstMonthStart(now);
+      tx.set(
+        userRef,
+        {
+          aiUsage: {
+            freeBalance: nextBalances.free,
+            paidBalance: nextBalances.paid,
+            dailyCount: dailyCount + 1,
+            dailyResetAt: dailyExpired ? nextMidnight : (usage?.dailyResetAt ?? nextMidnight),
+            monthlyCount: monthlyCount + 1,
+            monthlyResetAt: monthlyExpired ? nextMonth : (usage?.monthlyResetAt ?? nextMonth),
+          },
+        },
+        {merge: true}
+      );
+      return;
+    }
+
+    // 'reset' 모드 — 여기부터 tx.set까지는 원래 코드 그대로다(문자 그대로
+    // 동일한지 diff로 확인할 것, wallet-credit-spec.md §3-2 인수 기준).
     // 관리자가 지급한 무료 회차(또는 향후 충전 회차). 일/월 한도를 다 쓴
     // 뒤에도 남아 있으면 이걸 먼저 소진해 계속 쓸 수 있게 한다 — "추가로
     // 준 회차"이므로 일/월 카운트에는 올리지 않고 잔액만 1 줄인다.

@@ -265,6 +265,10 @@ async function getBillingConfig() {
   const snap = await getDoc(doc(db, "config", "billing"));
   const data = snap.exists() ? snap.data() : {};
   return {
+    // 과금 모델 스위치(reset/wallet, 2026-08-14 U1). 문서에 필드가 없으면
+    // 반드시 "reset"으로 표시한다 — docs/planning/ai-credit-wallet-spec.md
+    // §2-4, §3-2. 서버(functions/src/walletCredits.ts)도 같은 폴백 규칙을 쓴다.
+    model: data.model === "wallet" ? "wallet" : "reset",
     freeCredits: data.freeCredits ?? 10,
     tiers: TIER_PRICES.map((price) => {
       const found = (data.tiers ?? []).find((t) => t.priceKrw === price);
@@ -290,6 +294,27 @@ async function loadBilling() {
         <button class="btn-primary" id="billingSaveBtn">저장</button>
       </div>
       <div id="billingMsg"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">과금 모델</h3>
+      <p class="hint">
+        <strong>reset(리셋형)</strong>이 기본값입니다 — 지금 라이브가 쓰는 모델로,
+        하루/월 한도가 매일·매월 초기화됩니다.
+        <strong>wallet(지갑형)</strong>로 바꾸면 리셋이 사라지고, 무료(가입 시 1회성)
+        + 충전 잔액을 다 쓸 때까지 소진하는 방식으로 전환됩니다.
+        결제(IAP)가 아직 준비되지 않았다면 반드시 reset을 유지하세요 — wallet
+        전환은 결제 버튼이 열린 뒤에만 해야 합니다
+        (docs/planning/ai-credit-wallet-spec.md 9절 전환 체크리스트 참고).
+      </p>
+      <div class="row">
+        <select id="billingModel" style="width:220px;">
+          <option value="reset">reset — 리셋형 (기본값)</option>
+          <option value="wallet">wallet — 지갑형 (리셋 없음)</option>
+        </select>
+        <button class="btn-primary" id="billingModelSaveBtn">저장</button>
+      </div>
+      <div id="billingModelMsg"></div>
     </div>
 
     <div class="card">
@@ -331,6 +356,7 @@ async function loadBilling() {
   // 실제 값은 loadAppUpdate()와 같은 패턴으로 DOM 프로퍼티로 안전하게 채운다.
   const cfg = await getBillingConfig();
   $("#freeCredits").value = cfg.freeCredits;
+  $("#billingModel").value = cfg.model;
   $("#tierRows").innerHTML = cfg.tiers.map((t, i) => `
     <div class="row" style="align-items:center; margin-bottom:6px;">
       <div style="width:110px; font-weight:700;">${t.priceKrw.toLocaleString()}원</div>
@@ -367,6 +393,16 @@ async function loadBilling() {
     await logAdminAudit("billing.save", "config/billing",
       `무료 ${freeCredits}회, 활성 티어 ${tiers.filter((t) => t.active).length}개`);
     $("#billingMsg").innerHTML = `<div class="hint">저장했습니다.</div>`;
+  });
+
+  // 과금 모델 스위치 — 상품 설정(회수·가격)과 별개 버튼으로 저장한다.
+  // wallet 전환은 되돌리기가 매끄럽지 않은 결정(스펙 §9 롤백 항목)이라
+  // 회수 값을 고치다가 실수로 같이 넘어가는 걸 막기 위해서다.
+  $("#billingModelSaveBtn").addEventListener("click", async () => {
+    const model = $("#billingModel").value === "wallet" ? "wallet" : "reset";
+    await setDoc(doc(db, "config", "billing"),
+      { model, updatedAt: serverTimestamp() }, { merge: true });
+    $("#billingModelMsg").innerHTML = `<div class="hint">저장했습니다. (현재: ${model})</div>`;
   });
 
   // ② 충전 내역 조회 (이메일)

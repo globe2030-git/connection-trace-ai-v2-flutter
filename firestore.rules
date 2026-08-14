@@ -189,6 +189,21 @@ service cloud.firestore {
         'at' in d && d.at == request.time;
     }
 
+    // wallet(지갑형) 크레딧 잔액 변동 히스토리 — 무료 지급(가입 시 1회성)/
+    // 고객응대 무료 지급/충전 3종의 출처별 감사 추적(ai-credit-wallet-spec.md
+    // §2-3, §2-5). purchases·aiAuditLogs와 같은 패턴: 서버(Admin SDK)만
+    // 기록하고, 클라이언트 쓰기는 위조 방지를 위해 전면 금지. 히스토리는
+    // "관리자만 본다"는 요구를 규칙 레벨에서 강제한다.
+    //
+    // ⚠️ creditGrantAudits(위, 관리자 CS 지급 감사)와 목적이 다른 별개
+    // 컬렉션이다 — 하나는 "관리자가 왜 지급했는지"의 감사 원장이고, 이건
+    // "지갑 잔액이 어떤 출처로 얼마나 변했는지"의 사용자별 히스토리다. 통합
+    // 여부는 PM 확인 후 별도 결정.
+    match /creditGrants/{grantId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // Apple refresh_token 보관(탈퇴 시 폐기용, P1-38). 민감 토큰이라 클라이언트는
     // 읽지도 쓰지도 못한다 — 서버(storeAppleRefreshToken / onUserDeletedCleanup)만
     // Admin SDK로 접근한다.
