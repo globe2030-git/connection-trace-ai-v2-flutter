@@ -39,6 +39,8 @@ import {
   consumeWalletCredit,
   resolveBillingModel,
 } from "./walletCredits";
+import {DEFAULT_FREE_CREDITS, planFreeGrant} from "./freeGrant";
+import {generateReferralCode} from "./referralCode";
 
 initializeApp();
 
@@ -707,6 +709,195 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       });
       throw e;
     }
+  }
+);
+
+interface BootstrapAccountRequest {
+  // ⚠️ 이번 라운드(U2)는 시그니처만 열어 두고 처리하지 않는다 — 다른
+  // 사람의 코드를 넣어 보너스를 받는 "redemption"은 다음 라운드(별도 승인
+  // 필요) 몫이다. 받아도 무시한다(작업 지시서 명시).
+  referralCodeInput?: string;
+}
+
+interface BootstrapAccountResponse {
+  referralCode: string;
+  /** 이번 호출에서 실제로 무료체험을 새로 지급했는지(디버그·관찰용). */
+  freeGranted: boolean;
+}
+
+/**
+ * 리퍼럴 코드 발급이 최대 재시도 후에도 실패했을 때 던지는 에러.
+ * `referralCodes/{code}` 문서 생성 충돌이 5회 연속 나는 것은 현실적으로
+ * 거의 발생하지 않는다(코드 공간이 32^6 ≈ 10억).
+ */
+const REFERRAL_CODE_MAX_ATTEMPTS = 5;
+
+/**
+ * 본인 리퍼럴 코드 발급 — 멱등(ai-credit-wallet-spec.md와 별개로,
+ * monetization-referral-implementation-spec-2026-08-14.md §3-1 근거).
+ *
+ * `users/{uid}.referralCode`가 이미 있으면 그대로 반환. 없으면
+ * `referralCode.ts`의 순수 생성기로 후보를 만들고, `referralCodes/{code}`
+ * 문서를 `tx.create()`로 선점 시도한다 — 이미 다른 사용자가 같은 코드를
+ * 선점했다면 Firestore가 그 트랜잭션을 충돌시켜 재시도하게 만든다(check
+ * -then-act보다 안전, walletCredits.ts 스타일과 동일한 이유로 create를
+ * 씀). 코드가 최대 시도 안에 안 정해지면(사실상 거의 안 일어남) 에러.
+ */
+async function ensureReferralCode(
+  db: FirebaseFirestore.Firestore,
+  uid: string
+): Promise<string> {
+  const userRef = db.collection("users").doc(uid);
+  const existing = await userRef.get();
+  const already = existing.data()?.referralCode as string | undefined;
+  if (already) return already;
+
+  for (let attempt = 0; attempt < REFERRAL_CODE_MAX_ATTEMPTS; attempt++) {
+    const candidate = generateReferralCode();
+    const codeRef = db.collection("referralCodes").doc(candidate);
+    try {
+      return await db.runTransaction(async (tx) => {
+        // 재확인: 동시 호출(예: 로그인 이벤트가 겹침) 중 다른 트랜잭션이
+        // 이 사이 이미 코드를 발급했을 수 있다 — 그러면 그 값을 그대로 쓴다.
+        const userSnap = await tx.get(userRef);
+        const alreadyRace = userSnap.data()?.referralCode as
+          | string
+          | undefined;
+        if (alreadyRace) return alreadyRace;
+
+        tx.create(codeRef, {uid});
+        tx.set(userRef, {referralCode: candidate}, {merge: true});
+        return candidate;
+      });
+    } catch (err) {
+      // tx.create가 이미 존재하는 referralCodes 문서와 충돌하면 여기로
+      // 온다(다른 uid가 먼저 그 코드를 선점) — 새 후보로 재시도한다.
+      logger.warn("리퍼럴 코드 후보 충돌 — 재시도", {
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  throw new HttpsError(
+    "internal",
+    "리퍼럴 코드를 발급하지 못했어요. 잠시 후 다시 시도해 주세요."
+  );
+}
+
+/**
+ * 로그인 시 앱이 1회 호출하는 신규 콜러블 — (a) 무료체험 크레딧을 uid당
+ * 1회만 지급하고(멱등) (b) 본인 리퍼럴 코드를 발급한다(멱등).
+ *
+ * **매 로그인마다 불려도 무해해야 한다** — 실제 지급/발급은 서버가 각각
+ * `aiUsage.freeGrantedAt`/`users/{uid}.referralCode` 존재 여부로 멱등
+ * 가드를 걸므로, 두 번째 호출부터는 아무 것도 쓰지 않고 기존 값만 반환한다.
+ *
+ * ⚠️ `grantBonusCredits`(관리자의 고객응대 무료 지급)와는 완전히 독립된
+ * 트랜잭션이다 — 코드도 공유하지 않는다(다른 세션이 그 함수를 하드닝
+ * 중이라 이번 작업 지시서가 명시적으로 분리를 요구함).
+ */
+export const bootstrapAccount = onCall<BootstrapAccountRequest>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  async (request): Promise<BootstrapAccountResponse> => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? null;
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
+
+    // config/billing.freeCredits는 트랜잭션 밖에서 먼저 읽는다(외부 읽기를
+    // 트랜잭션 안에 넣지 않는 원칙, incrementAndCheckUsage와 동일 패턴).
+    // 문서가 없거나 필드가 없거나 숫자가 아니면 확정값(DEFAULT_FREE_CREDITS
+    // =10, monetization-referral-implementation-spec-2026-08-14.md §1)으로
+    // 폴백한다.
+    let configFreeCredits = DEFAULT_FREE_CREDITS;
+    try {
+      const billingSnap = await db.collection("config").doc("billing").get();
+      const raw = billingSnap.exists
+        ? billingSnap.data()?.freeCredits
+        : undefined;
+      if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+        configFreeCredits = raw;
+      }
+    } catch (err) {
+      logger.warn("config/billing 조회 실패 — 기본 무료 회차로 폴백", {
+        error: err instanceof Error ? err.message : String(err),
+        fallback: DEFAULT_FREE_CREDITS,
+      });
+    }
+
+    let freeGranted = false;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      const usage = snap.data()?.aiUsage as
+        | {
+            freeGrantedAt?: FirebaseFirestore.Timestamp;
+            freeBalance?: number;
+            paidBalance?: number;
+            bonusCredits?: number;
+          }
+        | undefined;
+
+      const plan = planFreeGrant({
+        alreadyGranted: usage?.freeGrantedAt != null,
+        currentFreeBalance: usage?.freeBalance ?? 0,
+        legacyBonusCredits: usage?.bonusCredits ?? 0,
+        configFreeCredits,
+      });
+
+      if (!plan.shouldGrant) return; // 이미 지급됨 — 멱등, 아무 것도 안 함
+
+      freeGranted = true;
+      const now = FieldValue.serverTimestamp();
+      tx.set(
+        userRef,
+        {aiUsage: {freeBalance: plan.newFreeBalance, freeGrantedAt: now}},
+        {merge: true}
+      );
+
+      const grantRef = db.collection("creditGrants").doc();
+      tx.create(grantRef, {
+        type: "signup_free",
+        amount: plan.grantedAmount,
+        bucket: "free",
+        uid,
+        email,
+        grantedAt: now,
+        by: null,
+        reason: null,
+        note: null,
+        balanceAfter: {
+          free: plan.newFreeBalance,
+          paid: usage?.paidBalance ?? 0,
+        },
+      });
+
+      if (plan.carryOver > 0) {
+        const adjustRef = db.collection("creditGrants").doc();
+        tx.create(adjustRef, {
+          type: "adjust",
+          amount: plan.carryOver,
+          bucket: "free",
+          uid,
+          email,
+          grantedAt: now,
+          by: null,
+          reason: null,
+          note: "bonusCredits 레거시 이월",
+          balanceAfter: {
+            free: plan.newFreeBalance,
+            paid: usage?.paidBalance ?? 0,
+          },
+        });
+      }
+    });
+
+    const referralCode = await ensureReferralCode(db, uid);
+
+    return {referralCode, freeGranted};
   }
 );
 

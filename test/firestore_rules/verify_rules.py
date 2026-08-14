@@ -403,6 +403,22 @@ CASES = [
     case("⭐ 이미 있는 감사 로그는 관리자도 update할 수 없다(append-only)", "DENY",
          uid="admin1", method="update", path=ADMIN_AUDIT_PATH, token=ADMIN_TOKEN,
          before=admin_audit_doc(), after=admin_audit_doc(summary="수정 시도")),
+    # ── 리퍼럴 코드(referralCodes, U2 — bootstrapAccount) ────────────
+    # 코드 발급·검증은 항상 서버(Admin SDK)를 거친다는 원칙을 규칙
+    # 레벨에서 강제 — 클라이언트는 읽기/쓰기 모두 불가(로그인 여부와
+    # 무관하게 거부).
+    case("⭐ 리퍼럴 코드는 본인 것도 클라이언트가 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path="/databases/(default)/documents/referralCodes/ABC123",
+         before={"uid": OWNER}),
+    case("⭐ 리퍼럴 코드는 클라이언트가 만들 수 없다", "DENY",
+         uid=OWNER, method="create",
+         path="/databases/(default)/documents/referralCodes/ABC123",
+         after={"uid": OWNER}),
+    case("리퍼럴 코드는 로그인 안 해도 당연히 거부", "DENY",
+         uid=None, method="get",
+         path="/databases/(default)/documents/referralCodes/ABC123",
+         before={"uid": OWNER}),
 ]
 
 

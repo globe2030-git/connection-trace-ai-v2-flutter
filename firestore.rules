@@ -204,6 +204,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 리퍼럴(추천인) 코드 → uid 매핑(monetization-referral-implementation
+    // -spec-2026-08-14.md §3-1). 코드 발급은 서버(bootstrapAccount, Admin
+    // SDK)만 하고, 클라이언트는 절대 직접 읽거나 쓰지 못한다 — "코드 검증은
+    // 항상 콜러블을 통해서만"이라는 원칙을 규칙 레벨에서 강제한다. 코드
+    // "입력(redemption)" 검증 콜러블은 다음 라운드 몫이지만, 이 규칙은
+    // 지금 함께 넣어 둔다.
+    match /referralCodes/{code} {
+      allow read, write: if false;
+    }
+
     // Apple refresh_token 보관(탈퇴 시 폐기용, P1-38). 민감 토큰이라 클라이언트는
     // 읽지도 쓰지도 못한다 — 서버(storeAppleRefreshToken / onUserDeletedCleanup)만
     // Admin SDK로 접근한다.
