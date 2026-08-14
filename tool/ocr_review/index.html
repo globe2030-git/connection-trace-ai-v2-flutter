@@ -109,14 +109,30 @@
   #work { display: none; flex: 1; min-height: 0; }
   #work.on { display: flex; }
 
+  /* 이미지 칸 너비는 사람이 정한다. 명함마다 가로/세로가 제각각이라 고정
+     비율로는 어느 쪽이든 짤린다 — 실제로 "명함이 크게 나와서 오른쪽 입력항목이
+     짤린다"는 제보가 있었다. 정한 너비는 다음에도 유지된다. */
   .pane-img {
-    flex: 1 1 46%;
-    min-width: 260px;
+    flex: 0 0 var(--imgw, 46%);
+    min-width: 160px;
     background: var(--panel);
-    border-right: 1px solid var(--line);
     display: flex;
     flex-direction: column;
   }
+  .splitter {
+    flex: 0 0 7px;
+    cursor: col-resize;
+    background: var(--line);
+    position: relative;
+    touch-action: none;
+  }
+  .splitter::after {
+    content: '';
+    position: absolute;
+    inset: 0 -4px;
+  }
+  .splitter:hover, .splitter.dragging { background: var(--accent); }
+  body.dragging { cursor: col-resize; user-select: none; }
   .imgbar {
     flex: none;
     display: flex;
@@ -137,7 +153,7 @@
   .imgwrap.zoom img { max-width: none; max-height: none; }
   .imgwrap .none { color: var(--muted); text-align: center; }
 
-  .pane-form { flex: 1 1 54%; min-width: 340px; overflow: auto; padding: 12px 14px 40px; }
+  .pane-form { flex: 1 1 0; min-width: 280px; overflow: auto; padding: 12px 14px 40px; }
 
   .raw { margin-bottom: 14px; }
   .raw h3, .fields h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 700; letter-spacing: .04em; }
@@ -287,6 +303,8 @@
       </div>
       <div class="imgwrap" id="imgwrap"><div class="none">이미지 없음</div></div>
     </div>
+
+    <div class="splitter" id="splitter" title="좌우로 끌어 너비 조절 (두 번 누르면 초기화)"></div>
 
     <div class="pane-form">
       <div class="raw">
@@ -602,6 +620,45 @@ document.querySelectorAll('[data-rot]').forEach((b) => {
 $('#btnZoom').onclick = () => $('#imgwrap').classList.toggle('zoom');
 
 if (!canStore) $('#warn').style.display = '';
+
+/* ── 좌우 너비 조절 ────────────────────────────────────────────
+ * 명함마다 가로/세로가 제각각이라 고정 비율로는 어느 한쪽이 반드시 짤린다 —
+ * 세로로 찍힌 명함에서 "오른쪽 입력항목이 짤린다"는 제보가 실제로 있었다.
+ * 정한 너비는 다음 검수에도 유지된다(자동 저장이 되는 브라우저에서만).
+ */
+const WIDTH_KEY = 'ocr-review-imgw';
+const setImgWidth = (pct) => {
+  const clamped = Math.min(78, Math.max(14, pct));
+  $('#work').style.setProperty('--imgw', `${clamped}%`);
+  if (canStore) { try { localStorage.setItem(WIDTH_KEY, String(clamped)); } catch {} }
+};
+if (canStore) {
+  const saved = Number(localStorage.getItem(WIDTH_KEY));
+  if (saved) setImgWidth(saved);
+}
+
+const splitter = $('#splitter');
+splitter.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  splitter.setPointerCapture(e.pointerId);
+  splitter.classList.add('dragging');
+  document.body.classList.add('dragging');
+});
+splitter.addEventListener('pointermove', (e) => {
+  if (!splitter.hasPointerCapture(e.pointerId)) return;
+  const box = $('#work').getBoundingClientRect();
+  setImgWidth(((e.clientX - box.left) / box.width) * 100);
+});
+const endDrag = (e) => {
+  if (splitter.hasPointerCapture(e.pointerId)) {
+    splitter.releasePointerCapture(e.pointerId);
+  }
+  splitter.classList.remove('dragging');
+  document.body.classList.remove('dragging');
+};
+splitter.addEventListener('pointerup', endDrag);
+splitter.addEventListener('pointercancel', endDrag);
+splitter.addEventListener('dblclick', () => setImgWidth(46));
 
 // 검수 중 실수로 창을 닫는 것을 막는다. 자동 저장이 되는 브라우저에서도
 // 내보내기 전이면 정답지 파일이 없다.
