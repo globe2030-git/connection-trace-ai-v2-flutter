@@ -187,6 +187,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 그 전에는 횟수 개념이 없어 세 번, 네 번 찍으면 계속 누적됐고 "여기서
   /// 끝났다"는 지점도 없었다. 이 값으로 안내 문구와 초기화 시점을 정한다.
   int _scanCount = 0;
+  /// "여기서 완료"로 스캔 흐름을 **끝냈는지**.
+  ///
+  /// 끝낸 뒤 사용자가 다시 촬영을 시작하면 그것은 **새 스캔 흐름**이다. 이
+  /// 표시가 없으면 `_scanCount`가 그대로 남아 다음 촬영이 자동으로 "뒷면"으로
+  /// 계산되고, 그래서 **뒷면 선택지가 사라진다** — 사용자 제보 "사진찍기 →
+  /// 다시찍기 → 여기서완료 → 사진찍기 → 뒷면찍기가 없어짐"(2026-08-14).
+  bool _scanSessionClosed = false;
   bool _useCardAsAvatar = false;
 
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
@@ -455,6 +462,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _addressGeoFailed = false;
         _interestsController.clear();
         _scanCount = 0;
+        _scanSessionClosed = false;
       }
       // 스캔한 명함 이미지를 대표 후보 목록에 쌓는다(추가 133). 기본 대표는
       // "이름이 읽힌 면"(보통 앞면) — 예전에는 무조건 마지막 스캔이 대표가
@@ -525,6 +533,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     ];
 
     if (!mounted) return;
+    // "여기서 완료" 뒤에 다시 찍기 시작했다면 새 흐름이다 — 앞면부터 다시 센다.
+    if (_scanSessionClosed) {
+      _scanCount = 0;
+      _scanSessionClosed = false;
+    }
     _scanCount = overwrite ? 1 : _scanCount + 1;
 
     _showInlineNotice(
@@ -629,6 +642,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         ),
       ),
     );
+    if (choice == 'done') _scanSessionClosed = true;
     if (!mounted || choice == null || choice == 'done') return;
 
     // 뒷면을 고르면 카메라 화면도 "뒷면"으로 연다. 재촬영은 방금 찍던 면을
