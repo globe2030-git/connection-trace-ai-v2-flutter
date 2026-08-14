@@ -93,7 +93,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _postalCodeController;
   late TextEditingController _phoneController;
   late TextEditingController _officePhoneController;
+  late TextEditingController _directPhoneController;
+  late TextEditingController _faxController;
   late TextEditingController _emailController;
+  late TextEditingController _websiteController;
   late TextEditingController _tagsController;
   late TextEditingController _interestsController;
   late TextEditingController _memoController;
@@ -107,7 +110,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _postalCodeFocusNode = FocusNode();
   final _phoneFocusNode = FocusNode();
   final _officePhoneFocusNode = FocusNode();
+  final _directPhoneFocusNode = FocusNode();
+  final _faxFocusNode = FocusNode();
   final _emailFocusNode = FocusNode();
+  final _websiteFocusNode = FocusNode();
   final _tagsFocusNode = FocusNode();
   final _interestsFocusNode = FocusNode();
   final _memoFocusNode = FocusNode();
@@ -234,7 +240,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _postalCodeController = TextEditingController(text: c?.postalCode ?? '');
     _phoneController = TextEditingController(text: c?.phone ?? '');
     _officePhoneController = TextEditingController(text: c?.officePhone ?? '');
+    _directPhoneController = TextEditingController(text: c?.directPhone ?? '');
+    _faxController = TextEditingController(text: c?.fax ?? '');
     _emailController = TextEditingController(text: c?.email ?? '');
+    _websiteController = TextEditingController(text: c?.website ?? '');
     // ⚠️ 신규 등록의 기본값은 **빈 값**이어야 한다. 예전에는 `'AI, IT'`가
     // 박혀 있어서, 회계사 명함을 등록해도 태그에 `AI`·`IT`가 그대로 저장됐다
     // (테스터 제보 — 통합본 E-08). 데모용 더미값이 그대로 남아 있던 것이고,
@@ -257,11 +266,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _postalCodeFocusNode,
       _phoneFocusNode,
       _officePhoneFocusNode,
+      _directPhoneFocusNode,
+      _faxFocusNode,
       _emailFocusNode,
+      _websiteFocusNode,
       _tagsFocusNode,
       _interestsFocusNode,
       _memoFocusNode,
     ];
+    // 입력 칸을 탭하면 키보드가 올라오는데, 포커스된 칸이 폼 아래쪽이면
+    // 키보드에 가려 보이지 않던 문제(사용자 제보 2026-08-14). viewInsets 패딩만
+    // 으로는 키보드 애니메이션 타이밍 때문에 기본 자동 스크롤이 어긋나므로,
+    // 포커스를 얻으면 그 칸을 명시적으로 화면 안으로 끌어온다.
+    for (final node in _fieldFocusOrder) {
+      node.addListener(() => _ensureFocusedFieldVisible(node));
+    }
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
@@ -288,7 +307,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       'postalCode': _postalCodeController.text,
       'phone': _phoneController.text,
       'officePhone': _officePhoneController.text,
+      'directPhone': _directPhoneController.text,
+      'fax': _faxController.text,
       'email': _emailController.text,
+      'website': _websiteController.text,
       'tags': _tagsController.text,
       'interests': _interestsController.text,
       'memo': _memoController.text,
@@ -306,7 +328,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _postalCodeController.dispose();
     _phoneController.dispose();
     _officePhoneController.dispose();
+    _directPhoneController.dispose();
+    _faxController.dispose();
     _emailController.dispose();
+    _websiteController.dispose();
     _tagsController.dispose();
     _interestsController.dispose();
     _memoController.dispose();
@@ -318,7 +343,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _addressDetailFocusNode.dispose();
     _phoneFocusNode.dispose();
     _officePhoneFocusNode.dispose();
+    _directPhoneFocusNode.dispose();
+    _faxFocusNode.dispose();
     _emailFocusNode.dispose();
+    _websiteFocusNode.dispose();
     _tagsFocusNode.dispose();
     _interestsFocusNode.dispose();
     _memoFocusNode.dispose();
@@ -1669,7 +1697,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       officePhone: _officePhoneController.text.trim().isEmpty
           ? null
           : _officePhoneController.text.trim(),
+      directPhone: _directPhoneController.text.trim().isEmpty
+          ? null
+          : _directPhoneController.text.trim(),
+      fax: _faxController.text.trim().isEmpty
+          ? null
+          : _faxController.text.trim(),
       email: _emailController.text.trim(),
+      website: _websiteController.text.trim().isEmpty
+          ? null
+          : _websiteController.text.trim(),
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
       interests: interests,
@@ -1923,7 +1960,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       officePhone: _officePhoneController.text.trim().isEmpty
           ? null
           : _officePhoneController.text.trim(),
+      directPhone: _directPhoneController.text.trim().isEmpty
+          ? null
+          : _directPhoneController.text.trim(),
+      fax: _faxController.text.trim().isEmpty
+          ? null
+          : _faxController.text.trim(),
       email: _emailController.text.trim(),
+      website: _websiteController.text.trim().isEmpty
+          ? null
+          : _websiteController.text.trim(),
       avatarUrl: _selectedAvatarUrl ?? existing.avatarUrl,
       tags: tags.isEmpty ? existing.tags : tags,
       interests: interests.isEmpty ? existing.interests : interests,
@@ -1958,7 +2004,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         'postalCode' => _postalCodeController,
         'phone' => _phoneController,
         'officePhone' => _officePhoneController,
+        'directPhone' => _directPhoneController,
+        'fax' => _faxController,
         'email' => _emailController,
+        'website' => _websiteController,
         'tags' => _tagsController,
         'interests' => _interestsController,
         'memo' => _memoController,
@@ -2015,6 +2064,27 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     if (shouldDiscard == true && mounted) {
       Navigator.pop(context);
     }
+  }
+
+  // 포커스된 입력 칸을 키보드 위(화면 안)로 끌어온다. 키보드가 올라오는
+  // 애니메이션(≈0.3초)이 끝난 뒤에 스크롤해야 실제 viewInsets 기준으로 맞아,
+  // 애니메이션 도중 어긋나 칸이 가리는 것을 막는다.
+  void _ensureFocusedFieldVisible(FocusNode node) {
+    if (!node.hasFocus) return;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      // 지연 뒤에도 여전히 이 시트가 살아 있고(mounted) 그 칸이 포커스를
+      // 쥐고 있을 때만 스크롤한다 — 포커스가 살아 있으면 node.context도 유효한
+      // 트리를 가리킨다.
+      if (!mounted || !node.hasFocus) return;
+      final ctx = node.context;
+      if (ctx == null) return;
+      // 칸을 뷰포트 중앙쯤에 두어 키보드 위로 확실히 올린다.
+      // ignore: use_build_context_synchronously
+      Scrollable.ensureVisible(ctx,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut);
+    });
   }
 
   @override
@@ -2542,9 +2612,35 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     controller: _officePhoneController,
                     focusNode: _officePhoneFocusNode,
                     order: 6,
-                    nextFocusNode: _emailFocusNode,
+                    nextFocusNode: _directPhoneFocusNode,
                     label: '사무실 전화번호 (선택)',
                     hint: '예: 02-123-4567',
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 6-1. 직통 전화번호 (선택)
+                  _buildFormField(
+                    controller: _directPhoneController,
+                    focusNode: _directPhoneFocusNode,
+                    order: 6.3,
+                    nextFocusNode: _faxFocusNode,
+                    label: '직통 전화번호 (선택)',
+                    hint: '예: 02-123-4568',
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 6-2. 팩스 (선택)
+                  _buildFormField(
+                    controller: _faxController,
+                    focusNode: _faxFocusNode,
+                    order: 6.6,
+                    nextFocusNode: _emailFocusNode,
+                    label: '팩스 (선택)',
+                    hint: '예: 02-123-4569',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
                   ),
@@ -2555,7 +2651,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     controller: _emailController,
                     focusNode: _emailFocusNode,
                     order: 7,
-                    nextFocusNode: _tagsFocusNode,
+                    nextFocusNode: _websiteFocusNode,
                     label: '이메일 *',
                     hint: '예: example@company.com',
                     keyboardType: TextInputType.emailAddress,
@@ -2568,6 +2664,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       }
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 7-1. 웹사이트 (선택)
+                  _buildFormField(
+                    controller: _websiteController,
+                    focusNode: _websiteFocusNode,
+                    order: 7.5,
+                    nextFocusNode: _tagsFocusNode,
+                    label: '웹사이트 (선택)',
+                    hint: '예: www.company.com',
+                    keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 10),
 

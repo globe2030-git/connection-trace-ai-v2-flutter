@@ -50,7 +50,14 @@ class ContactModel {
   final String title;
   final String phone;
   final String? officePhone;
+  // 직통 전화 — "직통/DID/Direct" 라벨의 개인 유선. 대표번호(officePhone)와 구분.
+  final String? directPhone;
+  // 팩스 번호. 파서는 사무실 전화 오분류를 막으려고 팩스를 걷어내는데, 이
+  // 필드가 생기면 버리는 대신 담는다.
+  final String? fax;
   final String email;
+  // 회사/개인 웹사이트 URL. 이메일 도메인과 구분해서 보관한다.
+  final String? website;
   // 주소1 — 도로명 등 기본 주소. 지오코딩(위치 정보)의 기준이 되는 부분.
   final String? address;
   // 상세주소 — 건물명/동/호수 등. 지오코딩에는 쓰이지 않고 표시용으로만 보관.
@@ -95,7 +102,10 @@ class ContactModel {
     required this.title,
     required this.phone,
     this.officePhone,
+    this.directPhone,
+    this.fax,
     required this.email,
+    this.website,
     this.address,
     this.addressDetail,
     this.postalCode,
@@ -135,7 +145,10 @@ class ContactModel {
       'title': title,
       'phone': phone,
       'officePhone': officePhone,
+      'directPhone': directPhone,
+      'fax': fax,
       'email': email,
+      'website': website,
       'address': address,
       'addressDetail': addressDetail,
       'postalCode': postalCode,
@@ -168,7 +181,10 @@ class ContactModel {
       title: json['title'] as String,
       phone: json['phone'] as String,
       officePhone: json['officePhone'] as String?,
+      directPhone: json['directPhone'] as String?,
+      fax: json['fax'] as String?,
       email: json['email'] as String,
+      website: json['website'] as String?,
       address: json['address'] as String?,
       addressDetail: json['addressDetail'] as String?,
       postalCode: json['postalCode'] as String?,
@@ -207,7 +223,10 @@ class ContactModel {
     String? title,
     String? phone,
     String? officePhone,
+    String? directPhone,
+    String? fax,
     String? email,
+    String? website,
     String? address,
     String? addressDetail,
     String? postalCode,
@@ -230,7 +249,10 @@ class ContactModel {
       title: title ?? this.title,
       phone: phone ?? this.phone,
       officePhone: officePhone ?? this.officePhone,
+      directPhone: directPhone ?? this.directPhone,
+      fax: fax ?? this.fax,
       email: email ?? this.email,
+      website: website ?? this.website,
       address: address ?? this.address,
       addressDetail: addressDetail ?? this.addressDetail,
       postalCode: postalCode ?? this.postalCode,
