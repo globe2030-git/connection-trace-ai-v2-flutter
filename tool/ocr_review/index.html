@@ -141,20 +141,36 @@
 
   .raw { margin-bottom: 14px; }
   .raw h3, .fields h3 { font-size: 12px; color: var(--muted); margin: 0 0 6px; font-weight: 700; letter-spacing: .04em; }
-  .rawline {
-    display: block;
-    width: 100%;
-    text-align: left;
+  /* 원문은 **낱말 단위로 눌러 넣는다.** 검수는 장수가 많아 타이핑을 줄이는
+     것이 전부다 — `Molecule 박병건 | Andy Park`에서 `박병건`만 집어야 한다. */
+  .rawrow {
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
     border: 1px solid var(--line);
-    background: var(--panel);
     border-radius: 6px;
-    padding: 4px 8px;
+    padding: 3px 4px;
     margin-bottom: 3px;
+    flex-wrap: wrap;
+  }
+  .tok {
+    border: 1px solid transparent;
+    background: var(--chip);
+    border-radius: 5px;
+    padding: 2px 7px;
     cursor: pointer;
     font-size: 13px;
     word-break: break-all;
   }
-  .rawline:hover { border-color: var(--accent); background: var(--chip); }
+  .tok:hover { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .tok.whole { background: transparent; color: var(--muted); font-size: 11px; }
+  .tok.whole:hover { color: #fff; }
+  .target {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+  .target b { color: var(--accent); }
 
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 4px 6px 4px 0; vertical-align: middle; }
@@ -179,6 +195,20 @@
     background: var(--bg);
   }
   .ans:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .ansc { position: relative; }
+  .clear {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 3px;
+    line-height: 1;
+  }
+  .clear:hover { color: var(--empty); }
   .tag {
     display: inline-block;
     min-width: 44px;
@@ -260,7 +290,8 @@
 
     <div class="pane-form">
       <div class="raw">
-        <h3>인식 원문 — 누르면 방금 고른 칸에 들어갑니다</h3>
+        <h3>인식 원문 — 낱말을 누르면 정답 칸에 들어갑니다</h3>
+        <p class="target" id="target">먼저 아래에서 <b>채울 칸</b>을 누르세요.</p>
         <div id="rawLines"></div>
       </div>
       <div class="fields">
@@ -434,18 +465,37 @@ function render() {
     d.textContent = '원문 없음';
     raw.appendChild(d);
   }
+  // 낱말 단위로 넣는다 — 줄 전체가 필요한 경우가 오히려 드물다.
+  const put = (text) => {
+    const t = lastFocused;
+    if (!t) {
+      $('#target').innerHTML = '먼저 아래에서 <b>채울 칸</b>을 누르세요.';
+      return;
+    }
+    t.value = t.value ? `${t.value} ${text}` : text;
+    t.dispatchEvent(new Event('input'));
+    t.focus();
+  };
   for (const seg of segs) {
-    const b = document.createElement('button');
-    b.className = 'rawline';
-    b.textContent = seg;
-    b.onclick = () => {
-      const t = lastFocused;
-      if (!t) return;
-      t.value = t.value ? `${t.value} ${seg}` : seg;
-      t.dispatchEvent(new Event('input'));
-      t.focus();
-    };
-    raw.appendChild(b);
+    const row = document.createElement('div');
+    row.className = 'rawrow';
+
+    const whole = document.createElement('button');
+    whole.className = 'tok whole';
+    whole.textContent = '줄 전체';
+    whole.title = '이 줄을 통째로 넣기';
+    whole.onclick = () => put(seg);
+    row.appendChild(whole);
+
+    // 구분자만 있는 토큰(`|`, `/`)은 넣을 일이 없어 버린다.
+    for (const tok of seg.split(/\s+/).filter((t) => /[\w가-힣@]/.test(t))) {
+      const b = document.createElement('button');
+      b.className = 'tok';
+      b.textContent = tok;
+      b.onclick = () => put(tok);
+      row.appendChild(b);
+    }
+    raw.appendChild(row);
   }
 
   // 칸별
@@ -471,6 +521,19 @@ function render() {
     input.dataset.field = f;
     tdAns.appendChild(input);
 
+    // "명함에 이 값이 없다"를 한 번에 — 지우려고 드래그·백스페이스를 쓰지
+    // 않게 한다.
+    const clear = document.createElement('button');
+    clear.className = 'clear';
+    clear.textContent = '✕';
+    clear.title = '비우기 (명함에 없음)';
+    clear.onclick = () => {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    };
+    tdAns.appendChild(clear);
+
     const tdTag = document.createElement('td');
     const tag = document.createElement('span');
     tag.className = 'tag';
@@ -485,14 +548,20 @@ function render() {
       else { tag.className = 'tag edit'; tag.textContent = '수정'; }
     };
     input.oninput = paint;
-    input.onfocus = () => { lastFocused = input; };
+    input.onfocus = () => {
+      lastFocused = input;
+      $('#target').innerHTML = `원문 낱말을 누르면 <b>${f}</b> 칸에 들어갑니다.`;
+    };
     tdGot.onclick = () => { input.value = got; paint(); input.focus(); };
     paint();
 
     tr.append(th, tdGot, tdAns, tdTag);
     body.appendChild(tr);
   }
-  lastFocused = null;
+  // 장을 넘기면 대개 **이름부터** 손대므로 미리 골라 둔다 — 클릭 한 번을 줄인다.
+  lastFocused = body.querySelector('.ans');
+  $('#target').innerHTML =
+    `원문 낱말을 누르면 <b>${FIELDS[0]}</b> 칸에 들어갑니다.`;
 }
 
 function collect() {
