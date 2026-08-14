@@ -2,6 +2,25 @@
 
 ## 작업 로그
 
+### 2026-08-14 (추가 216) — 관리자 보안 즉시급 4건 (구현·자동검증·병합 완료 · 실서버 배포 대기)
+
+관리자 세션이 2026-08-13 관리자 전용 감사(취약점 12건) 중 **출시/운영 차단급
+즉시급 4건**을 수정했다. 상세 작업기록은
+[`admin-security-hardening-2026-08-14.md`](./admin-security-hardening-2026-08-14.md).
+
+- **4건**: ① 법적문서 편집기 반영단절(콘솔 편집이 앱/심사에 안 닿는데 닿는 척 →
+  읽기전용화·문구 정정) ② 관리자 해제 후 Callable 권한 잔존(rules·functions·앱
+  3곳 이메일 목록을 `tool/check_admin_sync.py` 드리프트 감지로 묶음, 인터림)
+  ③ 무료 크레딧 무제한·중복(상한·operationId 멱등·`creditGrantAudits` 감사)
+  ④ 강제업데이트 임의 URL(공식 스토어 host+https allowlist, rules+앱 2중).
+- **브랜치** `feat/admin-security-hardening`(2커밋 `bfc074f`·`5aee163`) →
+  **PR #149로 main 병합**(PM 수행, 사용자 위임 확정).
+- **자동검증 통과**: verify_rules 22/22, functions 25/25, check_admin_sync 3소스
+  일치+selftest, flutter analyze 신규0, flutter test 333/333.
+- **한계(정직)**: 진짜 단일원본(`config/admins`+Rules `get()`)은 운영 데이터
+  의존이라 인터림으로 대체. #2 해제→거부·#3 트랜잭션 멱등성·#1 콘솔 육안은
+  **실서버 배포 후 확인 필요**(문서 6절 (b)). 중간 8건·낮음 1건은 미착수.
+
 ### 2026-08-14 (추가 215) — 세션 정리: 64커밋 3분할 PR + 테스터 피드백 워드 문서
 
 이 세션은 코드보다 **정리·전달** 작업이 컸다. 시간순:
