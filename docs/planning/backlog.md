@@ -2,6 +2,34 @@
 
 ## 작업 로그
 
+### 2026-08-15 (추가 217) — 관리자 보안 중간위험 A묶음 4건 (구현·자동검증·병합 완료 · 일부 배포 후 확인)
+
+즉시급 4건(추가 216, #149) 후속으로, 관리자 감사 중간위험 중 **A 묶음(규칙+
+배포설정 4건)**을 수정·병합했다(PR #157, main `04cc5a1`).
+
+- **008 내부 손익 보고서 비공개화**: `docs/admin/reports/pnl-analysis-freemium.html`을
+  `docs/planning/business/`로 되돌려 공개 배포 트리에서 제거. admin.js 죽은 링크
+  제거·안내 교체, 참조 3곳(HANDOFF·beta-observability-plan·server-setup-plan) 갱신.
+- **011 관리자 콘솔 CSP·anti-framing 헤더**: `firebase.json` admin 타겟에 headers
+  추가. allowlist는 admin.js·index.html 실제 origin을 코드로 조사해 맞춤(script-src는
+  gstatic만 잠금, style-src만 'unsafe-inline' 불가피). 근거는 `docs/admin/README.md`.
+- **009 OCR 통계 스키마 검증**: `ocrStats` 쓰기에 키·타입·범위 강제. **감소는
+  의도적 허용** — 초기화 버튼이 서버 문서는 두고 로컬만 지워 다음 스캔에 더 작은
+  값이 정상적으로 올라오므로 단조증가를 걸면 정상 플로우가 깨진다("코드는 맞는데
+  실물이 틀린" 함정 회피). 통계라 감소의 보안·비용 영향 없음.
+- **005 문의 답변 위조 차단**: `inquiries`/`replies` 쓰기에 키·역할·상태 강제
+  (create 7키·status pending·본인 이메일, reply 역할별 from).
+
+**검증(세션 내 독립 재실행)**: flutter analyze 신규0, flutter test 338/338,
+verify_rules.py 38/38(009·005 신규 16케이스, get() 목 지원 추가), check_admin_sync
+3소스 일치. **009·005는 로컬 규칙엔진으로 완결**, **008·011은 배포 후 실물 확인
+필요**(보고서 URL 401/403, CSP 하 콘솔 정상 동작 — hosting:admin 배포 관문).
+
+**후속 과제**: 009 진짜 단조가 필요하면 `reset()`이 서버 문서도 리셋해야 함.
+008의 "인증된 관리자만 열람" 진짜 게이트(Cloud Function 등)는 이번 범위 밖.
+관리자 중간위험 나머지(004 billing XSS·006 문의 DoS·007 탈퇴 잔존·010 감사
+확대)와 낮음 1건(012 세션 잔존)은 미착수.
+
 ### 2026-08-14 (추가 216) — 관리자 보안 즉시급 4건 (구현·자동검증·병합 완료 · 실서버 배포 대기)
 
 관리자 세션이 2026-08-13 관리자 전용 감사(취약점 12건) 중 **출시/운영 차단급
