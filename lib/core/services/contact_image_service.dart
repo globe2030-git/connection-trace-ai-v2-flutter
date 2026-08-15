@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../utils/card_photo_downscale.dart';
 import 'card_photo_backup_service.dart';
 import 'data_crypto_service.dart';
 import 'encryption_key_service.dart';
@@ -104,13 +105,31 @@ class ContactImageService {
     try {
       final src = File(sourcePath);
       if (!src.existsSync()) return null;
-      final bytes = await src.readAsBytes();
+      final original = await src.readAsBytes();
+
+      // 보관본은 줄여서 넣는다(2026-08-16). 서버 저장 비용이 누적되는데
+      // 충전형은 AI를 쓸 때만 받으므로 회수 경로가 없다 — 근거와 계산은
+      // docs/planning/card-photo-storage-cost-spec-2026-08-16.md.
+      //
+      // ⚠️ **자리가 여기여야 한다.** 촬영 → 크롭 → 회전 → OCR → (화면 닫힘)
+      // → 저장 순서라, 크롭 단계에서 줄이면 그 결과물이 곧 OCR 입력이 되어
+      // 인식률이 떨어진다. 인식은 이 지점보다 한참 앞에서 이미 끝나 있다.
+      //
+      // 로컬 파일도 함께 줄어든다. 서버용만 줄이려면 재암호화가 필요해
+      // **평문 구간이 한 번 더 생기는데**, 암호문을 그대로 올리는 구조를
+      // 고른 이유 자체가 그 구간을 없애는 것이었다. 게다가 기기를 바꾸면
+      // 서버 사본을 내려받아 로컬이 되므로 "로컬만 고화질"은 오래 못 간다.
+      final bytes = downscaleForArchive(original);
+
       final key = await _keyService.getOrCreateUserKey(uid);
       final encrypted = await DataCryptoService.encryptBytes(bytes, key);
 
       final docsDir = await getApplicationDocumentsDirectory();
       final outPath = '${docsDir.path}/${_fileName(contactId)}';
       await File(outPath).writeAsBytes(encrypted, flush: true);
+      // ⚠️ 캐시에도 **축소본**을 넣는다. 원본(original)을 넣으면 파일과
+      // 화면이 그 실행 동안 어긋난다 — 다음에 앱을 켜면 파일에서 읽어
+      // 축소본이 뜨므로, 같은 사진이 세션마다 달라 보인다.
       _decryptedCache[outPath] = Uint8List.fromList(bytes);
 
       // 서버 업로드는 **기다리지 않는다**(fire-and-forget). 로컬 저장이 이미
