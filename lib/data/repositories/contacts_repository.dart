@@ -333,10 +333,28 @@ class ContactsRepository extends ChangeNotifier {
   /// 반환값은 실제로 뭔가 바뀌었는지 — 호출자가 이걸 보고 저장 여부를
   /// 결정한다(이미 그 자리에서 저장하는 흐름이면 중복 저장을 피하려고).
   Future<bool> relinkMissingCardImagePaths() async {
-    if (_uid == null) return false;
+    final uid = _uid;
+    if (uid == null) return false;
     if (_contacts.every((c) => c.cardImagePath != null)) return false;
 
-    final existing = await _contactImageService.findAllExistingCardImagePaths();
+    var existing = await _contactImageService.findAllExistingCardImagePaths();
+
+    // 기기를 바꾸거나 앱을 다시 깔면 로컬 암호문 파일이 **하나도 없다** —
+    // 재연결할 대상이 없으니 예전에는 여기서 끝났고, 사진은 영영 돌아오지
+    // 않았다(명함 텍스트만 복원되는 상태). 서버에 사본이 있으면 내려받아
+    // 되살린다(2026-08-15, 추가 218).
+    final missingIds = _contacts
+        .where((c) => c.cardImagePath == null && !existing.containsKey(c.id))
+        .map((c) => c.id)
+        .toList();
+    if (missingIds.isNotEmpty) {
+      final restored = await _contactImageService.downloadMissingCardImages(
+        uid: uid,
+        contactIds: missingIds,
+      );
+      if (restored.isNotEmpty) existing = {...existing, ...restored};
+    }
+
     if (existing.isEmpty) return false;
 
     final relinked = relinkCardImagePaths(_contacts, existing);
@@ -524,10 +542,25 @@ class ContactsRepository extends ChangeNotifier {
 
   void deleteContact(String id) {
     // 삭제 전에 암호화된 명함 이미지 파일도 정리한다(추가 133).
+    // uid를 함께 넘겨 **서버 사본까지** 지운다 — 방침은 "이용자가 해당 명함을
+    // 삭제한 때 즉시 파기"라고 적고 있다(2026-08-15, 추가 218).
     final idx = _contacts.indexWhere((c) => c.id == id);
     final cardImagePath = idx >= 0 ? _contacts[idx].cardImagePath : null;
     if (cardImagePath != null) {
-      _contactImageService.deleteCardImage(cardImagePath);
+      _contactImageService.deleteCardImage(
+        cardImagePath,
+        uid: _uid,
+        contactId: id,
+      );
+    } else if (_uid != null) {
+      // 경로가 끊긴 명함(서버 복원 직후 등)이라도 서버엔 사본이 있을 수 있다.
+      // 여기서 안 지우면 참조가 사라져 **나중에 지울 수도 없는 고아 파일**이
+      // 된다 — 로컬에서 겪은 것과 같은 함정이다.
+      _contactImageService.deleteCardImage(
+        '',
+        uid: _uid,
+        contactId: id,
+      );
     }
     _contacts.removeWhere((c) => c.id == id);
     notifyListeners();

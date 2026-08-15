@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'card_photo_backup_service.dart';
 import 'data_crypto_service.dart';
 import 'encryption_key_service.dart';
 
@@ -14,13 +16,24 @@ import 'encryption_key_service.dart';
 /// ([EncryptionKeyService])를 그대로 재사용한다.
 ///
 /// 저장 형식: 앱 문서 디렉터리에 `contact_card_<contactId>.enc` 파일로
-/// `nonce+ciphertext+mac` 바이트를 쓴다. 서버 백업 대상이 아니다(Firebase
-/// Storage 미활성 — 이미지는 로컬 전용, 기기 변경 시 사라짐).
+/// `nonce+ciphertext+mac` 바이트를 쓴다.
+///
+/// **서버 저장(2026-08-15, backlog 추가 218)**: 같은 암호문 파일을
+/// [CardPhotoBackupService]가 Cloud Storage에도 올린다 — 기기를 바꾸면
+/// 명함 텍스트는 복원되는데 사진만 사라지던 문제를 없애기 위함이다. 여기서
+/// 복호화하지 않고 **암호문 그대로** 올리므로 서버는 사진을 열어볼 수 없다.
+/// ⚠️ 개인정보처리방침 v2.2 게시 전까지
+/// [CardPhotoBackupService.kCardPhotoBackupEnabled]가 `false`라 업로드는
+/// 실제로 일어나지 않는다.
 class ContactImageService {
-  ContactImageService({EncryptionKeyService? keyService})
-    : _keyService = keyService ?? EncryptionKeyService();
+  ContactImageService({
+    EncryptionKeyService? keyService,
+    CardPhotoBackupService? photoBackup,
+  }) : _keyService = keyService ?? EncryptionKeyService(),
+       _photoBackup = photoBackup ?? CardPhotoBackupService();
 
   final EncryptionKeyService _keyService;
+  final CardPhotoBackupService _photoBackup;
 
   // 복호화 결과를 경로별로 캐시한다 — 목록 아바타가 스크롤될 때마다 파일을
   // 다시 읽고 복호화하지 않도록. 값은 실패 시 null이 아니라 캐시하지 않는다.
@@ -99,6 +112,18 @@ class ContactImageService {
       final outPath = '${docsDir.path}/${_fileName(contactId)}';
       await File(outPath).writeAsBytes(encrypted, flush: true);
       _decryptedCache[outPath] = Uint8List.fromList(bytes);
+
+      // 서버 업로드는 **기다리지 않는다**(fire-and-forget). 로컬 저장이 이미
+      // 끝났고, 업로드는 기기 변경 대비용이라 명함 저장 화면을 네트워크
+      // 왕복만큼 붙잡아 둘 이유가 없다. 실패해도 서비스가 삼키고 false만
+      // 돌려주므로 여기서 잡을 예외가 없다.
+      unawaited(
+        _photoBackup.upload(
+          uid: uid,
+          contactId: contactId,
+          encryptedFilePath: outPath,
+        ),
+      );
       return outPath;
     } catch (e) {
       // 개인정보가 로그에 남지 않도록 타입만 남긴다.
@@ -129,14 +154,69 @@ class ContactImageService {
     }
   }
 
+  /// 로컬에 암호문 파일이 없는 명함들을 서버에서 내려받는다.
+  ///
+  /// 기기를 바꾸거나 앱을 다시 깔면 로컬 `.enc` 파일이 **하나도 없다.** 명함
+  /// 텍스트는 Firestore에서 복원되는데 사진만 비는 상태가 이때 생긴다.
+  ///
+  /// 새로 받아온 것만 `contactId → 로컬 경로`로 돌려준다(서버에도 없는 명함,
+  /// 즉 사진 없이 등록한 명함은 결과에 들어가지 않는다 — 오류가 아니다).
+  ///
+  /// 순차로 받는다. 명함 수백 장을 동시에 받으면 회선을 다 쓰고 앱이 다른
+  /// 복원 작업까지 굶긴다 — `GeoBackfillService`가 지오코더를 순차 호출하는
+  /// 것과 같은 판단이다(backlog 추가 76).
+  Future<Map<String, String>> downloadMissingCardImages({
+    required String uid,
+    required Iterable<String> contactIds,
+  }) async {
+    if (!CardPhotoBackupService.kCardPhotoBackupEnabled) return {};
+    final ids = contactIds.toList();
+    if (ids.isEmpty) return {};
+    final restored = <String, String>{};
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      for (final id in ids) {
+        final destination = '${docsDir.path}/${_fileName(id)}';
+        if (File(destination).existsSync()) {
+          restored[id] = destination;
+          continue;
+        }
+        final ok = await _photoBackup.download(
+          uid: uid,
+          contactId: id,
+          destinationPath: destination,
+        );
+        if (ok) restored[id] = destination;
+      }
+    } catch (e) {
+      debugPrint('명함 이미지 서버 복원 실패: ${e.runtimeType}');
+    }
+    return restored;
+  }
+
   /// 명함 삭제 시 암호문 파일도 지운다.
-  Future<void> deleteCardImage(String path) async {
+  ///
+  /// [uid]와 [contactId]를 함께 주면 **서버 사본까지** 지운다. 주지 않으면
+  /// 기기 파일만 지운다 — 로그인 전(게스트)처럼 서버에 사본이 있을 수 없는
+  /// 경우가 있어 선택 인자로 뒀다.
+  ///
+  /// ⚠️ 둘을 빠뜨리면 사용자가 지운 명함의 사진이 서버에 남는다. 방침은
+  /// "이용자가 해당 명함을 삭제한 때 즉시 파기"라고 적고 있으므로, 로그인
+  /// 상태의 삭제 경로에서는 반드시 함께 넘길 것.
+  Future<void> deleteCardImage(
+    String path, {
+    String? uid,
+    String? contactId,
+  }) async {
     try {
       _decryptedCache.remove(path);
       final file = File(path);
       if (file.existsSync()) await file.delete();
     } catch (e) {
       debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
+    }
+    if (uid != null && contactId != null) {
+      await _photoBackup.delete(uid: uid, contactId: contactId);
     }
   }
 
@@ -155,10 +235,17 @@ class ContactImageService {
   /// 안전하다.** 로컬 저장소를 계정별로 분리하는 작업(HANDOFF P1-10)이
   /// 반영되면 **uid 범위로 좁혀야** 다른 계정의 이미지를 지우지 않는다.
   ///
+  /// [uid]를 주면 **서버에 있는 사본까지** 전부 지운다. 계정 삭제에서는 반드시
+  /// 넘길 것 — 기기 파일만 지우면 방침이 약속한 "회원 탈퇴 시 전부 파기"가
+  /// 서버 쪽에서 지켜지지 않는다.
+  ///
   /// 실패한 파일 수를 반환한다 — 호출부가 사용자에게 알릴 수 있도록.
   /// 하나가 실패해도 나머지는 계속 지운다(멈추면 더 많이 남는다).
-  Future<int> deleteAllCardImages() async {
+  Future<int> deleteAllCardImages({String? uid}) async {
     var failed = 0;
+    if (uid != null) {
+      failed += await _photoBackup.deleteAllForUser(uid);
+    }
     try {
       final docsDir = await getApplicationDocumentsDirectory();
       final entries = docsDir.listSync();
