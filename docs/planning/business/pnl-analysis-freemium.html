@@ -130,7 +130,7 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
     <div class="eyebrow">Internal · Executive Brief</div>
     <h1>커넥션센스 프리미엄 구독 손익분석</h1>
     <div class="meta">
-      <span>작성일 2026-08-04 · 갱신 2026-08-08(AI 단가 실측 반영) · <b>갱신 2026-08-09(회차 판매안 E·F 추가 — 13·14번 섹션)</b></span>
+      <span>작성일 2026-08-04 · 갱신 2026-08-08(AI 단가 실측 반영) · 갱신 2026-08-09(회차 판매안 E·F 추가 — 13·14번 섹션) · <b>갱신 2026-08-16(명함 사진 서버 저장에 따른 스토리지 원가 — 16번 섹션)</b></span>
       <span>대상 규모 무료 5,000~50,000명 / 유료 100~1,000명</span>
       <span>모델 프리미엄(Freemium) 월 구독 · 회차 충전 · 회차 구독</span>
     </div>
@@ -212,6 +212,10 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
       <b>① 회차를 얹는 건 거의 공짜고, 가격을 깎는 건 그대로 손실이다.</b> 공헌이익률이 네 티어 모두 80~81%로 사실상 같다 — AI 원가는 판매가의 3~5%뿐이고 실질 원가는 스토어 수수료 15% 하나다. <b>프로모션은 할인이 아니라 회차 증정으로</b> 설계할 것.
       <br><br><b>② 무료 회차는 "가입 시 1회"로.</b> 매월 리셋은 유료 상품을 스스로 잠식한다(위 E1).
       <br><br><b>③ 사다리는 단계마다 회당 단가가 내려가야 한다.</b> 10 / 33 / 60 / 130회 = 회당 ₩100 → 90.9 → 83.3 → 76.9. 처음 제안값(₩10,000·110회)은 회당 ₩90.9라 <b>₩5,000 티어보다 비쌌다</b> — 같은 돈으로 ₩5,000을 두 번 사면 120회다.
+    </div>
+
+    <div class="callout" style="margin-bottom:16px; background:var(--warn-soft); border-color:var(--warn);">
+      <b>⚠️ 2026-08-16 — 위 세 안의 이익에는 사진 스토리지 비용이 빠져 있다.</b> 2026-08-15에 명함 원본 사진을 서버에 저장하기로 결정했는데(backlog 추가 218·220), 이 표를 포함한 5~15번의 모든 계산은 그 이전 것이다. <b>특히 E2의 "다운사이드가 없는 유일한 구조"라는 평가가 약해진다</b> — 사진 보관료는 사용과 무관하게 무료 사용자 전원에게 매달 붙는, 이 사업에서 유일하게 매출 없이 쌓이는 원가다. 규모와 감도, 그리고 이를 85% 줄이는 방법은 <b>16번 섹션</b>에 있다.
     </div>
 
     <div class="callout" style="margin-bottom:16px;">
@@ -343,6 +347,7 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
         <li><span>스토어 수수료</span><b>15%</b> <span style="color:var(--ink-faint); font-weight:400;">(연매출 $1M 미만 중소사업자 요율)</span></li>
         <li><span>인프라(Firestore+Auth) 인당 한계비용</span><b>$0.002/월</b></li>
         <li><span>AI 호출 1회당 비용</span><b>$0.0023</b> <span style="color:var(--ink-faint); font-weight:400;">(2026-08-08 실측 · thinkingLevel=MINIMAL)</span></li>
+        <li><span>사진 스토리지</span><b style="color:var(--warn);">미포함 → 16번</b> <span style="color:var(--ink-faint); font-weight:400;">(5~15번의 모든 손익에 사진 보관료가 빠져 있다)</span></li>
         <li><span>무료 등급 AI 사용 — 평균 / 상한</span><b>월 2회 / 월 8회</b></li>
         <li><span>유료 등급 AI 사용 — 평균 / 상한</span><b>월 15회 / 월 100회</b></li>
       </ul>
@@ -960,6 +965,186 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
     </div>
   </section>
 
+  <section>
+    <h2><span class="num">16</span>스토리지 원가 — 명함 사진을 서버에 저장하면</h2>
+    <p class="section-desc">2026-08-15 결정으로 <b>명함 원본 사진을 서버(Cloud Storage)에 암호문으로 저장</b>하게 됐다(backlog 추가 218·220). 그런데 <b>이 문서의 1~15번 어디에도 스토리지 비용이 한 줄도 없다</b> — 4번 가정의 "인프라 인당 한계비용 $0.002/월"은 Firestore+Auth만 잡은 값이고, 사진은 그때까지 기기에만 있었기 때문이다. 이 절이 그 구멍을 메운다(2026-08-16 추가).</p>
+
+    <div class="callout bad" style="margin-bottom:16px;">
+      <b>스토리지는 지금까지 다룬 비용과 성격이 다르다 — 흐름이 아니라 재고다.</b>
+      <br><br>AI 원가는 <b>쓸 때만</b> 나가고 <b>회차가 곧 천장</b>이라, 이 문서가 반복해서 말한 "회차가 비용 상한을 만든다"가 성립했다. 사진 보관료는 그렇지 않다. <b>한 번 올라가면 지울 때까지 매달 나간다</b> — 그 사용자가 앱을 다시 켜지 않아도, 충전을 한 번도 하지 않아도, 탈퇴하지 않는 한 계속.
+      <br><br>그래서 <b>E2(충전형)의 핵심 강점인 "구조적 다운사이드가 없다 — 사용이 곧 매출"이 더는 완전히 성립하지 않는다.</b> 사진 저장은 이 사업에서 <b>매출 없이 원가만 쌓이는 유일한 항목</b>이고, 무료 사용자에게도 똑같이 걸린다. 얼마나 깎아먹는지는 16-6에 있다.
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-1. 단가 — 공시가 실측 (2026-08-16 확인)</h3>
+    <p class="section-desc" style="margin-bottom:12px;">Google Cloud 공식 가격표에서 <b>서울 리전(asia-northeast3) Standard</b> 값을 직접 확인했다. AI 단가와 달리 이 값들은 추정이 아니라 공시가다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>항목</th><th>단가</th><th>무엇에 붙나</th></tr></thead>
+        <tbody>
+          <tr class="row-highlight"><td>저장 (Standard, 서울)</td><td class="tabular">$0.023 / GiB·월</td><td>보관 중인 전체 용량에 <b>매달</b></td></tr>
+          <tr><td>내려받기 (아시아 목적지, 0~10TiB)</td><td class="tabular">$0.12 / GiB</td><td>기기 변경·재설치 시 복원할 때만</td></tr>
+          <tr><td>올리기(수신) 트래픽</td><td class="tabular">무료</td><td>—</td></tr>
+          <tr><td>업로드 작업 (Class A)</td><td class="tabular">$0.005 / 1,000회</td><td>사진 1장 업로드 = 1회</td></tr>
+          <tr><td>내려받기 작업 (Class B)</td><td class="tabular">$0.0004 / 1,000회</td><td>사진 1장 복원 = 1회</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:12px; background:var(--warn-soft); border-color:var(--warn);">
+      <b>⚠️ 무료 할당량이 없을 가능성이 크다 — 확인 필요.</b> 우리 버킷은 <code>connection-sense.firebasestorage.app</code>이다. Firebase 공시상 이 형식 버킷의 무료 할당량(5GB 저장·월 100GB 내려받기)은 <b>us-central1 / us-west1 / us-east1 세 리전에만</b> 적용된다. 우리 버킷이 기록대로 서울 리전이면 <b>첫 1GB부터 과금</b>이다. 예전 <code>*.appspot.com</code> 버킷의 "5GB 무료"를 기억하고 있다면 그건 우리 경우가 아니다. <b>콘솔에서 버킷 리전을 확인하는 것이 이 절의 선행 확인 사항</b>이다(1분).
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-2. 사진 1장이 얼마인가 — 결국 장당 용량이 전부다</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>장당 용량</th><th>월</th><th>연</th><th>10년 보관</th></tr></thead>
+        <tbody>
+          <tr><td class="tabular">0.3 MB</td><td class="tabular">₩0.010</td><td class="tabular">₩0.12</td><td class="tabular">₩1.2</td></tr>
+          <tr><td class="tabular">1 MB</td><td class="tabular">₩0.032</td><td class="tabular">₩0.39</td><td class="tabular">₩3.9</td></tr>
+          <tr class="row-highlight"><td class="tabular">2 MB</td><td class="tabular">₩0.064</td><td class="tabular">₩0.77</td><td class="tabular">₩7.7</td></tr>
+          <tr><td class="tabular">3 MB</td><td class="tabular">₩0.096</td><td class="tabular">₩1.16</td><td class="tabular">₩11.6</td></tr>
+          <tr><td class="tabular">4 MB</td><td class="tabular">₩0.129</td><td class="tabular">₩1.54</td><td class="tabular">₩15.4</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="section-desc" style="margin-top:10px;">한 장은 푼돈이다. 문제는 <b>장수 × 사용자 수 × 영원히</b>라는 세 개의 곱셈이다.</p>
+
+    <div class="callout" style="margin-top:12px; background:var(--warn-soft); border-color:var(--warn);">
+      <b>⚠️ 장당 용량은 아직 실측되지 않았다 — 이 절에서 가장 중요한 미지수다.</b> 코드를 보면 저장본은 촬영 원본을 가이드 프레임으로 자른 뒤 <b>JPEG 품질 100으로 다시 인코딩</b>한 것이고(<code>camera_scan_modal_view.dart</code>의 <code>_cropToGuideFrame</code>), 갤러리 선택도 <code>imageQuality: 100</code>이다. 카메라는 <code>ResolutionPreset.max</code>이며 <b>해상도를 줄이는 처리가 어디에도 없다</b>. 최신 기기라면 장당 2~4MB대가 나올 수 있다.
+      <br><br>위 표에서 <b>0.3MB와 4MB의 차이는 13배</b>다. 아래 모든 금액이 이 한 값에 그대로 비례하므로, <b>실기기에서 <code>.enc</code> 파일 크기를 재는 것이 이 절 전체의 선행 과제</b>다(<code>adb run-as</code>로 앱 문서 디렉터리의 <code>contact_card_*.enc</code> 크기를 보면 된다 — 암호문은 원본보다 28바이트만 크다).
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-3. 사용자 1인당 월 원가</h3>
+    <p class="section-desc" style="margin-bottom:12px;">"누적 장수"는 시간축이기도 하다 — 한 사람이 <b>월 3장씩</b> 모은다면 20장은 약 7개월 뒤, 50장은 약 17개월 뒤, 100장은 약 33개월 뒤의 모습이다. 사진은 명함을 지우기 전까지 줄지 않으므로 이 표는 <b>왼쪽에서 오른쪽으로, 위에서 아래로 시간이 흐른다</b>고 읽으면 된다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>누적 장수</th><th>0.3MB</th><th>1MB</th><th>2MB</th><th>4MB</th></tr></thead>
+        <tbody>
+          <tr><td>20장 <span class="sub">(≈7개월)</span></td><td class="tabular">₩0.19</td><td class="tabular">₩0.64</td><td class="tabular">₩1.28</td><td class="tabular">₩2.57</td></tr>
+          <tr class="row-highlight"><td>50장 <span class="sub">(≈17개월)</span></td><td class="tabular">₩0.48</td><td class="tabular">₩1.61</td><td class="tabular">₩3.21</td><td class="tabular">₩6.42</td></tr>
+          <tr><td>100장 <span class="sub">(≈33개월)</span></td><td class="tabular">₩0.96</td><td class="tabular">₩3.21</td><td class="tabular">₩6.42</td><td class="tabular">₩12.85</td></tr>
+          <tr><td>150장 <span class="sub">(≈50개월)</span></td><td class="tabular">₩1.45</td><td class="tabular">₩4.82</td><td class="tabular">₩9.64</td><td class="tabular">₩19.27</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout" style="margin-top:12px; background:var(--surface-2); border-color:var(--border);">
+      <b>비교 기준.</b> 이 문서가 지금까지 쓴 인프라 가정은 <b>인당 월 $0.002(₩2.9)</b>다. 위 표에서 <b>50장 × 2MB면 그것만으로 ₩3.21</b> — <b>기존 인프라 비용 전체보다 크다.</b> 즉 사진을 켜는 순간 4번 가정의 인프라 항목은 <b>두 배 이상</b>으로 다시 잡아야 한다.
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-4. 규모별 월 스토리지 총액</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>규모</th><th>1인 누적</th><th>총 보관량</th><th>월 비용</th><th>연 환산</th></tr></thead>
+        <tbody>
+          <tr><td>무료 5만 명</td><td>20장 × 1MB</td><td class="tabular">1.0 TiB</td><td class="tabular">$23</td><td class="tabular">$270</td></tr>
+          <tr class="row-highlight"><td>무료 5만 명</td><td>50장 × 2MB</td><td class="tabular">4.8 TiB</td><td class="tabular">$112</td><td class="tabular">$1,348</td></tr>
+          <tr><td>무료 5만 명</td><td>150장 × 3MB</td><td class="tabular">21.5 TiB</td><td class="tabular">$505</td><td class="tabular">$6,064</td></tr>
+          <tr><td>E안 25.5만 명</td><td>20장 × 1MB</td><td class="tabular">4.9 TiB</td><td class="tabular">$115</td><td class="tabular">$1,375</td></tr>
+          <tr class="row-highlight"><td>E안 25.5만 명</td><td>50장 × 2MB</td><td class="tabular">24.3 TiB</td><td class="tabular">$573</td><td class="tabular">$6,873</td></tr>
+          <tr><td>E안 25.5만 명</td><td>150장 × 3MB</td><td class="tabular">109.4 TiB</td><td class="tabular">$2,577</td><td class="tabular">$30,929</td></tr>
+          <tr><td>E안 25.5만 명</td><td>150장 × 4MB</td><td class="tabular">145.9 TiB</td><td class="tabular">$3,437</td><td class="tabular">$41,238</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-5. 손익 재계산 ① — 기본 시나리오(무료 5만 · 유료 1,000명)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>1인 누적</th><th>스토리지</th><th>월 이익(평균)</th><th>변화</th><th>월 이익(최악)</th></tr></thead>
+        <tbody>
+          <tr><td>— <span class="sub">(현행 문서)</span></td><td class="tabular">$0</td><td class="tabular profit-pos">$4,725</td><td class="tabular">기준</td><td class="tabular profit-pos">$3,840</td></tr>
+          <tr><td>20장 × 1MB</td><td class="tabular">$23</td><td class="tabular profit-pos">$4,702</td><td class="tabular">−0.5%</td><td class="tabular profit-pos">$3,817</td></tr>
+          <tr class="row-highlight"><td>50장 × 2MB</td><td class="tabular">$115</td><td class="tabular profit-pos">$4,610</td><td class="tabular">−2.4%</td><td class="tabular profit-pos">$3,725</td></tr>
+          <tr><td>100장 × 2MB</td><td class="tabular">$229</td><td class="tabular profit-pos">$4,496</td><td class="tabular">−4.8%</td><td class="tabular profit-pos">$3,610</td></tr>
+          <tr><td>150장 × 3MB</td><td class="tabular">$515</td><td class="tabular profit-pos">$4,210</td><td class="tabular">−10.9%</td><td class="tabular profit-pos">$3,324</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="section-desc" style="margin-top:10px;">기본 시나리오는 <b>유료 매출이 크고 무료가 적어</b> 타격이 제한적이다. 최악의 경우에도 10% 남짓. <b>문제는 다음 표다.</b></p>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-6. 손익 재계산 ② — E2 충전형(무료 25.5만 · 유료 5,000명) ← 여기가 결론</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>1인 누적</th><th>스토리지</th><th>월 이익</th><th>변화</th></tr></thead>
+        <tbody>
+          <tr><td>— <span class="sub">(현행 문서)</span></td><td class="tabular">$0</td><td class="tabular profit-pos">$3,349</td><td class="tabular">기준</td></tr>
+          <tr><td>20장 × 1MB</td><td class="tabular">$115</td><td class="tabular profit-pos">$3,234</td><td class="tabular">−3%</td></tr>
+          <tr class="row-highlight"><td>50장 × 2MB</td><td class="tabular">$573</td><td class="tabular profit-pos">$2,776</td><td class="tabular">−17%</td></tr>
+          <tr><td>100장 × 2MB</td><td class="tabular">$1,146</td><td class="tabular profit-pos">$2,203</td><td class="tabular">−34%</td></tr>
+          <tr><td>150장 × 3MB</td><td class="tabular">$2,577</td><td class="tabular profit-pos">$772</td><td class="tabular">−77%</td></tr>
+          <tr><td>150장 × 4MB</td><td class="tabular">$3,437</td><td class="tabular profit-neg">−$88</td><td class="tabular">−103%</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout bad" style="margin-top:12px;">
+      <b>무료 사용자가 많은 구조일수록 스토리지가 이익을 통째로 먹는다.</b> E2는 무료 25.5만 명 중 5,000명(2%)만 돈을 내는데, <b>스토리지는 25.5만 명 전원에게 매달 붙는다</b>. 장당 3MB·150장이면 월 이익의 <span class="big">77%</span>가 사라지고, 4MB면 <b>적자로 뒤집힌다</b>.
+      <br><br>강조할 것은 <b>이 표의 오른쪽 칸들이 "먼 미래"가 아니라 "시간이 지나면 자동으로 도달하는 자리"</b>라는 점이다. 사진은 지워지지 않으므로 사용자가 앱을 계속 쓰기만 하면 누적 장수는 반드시 늘어난다 — <b>가만히 두면 표의 아래쪽으로 흘러간다.</b>
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-7. 복원 트래픽(내려받기)</h3>
+    <p class="section-desc" style="margin-bottom:12px;">복원은 기기 변경·앱 재설치 때만 일어난다. 저장료와 달리 <b>흐름</b>이라 빈도에 비례한다.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>규모</th><th>월 복원 비율</th><th>1인 복원량</th><th>월 트래픽</th><th>월 비용</th></tr></thead>
+        <tbody>
+          <tr><td>무료 5만</td><td class="tabular">2%</td><td>50장 × 2MB</td><td class="tabular">98 GiB</td><td class="tabular">$12</td></tr>
+          <tr><td>무료 5만</td><td class="tabular">5%</td><td>50장 × 2MB</td><td class="tabular">244 GiB</td><td class="tabular">$29</td></tr>
+          <tr><td>E안 25.5만</td><td class="tabular">2%</td><td>50장 × 2MB</td><td class="tabular">498 GiB</td><td class="tabular">$60</td></tr>
+          <tr><td>E안 25.5만</td><td class="tabular">5%</td><td>100장 × 2MB</td><td class="tabular">2,490 GiB</td><td class="tabular">$299</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="section-desc" style="margin-top:10px;">업로드·다운로드 <b>작업 건수</b> 비용은 무시할 수준이다 — 25.5만 명이 월 3장씩 올려도 $3.83/월, 복원 작업은 월 $1 미만. <b>작업 단가는 신경 쓸 항목이 아니고, 용량과 트래픽만 보면 된다.</b></p>
+    <div class="callout" style="margin-top:12px; background:var(--surface-2); border-color:var(--border);">
+      <b>지금 테스트 기간은 복원 비율이 실제 서비스보다 훨씬 높다.</b> 계정 삭제·재가입·재설치를 반복하고 있어서다(이 반복이 <code>aiAuditLogs</code> 표본을 지워 온 것과 같은 원인 — 0번 섹션 ①). 테스트 중 관측한 복원 빈도를 그대로 서비스 예측에 쓰면 안 된다.
+    </div>
+
+    <h3 style="font-size:13px; margin:22px 0 8px;">16-8. 원가를 줄이는 손잡이 — 효과 큰 순서대로</h3>
+    <div class="marketing-list">
+      <div class="marketing-item">
+        <div class="marketing-rank">1</div>
+        <div>
+          <h3>보관본만 축소한다 — 85~90% 절감, 압도적 1순위</h3>
+          <p><b>인식은 촬영 직후 기기 안에서 끝난다.</b> 저장된 사진을 나중에 다시 인식에 쓰지 않으므로, <b>인식은 원본으로 하고 보관본만 줄이면 인식률에 아무 영향이 없다.</b> 긴 변 1,600px·품질 80 정도면 명함 글자를 화면에서 읽는 데 충분하고 장당 2MB → 약 0.3MB가 된다. E안 25.5만·50장 기준 <b>월 $573 → $86</b>.
+          <br>방침 v2.2가 "여러 이용자의 사진을 모은 인식 기능 학습·개선에 이용하지 않는다"로 확정됐으므로(2026-08-15), 학습용 원본을 남겨 둘 이유도 없어졌다.
+          <br><b>⚠️ 소급 적용이 안 된다.</b> 이미 올라간 사진은 그대로 남는다 — <b>플래그를 켜기 전에 정하는 편이 훨씬 싸다.</b> 다만 "사용자가 사진을 확대해 원문을 읽는" 용도를 어디까지 보장할지는 <b>사용자 결정 사항</b>이다.</p>
+        </div>
+        <span class="cost-badge free">−85%</span>
+      </div>
+      <div class="marketing-item">
+        <div class="marketing-rank">2</div>
+        <div>
+          <h3>탈퇴·명함 삭제 시 서버 정리를 서버 트리거로</h3>
+          <p>지금은 <b>클라이언트가 지우는 구조</b>라 탈퇴 도중 앱이 죽으면 사진이 서버에 남는다(추가 220 "남은 것"). 고아 파일은 <b>누구의 것도 아닌 채 영원히 과금</b>된다. 개인정보 파기 의무 문제이기도 하지만 <b>원가 항목이기도 하다</b> — <code>onUserDeletedCleanup</code>이 맡아야 한다.</p>
+        </div>
+        <span class="cost-badge low">누수 차단</span>
+      </div>
+      <div class="marketing-item">
+        <div class="marketing-rank">3</div>
+        <div>
+          <h3>5MB 규칙 상한 — 축소를 안 하면 결함이 된다</h3>
+          <p><code>storage.rules</code>가 5MB를 넘는 업로드를 거부한다. 품질 100·최대 해상도 크롭이 5MB를 넘는 고해상도 기기에서는 <b>업로드가 조용히 거부되고, 사진만 복원되지 않는 원래 문제로 되돌아간다</b>. 축소(1번)를 하면 이 위험도 함께 사라진다.</p>
+        </div>
+        <span class="cost-badge low">결함 위험</span>
+      </div>
+      <div class="marketing-item">
+        <div class="marketing-rank">4</div>
+        <div>
+          <h3>스토리지 클래스 하향 — 나중에 볼 것</h3>
+          <p>복원은 드문 접근이라 Nearline($0.016/GiB·월, −30%)이 후보다. 다만 <b>최소 보관 30일 + 조회 시 추가 과금</b>이 붙어 계산이 복잡해진다. 축소(1번)가 −85%인데 이건 −30%이므로 <b>순서가 뒤다.</b></p>
+        </div>
+        <span class="cost-badge low">−30%</span>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top:16px; background:var(--surface-2); border-color:var(--border);">
+      <b>이 절의 한계 — 무엇이 실측이고 무엇이 아닌가.</b>
+      <br>· <b>실측(공시가)</b>: 16-1의 단가 전부. 2026-08-16 Google Cloud 가격표 직접 확인.
+      <br>· <b>미실측</b>: ① <b>장당 용량</b>(모든 금액이 여기에 비례 — 실기기 <code>.enc</code> 크기 측정으로 바로 해결) ② <b>1인 누적 장수</b>(테스터 1명이 16장인 것 외에 표본 없음) ③ <b>복원 빈도</b>.
+      <br>· <b>미확인</b>: 버킷 실제 리전과 무료 할당량 적용 여부(16-1 경고).
+      <br>· 사진 저장은 <b>소급 업로드가 없다</b> — 플래그를 켠 시점 이후에 등록하는 명함부터 쌓인다(방침 v2.2). 따라서 위 총액은 <b>켠 날부터 서서히 도달하는 값</b>이지 첫 달 청구서가 아니다.
+    </div>
+  </section>
+
   <footer>
     이 문서의 모든 수치는 가정에 기반한 추정치이며, 실사용 데이터가 쌓이면 재계산이 필요합니다.
     스토어 수수료는 애플/구글의 중소사업자 프로그램(연 매출 $1M 미만, 15%) 기준이며, 이 기준을 초과하면 30%로 재계산해야 합니다.
@@ -970,6 +1155,7 @@ footer{margin-top:40px; padding-top:16px; border-top:1px solid var(--border); fo
     <br><b>13·14번 섹션(회차 판매안, 2026-08-09 추가)</b>은 위 실측 단가를 그대로 쓰되, <b>티어 구성비(₩1,000 60% / ₩3,000 25% / ₩5,000 10% / ₩10,000 5%)</b>와 <b>실사용률(상한의 60%)</b>, <b>사용 집중도(월 사용량의 60%가 한 주에 몰림)</b>라는 세 가지 미실측 가정 위에 있습니다.
     해지율은 반영하지 않았으므로 F안(회차 구독)의 우위는 상한값으로 읽어야 합니다. 이 값들은 2026-08-09 배포한 AI 호출 감사 로그(<code>aiAuditLogs</code>)로 실측 가능합니다.
     <br><b>15번 섹션(무료 10회 → 충전, 2026-08-11 추가)</b>은 13번과 동일한 단가·사다리를 쓰되, 무료 회차를 5→10회로 늘렸을 때의 <b>1회성 획득비</b>와 <b>자기부담 회수 손익분기(무료→충전 전환율 4%)</b>를 계산합니다. 이 전환율은 미실측 목표선입니다.
+    <br><b>16번 섹션(스토리지 원가, 2026-08-16 추가)</b>은 명함 사진의 서버 저장 결정에 따라 새로 생긴 비용을 계산합니다. 단가는 Google Cloud 공시가(서울 리전 Standard $0.023/GiB·월, 아시아 내려받기 $0.12/GiB)를 직접 확인한 <b>실측값</b>이지만, <b>장당 용량·1인 누적 장수·복원 빈도는 미실측</b>이며 모든 금액이 장당 용량에 정비례합니다. 1~15번의 손익에는 이 비용이 포함돼 있지 않으므로, 16-5·16-6의 차감표와 함께 읽어야 합니다.
     <br>그 밖의 가정(전환율 50:1, 사용량 평균/상한, 환율 ₩1,430/$)은 여전히 추정치이며 실사용 데이터가 쌓이면 재계산이 필요합니다.
     스토어 수수료는 애플/구글의 중소사업자 프로그램(연 매출 $1M 미만, 15%) 기준이며, 이 기준을 초과하면 30%로 재계산해야 합니다.
     작성: Claude (커넥션센스 프로젝트 어시스턴트) · 원본 데이터: docs/admin/reports/pnl-analysis-freemium.html
