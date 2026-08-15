@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/contact_image_service.dart';
@@ -450,6 +451,17 @@ class SettingsView extends StatelessWidget {
                       title: '잘못 채워진 태그 정리 (관리자)',
                       subtitle: '기본값 "AI, IT"만 그대로 남은 명함의 태그를 비움',
                       onTap: () => _confirmSeededTagCleanup(context),
+                    ),
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '자동 삽입된 메모 정리 (관리자)',
+                      subtitle: '스캔이 넣던 안내 문구만 그대로 남은 명함의 메모를 비움',
+                      onTap: () => _confirmSeededMemoCleanup(context),
                     ),
                   _SettingsRow(
                     icon: const Icon(
@@ -1147,6 +1159,67 @@ Future<void> _confirmSeededTagCleanup(BuildContext context) async {
   }
   messenger.showSnackBar(
     SnackBar(content: Text('${targets.length}건의 태그를 비웠습니다.')),
+  );
+}
+
+/// 스캔이 자동으로 넣던 문구가 그대로 남은 메모를 비운다 — **관리자 전용,
+/// 일회성 정리**(backlog 추가 223).
+///
+/// 태그 정리([_confirmSeededTagCleanup])와 같은 구조다. 자동 마이그레이션으로
+/// 하지 않은 이유도 같다 — **사용자가 그 문장을 보고 그대로 두기로 했을
+/// 가능성**을 앱이 구별할 수 없다. 지우려다 사용자 메모를 지우는 쪽이 더 나쁘다.
+///
+/// 대상은 메모가 **그 문장 하나뿐**인 명함이다. 뒤에 무언가 덧붙였다면 사용자가
+/// 그 칸을 의식했다는 뜻이라 건드리지 않는다.
+Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
+  final repo = context.read<ContactsRepository>();
+  // 판정 규칙은 따로 빼서 테스트한다(`seeded_memo_cleanup.dart`).
+  final targets = repo.contacts
+      .where((c) => isSeededScanMemo(c.memo))
+      .toList();
+
+  final messenger = ScaffoldMessenger.of(context);
+  if (targets.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('자동 삽입된 메모만 남은 명함이 없습니다.')),
+    );
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${targets.length}건의 메모를 비울까요?'),
+      content: Text(
+        '메모가 "AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다." '
+        '한 줄뿐인 명함 ${targets.length}건입니다.\n'
+        '예전에 스캔이 자동으로 넣던 문구가 그대로 저장된 것으로 봅니다.\n\n'
+        '이 문구는 AI 대화 가이드를 만들 때도 함께 전송되어, 아무 의미 없는 '
+        '내용이 상대방에 대한 정보처럼 쓰입니다.\n\n'
+        '되돌릴 수 없습니다.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '메모 비우기',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+
+  for (final contact in targets) {
+    repo.updateContact(contact.copyWith(memo: ''));
+  }
+  messenger.showSnackBar(
+    SnackBar(content: Text('${targets.length}건의 메모를 비웠습니다.')),
   );
 }
 
