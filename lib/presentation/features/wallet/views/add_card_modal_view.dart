@@ -10,6 +10,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../core/utils/ocr_origin.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
@@ -281,6 +282,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     for (final node in _fieldFocusOrder) {
       node.addListener(() => _ensureFocusedFieldVisible(node));
     }
+
+    // 자동 인식 표시(F-09)를 감시한다. 키는 `_ocrParsedSnapshot`에 쓰는 것과
+    // **정확히 같아야** 하며(파서가 채울 때 쓰는 키), 다르면 표시가 영영
+    // 안 붙는다. 여기 없는 칸(태그·관심사·메모)은 파서가 채우지 않는다.
+    _watchOcrBadge('name', _nameController);
+    _watchOcrBadge('company', _companyController);
+    _watchOcrBadge('title', _titleController);
+    _watchOcrBadge('address', _addressController);
+    _watchOcrBadge('addressDetail', _addressDetailController);
+    _watchOcrBadge('postal', _postalCodeController);
+    _watchOcrBadge('mobile', _phoneController);
+    _watchOcrBadge('office', _officePhoneController);
+    _watchOcrBadge('email', _emailController);
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
@@ -526,9 +540,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _setTextFromStart(_officePhoneController, result.officePhone);
         _setTextFromStart(_emailController, result.email);
         _tagsController.text = result.tags.join(', ');
-        _memoController.text = result.rawText.isEmpty
-            ? ''
-            : 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+        // ⚠️ 메모 칸은 **비운 채로 둔다.** 예전에는 여기에 "AI OCR 스캔으로 자동
+        // 추출된 명함 텍스트 정보입니다."를 넣었는데, 그건 사용자가 쓰지 않은
+        // 문장이 사용자 메모로 저장되는 것이라 E-08(태그 기본값 `AI, IT`)과
+        // 같은 유형의 가짜 데이터였다(CLAUDE.md 4절).
+        //
+        // 실제 피해도 있었다 — 이 문장이 AI 브리핑 요청에 `메모:`로 그대로
+        // 실려 나갔다(2026-08-15 실기기에서 확인). 아무 정보도 없는 문장에
+        // 토큰을 쓰고, AI는 그걸 이 사람에 대한 맥락으로 읽는다.
+        _memoController.text = '';
       } else {
         // 명함 앞/뒷면에 정보가 나뉘어 있는 경우가 흔해서(예: 앞면엔 이름·직함만,
         // 뒷면에 전화번호·주소·이메일) 새 스캔 결과로 폼을 통째로 덮어쓰지 않고
@@ -546,9 +566,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
           _tagsController.text = result.tags.join(', ');
         }
-        if (_memoController.text.trim().isEmpty) {
-          _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
-        }
+        // 메모는 채우지 않는다 — 위 `overwrite` 분기와 같은 이유다.
       }
     });
 
@@ -1573,6 +1591,82 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
+  /// 폼을 성격이 다른 두 덩어리로 가르는 헤더(F-04).
+  ///
+  /// "명함에서 읽은 정보"와 "내가 덧붙이는 정보"를 구분한다. 테스터 피드백은
+  /// *자동으로 읽힌 값과 내가 쓴 메모가 섞여 보인다*였는데, 원인은 두 성격의
+  /// 칸이 **같은 모양으로 연달아** 놓여 있던 것이다. 칸 모양을 바꾸는 대신
+  /// 헤더로 나눈 이유는, 입력칸 스타일을 둘로 만들면 이후 모든 화면에서 그
+  /// 두 스타일을 계속 맞춰야 하기 때문이다.
+  Widget _buildFormSectionHeader({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      // 위쪽 여백을 크게 둬서 앞 섹션과 시각적으로 떨어뜨린다. 아래는 곧바로
+      // 첫 입력칸이 오므로 좁게.
+      padding: const EdgeInsets.only(top: 6, bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.accentText),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 이 칸이 **아직 자동 인식 값 그대로인가**(F-09).
+  ///
+  /// 판정 규칙 자체는 [isStillOcrValue]에 있다 — 화면에서 떼어내 테스트로
+  /// 고정했다(`lib/core/utils/ocr_origin.dart` 문서화 참고).
+  bool _isStillOcrValue(String? ocrKey, TextEditingController controller) =>
+      isStillOcrValue(
+        key: ocrKey,
+        snapshot: _ocrParsedSnapshot,
+        currentText: controller.text,
+      );
+
+  /// 자동 인식 표시가 붙은 칸을 사용자가 고치면 **그 즉시** 표시가 사라지도록
+  /// 다시 그린다(F-09).
+  ///
+  /// 매 글자마다 `setState`를 부르면 이 큰 폼 전체가 리빌드된다. 그래서 표시가
+  /// 실제로 **켜짐↔꺼짐으로 바뀌는 순간에만** 다시 그린다 — 대부분의 타이핑은
+  /// 이미 꺼진 상태라 아무 일도 하지 않는다.
+  void _watchOcrBadge(String key, TextEditingController controller) {
+    var wasBadged = _isStillOcrValue(key, controller);
+    controller.addListener(() {
+      final isBadged = _isStillOcrValue(key, controller);
+      if (isBadged == wasBadged) return;
+      wasBadged = isBadged;
+      if (mounted) setState(() {});
+    });
+  }
+
   /// 자동 인식이 채운 값들을 저장 시점의 최종 값과 비교해, 사용자가 각 필드를
   /// 어떻게 바꿨는지(그대로/고침/지움)만 집계에 남긴다. **값은 넘기지 않는다.**
   /// 스캔을 한 번도 안 했으면(스냅샷이 비었으면) 아무것도 기록하지 않는다.
@@ -2456,9 +2550,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     const SizedBox(height: 12),
                   ],
 
+                  // F-04: 여기부터는 **명함에 인쇄된 정보**다. 아래 "내가
+                  // 덧붙이는 정보"와 성격이 달라 헤더로 갈라 놓는다 — 테스터가
+                  // "자동으로 읽힌 값과 내가 쓴 메모가 구분이 안 된다"고 했다.
+                  _buildFormSectionHeader(
+                    icon: Icons.badge_outlined,
+                    title: '명함에서 읽은 정보',
+                    subtitle: _ocrParsedSnapshot.isEmpty
+                        ? '명함에 인쇄된 내용을 적는 칸이에요'
+                        : '옅은 파란 칸은 자동으로 읽은 값이에요. 고치면 표시가 사라집니다',
+                  ),
+
                   // 1. 이름 (필수)
                   _buildFormField(
                     controller: _nameController,
+                    ocrKey: 'name',
                     focusNode: _nameFocusNode,
                     order: 1,
                     nextFocusNode: _companyFocusNode,
@@ -2477,6 +2583,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 2. 회사명 (필수)
                   _buildFormField(
                     controller: _companyController,
+                    ocrKey: 'company',
                     focusNode: _companyFocusNode,
                     order: 2,
                     nextFocusNode: _titleFocusNode,
@@ -2494,6 +2601,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 3. 직함 / 부서 (선택)
                   _buildFormField(
                     controller: _titleController,
+                    ocrKey: 'title',
                     focusNode: _titleFocusNode,
                     order: 3,
                     nextFocusNode: _addressFocusNode,
@@ -2505,6 +2613,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 4. 회사 주소 — 도로명까지(위치 정보/지오코딩의 기준이 되는 부분)
                   _buildFormField(
                     controller: _addressController,
+                    ocrKey: 'address',
                     focusNode: _addressFocusNode,
                     order: 4,
                     nextFocusNode: _addressDetailFocusNode,
@@ -2563,6 +2672,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 표시용으로만 별도 보관.
                   _buildFormField(
                     controller: _addressDetailController,
+                    ocrKey: 'addressDetail',
                     focusNode: _addressDetailFocusNode,
                     order: 4.5,
                     nextFocusNode: _postalCodeFocusNode,
@@ -2575,6 +2685,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 보관. OCR 스캔 또는 도로명주소 검색에서 자동으로 채워진다.
                   _buildFormField(
                     controller: _postalCodeController,
+                    ocrKey: 'postal',
                     focusNode: _postalCodeFocusNode,
                     order: 4.7,
                     nextFocusNode: _phoneFocusNode,
@@ -2587,6 +2698,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
                   _buildFormField(
                     controller: _phoneController,
+                    ocrKey: 'mobile',
                     focusNode: _phoneFocusNode,
                     order: 5,
                     nextFocusNode: _officePhoneFocusNode,
@@ -2610,6 +2722,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 6. 사무실 전화번호 (선택)
                   _buildFormField(
                     controller: _officePhoneController,
+                    ocrKey: 'office',
                     focusNode: _officePhoneFocusNode,
                     order: 6,
                     nextFocusNode: _directPhoneFocusNode,
@@ -2649,6 +2762,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 7. 이메일 (필수!)
                   _buildFormField(
                     controller: _emailController,
+                    ocrKey: 'email',
                     focusNode: _emailFocusNode,
                     order: 7,
                     nextFocusNode: _websiteFocusNode,
@@ -2678,6 +2792,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 10),
+
+                  // F-04: 여기부터는 **명함에 없는, 내가 덧붙이는 정보**다.
+                  // 자동 인식은 이 아래 칸을 절대 채우지 않는다.
+                  _buildFormSectionHeader(
+                    icon: Icons.edit_note,
+                    title: '내가 덧붙이는 정보',
+                    subtitle: '명함에 없는 내용이에요. AI 대화 가이드가 참고합니다',
+                  ),
 
                   // 8. 태그 키워드
                   _buildFormField(
@@ -2827,6 +2949,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 화면 맨 위에 따로 떠 있던 "* 필수 입력 항목" 범례를 첫 필드(이름) 라벨
     // 옆으로 옮겨 붙이기 위한 파라미터.
     String? trailingLegend,
+    // 자동 인식이 채울 수 있는 칸이면 `_ocrParsedSnapshot`의 키를 준다(F-09).
+    // 스냅샷에 그 키가 있고 **값이 아직 그대로면** "자동 인식" 표시가 붙는다.
+    // 사용자가 한 글자라도 고치면 값이 달라져 표시가 저절로 사라진다 — 별도
+    // 상태를 두지 않는 이유다.
+    String? ocrKey,
   }) {
     // 라벨을 입력란 위 별도 줄에 두지 않고 **입력란 안쪽 플로팅 라벨**로
     // 넣는다(사용자 요청, 2026-08-10). 필드마다 라벨 줄 하나와 그 아래 여백이
@@ -2834,6 +2961,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     //
     // 입력란 자체의 높이는 줄이지 않았다 — 터치 목표가 작아지면 오타를 고치기
     // 어려워진다. 줄인 것은 라벨이 차지하던 자리뿐이다.
+    final isAutoFilled = _isStillOcrValue(ocrKey, controller);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2905,7 +3033,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               fontSize: 13,
             ),
             filled: true,
-            fillColor: AppColors.bgBase,
+            // 자동 인식이 채운 값은 옅은 강조 배경으로 구분한다(F-09). 라벨 줄을
+            // 하나 더 만들지 않으려고 배경·아이콘으로만 표시했다 — 이 폼은
+            // 라벨 줄을 없애 항목을 더 담기로 한 이력이 있다(2026-08-10).
+            fillColor: isAutoFilled ? AppColors.accentSoft : AppColors.bgBase,
+            // 아이콘도 같은 이유로 칸 **안쪽**에 둔다. 세로 공간을 안 먹는다.
+            prefixIcon: isAutoFilled
+                ? const Tooltip(
+                    message: '명함에서 자동으로 읽은 값이에요. 고치면 이 표시가 사라집니다.',
+                    child: Icon(
+                      Icons.auto_awesome,
+                      size: 18,
+                      color: AppColors.accentText,
+                    ),
+                  )
+                : null,
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 24,
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,
