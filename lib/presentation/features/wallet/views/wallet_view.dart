@@ -444,7 +444,15 @@ class _WalletViewState extends State<WalletView> {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: Text('$count개의 명함을 삭제할까요?'),
-        content: const Text('선택한 명함과 기록이 기기에서 삭제됩니다.'),
+        // ⚠️ "기기에서"라고만 적으면 이 폰에서만 지우는 것으로 읽힌다.
+        // 실제로는 서버(Firestore)와 다른 기기에서도 사라지고 되돌릴 수
+        // 없다 — 명함을 지우면 삭제 기록(묘비)이 남아 다른 기기도 따라
+        // 지운다(P1-39 A안). 사진 서버 사본은 플래그를 켠 뒤 여기 문구에
+        // 함께 넣는다(2026-08-16, 지금은 올라간 사진이 없어 사실이 아니다).
+        content: const Text(
+          '선택한 명함과 기록이 기기와 서버에서 모두 삭제됩니다.\n'
+          '되돌릴 수 없습니다.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogCtx).pop(false),
@@ -760,7 +768,11 @@ class _ContactCard extends StatelessWidget {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('명함을 삭제할까요?'),
-            content: Text('${contact.name}님의 명함과 기록이 기기에서 삭제됩니다.'),
+            // 위 일괄 삭제와 같은 이유로 "기기와 서버"라고 적는다.
+            content: Text(
+              '${contact.name}님의 명함과 기록이 기기와 서버에서 모두 '
+              '삭제됩니다.\n되돌릴 수 없습니다.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
