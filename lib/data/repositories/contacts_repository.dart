@@ -555,12 +555,9 @@ class ContactsRepository extends ChangeNotifier {
     } else if (_uid != null) {
       // 경로가 끊긴 명함(서버 복원 직후 등)이라도 서버엔 사본이 있을 수 있다.
       // 여기서 안 지우면 참조가 사라져 **나중에 지울 수도 없는 고아 파일**이
-      // 된다 — 로컬에서 겪은 것과 같은 함정이다.
-      _contactImageService.deleteCardImage(
-        '',
-        uid: _uid,
-        contactId: id,
-      );
+      // 된다 — 로컬에서 겪은 것과 같은 함정이다. 빈 경로는 "기기 파일은 없고
+      // 서버만 정리하라"는 뜻으로 해석된다(deleteCardImage 문서화 참고).
+      _contactImageService.deleteCardImage('', uid: _uid, contactId: id);
     }
     _contacts.removeWhere((c) => c.id == id);
     notifyListeners();

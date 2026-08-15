@@ -203,17 +203,23 @@ class ContactImageService {
   /// ⚠️ 둘을 빠뜨리면 사용자가 지운 명함의 사진이 서버에 남는다. 방침은
   /// "이용자가 해당 명함을 삭제한 때 즉시 파기"라고 적고 있으므로, 로그인
   /// 상태의 삭제 경로에서는 반드시 함께 넘길 것.
+  ///
+  /// [path]가 비어 있으면 기기 파일 정리를 건너뛴다 — 서버 복원 직후처럼
+  /// **경로가 끊긴 명함**도 서버에는 사본이 있을 수 있어, 그 경우 [uid]·
+  /// [contactId]만으로 서버 쪽을 지우기 위함이다.
   Future<void> deleteCardImage(
     String path, {
     String? uid,
     String? contactId,
   }) async {
-    try {
-      _decryptedCache.remove(path);
-      final file = File(path);
-      if (file.existsSync()) await file.delete();
-    } catch (e) {
-      debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
+    if (path.isNotEmpty) {
+      try {
+        _decryptedCache.remove(path);
+        final file = File(path);
+        if (file.existsSync()) await file.delete();
+      } catch (e) {
+        debugPrint('명함 이미지 삭제 실패: ${e.runtimeType}');
+      }
     }
     if (uid != null && contactId != null) {
       await _photoBackup.delete(uid: uid, contactId: contactId);
