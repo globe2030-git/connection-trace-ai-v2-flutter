@@ -1052,7 +1052,7 @@ CLAUDE.md 6절에 **"⚠️ Android 릴리스가 아직 debug 키스토어로 �
    ↓
 firestore.rules·storage.rules 배포
    ↓
-functions 배포 (firebase deploy --only functions)   ← 2026-08-15 추가
+functions 배포 (firebase deploy --only functions)   ✅ 2026-08-15 완료
    ↓
 kCardPhotoBackupEnabled = true
    ↓
