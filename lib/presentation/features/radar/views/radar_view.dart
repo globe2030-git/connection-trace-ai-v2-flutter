@@ -404,6 +404,21 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 12),
 
+                        // 지도에서 기준점을 옮겨 뒀으면 그 사실을 알린다(F-13).
+                        //
+                        // ⚠️ 이 줄은 **검색 중에도 남긴다.** 아래 F-11 분기가
+                        // 감추는 것은 "지금 내 주변이 어떤가"를 말하는 조작
+                        // 줄이지, **"지금 무엇을 기준으로 잰 거리인가"가
+                        // 아니다.** 이걸 같이 감추면 검색 결과의 거리가 내 위치
+                        // 기준이 아닌데 그 사실을 알 길이 없어져, F-11이 깨진
+                        // 것처럼 보이는 결함으로 접수된다.
+                        if (viewModel.isUsingCustomAnchor) ...[
+                          _AnchorNoticeBar(
+                            onReset: viewModel.clearAnchor,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
                         // 검색 중에는 이 카드와 아래 조작 줄을 감춘다(F-11) —
                         // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
                         // 검색 결과를 밀어낼 이유가 없다.
@@ -532,8 +547,12 @@ class _RadarViewState extends State<RadarView> {
                         // 정보도 주지 않는다.
                         ...groupContactsByAddress(nearbyList).expand((group) {
                           final tiles = group.contacts.map((contact) {
+                            // 내 위치가 아니라 기준점에서 잰다(F-13). 목록
+                            // 정렬도 같은 기준을 쓰므로(뷰모델), 여기만 내
+                            // 위치로 재면 "거리는 커지는데 순서는 그대로"인
+                            // 목록이 된다.
                             final distance = GeoUtils.getDistanceMeters(
-                              viewModel.currentPosition,
+                              viewModel.referencePosition,
                               contact.geo,
                             );
                             return _NearbyContactTile(
@@ -1464,6 +1483,64 @@ class _RefreshLocationButton extends StatelessWidget {
 /// 같은 인맥을 두 화면에서 다른 모양으로 보여 줄 이유가 없어 형태를 맞췄다
 /// (사용자 요청, 2026-08-10). 다만 이 화면에는 **근접 거리**가 더 붙는다 —
 /// "지금 얼마나 가까운가"가 이 화면의 존재 이유다.
+/// "지금 거리 기준이 내 위치가 아니다"를 알리는 줄(F-13).
+///
+/// 지도에서 기준점을 옮기면 이 목록의 거리와 순서가 함께 바뀐다(사용자 결정,
+/// 2026-08-16). 바뀐 사실을 화면에 적지 않으면 사용자는 거리가 이상해진 것을
+/// 결함으로 읽는다 — 지도에서 한 조작과 목록의 숫자를 연결 짓기 어렵다.
+class _AnchorNoticeBar extends StatelessWidget {
+  final VoidCallback onReset;
+
+  const _AnchorNoticeBar({required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.center_focus_strong,
+            size: 16,
+            color: AppColors.accentText,
+          ),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              '지도에서 지정한 위치 기준으로 거리를 보여 주고 있습니다',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accentText,
+              ),
+            ),
+          ),
+          // 되돌리는 방법을 같은 줄에 둔다. 지도를 다시 열어야만 풀 수 있으면
+          // 목록에서 이상을 발견한 사람이 갈 곳을 잃는다.
+          TextButton(
+            onPressed: onReset,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: AppColors.accentText,
+            ),
+            child: const Text(
+              '내 위치로',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NearbyContactTile extends StatelessWidget {
   final ContactModel contact;
   final double distanceMeters;

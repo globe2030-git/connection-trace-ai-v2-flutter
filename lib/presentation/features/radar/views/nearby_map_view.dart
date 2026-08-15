@@ -5,6 +5,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import 'package:provider/provider.dart';
 
+import '../../../../core/icons/app_icons.dart';
+import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
@@ -94,6 +96,8 @@ class _NearbyMapViewState extends State<NearbyMapView> {
   Widget build(BuildContext context) {
     final viewModel = context.watch<RadarViewModel>();
     final me = viewModel.currentPosition;
+    // 지도에서 직접 찍은 기준점(F-13). 없으면 내 위치가 기준이다.
+    final anchor = viewModel.anchorPosition;
     final radius = viewModel.settings.radiusMeters;
 
     // 좌표가 있는 인맥만 지도에 올릴 수 있다. 주소만 있고 좌표 변환이 아직
@@ -121,7 +125,12 @@ class _NearbyMapViewState extends State<NearbyMapView> {
       );
     }
 
-    final center = LatLng(me.lat, me.lng);
+    // 내 위치와 거리 기준점은 다를 수 있다(F-13). 파란 점은 언제나 내 위치에
+    // 그대로 두고, 반경 원과 거리 계산만 기준점을 따른다 — 내 점까지 함께
+    // 옮기면 사용자가 자기가 어디 있는지를 잃는다.
+    final myPoint = LatLng(me.lat, me.lng);
+    final origin = anchor ?? me;
+    final center = LatLng(origin.lat, origin.lng);
 
     // 반경이 바뀌었으면 원이 화면에 들어오도록 배율을 다시 맞춘다. 빌드 중에는
     // 지도를 움직일 수 없어 다음 프레임으로 미룬다.
@@ -152,6 +161,16 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               interactionOptions: const InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
+              // 지도를 누른 지점을 거리 기준으로 삼는다(F-13, 사용자 결정
+              // 2026-08-16: 드래그가 아니라 탭). 드래그는 지도 이동(팬)과
+              // 손동작이 겹쳐, 지도를 옮기려다 기준점이 딸려 온다.
+              //
+              // `onTap`은 탭에만 반응하고 팬·확대에는 반응하지 않는다. 새 제스처
+              // 인식기를 얹지 않는 것이 중요하다 — 이 화면은 연속 터치로 멈추는
+              // 결함(E-11)이 났던 자리다.
+              onTap: (_, point) => viewModel.setAnchor(
+                GeoPosition(lat: point.latitude, lng: point.longitude),
+              ),
             ),
             children: [
               TileLayer(
@@ -179,11 +198,20 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               MarkerLayer(
                 markers: [
                   Marker(
-                    point: center,
+                    point: myPoint,
                     width: 22,
                     height: 22,
                     child: const _MyLocationDot(),
                   ),
+                  // 기준점을 옮겼을 때만 그린다. 내 위치와 모양을 다르게 해야
+                  // 어느 쪽이 나이고 어느 쪽이 기준인지 구분된다.
+                  if (anchor != null)
+                    Marker(
+                      point: center,
+                      width: 30,
+                      height: 30,
+                      child: const _AnchorMark(),
+                    ),
                   for (final contact in plottable)
                     Marker(
                       point: LatLng(contact.geo!.lat, contact.geo!.lng),
@@ -192,7 +220,12 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                       alignment: Alignment.topCenter,
                       child: _ContactPin(
                         contact: contact,
-                        onTap: () => _showContactSheet(context, contact, me),
+                        onTap: () => _showContactSheet(
+                          context,
+                          contact,
+                          origin,
+                          isCustomAnchor: anchor != null,
+                        ),
                       ),
                     ),
                 ],
@@ -203,9 +236,15 @@ class _NearbyMapViewState extends State<NearbyMapView> {
             right: 12,
             bottom: 96,
             child: _MapButton(
-              tooltip: '내 위치로',
+              // 같은 버튼이지만 기준점을 옮겨 둔 상태에서는 하는 일이 하나 더
+              // 있다 — 기준점을 풀고 내 위치로 되돌린다. 되돌릴 방법이 없으면
+              // "내 위치로 어떻게 돌아가지"가 곧바로 문의가 된다.
+              tooltip: anchor != null ? '기준점 해제 · 내 위치로' : '내 위치로',
               icon: Icons.my_location,
-              onTap: () => _mapController.move(center, _initialZoom(radius)),
+              onTap: () {
+                viewModel.clearAnchor();
+                _mapController.move(myPoint, _initialZoom(radius));
+              },
             ),
           ),
           Align(
@@ -214,6 +253,13 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               count: plottable.length,
               hiddenCount: hiddenCount,
               attribution: _attribution,
+              // 탭으로 기준점을 지정하는 것은 **눌러 보기 전에는 알 수 없는
+              // 동작**이라 안내를 글자로 붙인다. 이 저장소가 이미 같은 판단을
+              // 한 자리가 있다 — 주변 화면의 "짧게: 위치 갱신 · 길게: 감지
+              // 켜기/끄기" 줄이 같은 이유로 붙어 있다.
+              anchorDistanceFromMe: anchor == null
+                  ? null
+                  : GeoUtils.getDistanceMeters(me, anchor),
             ),
           ),
         ],
@@ -254,50 +300,119 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     );
   }
 
+  /// 핀을 눌렀을 때 뜨는 미니 카드.
+  ///
+  /// **여기에 전화·AI 버튼이 붙는 것이 F-14의 실제 변경분이다.** 그전에는 이
+  /// 카드가 글자만 보여 주어, 같은 인맥이라도 목록에서는 바로 전화를 걸 수
+  /// 있고 지도에서는 걸 수 없었다. 목록에서 버튼을 빼는 방향이 아니라 지도에
+  /// 더하는 방향으로 맞춘다(사용자 결정 2026-08-16, A안).
+  ///
+  /// 빠른 동작은 **눈에 보이는 버튼**으로만 둔다 — 길게 누르기에 얹지 않는다.
+  /// 이 앱에서 길게 누르기는 주변 화면의 위치 버튼 한 곳뿐이고, 거기조차 옆에
+  /// 글자 설명을 붙여야 했다.
   void _showContactSheet(
     BuildContext context,
     ContactModel contact,
-    GeoPosition me,
-  ) {
-    final distance = GeoUtils.getDistanceMeters(me, contact.geo);
+    GeoPosition origin, {
+    required bool isCustomAnchor,
+  }) {
+    final distance = GeoUtils.getDistanceMeters(origin, contact.geo);
+    // 번호가 하나도 없으면 통화 버튼을 잠근다 — 눌러도 아무 일이 없는 것보다
+    // 낫다. 목록 카드와 같은 판단이다.
+    final hasAnyPhone =
+        contact.phone.trim().isNotEmpty ||
+        (contact.officePhone?.trim().isNotEmpty ?? false);
+    // 지도 라우트의 내비게이터·뷰모델을 미리 잡아 둔다. 시트를 닫은 뒤에는
+    // 시트의 context가 죽어 있어 쓸 수 없다.
+    final mapNavigator = Navigator.of(context);
+    final viewModel = context.read<RadarViewModel>();
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.cardSurface,
       showDragHandle: true,
-      builder: (_) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Text(
-                contact.name,
-                style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      contact.name,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        contact.title,
+                        contact.company,
+                      ].where((s) => s.trim().isNotEmpty).join(' · '),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      // 기준점을 옮겨 둔 상태에서 "여기서"라고 하면 어디를
+                      // 말하는지 알 수 없다. 무엇을 기준으로 잰 값인지 밝힌다.
+                      distance.isFinite
+                          ? '${isCustomAnchor ? '지정한 위치' : '내 위치'}에서 ${_distanceLabel(distance)}'
+                          : '거리 정보 없음',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                [
-                  contact.title,
-                  contact.company,
-                ].where((s) => s.trim().isNotEmpty).join(' · '),
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
+              // 목록 카드와 같은 구성·같은 순서(전화 → AI). 같은 인맥을 두
+              // 화면에서 다른 모양으로 보여 줄 이유가 없다.
+              IconButton(
+                tooltip: '${contact.name}에게 전화',
+                onPressed: hasAnyPhone
+                    ? () {
+                        // 번호가 둘이면 선택 시트가 또 열린다. 미니 카드를 먼저
+                        // 닫아 시트가 시트 위에 겹치지 않게 한다.
+                        Navigator.of(sheetContext).pop();
+                        // 번호 두 개 처리와 "실제로 통화가 시작됐는가" 반환값이
+                        // 이미 검증된 경로다(2026-08-10·08-11). 새로 짜면 그
+                        // 검증을 버리는 셈이라 목록과 같은 것을 쓴다.
+                        PhoneCallService.showCallPicker(context, contact);
+                      }
+                    : null,
+                icon: AppIcon(
+                  AppIconId.call,
+                  size: 22,
+                  color: hasAnyPhone
+                      ? AppColors.accentText
+                      : AppColors.textMuted,
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                distance.isFinite
-                    ? '여기서 ${_distanceLabel(distance)}'
-                    : '거리 정보 없음',
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.textMuted,
+              IconButton(
+                tooltip: '${contact.name} AI 대화 가이드',
+                onPressed: () {
+                  // 브리핑은 '주변' 화면 위에 겹쳐 그려진다. 지도는 그 위에 얹힌
+                  // 별도 라우트라, 지도를 열어 둔 채 브리핑을 켜면 **지도 뒤에서
+                  // 열려 아무것도 안 보인다.** 그래서 미니 카드와 지도를 닫고
+                  // 연다. 어차피 브리핑은 전체 화면이라 지도는 가려진다.
+                  Navigator.of(sheetContext).pop();
+                  mapNavigator.pop();
+                  viewModel.openBriefing(contact);
+                },
+                icon: const Icon(
+                  Icons.auto_awesome,
+                  size: 22,
+                  color: AppColors.accentText,
                 ),
               ),
             ],
@@ -329,6 +444,36 @@ class _MyLocationDot extends StatelessWidget {
             blurRadius: 8,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 사용자가 찍은 거리 기준점 표시(F-13).
+///
+/// 내 위치(채워진 원)와 **모양을 다르게** 한다 — 같은 모양이면 둘 중 어느 것이
+/// 나인지 알 수 없다. 십자 과녁은 "여기를 기준으로 잰다"는 뜻으로 읽힌다.
+class _AnchorMark extends StatelessWidget {
+  const _AnchorMark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '거리 기준점',
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardSurface,
+          shape: BoxShape.circle,
+          border: Border.all(color: AppColors.accent, width: 2.5),
+          boxShadow: const [
+            BoxShadow(color: Color(0x33000000), blurRadius: 4),
+          ],
+        ),
+        child: const Icon(
+          Icons.center_focus_strong,
+          size: 18,
+          color: AppColors.accent,
+        ),
       ),
     );
   }
@@ -431,11 +576,24 @@ class _FoundBar extends StatelessWidget {
   final int hiddenCount;
   final String attribution;
 
+  /// 기준점을 옮겨 뒀으면 내 위치에서 그 지점까지의 거리. 옮기지 않았으면
+  /// `null`이고, 그때는 "지도를 누르면 된다"는 안내가 대신 나간다.
+  final double? anchorDistanceFromMe;
+
   const _FoundBar({
     required this.count,
     required this.hiddenCount,
     required this.attribution,
+    this.anchorDistanceFromMe,
   });
+
+  /// "(내 위치에서 1.2km)". 거리를 못 재면 괄호째 뺀다 — "내 위치에서 에서"
+  /// 같은 문장이 되는 것보다 없는 편이 낫다.
+  static String _fromMeSuffix(double meters) {
+    if (!meters.isFinite) return '';
+    if (meters < 1000) return ' (내 위치에서 ${meters.round()}m)';
+    return ' (내 위치에서 ${(meters / 1000).toStringAsFixed(1)}km)';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -456,6 +614,41 @@ class _FoundBar extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: AppColors.textPrimary,
               ),
+            ),
+            const SizedBox(height: 2),
+            // 기준이 어디인지 항상 한 줄로 밝힌다. 기준점을 옮겨 놓고 그 사실을
+            // 안 보여 주면 거리가 달라진 이유를 알 수 없다.
+            Row(
+              children: [
+                Icon(
+                  anchorDistanceFromMe == null
+                      ? Icons.touch_app_outlined
+                      : Icons.center_focus_strong,
+                  size: 13,
+                  color: anchorDistanceFromMe == null
+                      ? AppColors.textMuted
+                      : AppColors.accentText,
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    anchorDistanceFromMe == null
+                        ? '지도를 누르면 그 지점 기준으로 거리를 다시 계산합니다'
+                        : '지금 기준: 지도에서 지정한 위치'
+                              '${_fromMeSuffix(anchorDistanceFromMe!)}'
+                              ' · 오른쪽 아래 버튼으로 내 위치로 돌아갑니다',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: anchorDistanceFromMe == null
+                          ? FontWeight.w400
+                          : FontWeight.w700,
+                      color: anchorDistanceFromMe == null
+                          ? AppColors.textMuted
+                          : AppColors.accentText,
+                    ),
+                  ),
+                ),
+              ],
             ),
             // 좌표가 없는 인맥은 지도에 못 찍는다. 이 사실을 숨기면 "목록엔
             // 5명인데 지도엔 3명"이 버그로 보인다.
