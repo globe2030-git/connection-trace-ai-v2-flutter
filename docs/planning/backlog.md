@@ -2,6 +2,31 @@
 
 ## 작업 로그
 
+### 2026-08-15 (추가 219) — 관리자 보안 중간 B묶음 + 낮음 012 + 배포 완료 (감사 12건 전부 종결)
+
+추가 216(즉시급 4)·217(중간 A 4)·218(배포 기록)에 이어, 관리자 감사의 **중간
+B묶음 4건 + 낮음 012**를 구현·병합하고 배포까지 마쳤다. 이로써 **관리자 보안
+감사 12건이 전부 병합·배포**됐다.
+
+- **중간 B묶음(PR #159, main 병합)**: 004 config/billing 저장형 XSS(admin.js
+  프로퍼티 할당 + rules 스키마), 006 문의 DoS(admin.js limit 50 + 커서
+  페이지네이션; 진짜 rate limit은 App Check 후속), 007 탈퇴 시 inquiries/replies
+  재귀 삭제(`onUserDeletedCleanup`), 010 관리자 변경 감사(`adminAuditLogs`
+  append-only 인터림 — 대상 쓰기와 원자적이지 않음, 완전 Callable 통합은 후속).
+- **낮음 012(PR #161, main 병합)**: 관리자 콘솔 세션 지속성을
+  `browserSessionPersistence`로(브라우저 닫으면 종료) + 로그아웃 시
+  `location.reload()`로 렌더된 DOM·메모리 상태 완전 초기화.
+- **배포 완료**(main `e6ef7aa`): 218의 3종 배포(`rules`·`functions`·
+  `hosting:admin`)에 이어 012 반영 `hosting:admin` 재배포. curl 확인 — 배포된
+  admin.js에 012 반영, CSP/X-Frame-Options 헤더 정상, 콘솔 200.
+- **정정**: 추가 218의 "12건 중 11건 완료, 012 남음"은 그 시점 스냅숏이었고,
+  이 배포로 **012까지 완료돼 12/12**가 됐다.
+- **자동검증**: `flutter analyze` 신규 0, `flutter test` 338, functions node
+  31/31, `verify_rules.py` 52/52, `check_admin_sync.py` 3소스 일치.
+- **남은 것은 실물(부분 테스트)뿐**: 011 CSP 하 로그인·004 XSS·006
+  페이지네이션·010 감사 기록·012 재접속(브라우저), 007 탈퇴→문의 0건(실기기),
+  001 해제→거부·002 멱등성(서버 시나리오). 과금 관문 준수(지갑/billing 미포함).
+
 ### 2026-08-15 (추가 218) — 진행 상황 점검 + 미결 4건 중 3건 결정 (문서만)
 
 세션 시작 요청은 "개발 진행 상황을 점검하고 보고"였다. 문서만 읽지 않고 **git
