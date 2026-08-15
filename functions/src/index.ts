@@ -29,10 +29,12 @@ import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
+import {getStorage} from "firebase-admin/storage";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
+import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 
 initializeApp();
 
@@ -848,6 +850,29 @@ export const onUserDeletedCleanup = onDocumentDeleted(
         replyCount,
       });
     }
+
+    // ────────── [명함 사진 서버 사본 정리] 시작 ──────────
+    // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 cardPhotoCleanup.ts에 있다.
+    //
+    // 왜 여기인가: 앱이 스스로 지우려는 호출은 **계정을 지운 뒤에** 일어나
+    // request.auth가 null이고, storage.rules의 isOwner(uid)가 거짓이 되어
+    // 삭제도 listAll도 거부된다. Admin SDK는 규칙을 우회하므로 계정이 사라진
+    // 뒤에도 지울 수 있고, 앱이 중간에 죽어도 이 트리거는 돈다.
+    //
+    // ⚠️ 경계 주석을 둔 이유: 이 함수에 갈래가 여럿 몰려 있고
+    // feat/ai-credit-wallet 브랜치가 같은 함수를 크게 고쳐 놨다(deviceLedger는
+    // 의도적으로 지우지 않는다는 결정 포함). 나중에 그 브랜치를 rebase 하는
+    // 사람이 어디까지가 이번 변경인지 한눈에 보게 한다.
+    const photoCleanup = await deleteUserCardPhotos(getStorage().bucket(), uid);
+    if (photoCleanup.errorType) {
+      // 실패해도 던지지 않는다 — 위 정리들은 이미 끝났고, 여기서 던지면
+      // 트리거 전체가 재시도되어 같은 삭제를 반복한다.
+      logger.warn("탈퇴 사용자 명함 사진 정리 실패", {
+        uid,
+        errorType: photoCleanup.errorType,
+      });
+    }
+    // ────────── [명함 사진 서버 사본 정리] 끝 ──────────
   },
 );
 
