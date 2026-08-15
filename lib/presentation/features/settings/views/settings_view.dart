@@ -1061,6 +1061,24 @@ Future<bool> _cleanUpLocalArtifacts(
   //    경로를 잃어 고아 파일이 된다.
   //    uid를 넘겨 **서버 사본까지** 지운다 — 방침이 약속한 "회원 탈퇴 시 전부
   //    파기"는 기기만 비워서는 지켜지지 않는다(2026-08-15, 추가 218).
+  //
+  //    ⚠️ **탈퇴 경로에서는 이 서버 삭제가 실패하는 것이 정상이다. 버그가
+  //    아니다.** 계정 삭제(`deleteFirebaseAccountAndLocalSession`)가 먼저
+  //    일어나므로 여기 도달할 때는 `request.auth`가 null이고,
+  //    `storage.rules`의 `isOwner(uid)`가 거짓이 되어 삭제도 listAll도
+  //    거부된다. 순서를 바꿔 고치려 들지 말 것 — 그러면 서버 삭제나 재인증이
+  //    실패했을 때 계정은 살아 있는데 기기 데이터만 날아간다(위 주석 참고).
+  //
+  //    서버 사본은 Cloud Functions의 `onUserDeletedCleanup`이 Admin SDK로
+  //    지운다(`functions/src/cardPhotoCleanup.ts`). Admin SDK는 보안 규칙을
+  //    우회하므로 계정이 사라진 뒤에도 지울 수 있고, 앱이 중간에 죽어도 돈다.
+  //
+  //    이 호출을 그대로 남겨 두는 이유: `deleteAllCardImages`의 본래 일은
+  //    **기기에 있는 암호화 명함 이미지 파일을 지우는 것**이고, 서버 사본
+  //    삭제는 거기 얹힌 부수 동작이다. 호출을 빼면 기기 파일이 남는다.
+  //    실패 개수(`failedImages`)에 서버 쪽 실패가 섞여 들어와 탈퇴 후
+  //    "일부 정리 실패" 안내가 뜰 수 있는데, 그건 실제로 남은 것이 없으므로
+  //    무해하다 — 반대로 기기 파일을 안 지우는 쪽이 훨씬 나쁘다.
   final failedImages = await ContactImageService().deleteAllCardImages(
     uid: uid,
   );

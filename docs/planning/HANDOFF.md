@@ -1052,6 +1052,8 @@ CLAUDE.md 6절에 **"⚠️ Android 릴리스가 아직 debug 키스토어로 �
    ↓
 firestore.rules·storage.rules 배포
    ↓
+functions 배포 (firebase deploy --only functions)   ← 2026-08-15 추가
+   ↓
 kCardPhotoBackupEnabled = true
    ↓
 사진 업로드·복원 동작 + 설정에 동의 토글 나타남
@@ -1059,6 +1061,14 @@ kCardPhotoBackupEnabled = true
 
 이 순서를 건너뛰면 **고지 없는 수집**이 된다. `test/card_photo_backup_gate_test.dart`가
 플래그를 고정하고 있어, 켜려면 그 테스트를 함께 고쳐야 한다(실수 방지 장치).
+
+⚠️ **functions 배포 단계가 왜 새로 끼었나**(2026-08-15): 탈퇴해도 서버의 명함
+사진이 안 지워지는 결함이 있었다. 앱이 스스로 지우려는 호출이 **계정을 지운
+뒤에** 일어나 `request.auth`가 null이 되고 `storage.rules`가 거부한다. 그래서
+`onUserDeletedCleanup`이 Admin SDK로 지우도록 고쳤는데, **그건 배포돼야
+동작한다.** 배포 없이 플래그부터 켜면 그 사이에 탈퇴한 사람의 사진이 영영
+남는다 — 방침이 약속한 파기가 안 되는 상태다. 코드는 준비됐고 배포만 남았다
+(`functions/src/cardPhotoCleanup.ts`).
 
 ### 남은 일 — 누가 무엇을 하나
 
