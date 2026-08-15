@@ -95,6 +95,29 @@ class ContactModel {
   /// 없을 수 있어 nullable이며, 병합에서 null은 "가장 오래됨"으로 취급한다.
   final DateTime? updatedAt;
 
+  // --- F-10 재연락 루프(C 연락 후 후속) -------------------------------
+  //
+  // 전부 **사용자가 실제로 누른 것만** 들어간다. 앱이 추측해서 채우지 않는다
+  // ([ReconnectPriorityService]의 "가짜 이유 금지" 가드레일과 같은 원칙).
+  // 다른 명함 정보와 똑같이 암호화되어 저장·동기화된다.
+
+  /// C에서 고른 직전 연락 반응. 'good' | 'normal' | 'none'. 안 눌렀으면 null.
+  final String? lastReconnectOutcome;
+
+  /// 위 반응을 남긴 시각.
+  final DateTime? lastReconnectOutcomeAt;
+
+  /// C에서 "언제 다시?"로 고른 시점. "안 정함"이면 null.
+  /// 이 시각이 되기 전에는 A 후보에서 빠지고, 되면 최우선 후보가 된다.
+  final DateTime? nextFollowUpAt;
+
+  /// A에서 "이번엔 넘김"을 누른 결과. 이 시각까지는 후보에서 뺀다.
+  final DateTime? reconnectSnoozedUntil;
+
+  /// 반응 "없음"이 연달아 몇 번인지. A에서 덜 자주 띄우는 데만 쓴다.
+  /// 다른 반응이 한 번이라도 나오면 0으로 돌아간다.
+  final int reconnectNoResponseStreak;
+
   const ContactModel({
     required this.id,
     required this.name,
@@ -120,6 +143,11 @@ class ContactModel {
     this.useCardAsAvatar = false,
     this.isPriority = true,
     this.updatedAt,
+    this.lastReconnectOutcome,
+    this.lastReconnectOutcomeAt,
+    this.nextFollowUpAt,
+    this.reconnectSnoozedUntil,
+    this.reconnectNoResponseStreak = 0,
   });
 
   /// 기기 저장용 — 좌표를 포함한다. 좌표를 매번 다시 계산하지 않기 위해
@@ -170,6 +198,14 @@ class ContactModel {
       // 서버 백업에도 포함한다 — 다기기 병합의 최신본 판정 기준이라 서버에
       // 남아야 다른 기기가 비교할 수 있다(좌표와 달리 파생값이 아니다).
       'updatedAt': updatedAt?.toIso8601String(),
+      // F-10 재연락 기록. 서버 백업에도 넣는다 — 기기를 바꾸면 "언제 다시
+      // 연락하기로 했는지"가 사라지는데, 그건 사용자가 직접 정한 약속이라
+      // 좌표(파생값)와 성격이 다르다. 다른 명함 정보와 같이 암호화된다.
+      'lastReconnectOutcome': lastReconnectOutcome,
+      'lastReconnectOutcomeAt': lastReconnectOutcomeAt?.toIso8601String(),
+      'nextFollowUpAt': nextFollowUpAt?.toIso8601String(),
+      'reconnectSnoozedUntil': reconnectSnoozedUntil?.toIso8601String(),
+      'reconnectNoResponseStreak': reconnectNoResponseStreak,
     };
   }
 
@@ -213,6 +249,18 @@ class ContactModel {
       updatedAt: json['updatedAt'] != null
           ? DateTime.tryParse(json['updatedAt'] as String)
           : null,
+      lastReconnectOutcome: json['lastReconnectOutcome'] as String?,
+      lastReconnectOutcomeAt: json['lastReconnectOutcomeAt'] != null
+          ? DateTime.tryParse(json['lastReconnectOutcomeAt'] as String)
+          : null,
+      nextFollowUpAt: json['nextFollowUpAt'] != null
+          ? DateTime.tryParse(json['nextFollowUpAt'] as String)
+          : null,
+      reconnectSnoozedUntil: json['reconnectSnoozedUntil'] != null
+          ? DateTime.tryParse(json['reconnectSnoozedUntil'] as String)
+          : null,
+      reconnectNoResponseStreak:
+          (json['reconnectNoResponseStreak'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -241,6 +289,16 @@ class ContactModel {
     bool? useCardAsAvatar,
     bool? isPriority,
     DateTime? updatedAt,
+    String? lastReconnectOutcome,
+    DateTime? lastReconnectOutcomeAt,
+    DateTime? nextFollowUpAt,
+    DateTime? reconnectSnoozedUntil,
+    int? reconnectNoResponseStreak,
+    // `??` 방식의 copyWith는 **null로 되돌리는 것**을 표현할 수 없다. F-10에서는
+    // "안 정함"(다음 시점 없음)과 "스누즈 해제"가 실제로 필요한 상태라, 그
+    // 둘만 명시적 플래그를 둔다. 전체 필드에 도입하면 서명이 두 배가 된다.
+    bool clearNextFollowUpAt = false,
+    bool clearReconnectSnoozedUntil = false,
   }) {
     return ContactModel(
       id: id ?? this.id,
@@ -267,6 +325,17 @@ class ContactModel {
       useCardAsAvatar: useCardAsAvatar ?? this.useCardAsAvatar,
       isPriority: isPriority ?? this.isPriority,
       updatedAt: updatedAt ?? this.updatedAt,
+      lastReconnectOutcome: lastReconnectOutcome ?? this.lastReconnectOutcome,
+      lastReconnectOutcomeAt:
+          lastReconnectOutcomeAt ?? this.lastReconnectOutcomeAt,
+      nextFollowUpAt: clearNextFollowUpAt
+          ? null
+          : (nextFollowUpAt ?? this.nextFollowUpAt),
+      reconnectSnoozedUntil: clearReconnectSnoozedUntil
+          ? null
+          : (reconnectSnoozedUntil ?? this.reconnectSnoozedUntil),
+      reconnectNoResponseStreak:
+          reconnectNoResponseStreak ?? this.reconnectNoResponseStreak,
     );
   }
 }
