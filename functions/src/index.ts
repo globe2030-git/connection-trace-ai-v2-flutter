@@ -35,6 +35,7 @@ import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
+import {deleteTombstones} from "./tombstoneCleanup";
 
 initializeApp();
 
@@ -873,6 +874,39 @@ export const onUserDeletedCleanup = onDocumentDeleted(
       });
     }
     // ────────── [명함 사진 서버 사본 정리] 끝 ──────────
+
+    // ────────── [삭제 기록(묘비) 정리] 시작 ──────────
+    // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 tombstoneCleanup.ts에 있다.
+    //
+    // 왜 필요한가: **Firestore는 문서를 지워도 하위 컬렉션을 지우지 않는다.**
+    // 앱의 deleteAllUserData는 contacts 문서들과 users/{uid} 문서를 지우지만
+    // users/{uid}/deletedContacts/ 는 그대로 남는다 — 지우는 코드가 앱에도
+    // 서버에도 없었다. 방침 14번은 "명함 데이터 전체가 삭제된다"고 단언한다.
+    //
+    // 값은 deletedAt 시각뿐이지만 문서 ID가 contactId이고 경로에 uid가 있다.
+    // 개수만 로그에 남기고 문서 ID는 남기지 않는다.
+    //
+    // ⚠️ 위 사진 블록과 같은 이유로 경계 주석을 둔다 —
+    // feat/ai-credit-wallet이 이 함수를 크게 고쳐 놔서, rebase 하는 사람이
+    // 어디까지가 이번 변경인지 한눈에 보게 한다.
+    const tombstoneCleanup = await deleteTombstones(
+      db.collection(`users/${uid}/deletedContacts`),
+      () => db.batch(),
+      chunkArray,
+    );
+    if (tombstoneCleanup.errorType) {
+      logger.warn("탈퇴 사용자 삭제 기록 정리 실패", {
+        uid,
+        errorType: tombstoneCleanup.errorType,
+        deleted: tombstoneCleanup.deleted,
+      });
+    } else if (tombstoneCleanup.deleted > 0) {
+      logger.info("탈퇴 사용자 삭제 기록 정리", {
+        uid,
+        deleted: tombstoneCleanup.deleted,
+      });
+    }
+    // ────────── [삭제 기록(묘비) 정리] 끝 ──────────
   },
 );
 
