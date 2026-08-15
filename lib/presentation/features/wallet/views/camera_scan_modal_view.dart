@@ -10,6 +10,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/frame_contrast.dart';
+import '../../../../core/utils/scan_rotation.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class CameraScanModalView extends StatefulWidget {
@@ -484,6 +485,18 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 잘못 찍은 걸 알았다. 인식 전에 한 번 보여주고 [다시 찍기]/[확인]을 받는다.
   XFile? _pendingShot;
 
+  /// 확인 화면에서 사용자가 [↻ 회전]으로 더 돌린 각도(F-03).
+  ///
+  /// 자동 크롭이 항상 **반시계 90도로 세워 주는데**, 명함을 가이드에 반대
+  /// 방향으로 넣으면 그 고정 각도 때문에 **반드시 뒤집힌 채로 나온다.**
+  /// 지금까지는 되돌릴 방법이 재촬영뿐이었다 — 명함 주인 앞에서 여러 번 다시
+  /// 찍는 것은 실제 사용 맥락에서 부담이다.
+  ///
+  /// **파일이 아니라 각도만 들고 있는다.** 누를 때마다 다시 구우면 매번
+  /// JPEG을 재압축해 화질이 깎인다. 굽는 것은 [_confirmPendingShot]에서
+  /// 한 번뿐이고, 네 번 눌러 제자리로 온 경우에는 아예 굽지 않는다.
+  int _pendingRotation = 0;
+
   Future<void> _capturePhoto() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _isCapturing)
@@ -527,12 +540,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   }
 
   /// 보여준 사진으로 인식을 진행한다.
+  ///
+  /// ⚠️ **화면에서 돌린 각도를 파일에 반영한 뒤 인식한다.** 미리보기만 돌리고
+  /// 원본으로 인식하면 사용자가 본 것과 인식 결과가 어긋난다 — 이 저장소에서
+  /// 반복된 "코드는 맞는데 실물이 틀린" 유형이 나는 자리다.
   Future<void> _confirmPendingShot() async {
     final shot = _pendingShot;
     if (shot == null) return;
     setState(() => _isCapturing = true);
     try {
-      final scanResult = await OcrScannerService.scanBusinessCard(shot);
+      final target = await _bakeRotation(shot, _pendingRotation);
+      final scanResult = await OcrScannerService.scanBusinessCard(target);
       if (!mounted) return;
       Navigator.pop(context, scanResult);
     } catch (e) {
@@ -555,9 +573,38 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   Future<void> _retakePendingShot() async {
     setState(() {
       _pendingShot = null;
+      // 돌려 둔 각도도 함께 버린다 — 다시 찍은 사진에 앞 사진의 각도가
+      // 따라붙으면 사용자가 돌린 적 없는 방향으로 나온다.
+      _pendingRotation = 0;
       _isCapturing = false;
     });
     await _startAutoCaptureStream();
+  }
+
+  /// 화면에서 돌린 각도를 실제 이미지에 굽는다(F-03).
+  ///
+  /// [degrees]가 0이면 **원본을 그대로 돌려준다** — 네 번 눌러 제자리로 온
+  /// 것을 다시 인코딩하면 화질만 깎이고 결과는 같다.
+  ///
+  /// 실패하면 원본을 쓴다. 회전을 못 했다고 인식 자체를 막는 것보다, 방향이
+  /// 어긋난 채로라도 인식을 진행하는 편이 낫다 — [_cropToGuideFrame]이
+  /// 크롭 실패 시 원본을 쓰는 것과 같은 판단이다.
+  Future<XFile> _bakeRotation(XFile source, int degrees) async {
+    if (!needsRebake(degrees)) return source;
+    try {
+      final bytes = await source.readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return source;
+      final rotated = img.copyRotate(decoded, angle: normalizeTurn(degrees));
+      final jpgBytes = img.encodeJpg(rotated, quality: 100);
+      final outPath =
+          '${Directory.systemTemp.path}/card_rot_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      await File(outPath).writeAsBytes(jpgBytes);
+      return XFile(outPath);
+    } catch (_) {
+      return source;
+    }
   }
 
   /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
@@ -1052,9 +1099,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                     children: [
                       Expanded(
                         child: Center(
-                          child: Image.file(
-                            File(_pendingShot!.path),
-                            fit: BoxFit.contain,
+                          // 파일을 다시 굽지 않고 화면에서만 돌린다 — 누르는
+                          // 즉시 결과가 보여야 사용자가 판단할 수 있다(F-03).
+                          child: RotatedBox(
+                            quarterTurns: quarterTurnsFor(_pendingRotation),
+                            child: Image.file(
+                              File(_pendingShot!.path),
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ),
                       ),
@@ -1090,6 +1142,33 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     ),
                                     child: const Text('다시 찍기'),
                                   ),
+                                ),
+                                const SizedBox(width: 12),
+                                // F-03: 자동 크롭이 항상 반시계 90도로 세우기
+                                // 때문에, 명함을 가이드에 반대로 넣으면 반드시
+                                // 뒤집혀 나온다. 지금까지 되돌릴 방법이
+                                // 재촬영뿐이었다.
+                                OutlinedButton(
+                                  onPressed: _isCapturing
+                                      ? null
+                                      : () => setState(() {
+                                          _pendingRotation =
+                                              nextClockwiseTurn(
+                                            _pendingRotation,
+                                          );
+                                        }),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(
+                                      color: Colors.white54,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.rotate_right,
+                                      size: 20),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
