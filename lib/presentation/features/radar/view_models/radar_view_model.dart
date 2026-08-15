@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_consent_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/proximity_settings_service.dart';
+import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/proximity_settings.dart';
@@ -271,5 +272,29 @@ class RadarViewModel extends ChangeNotifier {
 
   void updateContact(ContactModel contact) {
     _contactsRepository.updateContact(contact);
+  }
+
+  // --- F-10 A. 오늘 연락하면 좋은 사람 ---------------------------------
+  //
+  // 위치와 무관하다. 이 화면의 나머지는 "지금 내 주변"을 말하지만, 재연락은
+  // "누굴 까먹었나"라서 GPS가 없어도(=filteredContacts가 비어도) 답할 수 있다.
+  // 그래서 `_currentPosition`을 보지 않고 저장소 전체를 대상으로 한다.
+
+  /// 오늘 연락하면 좋은 사람 목록. 순위·이유는 전부 기기 안에서 정해진다
+  /// (AI 호출 없음, 서버 전송 없음).
+  List<ReconnectCandidate> get reconnectCandidates =>
+      ReconnectPriorityService.pick(
+        contacts: _contactsRepository.contacts,
+        now: DateTime.now(),
+      );
+
+  /// "이번엔 넘김" — 7일 뒤에 다시 후보가 된다. 아무것도 지우지 않는다.
+  void snoozeReconnect(ContactModel contact) {
+    _contactsRepository.updateContact(
+      ReconnectPriorityService.applySnooze(
+        contact: contact,
+        now: DateTime.now(),
+      ),
+    );
   }
 }
