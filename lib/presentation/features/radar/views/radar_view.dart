@@ -22,6 +22,7 @@ import '../../wallet/views/add_card_modal_view.dart';
 import 'location_consent_sheet.dart';
 import 'location_access_flow.dart';
 import 'nearby_map_view.dart';
+import 'reconnect_today_section.dart';
 
 class RadarView extends StatefulWidget {
   const RadarView({super.key});
@@ -407,6 +408,22 @@ class _RadarViewState extends State<RadarView> {
                         // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
                         // 검색 결과를 밀어낼 이유가 없다.
                         if (!isSearching) ...[
+                          // F-10 A — "오늘 연락하면 좋은 사람".
+                          //
+                          // 왜 여기(위치 카드보다 위)인가: 이 섹션은 앱을 매일
+                          // 여는 이유고, 나머지는 "지금 주변이 어떤가"다. 아래에
+                          // 두면 주변에 아무도 없는 날(대부분의 날)에는 스크롤
+                          // 해야 보이는데, 그러면 매일 열 이유가 안 된다.
+                          //
+                          // 위치와 무관하게 뜬다 — GPS를 못 잡아도 "누굴
+                          // 까먹었나"에는 답할 수 있다. 후보가 없으면 섹션
+                          // 자체가 사라진다(억지로 채우지 않는다).
+                          ReconnectTodaySection(
+                            candidates: viewModel.reconnectCandidates,
+                            onOpenGuide: viewModel.openBriefing,
+                            onSnooze: viewModel.snoozeReconnect,
+                          ),
+
                           // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를
                           // 새로고침한다.
                           _NearbyCountCard(

@@ -8,6 +8,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/models/pending_comm_log_intent.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
+import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
@@ -21,6 +22,7 @@ import '../../radar/view_models/radar_view_model.dart';
 import 'ai_data_review_sheet.dart';
 import 'communication_source_sheet.dart';
 import 'manual_comm_log_modal_view.dart';
+import 'reconnect_outcome_sheet.dart';
 
 // 이 오버레이의 페이지 배경 위에 "직접" 놓이는(=GlassCard 안이 아닌) 에러 텍스트/아이콘
 // 전용 색상. AppColors.destructive(#EF4444)는 AppColors.bgBase 위에서
@@ -245,14 +247,52 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
       ),
     );
 
-    if (!mounted || action == null || action == PendingCommLogAction.discard) {
-      return;
+    if (mounted && action != null && action != PendingCommLogAction.discard) {
+      if (action == PendingCommLogAction.save) {
+        _saveCommLog(intent);
+      } else {
+        await _openManualRecord(intent.channel, initialSummary: intent.point);
+      }
     }
-    if (action == PendingCommLogAction.save) {
-      _saveCommLog(intent);
-    } else {
-      await _openManualRecord(intent.channel, initialSummary: intent.point);
-    }
+
+    // F-10 C — 소통 기록을 남겼든 안 남겼든, **방금 실제로 연락한 것은 사실**
+    // 이므로 여기서 한 번 묻는다. 스펙의 "연락 가이드 직후"가 바로 이 순간이다.
+    await _askReconnectOutcome();
+  }
+
+  /// F-10 **C. 연락 후 후속** — "연락 어땠어요?"를 한 번 묻는다.
+  ///
+  /// ⚠️ **강요하지 않는다.** 안 누르고 닫으면 `null`이 돌아오고 아무것도
+  /// 저장하지 않는다. 여기서 재촉하거나 다시 띄우면 C는 죽고, C가 죽으면
+  /// A(오늘 연락하면 좋은 사람)의 정확도를 올릴 연료도 없어진다.
+  Future<void> _askReconnectOutcome() async {
+    if (!mounted) return;
+    final repo = context.read<ContactsRepository>();
+    final result = await ReconnectOutcomeSheet.show(
+      context,
+      _resolveContact(repo),
+    );
+    if (result == null || !mounted) return;
+
+    // 시트가 떠 있는 동안 소통 기록이 추가됐을 수 있으므로 최신본에 얹는다.
+    final updated = ReconnectPriorityService.applyOutcome(
+      contact: _resolveContact(context.read<ContactsRepository>()),
+      outcome: result.outcome,
+      now: DateTime.now(),
+      followUpAfter: result.followUpAfter,
+    );
+    context.read<RadarViewModel>().updateContact(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.followUpAfter == null
+              ? '다음에 누구부터 연락할지 정하는 데 반영했어요'
+              : '그때가 되면 "오늘 연락하면 좋은 사람"에 다시 올려 드릴게요',
+        ),
+        backgroundColor: AppColors.accent,
+      ),
+    );
   }
 
   void _saveCommLog(PendingCommLogIntent intent) {
