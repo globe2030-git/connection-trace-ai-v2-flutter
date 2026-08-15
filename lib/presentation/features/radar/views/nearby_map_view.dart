@@ -232,34 +232,46 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               ),
             ],
           ),
-          Positioned(
-            right: 12,
-            bottom: 96,
-            child: _MapButton(
-              // 같은 버튼이지만 기준점을 옮겨 둔 상태에서는 하는 일이 하나 더
-              // 있다 — 기준점을 풀고 내 위치로 되돌린다. 되돌릴 방법이 없으면
-              // "내 위치로 어떻게 돌아가지"가 곧바로 문의가 된다.
-              tooltip: anchor != null ? '기준점 해제 · 내 위치로' : '내 위치로',
-              icon: Icons.my_location,
-              onTap: () {
-                viewModel.clearAnchor();
-                _mapController.move(myPoint, _initialZoom(radius));
-              },
-            ),
-          ),
+          // 버튼과 아래 바를 **한 세로 묶음**으로 둔다. 예전에는 버튼이
+          // `Positioned(bottom: 96)`으로 화면 밑에서 띄운 고정값이었는데,
+          // 바에 안내 줄이 한 줄 늘자 바가 높아져 **버튼이 바 뒤로 숨었다**
+          // (2026-08-16 실기기에서 확인). 하필 그 바에 "오른쪽 아래 버튼으로
+          // 돌아갑니다"라고 적혀 있어, 가리키는 버튼이 안 보이는 상태였다.
+          // 묶어 두면 바가 몇 줄이 되든 버튼은 항상 바로 위에 뜬다.
           Align(
             alignment: Alignment.bottomCenter,
-            child: _FoundBar(
-              count: plottable.length,
-              hiddenCount: hiddenCount,
-              attribution: _attribution,
-              // 탭으로 기준점을 지정하는 것은 **눌러 보기 전에는 알 수 없는
-              // 동작**이라 안내를 글자로 붙인다. 이 저장소가 이미 같은 판단을
-              // 한 자리가 있다 — 주변 화면의 "짧게: 위치 갱신 · 길게: 감지
-              // 켜기/끄기" 줄이 같은 이유로 붙어 있다.
-              anchorDistanceFromMe: anchor == null
-                  ? null
-                  : GeoUtils.getDistanceMeters(me, anchor),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12, bottom: 12),
+                  child: _MapButton(
+                    // 같은 버튼이지만 기준점을 옮겨 둔 상태에서는 하는 일이
+                    // 하나 더 있다 — 기준점을 풀고 내 위치로 되돌린다.
+                    // 되돌릴 방법이 없으면 "내 위치로 어떻게 돌아가지"가
+                    // 곧바로 문의가 된다.
+                    tooltip: anchor != null ? '기준점 해제 · 내 위치로' : '내 위치로',
+                    icon: Icons.my_location,
+                    onTap: () {
+                      viewModel.clearAnchor();
+                      _mapController.move(myPoint, _initialZoom(radius));
+                    },
+                  ),
+                ),
+                _FoundBar(
+                  count: plottable.length,
+                  hiddenCount: hiddenCount,
+                  attribution: _attribution,
+                  // 탭으로 기준점을 지정하는 것은 **눌러 보기 전에는 알 수 없는
+                  // 동작**이라 안내를 글자로 붙인다. 이 저장소가 이미 같은
+                  // 판단을 한 자리가 있다 — 주변 화면의 "짧게: 위치 갱신 ·
+                  // 길게: 감지 켜기/끄기" 줄이 같은 이유로 붙어 있다.
+                  anchorDistanceFromMe: anchor == null
+                      ? null
+                      : GeoUtils.getDistanceMeters(me, anchor),
+                ),
+              ],
             ),
           ),
         ],
