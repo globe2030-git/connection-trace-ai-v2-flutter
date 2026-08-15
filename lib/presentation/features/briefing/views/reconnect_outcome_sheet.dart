@@ -272,10 +272,13 @@ class _ChoiceChip extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(999),
         onTap: onTap,
+        // ⚠️ `alignment`(또는 Center)를 쓰지 말 것. Container에 alignment가
+        // 있으면 부모가 허용하는 **최대 폭까지 늘어난다.** Wrap은 자식에게
+        // 화면 폭을 그대로 주므로, 칩 하나가 한 줄을 다 먹고 넷이 세로로
+        // 쌓인다(실기기에서 실제로 그렇게 나왔다 — 폴드 내부 화면에서 발견).
+        // 대신 padding으로 크기를 만든다: 12+글자+12 ≈ 44로 터치 목표도 지킨다.
         child: Container(
-          constraints: const BoxConstraints(minHeight: 44, minWidth: 72),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(999),
             border: Border.all(
