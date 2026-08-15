@@ -40,6 +40,10 @@ import {
   resolveBillingModel,
 } from "./walletCredits";
 import {DEFAULT_FREE_CREDITS, planFreeGrant} from "./freeGrant";
+import {
+  kstIsoWeekCohort,
+  planActivation,
+} from "./pilotEvents";
 import {generateReferralCode} from "./referralCode";
 import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
 import {
@@ -627,6 +631,53 @@ async function writeAiAuditLog(record: {
   }
 }
 
+/**
+ * 파일럿 활성화 이벤트(명함 3장 이상 + AI 브리핑 1회 이상 사용) 판정·기록.
+ *
+ * `generateBriefing`이 이미 성공한 직후에만 부른다 — "지금 AI 사용이 1회
+ * 이상 일어났다"는 사실을 서버가 아는 유일한 지점이 여기이기 때문이다. 남은
+ * 조건(명함 3장 이상)은 이 함수가 `users/{uid}/contacts`를 Admin SDK
+ * count() 집계로 직접 확인한다. 두 조건이 모두 충족된 시점(둘 중 나중에
+ * 벌어진 사건 시점)에 한해 `users/{uid}.pilotActivatedAt`(멱등 가드)과
+ * `pilotEvents/{uid}/events/{eventId}` 로그를 함께 남긴다.
+ *
+ * ⚠️ U2의 리퍼럴 활성화 조건("명함 1장 + AI 1회", 아직 미구현)과는 완전히
+ * 별개인 독립 지표다 — 코드도 저장 위치도 공유하지 않는다.
+ *
+ * writeAiAuditLog와 같은 원칙: 절대 throw하지 않는다. 계측 실패가 AI
+ * 응답을 막으면 안 된다.
+ */
+async function maybeRecordActivationEvent(uid: string): Promise<void> {
+  try {
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      const alreadyActivated = userSnap.data()?.pilotActivatedAt != null;
+      if (alreadyActivated) return; // 멱등 — count() 집계도 아낀다.
+
+      const countSnap = await tx.get(userRef.collection("contacts").count());
+      const contactCount = countSnap.data().count;
+
+      const plan = planActivation({alreadyActivated, contactCount});
+      if (!plan.shouldRecord) return;
+
+      const at = FieldValue.serverTimestamp();
+      tx.set(userRef, {pilotActivatedAt: at}, {merge: true});
+      const eventRef = db
+        .collection("pilotEvents")
+        .doc(uid)
+        .collection("events")
+        .doc();
+      tx.create(eventRef, {type: "activation", uid, at});
+    });
+  } catch (err) {
+    logger.warn("파일럿 활성화 이벤트 기록 실패 — 무시하고 계속", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export const generateBriefing = onCall<GenerateBriefingRequest>(
   {
     secrets: [geminiApiKey],
@@ -729,6 +780,10 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         usage,
         latencyMs: Date.now() - startedAt,
       });
+      // 파일럿 활성화 판정은 AI 사용이 실제로 성공한 뒤에만 의미가 있다
+      // (실패 호출은 "AI 1회 사용"으로 치지 않는다). 실패해도 응답에는
+      // 영향 없음(위 함수 자체가 절대 throw하지 않음).
+      await maybeRecordActivationEvent(uid);
       return {talkingPoints};
     } catch (e) {
       const errorCode = e instanceof HttpsError ? e.code : "internal";
@@ -916,6 +971,17 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
           }
         | undefined;
 
+      // U6(파일럿 계측 — 주차 코호트 귀속): users/{uid}.cohortWeek가 이미
+      // 있으면 손대지 않는다(멱등). 없으면 이번 로그인 시각(KST)의 ISO
+      // 주차로 채운다 — 이 계측을 배포하기 전에 가입한 기존 사용자도 다음
+      // 로그인 때 자연히 백필된다. 무료체험 지급 멱등 가드(freeGrantedAt)와는
+      // 완전히 독립된 별개 가드라 아래 `plan.shouldGrant`가 false여도(이미
+      // 지급됨) 코호트만 따로 채워 넣을 수 있어야 한다.
+      const existingCohortWeek = snap.data()?.cohortWeek as string | undefined;
+      const cohortWeekToSet = existingCohortWeek
+        ? null
+        : kstIsoWeekCohort(new Date());
+
       const plan = planFreeGrant({
         alreadyGranted: usage?.freeGrantedAt != null,
         currentFreeBalance: usage?.freeBalance ?? 0,
@@ -923,7 +989,14 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
         configFreeCredits,
       });
 
-      if (!plan.shouldGrant) return; // 이미 지급됨 — 멱등, 아무 것도 안 함
+      if (!plan.shouldGrant) {
+        // 이미 지급됨 — 무료체험은 멱등이라 손대지 않는다. 코호트만 아직
+        // 없는 기존 사용자(백필 대상)라면 그 필드 하나만 쓴다.
+        if (cohortWeekToSet) {
+          tx.set(userRef, {cohortWeek: cohortWeekToSet}, {merge: true});
+        }
+        return;
+      }
 
       // deviceLedger 조회는 이 트랜잭션의 첫 쓰기(tx.set/tx.create)보다
       // 반드시 먼저 와야 한다(Firestore 트랜잭션 규칙: 모든 get은
@@ -950,7 +1023,10 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
         freeGranted = false;
         tx.set(
           userRef,
-          {aiUsage: {freeBalance: usage?.freeBalance ?? 0, freeGrantedAt: now}},
+          {
+            aiUsage: {freeBalance: usage?.freeBalance ?? 0, freeGrantedAt: now},
+            ...(cohortWeekToSet ? {cohortWeek: cohortWeekToSet} : {}),
+          },
           {merge: true}
         );
 
@@ -976,7 +1052,10 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
       freeGranted = true;
       tx.set(
         userRef,
-        {aiUsage: {freeBalance: plan.newFreeBalance, freeGrantedAt: now}},
+        {
+          aiUsage: {freeBalance: plan.newFreeBalance, freeGrantedAt: now},
+          ...(cohortWeekToSet ? {cohortWeek: cohortWeekToSet} : {}),
+        },
         {merge: true}
       );
 
