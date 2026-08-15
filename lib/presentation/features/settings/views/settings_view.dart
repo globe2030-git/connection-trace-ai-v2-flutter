@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/models/ai_data_review_memory.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
@@ -919,6 +920,10 @@ Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
   _accountActionInProgress = true;
   try {
     await auth.signOut();
+    // "AI에 보낼 정보"가 들고 있던 직전 선택·메모를 함께 비운다(F-08).
+    // 로그아웃 뒤 다른 계정으로 로그인하면 앞 사람이 제3자에 대해 쓴 문장이
+    // 그대로 뜬다 — 기기에 저장되지 않아도 같은 실행 안에서는 남는다.
+    AiDataReviewMemory.clear();
   } finally {
     _accountActionInProgress = false;
   }
@@ -1087,6 +1092,11 @@ Future<bool> _cleanUpLocalArtifacts(
   // 1-1) 사진 개선 동의(기기 캐시). 남으면 같은 기기에서 다음 계정이 앞
   //      사람의 동의를 물려받는다.
   await PhotoImprovementConsentService().clearLocal();
+
+  // 1-2) "AI에 보낼 정보" 화면이 들고 있던 직전 선택·메모(F-08). 기기에
+  //      저장하지 않고 메모리에만 있지만, **같은 실행 안에서 계정을 갈아타면**
+  //      앞 사람이 제3자에 대해 쓴 문장이 뒷사람 화면에 뜬다.
+  AiDataReviewMemory.clear();
 
   // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
   //    이전 사진이 그대로 보인다.
