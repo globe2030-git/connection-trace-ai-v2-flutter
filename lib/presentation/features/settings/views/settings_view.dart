@@ -12,6 +12,7 @@ import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
+import '../../../../core/services/photo_improvement_consent_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
@@ -285,6 +286,10 @@ class SettingsView extends StatelessWidget {
                     subtitle: '이 기기와 서버에 암호화하여 보관',
                     value: '로컬 + 서버 백업',
                   ),
+                  // 사진 개선 동의는 **선택**이다 — 꺼도 명함 등록·복원·보정이
+                  // 전부 그대로 동작한다. 이 토글이 정하는 것은 "내 사진을
+                  // 인식 개선용 표본에 넣어도 되는가" 하나뿐이다(추가 218).
+                  _PhotoImprovementConsentRow(uid: auth.firebaseUid),
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.aiChip,
@@ -690,9 +695,150 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-/// `_SettingsRow`와 같은 시각적 스타일이지만 끝에 스위치가 붙는 행. 실제
-/// 상태(예: 위치 이용 동의 여부)와 연결해서만 쓸 것 — 아무 상태도 바꾸지
-/// 않는 장식용 토글은 절대 추가하지 않는다.
+/// "명함 사진을 인식 기능 개선에 써도 된다"는 **별도 동의** 토글.
+///
+/// ## 이 토글이 정하지 *않는* 것
+///
+/// 사진의 서버 저장·복원, 그리고 **내 명함 정보가 잘못 인식됐을 때 원본과
+/// 대조해 바로잡는 일**은 계약 이행이라 이 토글과 무관하게 동작한다. 여기서
+/// 정하는 것은 오직 **"여러 이용자의 사진을 함께 이용한 인식 알고리즘 개선에
+/// 내 사진을 포함해도 되는가"** 하나다(개인정보처리방침 v2.2 2-1/2-2,
+/// backlog 추가 218).
+///
+/// 그래서 부제에 "끄셔도 모든 기능을 그대로 쓰실 수 있어요"를 항상 보여준다 —
+/// 동의하지 않으면 손해를 본다는 인상을 주면 그건 자유로운 동의가 아니다.
+///
+/// ## 로그인 전에는 끄고 잠근다
+///
+/// 동의는 계정에 붙는 기록이라 [uid]가 없으면 서버에 남길 수 없다. 그 상태에서
+/// 켜지게 두면 **기기에만 켜진 동의**가 생겨, 회사는 동의를 못 받았는데
+/// 사용자 화면에는 동의한 것처럼 보인다. 그래서 로그인 전에는 스위치를
+/// 비활성화한다.
+class _PhotoImprovementConsentRow extends StatefulWidget {
+  const _PhotoImprovementConsentRow({required this.uid});
+
+  final String? uid;
+
+  @override
+  State<_PhotoImprovementConsentRow> createState() =>
+      _PhotoImprovementConsentRowState();
+}
+
+class _PhotoImprovementConsentRowState
+    extends State<_PhotoImprovementConsentRow> {
+  final _service = PhotoImprovementConsentService();
+  bool _consented = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // 서버 값을 우선한다 — 기기를 바꾸면 로컬은 비어 있는데 서버에는 동의가
+    // 남아 있어, 이미 동의한 사용자에게 토글이 꺼진 것처럼 보인다.
+    final uid = widget.uid;
+    final value = uid == null
+        ? await _service.load()
+        : await _service.sync(uid);
+    if (!mounted) return;
+    setState(() => _consented = value);
+  }
+
+  Future<void> _toggle(bool next) async {
+    final uid = widget.uid;
+    if (uid == null || _busy) return;
+
+    // 낙관적으로 먼저 바꾼다 — 스위치가 손가락을 따라오지 않으면 고장으로
+    // 보인다. 실패하면 되돌리고 이유를 알린다.
+    setState(() {
+      _consented = next;
+      _busy = true;
+    });
+    final ok = await _service.setConsent(uid: uid, consented: next);
+    if (!mounted) return;
+    setState(() {
+      if (!ok) _consented = !next;
+      _busy = false;
+    });
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signedIn = widget.uid != null;
+    final subtitle = signedIn
+        ? '끄셔도 모든 기능을 그대로 쓰실 수 있어요'
+        : '로그인하면 설정할 수 있어요';
+
+    return Semantics(
+      toggled: _consented,
+      label: '명함 인식 개선에 사진 제공. $subtitle',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 76),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const AppIcon(
+                  AppIconId.scanCard,
+                  size: 22,
+                  color: AppColors.accentText,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '명함 인식 개선에 사진 제공',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch.adaptive(
+                value: _consented,
+                onChanged: signedIn && !_busy ? _toggle : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _confirmConsentWithdrawal(
   BuildContext context,
   RadarViewModel viewModel,
@@ -902,8 +1048,16 @@ Future<bool> _cleanUpLocalArtifacts(
 
   // 1) 명함 이미지 — 명함 목록을 비우기 전에 지워야 한다. 목록이 먼저 비면
   //    경로를 잃어 고아 파일이 된다.
-  final failedImages = await ContactImageService().deleteAllCardImages();
+  //    uid를 넘겨 **서버 사본까지** 지운다 — 방침이 약속한 "회원 탈퇴 시 전부
+  //    파기"는 기기만 비워서는 지켜지지 않는다(2026-08-15, 추가 218).
+  final failedImages = await ContactImageService().deleteAllCardImages(
+    uid: uid,
+  );
   if (failedImages > 0) hadFailure = true;
+
+  // 1-1) 사진 개선 동의(기기 캐시). 남으면 같은 기기에서 다음 계정이 앞
+  //      사람의 동의를 물려받는다.
+  await PhotoImprovementConsentService().clearLocal();
 
   // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
   //    이전 사진이 그대로 보인다.

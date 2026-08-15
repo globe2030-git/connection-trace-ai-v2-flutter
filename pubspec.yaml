@@ -95,6 +95,13 @@ dependencies:
   # 테스터 피드백이 "가끔 죽어요"에서 멈춘다. Dart 레벨 예외를 Crashlytics로
   # 모아 원인 스택을 본다. 같은 Firebase 프로젝트에 얹어 별도 계정 설정 불필요.
   firebase_crashlytics: ^5.0.0
+  # 명함 원본 사진의 서버 저장·복원(2026-08-15 결정, backlog 추가 218).
+  # 지금까지 사진은 기기에만 있어 폰을 바꾸면 텍스트만 복원되고 사진은
+  # 사라졌다(contact_image_service.dart 주석). 올리는 것은 원본이 아니라
+  # 이미 로컬에서 AES-256-GCM으로 암호화한 바이트 그대로다 — 서버는
+  # 열어볼 수 없는 암호문만 보관한다.
+  # ⚠️ 방침 v2.2 게시 전까지 CardPhotoBackupService의 플래그로 꺼 둔다.
+  firebase_storage: ^13.1.0
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
   share_plus: ^12.0.2

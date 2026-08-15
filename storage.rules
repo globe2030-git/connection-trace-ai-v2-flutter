@@ -16,6 +16,28 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // 명함 원본 사진은 **암호문**으로 올라온다(2026-08-15, backlog 추가 218).
+    //
+    // 앱이 로컬에 AES-256-GCM으로 암호화해 둔 `nonce+ciphertext+mac` 바이트를
+    // 복호화 없이 그대로 올리므로, contentType이 image/*가 아니라
+    // application/octet-stream이다. 위 isValidImage()로는 통과할 수 없어
+    // 별도 검사를 둔다 — 규칙과 CardPhotoBackupService._contentType이
+    // 어긋나면 업로드가 조용히 거부된다.
+    //
+    // 크기 상한은 이미지와 같은 5MB로 맞춘다. 암호문은 원본보다 nonce·MAC
+    // 28바이트만 커지므로 사실상 동일한 제한이다.
+    function isValidEncryptedCard() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == 'application/octet-stream';
+    }
+
+    // 명함 사진(암호문) — users/{uid}/cards/{contactId}.enc
+    // 아래 일반 규칙보다 먼저 두어야 이 경로가 이미지 검사에 걸리지 않는다.
+    match /users/{uid}/cards/{fileName} {
+      allow read: if isOwner(uid);
+      allow write: if isOwner(uid) && isValidEncryptedCard();
+    }
+
     match /users/{uid}/{allPaths=**} {
       allow read: if isOwner(uid);
       allow write: if isOwner(uid) && isValidImage();
