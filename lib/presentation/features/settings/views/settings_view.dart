@@ -10,6 +10,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
+import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
 import '../../../../core/services/photo_improvement_consent_service.dart';
@@ -289,7 +290,17 @@ class SettingsView extends StatelessWidget {
                   // 사진 개선 동의는 **선택**이다 — 꺼도 명함 등록·복원·보정이
                   // 전부 그대로 동작한다. 이 토글이 정하는 것은 "내 사진을
                   // 인식 개선용 표본에 넣어도 되는가" 하나뿐이다(추가 218).
-                  _PhotoImprovementConsentRow(uid: auth.firebaseUid),
+                  //
+                  // ⚠️ 사진 서버 저장이 꺼져 있으면 이 토글도 **보이지 않는다.**
+                  // 이유 둘:
+                  // 1) 저장하지 않는 사진에 대한 개선 동의는 **아무 뜻이 없다.**
+                  // 2) 동의 필드를 허용하는 `firestore.rules`가 아직 배포 전이라,
+                  //    켜면 서버 쓰기가 거부돼 "저장하지 못했어요"만 뜬다. 테스터
+                  //    빌드에 그대로 나가면 **고장난 기능으로 보인다**(2026-08-15,
+                  //    빌드 직전에 발견).
+                  // 플래그를 켤 때 rules 배포도 함께 해야 이 토글이 동작한다.
+                  if (CardPhotoBackupService.kCardPhotoBackupEnabled)
+                    _PhotoImprovementConsentRow(uid: auth.firebaseUid),
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.aiChip,
