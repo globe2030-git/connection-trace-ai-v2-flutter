@@ -927,19 +927,18 @@ kCardPhotoBackupEnabled = true
 있었다. 이 저장소는 워크트리 정리 중 미커밋 파일이 사라질 뻔한 전례가 있다
 (추가 176). 그래서 **손대지 않고 저장소 밖에 복사해 뒀다.**
 
-**백업 위치**: `/Volumes/X31(VM)/Claude/_wip-backup-2026-08-15/`
-- `wallet-worktree-tracked.patch` — 수정분(`git diff` 결과, 477줄)
-- `untracked/` — 신규 파일 6개:
-  `functions/src/pilotEvents.ts` · `pilotEvents.test.ts` ·
-  `lib/core/services/pilot_events_service.dart` · `test/pilot_events_service_test.dart` ·
-  `docs/planning/wallet-tester-deploy-runbook-2026-08-14.md` ·
-  `docs/planning/ios-asc-403-action-2026-08-14.md`
-
 **커밋하지 않은 것이 맞았다** — 확인해 보니 **지갑/과금 세션이 살아 있고 그
 작업이 진행 중**(U5 기기가드 `deviceLedger`)이었다. 다른 세션이 작업하는 파일을
-건드리면 검증하던 코드가 발밑에서 바뀐다(CLAUDE.md 4절). 이 백업은 그 세션이
-사라졌을 때를 위한 **안전망일 뿐**이다 — 지갑 작업은 **워크트리의 원본을 그대로**
-쓰고, 원본이 사라진 경우에만 백업에서 복원할 것.
+건드리면 검증하던 코드가 발밑에서 바뀐다(CLAUDE.md 4절).
+
+✅ **그 뒤 지갑 세션이 전부 커밋했다**(2026-08-15 확인). 백업했던 6개 파일이
+`origin/feat/ai-credit-wallet`에 모두 들어간 것을 확인하고,
+`/Volumes/X31(VM)/Claude/_wip-backup-2026-08-15/`는 **삭제했다** — 원본이
+안전해진 뒤에도 사본을 남겨 두면 어느 쪽이 최신인지 헷갈린다.
+
+📌 **다음에 같은 상황이 오면**: 다른 세션의 미커밋 작업을 발견하면 **손대지 말고
+저장소 밖에 복사**한 뒤, 그 세션이 커밋한 것을 확인하고 사본을 지운다. 이
+저장소는 워크트리 정리 중 미커밋 파일이 사라질 뻔한 전례가 있다(추가 176).
 
 `origin/feat/ai-credit-wallet`은 **커밋 8개가 미반영**이다(U1·U2·U4·U7 등).
 푸시는 돼 있으니 브랜치 자체는 안전하다. 이 브랜치는 **main 최후 병합** 예정이며,
