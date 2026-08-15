@@ -66,6 +66,14 @@ class _RadarViewState extends State<RadarView> {
     // 그 사람만 어디에도 안 나온다(사용자 요청, 2026-08-10).
     final nearbyList = viewModel.filteredContacts;
 
+    // F-11: 검색 중에는 화면을 **결과 전용**으로 바꾼다.
+    //
+    // 검색창이 화면 위쪽에 있는데도, 그 아래 "지금 가까운 사람 N명" 카드와
+    // 위치 조작 줄이 자리를 차지해 **정작 결과는 스크롤해야 보였다.** 둘 다
+    // "지금 내 주변이 어떤가"를 알려 주는 것들이라 검색 중에는 답이 아니다 —
+    // 그때 사용자가 보려는 것은 "찾는 사람이 여기 있나" 하나뿐이다.
+    final isSearching = viewModel.searchTerm.trim().isNotEmpty;
+
     return Stack(
       children: [
         Scaffold(
@@ -138,7 +146,15 @@ class _RadarViewState extends State<RadarView> {
                                   // 2026-08-10).
                                   const SizedBox(height: 6),
                                   Text(
-                                    _greetingForNow(),
+                                    // 검색 중에는 인사말 대신 **무엇을 찾고
+                                    // 있는지**를 보여 준다(F-11). 결과만 보면
+                                    // 어떤 말로 걸러졌는지 알 수 없고,
+                                    // 검색창은 스크롤하면 시야에서 사라진다.
+                                    isSearching
+                                        ? '"${viewModel.searchTerm.trim()}" 검색 중'
+                                        : _greetingForNow(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 14,
                                       height: 1.4,
@@ -387,19 +403,24 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 12),
 
-                        // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
-                        _NearbyCountCard(
-                          count: nearbyCount,
-                          isRefreshing: viewModel.isRefreshingLocation,
-                          onTap: viewModel.isRefreshingLocation
-                              ? null
-                              : () => handleLocationAccessAction(
-                                  context,
-                                  viewModel,
-                                ),
-                        ),
+                        // 검색 중에는 이 카드와 아래 조작 줄을 감춘다(F-11) —
+                        // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
+                        // 검색 결과를 밀어낼 이유가 없다.
+                        if (!isSearching) ...[
+                          // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를
+                          // 새로고침한다.
+                          _NearbyCountCard(
+                            count: nearbyCount,
+                            isRefreshing: viewModel.isRefreshingLocation,
+                            onTap: viewModel.isRefreshingLocation
+                                ? null
+                                : () => handleLocationAccessAction(
+                                    context,
+                                    viewModel,
+                                  ),
+                          ),
 
-                        const SizedBox(height: 8),
+                          const SizedBox(height: 8),
 
                         // 위치 아이콘과 조작 안내를 "지금 가까운 사람" 카드
                         // 바로 아래 한 줄에 둔다(사용자 요청, 2026-08-10).
@@ -409,33 +430,34 @@ class _RadarViewState extends State<RadarView> {
                         // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
                         // 설명을 옆에 붙인다. 툴팁만으로는 길게 눌러야 뜨는데,
                         // 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
-                        Row(
-                          children: [
-                            _RefreshLocationButton(
-                              isRefreshing: viewModel.isRefreshingLocation,
-                              usingRealGps: viewModel.usingRealGps,
-                              isDetecting: viewModel.hasLocationConsent,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
+                          Row(
+                            children: [
+                              _RefreshLocationButton(
+                                isRefreshing: viewModel.isRefreshingLocation,
+                                usingRealGps: viewModel.usingRealGps,
+                                isDetecting: viewModel.hasLocationConsent,
+                                onTap: () => handleLocationAccessAction(
+                                  context,
+                                  viewModel,
+                                ),
+                                onToggleDetect: () =>
+                                    _toggleNearbyDetect(context, viewModel),
                               ),
-                              onToggleDetect: () =>
-                                  _toggleNearbyDetect(context, viewModel),
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
 
-                        const SizedBox(height: 10),
+                          const SizedBox(height: 10),
+                        ],
 
                         // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
                         // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
@@ -462,9 +484,14 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 16),
 
-                        // 가까운 인맥 리스트 (대표 카드에 나온 사람은 제외)
+                        // 목록 제목도 화면의 성격을 따라간다(F-11) — 같은
+                        // 목록이라도 검색 중에는 "주변에 있는 사람들"이 아니라
+                        // "찾은 결과"다. 제목이 그대로면 사용자는 걸러진
+                        // 목록을 전체 목록으로 오해한다.
                         Text(
-                          '가까운 인맥 (${nearbyList.length}명)',
+                          isSearching
+                              ? '검색 결과 (${nearbyList.length}명)'
+                              : '가까운 인맥 (${nearbyList.length}명)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
