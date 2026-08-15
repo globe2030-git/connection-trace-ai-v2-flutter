@@ -1340,13 +1340,13 @@ Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
   final repo = context.read<ContactsRepository>();
   // 판정 규칙은 따로 빼서 테스트한다(`seeded_memo_cleanup.dart`).
   final targets = repo.contacts
-      .where((c) => isSeededScanMemo(c.memo))
+      .where((c) => memoHasSeededScanLine(c.memo))
       .toList();
 
   final messenger = ScaffoldMessenger.of(context);
   if (targets.isEmpty) {
     messenger.showSnackBar(
-      const SnackBar(content: Text('자동 삽입된 메모만 남은 명함이 없습니다.')),
+      const SnackBar(content: Text('자동 삽입된 문구가 남은 명함이 없습니다.')),
     );
     return;
   }
@@ -1354,13 +1354,15 @@ Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: Text('${targets.length}건의 메모를 비울까요?'),
+      title: Text('${targets.length}건에서 문구를 지울까요?'),
       content: Text(
-        '메모가 "AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다." '
-        '한 줄뿐인 명함 ${targets.length}건입니다.\n'
+        '"AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다."가 '
+        '한 줄로 들어 있는 명함 ${targets.length}건입니다.\n'
         '예전에 스캔이 자동으로 넣던 문구가 그대로 저장된 것으로 봅니다.\n\n'
         '이 문구는 AI 대화 가이드를 만들 때도 함께 전송되어, 아무 의미 없는 '
         '내용이 상대방에 대한 정보처럼 쓰입니다.\n\n'
+        '메모를 통째로 비우지 않고 그 줄만 지웁니다 — 같은 메모에 적어 두신 '
+        '내용은 그대로 남습니다.\n\n'
         '되돌릴 수 없습니다.',
       ),
       actions: [
@@ -1371,7 +1373,7 @@ Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
           child: const Text(
-            '메모 비우기',
+            '문구 지우기',
             style: TextStyle(color: AppColors.destructive),
           ),
         ),
@@ -1381,10 +1383,12 @@ Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
   if (confirmed != true) return;
 
   for (final contact in targets) {
-    repo.updateContact(contact.copyWith(memo: ''));
+    repo.updateContact(
+      contact.copyWith(memo: withoutSeededScanLine(contact.memo ?? '')),
+    );
   }
   messenger.showSnackBar(
-    SnackBar(content: Text('${targets.length}건의 메모를 비웠습니다.')),
+    SnackBar(content: Text('${targets.length}건에서 문구를 지웠습니다.')),
   );
 }
 
