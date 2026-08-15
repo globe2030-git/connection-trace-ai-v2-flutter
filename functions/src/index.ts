@@ -900,6 +900,16 @@ async function ensureReferralCode(
  * 완전히 건너뛰고 지금까지의 동작 그대로다 — 경고 로그만 남기고 절대
  * 요청을 실패시키지 않는다(설계 근거:
  * docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4).
+ *
+ * **⚠️ `config/billing.model` 게이트(2026-08-15 추가)**: 이 함수는
+ * `model`이 `'wallet'`일 때만 실제로 잔액을 지급한다(freeBalance·
+ * freeGrantedAt·creditGrants·deviceLedger 기록 전부). `'reset'`(기본값,
+ * 지금 라이브 상태)이면 이 그랜트 블록을 통째로 건너뛰고 cohortWeek
+ * 백필·리퍼럴 코드 발급만 한다 — reset 모드에서 지급해 버리면
+ * freeGrantedAt이 먼저 찍혀서 실제로 wallet을 켠 뒤 표준 무료체험을
+ * 영영 못 받는 사고가 나고, deviceLedger의 '기기당 1회' 예산도 출시
+ * 전에 미리 소모돼 버린다. 즉 이 함수는 배포해도 `model`이 `'reset'`인
+ * 동안은 완전히 무해하다("가" 안, wallet-spec §9 Phase 0 취지).
  */
 export const bootstrapAccount = onCall<BootstrapAccountRequest>(
   {
@@ -921,7 +931,19 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
     // 문서가 없거나 필드가 없거나 숫자가 아니면 확정값(DEFAULT_FREE_CREDITS
     // =10, monetization-referral-implementation-spec-2026-08-14.md §1)으로
     // 폴백한다.
+    // ⚠️ 2026-08-15 정정: 이 함수는 원래 config/billing.model을 확인하지
+    // 않고 무조건 무료체험을 지급했다 — reset 모드에서도 aiUsage.freeBalance/
+    // freeGrantedAt/creditGrants/deviceLedger를 실제로 썼다는 뜻이다.
+    // incrementAndCheckUsage(reset 분기)는 그 필드들을 읽지 않으므로
+    // 사용자에게 보이는 한도·화면은 안 바뀌지만("잠든 채 배포"의 절반만
+    // 지켜짐), deviceLedger의 "기기당 1회" 예산을 wallet 출시 전에 미리
+    // 소모하고 creditGrants에 아직 의미 없는 감사 기록을 쌓이게 된다. 아래
+    // billingModel 분기로 reset 모드에서는 이 블록 전체(잔액 지급·감사
+    // 기록·기기 캡 소비)를 건너뛰어 완전히 무해하게 만든다 — cohortWeek
+    // 백필·리퍼럴 코드 발급은 금전 등가가 아니므로(코드 자체는 아직 redemption
+    // 로직이 없어 못 씀) 계속 매 로그인 실행해도 안전하다.
     let configFreeCredits = DEFAULT_FREE_CREDITS;
+    let billingModel: BillingModel = "reset";
     try {
       const billingSnap = await db.collection("config").doc("billing").get();
       const raw = billingSnap.exists
@@ -930,8 +952,11 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
       if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
         configFreeCredits = raw;
       }
+      billingModel = resolveBillingModel(
+        billingSnap.exists ? billingSnap.data() : undefined
+      );
     } catch (err) {
-      logger.warn("config/billing 조회 실패 — 기본 무료 회차로 폴백", {
+      logger.warn("config/billing 조회 실패 — 기본 무료 회차/reset 모드로 폴백", {
         error: err instanceof Error ? err.message : String(err),
         fallback: DEFAULT_FREE_CREDITS,
       });
@@ -988,6 +1013,20 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
         legacyBonusCredits: usage?.bonusCredits ?? 0,
         configFreeCredits,
       });
+
+      // billingModel이 'reset'이면 지갑 자체가 아직 라이브가 아니다 — 이
+      // 시점에 freeGrantedAt을 찍어버리면 나중에 실제로 'wallet'을 켰을 때
+      // "이미 지급됨"으로 오판해 표준 무료체험을 영영 못 받는다. 그래서
+      // reset 모드에서는 그랜트 블록 전체를 건너뛰고 코호트만 백필한 뒤
+      // 그대로 반환한다 — 이 uid는 wallet 모드가 켜진 뒤 첫 로그인 때
+      // 정상적으로 무료체험을 받는다(ai-credit-wallet-spec.md §9 Phase 1
+      // 취지와 일치).
+      if (billingModel !== "wallet") {
+        if (cohortWeekToSet) {
+          tx.set(userRef, {cohortWeek: cohortWeekToSet}, {merge: true});
+        }
+        return;
+      }
 
       if (!plan.shouldGrant) {
         // 이미 지급됨 — 무료체험은 멱등이라 손대지 않는다. 코호트만 아직
@@ -1330,6 +1369,30 @@ export const onUserDeletedCleanup = onDocumentDeleted(
         uid,
         inquiryCount: inquiriesSnap.docs.length,
         replyCount,
+      });
+    }
+
+    // 파일럿 계측 이벤트 삭제(pilotEvents/{uid}/events/*, 2026-08-15).
+    // "탈퇴 시 파기" 원칙은 aiAuditLogs·inquiries와 동일하게 이 로그에도
+    // 적용된다 — uid가 그대로 남는 계측 데이터라 계정 삭제 시 함께 지운다.
+    // ⚠️ deviceLedger/{deviceHash}는 의도적으로 여기서 지우지 않는다 —
+    // 재가입×무료체험 무한 루프 방어(U5, 설계 §4-2)의 핵심이 "계정 삭제와
+    // 무관하게 남는 기기 단위 기록"이므로, uid 스코프 정리 로직에 절대
+    // 섞으면 안 된다.
+    const pilotEventsSnap = await db
+      .collection("pilotEvents")
+      .doc(uid)
+      .collection("events")
+      .get();
+    if (!pilotEventsSnap.empty) {
+      for (const batchDocs of chunkArray(pilotEventsSnap.docs, 400)) {
+        const batch = db.batch();
+        batchDocs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      logger.info("탈퇴 사용자 파일럿 계측 이벤트 삭제", {
+        uid,
+        eventCount: pilotEventsSnap.docs.length,
       });
     }
   },
