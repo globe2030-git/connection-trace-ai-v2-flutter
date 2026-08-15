@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -10,6 +11,7 @@ import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
+import '../../../common/same_address_group_header.dart';
 // 주변에서 못 찾은 검색을 명함 지갑(전체 검색)으로 이어 주기 위해 탭 통로를 쓴다.
 import '../../../navigation/main_tab_screen.dart';
 import '../view_models/radar_view_model.dart';
@@ -479,20 +481,39 @@ class _RadarViewState extends State<RadarView> {
                         // 다른 점 하나: 여기에는 **근접 거리**가 함께 붙는다.
                         // 이 화면의 존재 이유가 "지금 얼마나 가까운가"이므로
                         // 목록에서도 그 값이 보여야 한다.
-                        ...nearbyList.map((contact) {
-                          final distance = GeoUtils.getDistanceMeters(
-                            viewModel.currentPosition,
-                            contact.geo,
-                          );
-                          return _NearbyContactTile(
-                            contact: contact,
-                            distanceMeters: distance,
-                            onOpen: () => viewModel.openBriefing(contact),
-                            onCall: () => PhoneCallService.showCallPicker(
-                              context,
-                              contact,
+                        // 같은 주소에 여러 명이 있으면 묶어서 보여 준다(F-15).
+                        // 한 건물에 3명이 있는데 같은 거리가 세 줄 나열되면,
+                        // 사용자가 그걸 스스로 세어야 한다. 묶음 머리글은
+                        // 2명 이상일 때만 붙인다 — 1명짜리 머리글은 아무
+                        // 정보도 주지 않는다.
+                        ...groupContactsByAddress(nearbyList).expand((group) {
+                          final tiles = group.contacts.map((contact) {
+                            final distance = GeoUtils.getDistanceMeters(
+                              viewModel.currentPosition,
+                              contact.geo,
+                            );
+                            return _NearbyContactTile(
+                              contact: contact,
+                              distanceMeters: distance,
+                              // 묶음 안에서는 주소를 줄마다 반복하지 않는다 —
+                              // 머리글에 이미 있고, 같은 값이 세 번 나오면
+                              // 오히려 읽기 어렵다.
+                              showAddress: !group.isGrouped,
+                              onOpen: () => viewModel.openBriefing(contact),
+                              onCall: () => PhoneCallService.showCallPicker(
+                                context,
+                                contact,
+                              ),
+                            );
+                          });
+                          if (!group.isGrouped) return tiles;
+                          return [
+                            SameAddressGroupHeader(
+                              address: group.address,
+                              count: group.contacts.length,
                             ),
-                          );
+                            ...tiles,
+                          ];
                         }),
                       ],
                     ),
@@ -1405,11 +1426,16 @@ class _NearbyContactTile extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onCall;
 
+  /// 주소 줄(F-12)을 보여 줄지. 같은 주소 묶음(F-15) 안에서는 머리글에 주소가
+  /// 이미 있어 `false`로 준다 — 같은 값이 줄마다 반복되면 오히려 읽기 어렵다.
+  final bool showAddress;
+
   const _NearbyContactTile({
     required this.contact,
     required this.distanceMeters,
     required this.onOpen,
     required this.onCall,
+    this.showAddress = true,
   });
 
   bool get _hasAnyPhone =>
@@ -1476,7 +1502,8 @@ class _NearbyContactTile extends StatelessWidget {
                 // 주소 한 줄(F-12) — 이 화면의 목적이 "지금 어디쯤 가까이 있는가"라
                 // 회사명만으로는 부족했다. 주소가 없는 명함은 애초에 좌표가 없어
                 // 이 목록에 뜨지 않지만, 혹시 비어 있으면 줄 자체를 숨긴다.
-                if ((contact.address ?? '').trim().isNotEmpty) ...[
+                if (showAddress &&
+                    (contact.address ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
