@@ -156,6 +156,21 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
     await AiUsageService.fetch();
   }
 
+  /// F-08 — "AI에 보낼 정보"를 다시 열어 보고 고친다.
+  ///
+  /// 동의 캐시를 비우기만 하면 [_generate]가 알아서 전송 항목 화면을 다시
+  /// 띄운다. 그 화면에서:
+  /// - **닫으면** `null`이 돌아와 생성도 과금도 일어나지 않는다(그냥 보기).
+  /// - **고쳐서 확인하면** 새 선택으로 다시 생성한다.
+  ///
+  /// 캐시를 비우는 것 자체가 부작용이라 되돌릴 필요는 없다 — 사용자가 닫아서
+  /// 생성이 취소되면 다음에 "새로 생성"을 눌렀을 때 전송 항목을 한 번 더
+  /// 확인하게 될 뿐이고, 그건 이 기능이 바라는 방향이다.
+  Future<void> _editAiData() async {
+    setState(() => _consentedSelection = null);
+    await _generate();
+  }
+
   Future<void> _addCommunicationRecord() async {
     final contact = _resolveContact(context.read<ContactsRepository>());
     final action = await showModalBottomSheet<CommunicationSourceAction>(
@@ -527,6 +542,26 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
                             ],
                           ),
                         ),
+                        // F-08: "AI에 보낼 정보"로 다시 들어가는 통로.
+                        //
+                        // 왜 필요한가: 한 번 동의하면 `_consentedSelection`이
+                        // 남아 **"새로 생성"을 눌러도 전송 항목 화면이 다시
+                        // 뜨지 않았다.** 그래서 사용자는 자기가 무엇을 보냈는지
+                        // 확인할 수도, 고칠 수도 없었다(테스터 피드백 F-08).
+                        //
+                        // 그냥 열어 보기만 하면 **아무 비용도 들지 않는다** —
+                        // 닫으면 생성이 일어나지 않는다. 고쳐서 확인을 누르면
+                        // 그때 생성된다(그 화면이 남은 횟수를 함께 보여준다).
+                        if (serviceDeployed)
+                          IconButton(
+                            icon: const AppIcon(
+                              AppIconId.aiDataInfo,
+                              size: 20,
+                              color: AppColors.accentText,
+                            ),
+                            onPressed: _isGenerating ? null : _editAiData,
+                            tooltip: 'AI에 보낼 정보 보기·수정',
+                          ),
                         if (serviceDeployed)
                           IconButton(
                             icon: _isGenerating
