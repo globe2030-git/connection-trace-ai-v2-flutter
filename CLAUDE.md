@@ -45,15 +45,35 @@ gh pr create --base main
 
 ## 3. 커밋 전 확인
 
-푸시하면 GitHub Actions(`.github/workflows/ci.yml`)가 `flutter analyze`와
-`flutter test`를 자동으로 돌린다. 그래도 로컬에서 먼저 돌려보는 것이 빠르다.
+**로컬에서 먼저 돌린다. 자동 검사는 안전망이지 1차 검사가 아니다.**
 
 ```
 flutter analyze   # info 19건은 기존 잔재라 통과, error·warning은 반드시 0
-flutter test      # 현재 225건
+flutter test      # 현재 513건
 ```
 
 `analyze`는 CI에서 `--no-fatal-infos`로 돈다. 남아 있는 info를 늘리지 말 것.
+
+### 자동 검사(GitHub Actions)가 도는 조건 — 2026-08-16에 좁혔다
+
+| 언제 | 도나 |
+|---|---|
+| **`main`으로 가는 PR** (코드 포함) | ✅ |
+| `main`에 직접 push (코드 포함) | ✅ |
+| **문서만 바뀐 PR**(`**.md`·`docs/**`) | ❌ 건너뛴다 |
+| **브랜치에 push** (PR 열기 전) | ❌ 안 돈다 |
+
+⚠️ **그러니 PR을 열기 전에는 자동 검사 결과가 없다.** 로컬에서 돌린 결과를
+**PR 본문에 숫자로 적는다**(`analyze 19 · test 513` 형식). 안 적으면 나중에
+*"이건 검증됐나?"*에 답할 수 없다.
+
+**왜 좁혔나**: 여러 세션이 붙어 일하면서 **3일 만에 무료분이 바닥나 CI가 통째로
+멈췄다**(추가 257). 문서만 고친 PR에도 테스트 513건이 다 돌았고, `backlog.md`
+충돌을 풀어 다시 푸시할 때마다 처음부터 다시 돌았다(하루 여섯 번).
+
+⚠️ **잡이 결제로 멈추면 빨간 X가 뜨는데, 그건 "실패"가 아니라 "돌지 않음"이다.**
+`gh run view <id> --json jobs`로 **단계 수가 0이면** 결제 문제다 — 코드에서
+원인을 찾지 마라. 확인은 <https://github.com/settings/billing>.
 
 ## 4. 이 프로젝트에서 특히 조심할 것
 
