@@ -10,10 +10,15 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/card_quad_geometry.dart';
+import '../../../../core/utils/card_photo_downscale.dart';
+import '../../../../core/utils/card_quad_warp.dart';
 import '../../../../core/utils/frame_contrast.dart';
 import '../../../../core/utils/scan_rotation.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
+import '../../../../core/services/card_rect_detector.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import 'card_rect_overlay.dart';
 
 class CameraScanModalView extends StatefulWidget {
   /// 지금 찍는 면("앞면"/"뒷면"). 화면 아래에 항상 띄운다.
@@ -180,6 +185,74 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   DateTime? _streamStartedAt;
   DateTime? _lastAnalyzedAt;
 
+  // ───────── 명함 테두리 검출(B′) ─────────
+  //
+  // ⚠️ **기존 자동 촬영 판정을 지우지 않는다.** 대비·흔들림 값은 실기기에서
+  // 여러 차례 다듬은 것이고(2026-08-06·08-14), 여기서는 **조건을 하나 더할
+  // 뿐**이다 — "사각형이 잡혔고 + 안 흔들리면 찍는다".
+  //
+  // 그리고 **검출이 없어도 앱은 예전 그대로 돌아간다.** 안드로이드는 아직
+  // 검출이 없고, 아이폰에서도 실패할 수 있다. 그때는 고정 가이드 상자로
+  // 되돌아간다 — 최악의 경우가 지금과 같도록 만드는 것이 이 작업의 안전선이다.
+  final CardRectDetector _rectDetector = CardRectDetector();
+
+  /// 화면에 그릴 테두리(깜빡임 방지용 유지 장치).
+  final CardRectHold _rectHold = CardRectHold();
+
+  /// 카메라 센서가 몇 도 돌아 있나 — 카메라를 연 뒤에 정해진다.
+  ///
+  /// ⚠️ 이 값만으로 회전을 정하면 틀린다. 아이폰이 실제로 준 프레임은
+  /// **이미 세로**(3024×4032)였다 — 실제 회전은 프레임 모양까지 보고
+  /// [quarterTurnsForFrame]이 정한다.
+  int _sensorOrientation = 0;
+
+  /// 지금 화면에 그리고 있는 검출. null이면 고정 가이드 상자만 보인다.
+  CardRectDetection? _visibleDetection;
+
+  /// 마지막으로 **명함처럼 생긴** 사각형을 본 시각.
+  ///
+  /// ⚠️ 이 값을 그대로 쓰지 않고 [_hasRecentCardRect]로 나이를 본다. 검출은
+  /// 비동기라 결과가 늦게 도착하는데, 그냥 bool로 들고 있으면 **명함을
+  /// 치웠는데도 참으로 남아** 엉뚱한 순간에 찍힌다.
+  DateTime? _lastCardRectAt;
+
+  /// 이 화면을 연 뒤 사각형을 **한 번이라도** 찾았나.
+  bool _everFoundCardRect = false;
+
+  /// 촬영 순간에 쓰던 검출 — 크롭에 쓴다.
+  CardRectDetection? _detectionAtCapture;
+
+  /// 검출 결과가 이 시간 안에 들어왔어야 "지금 명함이 보인다"로 친다.
+  static const _cardRectFreshness = Duration(milliseconds: 500);
+
+  /// ⚠️ **되돌림 장치.** 스트림을 시작하고 이 시간이 지나도록 사각형을 한
+  /// 번도 못 찾으면 검출 조건을 뺀다.
+  ///
+  /// 왜 필요한가: 검출이 붙었는데 이 기기·이 조명에서 잘 안 잡히면
+  /// **자동 촬영이 통째로 죽는다.** 그건 지금보다 나쁜 상태다. 이 프로젝트는
+  /// 자동 촬영 조건을 조였다가 *"파란색으로 변하지를 않아"*, *"자동 촬영 잘
+  /// 안됨"* 제보를 **두 번** 받았다.
+  ///
+  /// ⚠️ 이 장치에는 함정이 있다 — **네이티브 등록을 빠뜨려도 똑같이 조건이
+  /// 풀려 예전처럼 잘 도는 것처럼 보인다.** 그래서 [_logRectStateOnce]가
+  /// "결함"과 "설계대로"를 갈라 남긴다.
+  static const _cardRectGrace = Duration(seconds: 6);
+
+  bool get _hasRecentCardRect {
+    final at = _lastCardRectAt;
+    return at != null && DateTime.now().difference(at) <= _cardRectFreshness;
+  }
+
+  /// 자동 촬영에 "사각형이 잡혔을 것"을 요구하나.
+  bool get _requiresCardRect {
+    if (!CardRectDetector.isSupportedOnThisPlatform) return false;
+    if (_rectDetector.isDisabled) return false;
+    if (_everFoundCardRect) return true;
+    final startedAt = _streamStartedAt;
+    if (startedAt == null) return false;
+    return DateTime.now().difference(startedAt) < _cardRectGrace;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -214,6 +287,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
+      // 검출 좌표를 화면 방향으로 되돌리는 데 쓴다 — 안 맞추면 테두리가
+      // 엉뚱한 곳에 그려진다.
+      _sensorOrientation = backCamera.sensorOrientation;
       controller = CameraController(
         backCamera,
         // OCR 인식률 개선 요청(2026-08-06 밤)에 대응해 veryHigh(약 1080p)
@@ -351,6 +427,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final controller = _controller;
     if (controller == null || !_isStreamingForAutoCapture) return;
     _isStreamingForAutoCapture = false;
+    // 프레임이 끊기면 검출도 끊긴다. 마지막 테두리를 지워 **멈춘 화면 위에
+    // 낡은 테두리가 남는 것**을 막는다.
+    _rectHold.clear();
+    _lastCardRectAt = null;
+    if (mounted && _visibleDetection != null) {
+      setState(() => _visibleDetection = null);
+    }
     try {
       await controller.stopImageStream();
     } catch (_) {}
@@ -371,6 +454,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     if (startedAt != null && now.difference(startedAt) < _autoCaptureWarmup) {
       return;
     }
+
+    // 명함 테두리 검출을 **얹는다**(B′). 결과는 늦게 도착하므로 여기서
+    // 기다리지 않는다 — 기다리면 프레임 콜백이 막혀 화면이 끊긴다.
+    //
+    // ⚠️ `image`의 바이트는 이 콜백이 끝나면 카메라가 재사용한다. 아래
+    // [CardRectDetector.detect]는 **첫 await 전에** 바이트를 읽어 채널
+    // 메시지로 넘기므로 안전하다. 그 순서를 바꾸면 조용히 깨진 프레임을 본다.
+    unawaited(_runRectDetection(image));
 
     final sample = _sampleLuma(image);
     final previous = _previousLumaSample;
@@ -442,7 +533,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       }
     }
 
-    if (avgDiff < _stabilityDiffThreshold && hasContent) {
+    // 검출이 붙어 있으면 **"사각형이 잡혔을 것"까지 요구한다**(B′). 붙어
+    // 있지 않거나(안드로이드) 이 기기에서 잘 안 잡히면 [_requiresCardRect]가
+    // false가 되어 예전 판정 그대로 돈다.
+    final rectOk = !_requiresCardRect || _hasRecentCardRect;
+    if (!kReleaseMode) _logRectStateOnce();
+
+    if (avgDiff < _stabilityDiffThreshold && hasContent && rectOk) {
       _stableSince ??= now;
     } else {
       _stableSince = null;
@@ -458,6 +555,154 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         now.difference(stableSince) >= _requiredStableDuration) {
       _stableSince = null;
       _capturePhoto();
+    }
+  }
+
+  /// 마지막 검출이 떨어진 이유(디버그 화면용).
+  CardShapeVerdict? _lastRectVerdict;
+
+  /// 마지막으로 화면에 띄운 진단 요약(갱신 판단용).
+  String? _lastDiagSummary;
+
+  /// 마지막 크롭의 **긴 변**(px). 검출 크롭이 아니었으면 null.
+  ///
+  /// ⚠️ **촬영 거리가 그대로 해상도가 된다**(2026-08-16 실측).
+  ///
+  /// | 거리 | 크롭 긴 변 | 명함 90mm 기준 |
+  /// |---|---|---|
+  /// | 가까이 | 1,786px | 약 390dpi |
+  /// | 멀리 | **993px** | 약 **280dpi** ← 문서 스캔 표준 미달 |
+  ///
+  /// 기존 경로는 가이드 상자를 **고정 크기**로 잘라 거리와 무관하게 2,000px대가
+  /// 나왔다. 검출 크롭은 명함에 딱 맞게 자르므로 이 전제가 깨진다.
+  ///
+  /// 그리고 이 크롭이 **곧 OCR 입력**이다 — `card_photo_downscale.dart`가
+  /// *"축소를 크롭 단계에 넣으면 인식률이 떨어진다"*고 경고하는 그 자리에,
+  /// 이제 **촬영 거리**가 들어앉았다.
+  ///
+  /// 막지는 않는다(사용자 결정 2026-08-16). **확인 화면에서 알리기만** 하고,
+  /// 다시 찍을지는 사용자가 고른다 — 이미 *"글자가 또렷한가요?"* 관문이 있다.
+  int? _lastCropLongEdge;
+
+  /// 마지막 크롭 결과 요약(release 빌드 제외).
+  ///
+  /// ⚠️ **이 숫자가 이번 작업의 갈림길이다.** 잘라낸 긴 변이 축소 임계
+  /// (1,600px)를 넘지 않으면 `contact_image_service`가 축소를 건너뛰고,
+  /// 저장본이 커져 **무료 200장 한도의 근거가 흔들린다**(인계 문서 5절).
+  ///
+  /// 로그로 확인할 수 없는 기기라 **확인 화면에 띄운다** — `flutter run`이
+  /// 앱에 못 붙고 `idevicesyslog`에도 앱 로그가 안 올라온다(2026-08-16 실측).
+  String? _lastCropSummary;
+
+  /// 검출이 지금 어떤 상태인지 **한 줄로** 만든다(release 빌드 제외).
+  ///
+  /// ⚠️ 화면에 이 줄이 보이는 것 자체가 **새 빌드가 깔렸다는 증거**다.
+  /// 이 기기에서는 `flutter run`이 앱에 못 붙고 `idevicesyslog`에도 앱
+  /// 로그가 안 올라온다(2026-08-16 실측) — **화면이 유일한 창구**다.
+  String _rectDebugLabel() {
+    final state = switch (_rectDetector.channelState) {
+      CardRectChannelState.unknown => '대기',
+      CardRectChannelState.working => '채널OK',
+      CardRectChannelState.missing => '⚠️채널없음(결함)',
+      CardRectChannelState.failing => '⚠️채널오류(결함)',
+    };
+    final found = _visibleDetection != null
+        ? '명함잡힘'
+        : (_lastRectVerdict == null
+              ? '후보없음'
+              : '떨어짐:${_lastRectVerdict!.name}');
+    final gate = _requiresCardRect ? '조건적용' : '조건해제';
+    final diag = _rectDetector.lastDiagnostics;
+    final diagLine = diag == null ? '' : '\n${diag.summary}';
+    return '$state · $found · $gate$diagLine';
+  }
+
+  bool _rectStateLogged = false;
+
+  /// ⚠️ **"검출이 안 붙었다"와 "검출이 붙었는데 못 찾았다"를 갈라 적는다.**
+  ///
+  /// 6초 폴백([_cardRectGrace])에는 함정이 하나 있다 — **네이티브 등록을
+  /// 빠뜨려도 6초 뒤 조건이 풀려 자동 촬영이 정상 동작한다.** 화면상으로는
+  /// 예전과 똑같이 멀쩡해 보이므로, 그대로 두면 다음 사람이 *"폴백 잘 되네"*로
+  /// 읽고 넘어간다.
+  ///
+  /// | 로그 | 성격 |
+  /// |---|---|
+  /// | 채널 없음 · 채널 오류 | **결함** — 고쳐야 한다 |
+  /// | 채널 정상, 미검출 | **설계대로** — 조명·거리 문제 |
+  void _logRectStateOnce() {
+    if (_rectStateLogged) return;
+    if (!CardRectDetector.isSupportedOnThisPlatform) return;
+    final startedAt = _streamStartedAt;
+    if (startedAt == null) return;
+
+    if (_everFoundCardRect) {
+      _rectStateLogged = true;
+      debugPrint('[CARDRECT] 채널 정상 — 사각형 검출 확인됨');
+      return;
+    }
+    if (DateTime.now().difference(startedAt) < _cardRectGrace) return;
+
+    _rectStateLogged = true;
+    switch (_rectDetector.channelState) {
+      case CardRectChannelState.missing:
+        debugPrint(
+          '[CARDRECT] ⚠️ 결함: 네이티브 채널이 없습니다(MissingPlugin). '
+          'AppDelegate 등록을 확인하십시오 — 기존 가이드로 폴백합니다',
+        );
+      case CardRectChannelState.failing:
+        debugPrint('[CARDRECT] ⚠️ 결함: 채널 오류·지연이 반복됩니다 — 기존 가이드로 폴백합니다');
+      case CardRectChannelState.working:
+        debugPrint(
+          '[CARDRECT] 설계대로: 채널은 정상인데 '
+          '${_cardRectGrace.inSeconds}초간 사각형을 못 찾아 조건을 해제합니다',
+        );
+      case CardRectChannelState.unknown:
+        debugPrint('[CARDRECT] ⚠️ 채널을 한 번도 부르지 못했습니다 — 프레임이 들어오는지 확인하십시오');
+    }
+  }
+
+  /// 프레임 한 장을 검출기에 보내고, 결과를 화면·자동 촬영 판정에 반영한다.
+  ///
+  /// ⚠️ **테두리를 그리는 값과 자동 촬영에 쓰는 값을 나눈다.**
+  ///
+  /// | | 무엇을 쓰나 | 왜 |
+  /// |---|---|---|
+  /// | 테두리 그리기 | [_rectHold]가 잠깐 붙잡아 둔 값 | 한두 프레임 비어도 안 깜빡이게 |
+  /// | 자동 촬영 판정 | [_lastCardRectAt]의 **나이** | 명함을 치웠는데 찍히면 안 되니까 |
+  ///
+  /// 붙잡아 둔 값으로 촬영까지 판단하면 **유지 시간 동안은 명함이 없어도
+  /// 찍힌다.** 실기기에서야 드러나는 종류의 결함이라 여기서 갈라 둔다.
+  Future<void> _runRectDetection(CameraImage image) async {
+    final detection = await _rectDetector.detect(
+      image,
+      sensorOrientation: _sensorOrientation,
+    );
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final isCard = detection?.isCardLike ?? false;
+    if (isCard) {
+      _lastCardRectAt = now;
+      _everFoundCardRect = true;
+    }
+
+    // 명함으로 판정된 것만 그린다 — 책상 모서리에 테두리가 붙으면 사용자는
+    // 앱이 잘못 보고 있다고 읽는다.
+    _rectHold.update(isCard ? detection : null, now);
+    final visible = _rectHold.visibleAt(now);
+    final verdict = detection?.verdict;
+    // 디버그 줄의 숫자도 갱신돼야 한다 — 안 그러면 처음 값에서 멈춰
+    // **화면을 보고 판정할 수 없다**(이 기기에서는 로그를 못 본다).
+    final diagSummary = _rectDetector.lastDiagnostics?.summary;
+    if (visible != _visibleDetection ||
+        (!kReleaseMode &&
+            (verdict != _lastRectVerdict || diagSummary != _lastDiagSummary))) {
+      setState(() {
+        _visibleDetection = visible;
+        _lastRectVerdict = verdict;
+        _lastDiagSummary = diagSummary;
+      });
     }
   }
 
@@ -514,6 +759,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     if (controller == null || !controller.value.isInitialized || _isCapturing)
       return;
 
+    // 스트림을 멈추면 검출도 멈춘다. **멈추기 전에** 지금 보고 있던 사각형을
+    // 붙잡아 둔다 — 이 값으로 자른다.
+    _detectionAtCapture = _rectHold.visibleAt(DateTime.now());
+
     // takePicture()는 이미지 스트림이 활성화된 상태에서 호출하면 실패하는
     // 기기가 있어서, 촬영 직전엔 항상 스트림을 먼저 멈춘다.
     await _stopAutoCaptureStream();
@@ -528,7 +777,17 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final rawFile = await controller.takePicture();
       if (!mounted) return;
       final screenSize = MediaQuery.of(context).size;
-      final croppedFile = await _cropToGuideFrame(rawFile, screenSize);
+      // 검출된 테두리대로 자른다(B′). **실패하면 기존 고정 가이드 크롭으로
+      // 되돌아간다** — 최악의 경우가 지금과 같아야 한다.
+      _lastCropLongEdge = null;
+      if (!kReleaseMode) _lastCropSummary = null;
+      var croppedFile = await _cropByDetectedQuad(rawFile, screenSize);
+      if (croppedFile == null) {
+        // ⚠️ 어느 경로로 잘렸는지 화면에 남긴다 — 안 남기면 검출 크롭과
+        // 폴백 크롭을 결과만 보고 구분할 수 없다.
+        if (!kReleaseMode) _lastCropSummary = '검출 크롭 실패 → 기존 가이드로 폴백';
+        croppedFile = await _cropToGuideFrame(rawFile, screenSize);
+      }
 
       // 촬영 원본은 크롭이 끝나면 쓰이지 않는다. **평문이므로 바로 지운다**
       // (2026-08-16). 실기기에서 이 파일들이 83장·198.5MB 쌓여 있었고,
@@ -692,6 +951,59 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// (표준 90x50mm 외에도 크고 작은 변형이 흔함) 계산이 살짝 어긋나거나
   /// 카드가 가이드보다 커도 잘리지 않도록 가이드 프레임보다 30% 여유를 두고
   /// 크롭 범위를 화면 안으로 clamp한다.
+  /// 검출된 테두리대로 잘라서 편다(B′). 검출이 없거나 실패하면 **null**을
+  /// 돌려주고, 부르는 쪽은 기존 [_cropToGuideFrame]으로 되돌아간다.
+  ///
+  /// ⚠️ **별도 isolate에서 돌린다.** 원근 보정은 결과 픽셀 하나마다 원본에서
+  /// 네 점을 읽어 섞는 일이라, 200만 픽셀이면 그만큼 반복한다. 본 스레드에서
+  /// 돌리면 촬영 직후 확인 화면으로 넘어가는 동안 화면이 멈춘 것처럼 보인다.
+  ///
+  /// ⚠️ **결과 크기를 로그로 남긴다.** 잘라낸 긴 변이 축소 임계(1,600px)를
+  /// 넘는지가 이 작업의 갈림길이다 — 안 넘으면 `contact_image_service`가
+  /// 축소를 건너뛰어 저장본이 커지고 **무료 200장 한도의 근거가 흔들린다.**
+  Future<XFile?> _cropByDetectedQuad(XFile rawFile, Size screenSize) async {
+    final detection = _detectionAtCapture;
+    if (detection == null || !detection.isCardLike) return null;
+
+    try {
+      // 표시 좌표 → 가시 좌표(화면에 보이는 영역 기준).
+      final visibleQuad = displayQuadToVisibleQuad(
+        detection.quad,
+        detection.displaySize,
+        screenSize,
+      );
+
+      final outPath =
+          '${Directory.systemTemp.path}/card_scan_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final result = await compute(
+        warpCardToFile,
+        CardWarpRequest(
+          sourcePath: rawFile.path,
+          visibleCornersFlat: cornersToFlat(visibleQuad.corners),
+          screenWidth: screenSize.width,
+          screenHeight: screenSize.height,
+          outputPath: outPath,
+        ),
+      );
+      if (result == null) return null;
+      _lastCropLongEdge = result.longEdge;
+
+      if (!kReleaseMode) {
+        // ⚠️ 숫자만 남긴다. 명함 내용은 찍지 않는다(CLAUDE.md 4절).
+        final over = result.longEdge > 1600;
+        _lastCropSummary =
+            '크롭 ${result.width}x${result.height} · 긴변 ${result.longEdge}'
+            ' · 축소임계(1600) ${over ? "넘음 ✅" : "못넘음 ⚠️"}'
+            ' · ${result.elapsedMs}ms';
+        debugPrint('[CARDRECT] $_lastCropSummary');
+      }
+      return XFile(result.path);
+    } catch (_) {
+      // 원근 보정이 실패해도 촬영 자체를 버리지 않는다.
+      return null;
+    }
+  }
+
   Future<XFile> _cropToGuideFrame(XFile rawFile, Size screenSize) async {
     try {
       final bytes = await rawFile.readAsBytes();
@@ -795,7 +1107,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   @override
   Widget build(BuildContext context) {
     final isReady = _controller != null && _controller!.value.isInitialized;
-    final guideSize = _guideFrameSizeFor(MediaQuery.of(context).size);
+    final screenSize = MediaQuery.of(context).size;
+    final guideSize = _guideFrameSizeFor(screenSize);
+
+    // 검출된 테두리를 화면 좌표(가시 좌표)로 옮긴다(B′). null이면 예전처럼
+    // 고정 가이드 상자만 보인다.
+    final detection = _visibleDetection;
+    final detectedQuad = detection == null
+        ? null
+        : displayQuadToVisibleQuad(
+            detection.quad,
+            detection.displaySize,
+            screenSize,
+          );
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -819,6 +1143,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                   alignment: Alignment.center,
                   children: [
                     if (isReady) _buildCameraPreview(),
+                    // 찾아낸 명함에 달라붙는 테두리(B′). 확인 화면에서는
+                    // 프리뷰가 멈춰 있으므로 그리지 않는다.
+                    if (isReady && detectedQuad != null && _pendingShot == null)
+                      Positioned.fill(
+                        child: CardRectOverlay(
+                          quad: detectedQuad,
+                          color: AppColors.accent,
+                        ),
+                      ),
                     if (!isReady && !_isInitializing && _initError == null)
                       Icon(
                         Icons.camera,
@@ -1032,8 +1365,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: _isFrameStable ? AppColors.accent : Colors.white,
-                        width: _isFrameStable ? 3 : 1.5,
+                        // 검출 테두리가 붙어 있으면 고정 가이드를 물린다 —
+                        // 상자가 둘이면 어디에 맞춰야 할지 헷갈린다. 지우지
+                        // 않고 흐리게만 두는 이유는, 검출이 끊기면 이것이
+                        // 다시 앞으로 나와야 하기 때문이다(폴백).
+                        color: detectedQuad != null
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : (_isFrameStable
+                                  ? AppColors.accent
+                                  : Colors.white),
+                        width: _isFrameStable && detectedQuad == null ? 3 : 1.5,
                       ),
                     ),
                     child: Stack(
@@ -1102,6 +1443,35 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                             fontWeight: FontWeight.w600,
                           ),
                         ),
+                        // ⚠️ **검출이 도는지 화면으로 판정할 수 있게 한다**(B′).
+                        //
+                        // 왜 로그가 아니라 화면인가: 이 기기에서는 앱 로그를
+                        // 볼 방법이 없다 — `flutter run`이 앱에 못 붙고
+                        // `idevicesyslog`에도 앱이 찍는 줄이 하나도 안 올라온다
+                        // (2026-08-16 실측, iOS 26).
+                        //
+                        // 이 줄이 없으면 **아래 넷을 화면에서 구분할 수 없다** —
+                        // 전부 "테두리가 안 보인다"로 똑같이 보인다.
+                        //
+                        //   채널 없음     ← 결함(네이티브 등록 누락)
+                        //   이미지 실패   ← 결함(폭·행길이 어긋남)
+                        //   Vision 미검출 ← 설계대로(조명·거리)
+                        //   우리가 걸러냄 ← 판정 기준 문제
+                        //
+                        // ⚠️ 이 줄이 아예 안 보이면 **낡은 빌드가 깔린 것**이다.
+                        // release 빌드에는 나오지 않는다.
+                        if (!kReleaseMode &&
+                            CardRectDetector.isSupportedOnThisPlatform)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              '검출 ${_rectDebugLabel()}',
+                              style: const TextStyle(
+                                color: Colors.lightGreenAccent,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
                         // 디버그 빌드에서만 보이는 실측값(대비 / 지배톤).
                         // 자동 촬영 임계값을 **추측으로 정했다가 진짜 명함을
                         // 막는 회귀**를 냈다. 실제 장면의 숫자를 읽을 수 있어야
@@ -1172,6 +1542,43 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
+                            // ⚠️ **작게 잡혔으면 알린다**(2026-08-16 실측).
+                            //
+                            // 멀리서 찍으면 크롭이 993px까지 내려간다(약
+                            // 280dpi로 문서 스캔 표준 미달). 막지는 않는다 —
+                            // 이 프로젝트는 자동 촬영 조건을 조였다가 **진짜
+                            // 명함을 막는 회귀를 두 번** 냈다. 이미 있는
+                            // *"글자가 또렷한가요?"* 관문에 근거를 한 줄
+                            // 얹어, 다시 찍을지는 사용자가 고르게 한다.
+                            if (_lastCropLongEdge != null &&
+                                _lastCropLongEdge! < kCardPhotoMaxLongSide)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  '명함이 작게 잡혔어요. 더 가까이서 다시 찍으면 글자가 또렷해집니다.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppColors.accent,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            // ⚠️ 크롭 결과 픽셀 수(release 빌드 제외).
+                            // 이 숫자가 축소 임계(1,600)를 넘는지가 저장
+                            // 용량·무료 200장 한도와 직접 걸린다.
+                            if (!kReleaseMode && _lastCropSummary != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  _lastCropSummary!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.lightGreenAccent,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
                             const SizedBox(height: 12),
                             Row(
                               children: [
