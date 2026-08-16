@@ -4,6 +4,7 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/services/proximity_settings_service.dart';
 import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/utils/location_quality.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/proximity_settings.dart';
 import '../../../../data/repositories/contacts_repository.dart';
@@ -112,6 +113,25 @@ class RadarViewModel extends ChangeNotifier {
       _locationAccessState == LocationAccessState.consentRequired;
   LocationConsentRecord get locationConsent => _locationConsent;
   LocationAccessState get locationAccessState => _locationAccessState;
+
+  /// 지금 쓰는 내 위치가 믿을 만한지 한 줄로. 알릴 것이 없으면 null(E-12).
+  ///
+  /// ⚠️ **오차를 감지 반경과 견준다.** *"300m면 나쁘다"*는 말이 성립하지 않는다 —
+  /// 반경 10km에서 300m는 무시할 만하고, 반경 500m에서는 목록 자체를 못 믿게
+  /// 만든다.
+  ///
+  /// 기준점을 직접 지정한 동안에는 알리지 않는다(F-13) — 그때 목록은 **내
+  /// 위치가 아니라 그 지점**을 기준으로 하므로 측위 품질과 무관하다.
+  String? get locationQualityMessage {
+    if (_anchorPosition != null) return null;
+    if (_locationAccessState != LocationAccessState.ready) return null;
+    final q = _locationService.lastFixQuality;
+    return locationQualityNotice(
+      accuracyMeters: q.accuracyMeters,
+      age: q.age,
+      radiusMeters: _settings.radiusMeters,
+    );
+  }
   // 좌표는 서버에 백업하지 않으므로(backlog 추가 75, C안) 새 기기에서 복원한
   // 직후에는 명함에 좌표가 없어 거리 계산이 안 된다. 주소로 좌표를 다시
   // 계산하는 동안 화면이 "주변에 아무도 없음"으로 보이면 오해를 사므로,
