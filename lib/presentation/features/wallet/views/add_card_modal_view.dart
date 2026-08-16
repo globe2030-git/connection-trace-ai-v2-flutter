@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -15,6 +17,7 @@ import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
+import '../../../../core/services/doc_scanner_capture_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/utils/scan_conflict.dart';
 import '../../../../core/services/ocr_stats_service.dart';
@@ -425,6 +428,93 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _fieldFocusOrder[nextIndex].requestFocus();
   }
 
+  /// 두 촬영 경로를 뒤집는 스위치 — ⚠️ **debug 빌드에서만 보인다.**
+  ///
+  /// release·테스터 배포 빌드에는 **아예 없다**. 로그인 화면의 "로그인
+  /// 건너뛰기"와 같은 취급이라, 이용자에게 보이는 촬영 진입점은 **그대로
+  /// 하나**다(제품 원칙 2-3절 *"같은 일을 하는 진입점 세 개 이상"*에 안 걸린다).
+  ///
+  /// **왜 필요한가**: 2단계가 *"실제 명함 20~30장으로 둘을 나란히 재기"*인데,
+  /// 상수 플래그만 두면 **명함 한 장마다 빌드를 다시 깔아야 해서** 나란히
+  /// 비교가 안 된다. 이 스위치는 그 측정을 위한 도구다.
+  ///
+  /// 📌 **2단계가 끝나면 지운다.**
+  Widget _buildDocScannerDebugSwitch() {
+    if (!kDebugMode) return const SizedBox.shrink();
+    return ValueListenableBuilder<bool>(
+      valueListenable: docScannerCaptureEnabled,
+      builder: (_, useDocScanner, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(
+              value: useDocScanner,
+              onChanged: (v) => docScannerCaptureEnabled.value = v,
+            ),
+            Expanded(
+              child: Text(
+                useDocScanner ? '[debug] 촬영: 문서 스캐너(신규)' : '[debug] 촬영: 가이드 상자(기존)',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 기성 문서 스캐너로 찍고 인식까지 한다(추가 266, 1단계).
+  ///
+  /// 기존 촬영 화면([CameraScanModalView])은 **자기 안에서 인식까지 마치고**
+  /// [OcrScanResult]를 `pop`으로 돌려준다. 이 경로에는 우리 화면이 없으므로
+  /// **여기서 같은 일을 한다** — 돌려주는 값의 모양이 같아야 부르는 쪽을
+  /// 갈라놓지 않는다.
+  ///
+  /// 사용자가 취소하면 `null`.
+  ///
+  /// ⚠️ **평문 사진을 새게 두지 않는다.** 인식까지 못 간 사진은 넘겨줄 곳이
+  /// 없으므로 여기서 지운다 — 기존 경로가 인식 실패 시 크롭본을 지우는 것과
+  /// 같은 자리다(추가 253). 인식에 성공하면 그 파일은 저장 쪽이 넘겨받으므로
+  /// **여기서 지우면 안 된다.**
+  Future<OcrScanResult?> _scanWithDocScanner() async {
+    setState(() => _isScanningOcr = true);
+    // 지울 책임이 아직 우리에게 있는 파일. 넘겨준 뒤에는 null로 비운다.
+    String? orphanPath;
+    try {
+      final capture = await DocScannerCaptureService.capture();
+      if (capture == null) return null; // 사용자가 스캐너를 닫았다.
+      orphanPath = capture.path;
+      final scanned = await OcrScannerService.scanBusinessCard(
+        XFile(capture.path),
+      );
+      orphanPath = null; // 인식 성공 — 이제 저장 쪽이 이 파일의 주인이다.
+      return scanned;
+    } catch (e) {
+      if (!mounted) return null;
+      // 권한 거부는 "실패"가 아니라 사용자가 막은 것이라 문구를 따로 준다 —
+      // "인식에 실패했습니다"만 보면 무엇을 해야 할지 알 수 없다.
+      final denied = e is CunningDocumentScannerException &&
+          e.code == 'permission_denied';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            denied
+                ? '⚠️ 카메라 권한이 없어 명함을 촬영할 수 없습니다. 설정에서 권한을 켜 주세요.'
+                : '⚠️ 명함 인식에 실패했습니다: $e',
+          ),
+          backgroundColor: AppColors.destructive,
+        ),
+      );
+      return null;
+    } finally {
+      await deleteQuietly(orphanPath);
+      if (mounted) setState(() => _isScanningOcr = false);
+    }
+  }
+
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
   Future<void> _performOcrScan({
     required bool isFromCamera,
@@ -435,13 +525,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     OcrScanResult? result;
 
     if (isFromCamera) {
-      // Open camera scanner view with viewfinder shutter
-      result = await Navigator.push<OcrScanResult>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
-        ),
-      );
+      if (docScannerCaptureEnabled.value) {
+        // 새 촬영 경로(추가 266, 1단계). 기성 문서 스캐너가 **가이드 상자가
+        // 아니라 명함 테두리**를 찾아 잘라 준다. 돌려주는 값의 모양이 같아서
+        // 아래 흐름(충돌 감지·필드 채움·사진 목록·저장)은 그대로 돈다.
+        result = await _scanWithDocScanner();
+      } else {
+        // Open camera scanner view with viewfinder shutter
+        result = await Navigator.push<OcrScanResult>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+          ),
+        );
+      }
     } else {
       // Open interactive gallery / file explorer picker view
       result = await showModalBottomSheet<OcrScanResult>(
@@ -2509,6 +2606,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       ),
                     ],
                   ),
+
+                  _buildDocScannerDebugSwitch(),
 
                   const SizedBox(height: 12),
 
