@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../utils/card_photo_downscale.dart';
 import 'card_photo_backup_service.dart';
+import 'card_photo_backup_state.dart';
 import 'data_crypto_service.dart';
 import 'encryption_key_service.dart';
 
@@ -30,11 +31,14 @@ class ContactImageService {
   ContactImageService({
     EncryptionKeyService? keyService,
     CardPhotoBackupService? photoBackup,
+    CardPhotoBackupStateService? backupState,
   }) : _keyService = keyService ?? EncryptionKeyService(),
-       _photoBackup = photoBackup ?? CardPhotoBackupService();
+       _photoBackup = photoBackup ?? CardPhotoBackupService(),
+       _backupState = backupState ?? CardPhotoBackupStateService();
 
   final EncryptionKeyService _keyService;
   final CardPhotoBackupService _photoBackup;
+  final CardPhotoBackupStateService _backupState;
 
   // 복호화 결과를 경로별로 캐시한다 — 목록 아바타가 스크롤될 때마다 파일을
   // 다시 읽고 복호화하지 않도록. 값은 실패 시 null이 아니라 캐시하지 않는다.
@@ -134,14 +138,29 @@ class ContactImageService {
 
       // 서버 업로드는 **기다리지 않는다**(fire-and-forget). 로컬 저장이 이미
       // 끝났고, 업로드는 기기 변경 대비용이라 명함 저장 화면을 네트워크
-      // 왕복만큼 붙잡아 둘 이유가 없다. 실패해도 서비스가 삼키고 false만
-      // 돌려주므로 여기서 잡을 예외가 없다.
+      // 왕복만큼 붙잡아 둘 이유가 없다.
+      //
+      // ⚠️ 다만 **결과는 기록한다**(2026-08-16). 예전에는 실패해도 아무
+      // 일도 일어나지 않아, **네트워크가 끊긴 채 저장하면 백업이 안 됐는데
+      // 아무도 몰랐다.** 그러면 기기를 바꾼 뒤에야 사진이 없다는 것을 알게
+      // 되는데, 이 기능을 만든 이유가 정확히 그 상황을 없애는 것이었다.
+      // 기록해 두어야 지갑에 "백업 안 됨"을 표시하고 나중에 다시 시도할 수
+      // 있다.
       unawaited(
-        _photoBackup.upload(
-          uid: uid,
-          contactId: contactId,
-          encryptedFilePath: outPath,
-        ),
+        _photoBackup
+            .upload(
+              uid: uid,
+              contactId: contactId,
+              encryptedFilePath: outPath,
+            )
+            .then(
+              (ok) => _backupState.record(
+                contactId,
+                ok ? CardPhotoBackupState.synced : CardPhotoBackupState.failed,
+              ),
+            )
+            // 상태 기록이 실패해도 저장 자체는 이미 끝났다. 조용히 넘긴다.
+            .catchError((_) {}),
       );
       return outPath;
     } catch (e) {
