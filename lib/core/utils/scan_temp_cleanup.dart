@@ -166,6 +166,37 @@ bool isCameraCaptureName(String fileName) =>
 /// image_picker가 재인코딩할 때 만드는 사본 이름(`scaled_…`).
 bool isScaledCopyName(String fileName) => fileName.startsWith('scaled_');
 
+/// 카메라 플러그인이 **아이폰에서** 촬영 원본을 넣는 폴더 이름.
+///
+/// ## ⚠️ 왜 따로 있어야 하나 (2026-08-17 실측)
+///
+/// 위 정리는 **안드로이드의 평평한 캐시 구조**를 전제로 쓰였다 —
+/// `cache/CAP*.jpg`처럼 **맨 위 칸에** 있다고 봤다. **아이폰은 두 칸 아래다.**
+///
+/// ```
+/// 안드로이드  cache/CAP*.jpg                ← 맨 위. 걸린다
+/// 아이폰      tmp/camera/pictures/CAP_*.jpg ← 두 칸 아래. **안 걸렸다**
+/// ```
+///
+/// 그래서 **아이폰에서만 조용히 안 돌았다.** 실기기에서 **59장·262.7MB**가
+/// 남아 있었고, 가장 오래된 것은 **닷새 전** 것이었다. 전부 **평문 명함**이다.
+///
+/// 📌 `sweepPickerAndCameraLeftovers`는 **죽은 코드가 아니었다.** `main.dart`가
+/// 앱을 열 때마다 제대로 부른다 — **훑는 범위가 좁았을 뿐**이다. 처음에는
+/// "안 불리는 것"으로 오해했다가 호출부를 찾아보고 정정했다. **부르는 곳이
+/// 있는지부터 확인할 것.**
+///
+/// ## 지워도 되는 근거 — 짐작이 아니라 플러그인 소스로 확인했다
+///
+/// `camera_avfoundation`의 `DefaultCamera.swift:757-773`이
+/// `temporaryDirectory/camera/<subfolder>/CAP_<uuid>.jpg`를 **촬영마다 새로**
+/// 만든다. 그리고 플러그인 소스 전체에 **`removeItem`도 `contentsOfDirectory`도
+/// 없다** — 지우지도, 지난 파일을 다시 찾지도 않는다. 촬영이 끝난 파일은 순수한
+/// 쓰레기다(안드로이드 쪽과 같은 결론, 같은 방식으로 확인).
+const String kCameraPluginDirName = 'camera';
+
+bool isCameraPluginDirName(String dirName) => dirName == kCameraPluginDirName;
+
 /// image_picker가 갤러리 선택마다 만드는 폴더 이름인가(UUID 모양).
 ///
 /// `8-4-4-4-12` 16진수만 통과시킨다 — 다른 구성요소의 캐시 폴더
@@ -222,6 +253,68 @@ Future<int> sweepPickerAndCameraLeftovers(
           removed++;
         } else if (entity is Directory && isPickerCacheDirName(name)) {
           removed += await _sweepPickerDir(entity, at, maxAge);
+        } else if (entity is Directory && isCameraPluginDirName(name)) {
+          // ⚠️ 아이폰은 촬영 원본이 **두 칸 아래**(`camera/pictures/`)에 있다.
+          // 이 갈래가 없어서 아이폰에서만 조용히 안 지워졌다.
+          removed += await _sweepCameraPluginDir(entity, at, maxAge);
+        }
+      } catch (_) {
+        // 하나가 실패해도 나머지는 계속 본다.
+      }
+    }
+  } catch (_) {
+    // 폴더를 못 열어도 조용히 넘어간다.
+  }
+  return removed;
+}
+
+/// 카메라 플러그인 폴더(`camera/`)를 정리한다 — **아이폰용**.
+///
+/// 안에 `pictures`·`videos` 같은 칸이 하나 더 있고, 그 안에 `CAP_*` 파일이
+/// 있다. **그 이름을 가진 파일만** 지운다.
+///
+/// ⚠️ **폴더는 남긴다.** 플러그인이 없으면 다시 만들긴 하지만, 지우는 순간
+/// 촬영 중인 다른 흐름과 부딪힐 수 있다 — **우리 목적은 사진을 없애는 것**이지
+/// 폴더를 없애는 것이 아니다.
+///
+/// ⚠️ **한 칸만 더 내려간다.** 끝까지 훑지 않는 이유는 이 파일이 처음부터
+/// 지켜 온 원칙과 같다 — **기대는 것을 최소로 줄이고 명시한다.** 깊이 들어갈수록
+/// 남의 파일을 지울 위험이 커진다.
+Future<int> _sweepCameraPluginDir(
+  Directory dir,
+  DateTime at,
+  Duration maxAge,
+) async {
+  var removed = 0;
+  try {
+    await for (final entity in dir.list(followLinks: false)) {
+      final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      try {
+        if (entity is File) {
+          // 폴더 바로 아래에 있는 경우도 받는다(구조가 바뀔 수 있다).
+          if (!isCameraCaptureName(name)) continue;
+          if (!_isOldEnough((await entity.stat()).modified, at, maxAge)) {
+            continue;
+          }
+          await entity.delete();
+          removed++;
+        } else if (entity is Directory) {
+          await for (final inner in entity.list(followLinks: false)) {
+            if (inner is! File) continue;
+            final innerName = inner.uri.pathSegments
+                .where((s) => s.isNotEmpty)
+                .last;
+            if (!isCameraCaptureName(innerName)) continue;
+            try {
+              if (!_isOldEnough((await inner.stat()).modified, at, maxAge)) {
+                continue;
+              }
+              await inner.delete();
+              removed++;
+            } catch (_) {
+              // 하나가 실패해도 나머지는 계속 본다.
+            }
+          }
         }
       } catch (_) {
         // 하나가 실패해도 나머지는 계속 본다.
