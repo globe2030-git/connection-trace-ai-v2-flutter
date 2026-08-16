@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:connection_trace_ai_flutter/core/utils/location_quality.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:connection_trace_ai_flutter/core/services/location_consent_service.dart';
@@ -18,6 +19,11 @@ import 'package:connection_trace_ai_flutter/presentation/features/radar/views/lo
 /// 동의 시트가 새로 쌓인 것이다 — 화면이 시트로 겹겹이 덮여 멈춘 것처럼 보였다.
 /// GPS 요청은 이미 단일화돼 있었지만 시트·설정 열기 같은 UI 경로는 무방비였다.
 class _FakeLocationGateway implements LocationGateway {
+  /// E-12: 위치 품질. 검사에서는 기본적으로 "모름"이고, 필요한 검사만
+  /// 이 값을 바꿔 쓴다.
+  @override
+  LocationFixQuality lastFixQuality = LocationFixQuality.unknown;
+
   DeviceLocationAccess checkResult = DeviceLocationAccess.denied;
   DeviceLocationAccess requestResult = DeviceLocationAccess.denied;
   GeoPosition? position;

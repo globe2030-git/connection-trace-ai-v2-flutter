@@ -419,6 +419,19 @@ class _RadarViewState extends State<RadarView> {
                           const SizedBox(height: 8),
                         ],
 
+                        // 내 위치가 얼마나 믿을 만한지 알린다(E-12).
+                        //
+                        // ⚠️ 기준점 안내와 같은 이유로 **검색 중에도 남긴다** —
+                        // 이것도 "지금 무엇을 기준으로 잰 거리인가"에 관한
+                        // 정보다. 알릴 것이 없으면 뷰모델이 null을 주므로 줄
+                        // 자체가 안 생긴다(억지로 채우지 않는다).
+                        if (viewModel.locationQualityMessage != null) ...[
+                          _LocationQualityBar(
+                            message: viewModel.locationQualityMessage!,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
                         // 검색 중에는 이 카드와 아래 조작 줄을 감춘다(F-11) —
                         // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
                         // 검색 결과를 밀어낼 이유가 없다.
@@ -1485,6 +1498,51 @@ class _RefreshLocationButton extends StatelessWidget {
 /// "지금 얼마나 가까운가"가 이 화면의 존재 이유다.
 /// "지금 거리 기준이 내 위치가 아니다"를 알리는 줄(F-13).
 ///
+/// 내 위치의 품질을 알리는 줄(E-12).
+///
+/// ⚠️ **경고가 아니라 안내다.** 빨간색을 쓰지 않는다 — 사용자가 뭘 잘못한 것이
+/// 아니고, 대부분 실내라서 생기는 정상적인 일이다. 겁을 주면 위치 기능 자체를
+/// 꺼 버린다.
+///
+/// 되돌릴 버튼을 두지 않는 이유: **사용자가 할 수 있는 일이 없다.** 밖으로
+/// 나가거나 기다리면 나아지는데, 그건 버튼으로 시키는 것이 아니다.
+class _LocationQualityBar extends StatelessWidget {
+  final String message;
+
+  const _LocationQualityBar({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.textSecondary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.my_location_outlined,
+            size: 15,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 지도에서 기준점을 옮기면 이 목록의 거리와 순서가 함께 바뀐다(사용자 결정,
 /// 2026-08-16). 바뀐 사실을 화면에 적지 않으면 사용자는 거리가 이상해진 것을
 /// 결함으로 읽는다 — 지도에서 한 조작과 목록의 숫자를 연결 짓기 어렵다.
