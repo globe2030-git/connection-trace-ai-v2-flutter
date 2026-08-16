@@ -109,6 +109,7 @@ dependencies:
   # 카드 높이가 가변이라 일반 ListView로는 인덱스 오프셋을 계산할 수 없어,
   # 인덱스 기반 스크롤(ItemScrollController.scrollTo)을 제공하는 이 패키지를 쓴다.
   scrollable_positioned_list: ^0.3.8
+  cunning_document_scanner: ^3.0.1
 
 dev_dependencies:
   flutter_test:
