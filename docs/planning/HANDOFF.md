@@ -35,6 +35,15 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
 
 - **앱 이름**: 커넥션센스 (Connection Sense) — 원래 "Connection Trace AI"에서
   개명(추가 28).
+  - ⚠️ **재개명은 보류 중이다**(2026-08-16 사용자 확정, 추가 258). 테스트가
+    끝난 뒤 **내부 품평회**를 거쳐 결정한다. 후보는 **알음**(1순위) ·
+    **말머리**(2순위)로 좁혀져 있고 근거는
+    [`app-name-research-2026-08-16.md`](../marketing/app-name-research-2026-08-16.md).
+  - **범위는 A안(표시 이름만)으로 확정됐다.** 패키지명·번들 ID는 안 건드린다 —
+    그래서 **스토어 등록 후에도 개명할 수 있고, 시한 압박이 없다.**
+    비용 근거는 [`app-rename-b-plan-cost-2026-08-16.md`](./app-rename-b-plan-cost-2026-08-16.md).
+  - ⚠️ 그 대가로 패키지명은 **영원히** `com.connectiontrace.connection_trace_ai_flutter`
+    로 남는다(옛 이름 잔재). 이용자에게 보이는 자리는 아니다.
 - **위치**: `/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter`
 - **스택**: Flutter (Dart), 상태관리는 `provider` 패키지, 로컬 저장은
   `shared_preferences`(일반 데이터) + `flutter_secure_storage`(AI API 키).
