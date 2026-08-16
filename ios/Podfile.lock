@@ -1230,6 +1230,9 @@ PODS:
   - Firebase/Functions (12.17.0):
     - Firebase/CoreOnly
     - FirebaseFunctions (~> 12.17.0)
+  - Firebase/Storage (12.17.0):
+    - Firebase/CoreOnly
+    - FirebaseStorage (~> 12.17.0)
   - firebase_app_check (0.4.6):
     - Firebase/CoreOnly (~> 12.17.0)
     - firebase_core
@@ -1244,6 +1247,10 @@ PODS:
     - Flutter
   - firebase_crashlytics (5.2.7):
     - Firebase/Crashlytics (= 12.17.0)
+    - firebase_core
+    - Flutter
+  - firebase_storage (13.4.6):
+    - Firebase/Storage (= 12.17.0)
     - firebase_core
     - Flutter
   - FirebaseAppCheck (12.17.0):
@@ -1325,6 +1332,13 @@ PODS:
     - nanopb (~> 3.30910.0)
     - PromisesSwift (~> 2.1)
   - FirebaseSharedSwift (12.17.0)
+  - FirebaseStorage (12.17.0):
+    - FirebaseAppCheckInterop (~> 12.17.0)
+    - FirebaseAuthInterop (~> 12.17.0)
+    - FirebaseCore (~> 12.17.0)
+    - FirebaseCoreExtension (~> 12.17.0)
+    - GoogleUtilities/Environment (~> 8.1)
+    - GTMSessionFetcher/Core (< 6.0, >= 3.4)
   - Flutter (1.0.0)
   - flutter_secure_storage (6.0.0):
     - Flutter
@@ -1558,6 +1572,7 @@ DEPENDENCIES:
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_crashlytics (from `.symlinks/plugins/firebase_crashlytics/ios`)
+  - firebase_storage (from `.symlinks/plugins/firebase_storage/ios`)
   - Flutter (from `Flutter`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - geocoding_darwin (from `.symlinks/plugins/geocoding_darwin/darwin`)
@@ -1599,6 +1614,7 @@ SPEC REPOS:
     - FirebaseRemoteConfigInterop
     - FirebaseSessions
     - FirebaseSharedSwift
+    - FirebaseStorage
     - GoogleDataTransport
     - GoogleMLKit
     - GoogleSignIn
@@ -1635,6 +1651,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_core/ios"
   firebase_crashlytics:
     :path: ".symlinks/plugins/firebase_crashlytics/ios"
+  firebase_storage:
+    :path: ".symlinks/plugins/firebase_storage/ios"
   Flutter:
     :path: Flutter
   flutter_secure_storage:
@@ -1681,6 +1699,7 @@ SPEC CHECKSUMS:
   firebase_auth: 3e82fa3e632856cd5a8e2bedf458d682740c8168
   firebase_core: c94f9efeed0ded590b7eecaf6110a374eb865d7a
   firebase_crashlytics: 36d85edffd4bfd025c13025b0009f63754983536
+  firebase_storage: cfd99be7642a3d9bf36d45ff234c1987dafb811c
   FirebaseAppCheck: 64d364d08ad1f6e8e084f7183c802df0a69eba3c
   FirebaseAppCheckInterop: 6d4cd7b9df8047da8cfc98c3fef4618bab2a8e0d
   FirebaseAuth: d27d2fc54508c3af9db2f617300fcf3042328d80
@@ -1697,6 +1716,7 @@ SPEC CHECKSUMS:
   FirebaseRemoteConfigInterop: 785e617ae4cbc778eea97dde952b88fb934e11ff
   FirebaseSessions: 83cf567ddcef20303eb85e003dfdbe030343ef8d
   FirebaseSharedSwift: 983820e9aa55d2acd6af77f9a1f252ba0afb3150
+  FirebaseStorage: 27f85a11050be78601509cb450a12823dc9f5764
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_secure_storage: 1ed9476fba7e7a782b22888f956cce43e2c62f13
   geocoding_darwin: 968545604e6896deeef55517d53a81b3b9801971
