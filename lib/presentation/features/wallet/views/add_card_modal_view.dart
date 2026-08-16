@@ -11,6 +11,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/ocr_origin.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
@@ -212,6 +213,26 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   bool _scanSessionClosed = false;
   bool _useCardAsAvatar = false;
 
+  /// 스캔 임시 파일을 **버릴 때** 지운다(추가 253).
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// `_scannedCardImages`에 쌓이는 것은 **평문 명함 사진**이다. 저장본은
+  /// AES-256-GCM으로 암호화하는데(`ContactImageService`) 그 원본이 캐시에
+  /// 그대로 남으면 **암호화하는 이유 자체가 무력해진다.** 목록에서 빼는 것과
+  /// 파일을 지우는 것은 다른 일인데, 여태 앞의 것만 하고 있었다.
+  ///
+  /// ⚠️ **저장이 끝난 뒤에만 부른다.** 저장은 화면이 닫히기 전에 이 경로를
+  /// 읽어 암호화한다 — 미리 지우면 빈 파일을 읽는다. 그래서 부르는 자리는
+  /// **버리는 것이 확정된 지점**뿐이다(재촬영 / 새 명함으로 시작 / 화면 닫힘).
+  ///
+  /// 던지지 않는다. 정리가 실패해도 등록은 계속돼야 한다.
+  void _discardScanFiles(Iterable<String> paths) {
+    for (final p in paths) {
+      unawaited(deleteQuietly(p));
+    }
+  }
+
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
   String? get _scannedCardImageSourcePath =>
       (_selectedScanIndex >= 0 &&
@@ -342,6 +363,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   @override
   void dispose() {
+    // 화면이 닫히는 시점에 남아 있는 스캔 임시 파일을 전부 지운다(추가 253).
+    //
+    // 여기 하나로 세 경우가 함께 닫힌다:
+    //
+    // - **폼 취소** — 등록하지 않고 닫았으니 전부 버려진다
+    // - **중복 병합**(`_applyUpdateToExisting`) — 기존 명함에 합치고 닫는다
+    // - **고르지 않은 나머지 면** — 앞뒷면을 스캔해도 저장은 대표 한 장만
+    //   가져간다. 나머지는 아무도 안 지우고 있었다
+    //
+    // 저장을 거친 경우 대표 한 장은 `ContactImageService`가 이미 지웠지만,
+    // [deleteQuietly]는 없는 파일에 조용히 넘어가므로 겹쳐 불러도 안전하다.
+    // 저장은 `Navigator.pop`보다 먼저 끝나므로 여기서 지워도 늦지 않다.
+    _discardScanFiles(_scannedCardImages.map((e) => e.path));
+
     WebTabGuard.uninstall();
     _nameController.dispose();
     _companyController.dispose();
@@ -507,6 +542,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
         // 명함을 저장하는데 **좌표가 이전 명함 주소로 잡히는** 일이 가능했다
         // (backlog 추가 189).
+        // 앞 명함의 사진은 여기서 확실히 버려진다 — 파일도 함께 지운다
+        // (추가 253). 목록만 비우면 평문 사진이 캐시에 남았다.
+        _discardScanFiles(_scannedCardImages.map((e) => e.path));
         _scannedCardImages.clear();
         _selectedScanIndex = -1;
         _ocrParsedSnapshot.clear();
@@ -821,8 +859,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           }
         });
         _lastScanReplacedValues.clear();
-        // 방금 찍은 사진도 후보에서 뺀다.
+        // 방금 찍은 사진도 후보에서 뺀다. 파일도 함께 지운다(추가 253) —
+        // 다시 찍는 것이므로 그 사진은 확실히 안 쓰인다. 한 번 등록하면서
+        // 여러 번 재촬영할 수 있어, 화면이 닫힐 때까지 미루면 그동안 평문
+        // 사진이 장마다 쌓인다.
         if (_scannedCardImages.isNotEmpty) {
+          _discardScanFiles([_scannedCardImages.last.path]);
           _scannedCardImages.removeLast();
           _selectedScanIndex = _scannedCardImages.isEmpty
               ? -1
@@ -1120,6 +1162,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final savedPath =
           '${docsDir.path}/contact_avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
       await File(picked.path).copy(savedPath);
+      // 갤러리가 만든 사본은 복사가 끝나면 안 쓰인다 — 여기서 지운다
+      // (추가 253). 명함 주인의 얼굴 사진이 앱 캐시에 평문으로 남는 자리였다.
+      //
+      // ⚠️ `imageQuality: 90`이라 플러그인이 `scaled_*`를 새로 만들어 그
+      // 경로를 돌려준다. 우리가 지울 수 있는 것은 그 축소본이고, 플러그인이
+      // UUID 폴더에 남기는 원본 사본에는 손이 닿지 않는다 — 그건 앱 시작
+      // 쓸어담기(추가 248)가 걷어낸다.
+      unawaited(deleteQuietly(picked.path));
       if (!mounted) return;
       setState(() => _selectedAvatarUrl = savedPath);
     } catch (e) {
