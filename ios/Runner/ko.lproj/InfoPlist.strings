@@ -1,0 +1,12 @@
+/* iOS가 그리는 화면(권한 창·사진 선택·문서 스캐너 등)을 한글로 나오게 하려면
+   이 폴더(ko.lproj)가 앱 번들 안에 있어야 한다(2026-08-16 실기기 확인).
+
+   ⚠️ Info.plist에 CFBundleLocalizations를 적는 것만으로는 안 됐다. iOS는 번들
+   안의 .lproj 폴더로 지원 언어를 판단하는데, 우리 번들에는 Base.lproj뿐이었다.
+
+   여기 적은 권한 문구는 Info.plist의 영문 기본값을 한국어로 덮어쓴다. */
+
+"NSCameraUsageDescription" = "명함을 촬영해 정보를 읽어오기 위해 카메라를 사용합니다.";
+"NSPhotoLibraryUsageDescription" = "저장된 명함 사진을 불러오기 위해 사진 접근이 필요합니다.";
+"NSLocationWhenInUseUsageDescription" = "주변에 있는 인맥을 찾기 위해 앱을 사용하는 동안 위치를 확인합니다.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "주변에 있는 인맥을 찾기 위해 앱을 사용하는 동안 위치를 확인합니다.";
