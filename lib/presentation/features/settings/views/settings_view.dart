@@ -12,6 +12,7 @@ import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/card_photo_backup_state.dart';
+import '../../../../core/services/card_photo_quota_service.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
@@ -1100,6 +1101,11 @@ Future<bool> _cleanUpLocalArtifacts(
   //      대개 그냥 맞지 않는 기록으로 남지만, 지갑 목록의 표시를 어긋나게
   //      만들 수 있어 함께 비운다.
   await CardPhotoBackupStateService().clear();
+
+  // 1-2) 갈무리해 둔 사진 백업 한도. 앞 사람의 한도가 뒷사람에게 적용되면
+  //      안 된다 — 충전 이용자가 쓰던 기기에 무료 이용자가 로그인하면
+  //      2,000장이 적용될 수 있다.
+  await CardPhotoQuotaService().clearCache();
 
   // 1-2) "AI에 보낼 정보" 화면이 들고 있던 직전 선택·메모(F-08). 기기에
   //      저장하지 않고 메모리에만 있지만, **같은 실행 안에서 계정을 갈아타면**

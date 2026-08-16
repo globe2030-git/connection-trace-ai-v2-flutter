@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/card_photo_downscale.dart';
+import '../utils/card_photo_quota.dart';
 import '../utils/scan_temp_cleanup.dart';
 import 'card_photo_backup_service.dart';
 import 'card_photo_backup_state.dart';
+import 'card_photo_quota_service.dart';
 import 'data_crypto_service.dart';
 import 'encryption_key_service.dart';
 
@@ -33,13 +35,16 @@ class ContactImageService {
     EncryptionKeyService? keyService,
     CardPhotoBackupService? photoBackup,
     CardPhotoBackupStateService? backupState,
+    CardPhotoQuotaService? quota,
   }) : _keyService = keyService ?? EncryptionKeyService(),
        _photoBackup = photoBackup ?? CardPhotoBackupService(),
-       _backupState = backupState ?? CardPhotoBackupStateService();
+       _backupState = backupState ?? CardPhotoBackupStateService(),
+       _quota = quota ?? CardPhotoQuotaService();
 
   final EncryptionKeyService _keyService;
   final CardPhotoBackupService _photoBackup;
   final CardPhotoBackupStateService _backupState;
+  final CardPhotoQuotaService _quota;
 
   // 복호화 결과를 경로별로 캐시한다 — 목록 아바타가 스크롤될 때마다 파일을
   // 다시 읽고 복호화하지 않도록. 값은 실패 시 null이 아니라 캐시하지 않는다.
@@ -48,6 +53,48 @@ class ContactImageService {
   static String _fileName(String contactId) => 'contact_card_$contactId.enc';
   static const String _fileNamePrefix = 'contact_card_';
   static const String _fileNameSuffix = '.enc';
+
+  /// 한도를 확인한 뒤 올린다(2026-08-16).
+  ///
+  /// **한도를 넘으면 올리지 않고 그 사실을 기록한다.** 실패가 아니라 정책이라
+  /// [CardPhotoBackupState.quotaExceeded]로 구분해 남긴다 — 나중에 지갑에
+  /// "백업 안 됨"을 표시하고 **왜 안 됐는지**까지 말하려면 이 구분이 필요하다.
+  ///
+  /// ⚠️ **한도를 넘어도 명함과 사진은 정상 저장된다.** 막는 것은 **서버
+  /// 업로드**뿐이다. 그래서 이 판정이 저장 경로를 막지 않도록 업로드와 함께
+  /// 기다리지 않고 돌린다.
+  ///
+  /// ⚠️ **이미 올라간 것은 건드리지 않는다.** 밀어내기를 하지 않는 이유는
+  /// 법무다 — 방침이 적은 사진 파기 사유는 "명함 삭제 시"와 "회원 탈퇴 시"
+  /// 둘뿐이고, "한도를 넘어 회사가 지운다"는 근거가 없다.
+  ///
+  /// ⚠️ **클라이언트가 세는 것만으로는 정상 이용자만 막힌다.** 위조된
+  /// 클라이언트는 그대로 올릴 수 있고, `storage.rules`로는 파일 개수를 셀 수
+  /// 없다(보안 규칙에 집계 기능이 없다). 진짜 강제는 App Check(P0-9)가 있어야
+  /// 한다 — **"한도를 강제했다"고 기록하지 말 것.**
+  Future<void> _uploadWithinQuota({
+    required String uid,
+    required String contactId,
+    required String encryptedFilePath,
+  }) async {
+    final quota = await _quota.fetch(uid);
+    final synced = (await _backupState.load()).syncedCount;
+
+    if (!canUpload(synced, quota)) {
+      await _backupState.record(contactId, CardPhotoBackupState.quotaExceeded);
+      return;
+    }
+
+    final ok = await _photoBackup.upload(
+      uid: uid,
+      contactId: contactId,
+      encryptedFilePath: encryptedFilePath,
+    );
+    await _backupState.record(
+      contactId,
+      ok ? CardPhotoBackupState.synced : CardPhotoBackupState.failed,
+    );
+  }
 
   /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
   /// JSON에는 경로를 넣지 않는데(다른 기기에선 무의미한 로컬 경로라서),
@@ -124,7 +171,18 @@ class ContactImageService {
       // **평문 구간이 한 번 더 생기는데**, 암호문을 그대로 올리는 구조를
       // 고른 이유 자체가 그 구간을 없애는 것이었다. 게다가 기기를 바꾸면
       // 서버 사본을 내려받아 로컬이 되므로 "로컬만 고화질"은 오래 못 간다.
-      final bytes = downscaleForArchive(original);
+      final shrunk = downscaleForArchiveWithInfo(original);
+      final bytes = shrunk.bytes;
+
+      // ⚠️ 축소를 건너뛰었으면 남긴다(2026-08-16). 긴 변이 1,600 이하면
+      // 원본이 그대로 올라가는데, 그건 quality:100이라 계획값의 3배 이상이다.
+      // 화면비·화소가 다른 기기에서만 조용히 일어날 수 있어 실패도 로그도
+      // 없다 — 실물에서 확인할 방법을 남겨 둔다.
+      if (!shrunk.downscaled) {
+        debugPrint(
+          '명함 사진 축소 건너뜀(긴 변 1600 이하) · ${bytes.length ~/ 1024}KB',
+        );
+      }
 
       final key = await _keyService.getOrCreateUserKey(uid);
       final encrypted = await DataCryptoService.encryptBytes(bytes, key);
@@ -148,20 +206,11 @@ class ContactImageService {
       // 기록해 두어야 지갑에 "백업 안 됨"을 표시하고 나중에 다시 시도할 수
       // 있다.
       unawaited(
-        _photoBackup
-            .upload(
-              uid: uid,
-              contactId: contactId,
-              encryptedFilePath: outPath,
-            )
-            .then(
-              (ok) => _backupState.record(
-                contactId,
-                ok ? CardPhotoBackupState.synced : CardPhotoBackupState.failed,
-              ),
-            )
-            // 상태 기록이 실패해도 저장 자체는 이미 끝났다. 조용히 넘긴다.
-            .catchError((_) {}),
+        _uploadWithinQuota(
+          uid: uid,
+          contactId: contactId,
+          encryptedFilePath: outPath,
+        ).catchError((_) {}),
       );
       // 원본(촬영 임시 파일)은 여기까지 오면 쓰임이 끝났다. **평문이므로
       // 지운다**(2026-08-16). 저장이 이 파일을 읽는 마지막 지점이라, 더 앞에서

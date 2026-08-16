@@ -68,6 +68,15 @@ bool needsDownscale(int width, int height) =>
 ///
 /// ⚠️ 던지지 않는다. 축소 실패로 **명함 저장 자체가 막히면 안 된다** —
 /// 사용자가 잃는 것(명함)이 얻는 것(용량)보다 크다.
+/// 줄였는지까지 함께 알려 준다. 관측용이다 — 자세한 이유는
+/// [CardPhotoSizeBand] 참고.
+({Uint8List bytes, bool downscaled}) downscaleForArchiveWithInfo(
+  Uint8List original,
+) {
+  final out = downscaleForArchive(original);
+  return (bytes: out, downscaled: !identical(out, original));
+}
+
 Uint8List downscaleForArchive(Uint8List original) {
   try {
     final decoded = img.decodeImage(original);

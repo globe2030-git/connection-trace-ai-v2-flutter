@@ -104,6 +104,26 @@ void main() {
     });
   });
 
+  group('⚠️ 1,600px 경계 — 축소를 건너뛰는지 알 수 있어야 한다', () {
+    test('정확히 1600이면 건너뛴다 — 설계상 맞지만 원본이 그대로 간다', () {
+      final original = _jpeg(1600, 900);
+      final r = downscaleForArchiveWithInfo(original);
+      expect(r.downscaled, isFalse);
+      expect(identical(r.bytes, original), isTrue);
+    });
+
+    test('1601이면 줄인다', () {
+      final r = downscaleForArchiveWithInfo(_jpeg(1601, 900));
+      expect(r.downscaled, isTrue);
+    });
+
+    test('큰 사진은 줄였다고 알려 준다', () {
+      final r = downscaleForArchiveWithInfo(_jpeg(2934, 1636));
+      expect(r.downscaled, isTrue);
+      expect(r.bytes.length, lessThan(_jpeg(2934, 1636).length));
+    });
+  });
+
   group('상수 — 값이 바뀌면 비용 계산이 어긋난다', () {
     test('긴 변 1600 · 품질 80', () {
       // 이 값들은 비용 스펙(card-photo-storage-cost-spec-2026-08-16.md)의
@@ -113,3 +133,9 @@ void main() {
     });
   });
 }
+
+// ⚠️ 1,600px 경계 — 손익/원가 세션이 찾은 위험(2026-08-16).
+//
+// 긴 변이 정확히 1,600이면 축소를 건너뛰고 원본(quality:100)이 그대로 올라간다.
+// 설계는 맞지만(작은 사진을 다시 구우면 화질만 깎인다) **그 사실을 알 수
+// 있어야** 한다 — 기기에 따라 조용히 일어나기 때문이다.

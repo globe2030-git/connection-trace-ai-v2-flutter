@@ -46,6 +46,41 @@ enum CardPhotoBackupState {
   failed,
 }
 
+/// 보관본이 **실제로 축소됐는지**와 그 크기 구간(2026-08-16).
+///
+/// ## 왜 이것까지 남기나
+///
+/// `downscaleForArchive`는 **긴 변이 1,600을 "넘을 때만"** 줄인다. 작은 사진을
+/// 다시 구우면 화질만 깎이므로 맞는 설계인데, **정확히 1,600이거나 그 아래면
+/// 원본이 그대로 올라간다.** 그 원본은 `encodeJpg(quality: 100)`이라
+/// **계획값(0.3MB)의 3배 이상**이다.
+///
+/// ⚠️ **화면비·화소가 다른 기기에서 크롭 긴 변이 1,600 근처로 내려가면 그
+/// 기기 사용자만 조용히 축소를 안 받는다.** 실패도 안 나고 로그도 없어
+/// **아무도 모른다** — 이 저장소가 반복해 다친 유형이다.
+///
+/// 손익/원가 세션이 실제 함수를 표본 103장에 돌려 찾았다(평균 264KB).
+///
+/// ⚠️ 개인정보가 아니다 — **불리언과 크기 구간뿐**이고 사진 내용과 무관하다.
+enum CardPhotoSizeBand {
+  /// 축소를 거쳤고 결과가 계획값 안(≤ 400KB).
+  downscaledSmall,
+
+  /// 축소를 거쳤는데 결과가 크다(> 400KB). 표본 P90이 371KB이므로 드물어야 한다.
+  downscaledLarge,
+
+  /// **축소를 건너뛰었다** — 긴 변이 1,600 이하였다. 위 경고에 해당한다.
+  notDownscaled,
+}
+
+/// 바이트 수와 축소 여부로 구간을 정한다.
+CardPhotoSizeBand sizeBandOf({required bool downscaled, required int bytes}) {
+  if (!downscaled) return CardPhotoSizeBand.notDownscaled;
+  return bytes <= 400 * 1024
+      ? CardPhotoSizeBand.downscaledSmall
+      : CardPhotoSizeBand.downscaledLarge;
+}
+
 /// 저장 값 ↔ 이름. `enum.name`을 그대로 쓰면 이름을 바꿀 때 저장된 값이
 /// 깨지므로 문자열을 고정한다.
 const Map<CardPhotoBackupState, String> _stateNames = {
