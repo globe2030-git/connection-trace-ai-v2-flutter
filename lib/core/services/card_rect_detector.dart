@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/card_quad_geometry.dart';
+import 'card_rect_worker.dart';
 
 /// 카메라 프레임에서 **명함 테두리(사각형)를 찾는** 서비스 — B′ 1단계.
 ///
@@ -29,12 +30,14 @@ import '../utils/card_quad_geometry.dart';
 ///
 /// ## 지금 어디까지 되나
 ///
-/// | 플랫폼 | 엔진 | 상태 |
+/// | 플랫폼 | 엔진 | 어떻게 부르나 |
 /// |---|---|---|
-/// | iOS | `VNDetectRectanglesRequest` | ✅ |
-/// | Android | OpenCV(기성 `org.opencv:opencv`) | ✅ |
+/// | iOS | `VNDetectRectanglesRequest` | **MethodChannel**(Swift) |
+/// | Android | OpenCV(`dartcv4`) | **별도 isolate**(Dart에서 직접) |
 ///
-/// **둘이 같은 채널·같은 응답 모양**을 쓴다. 이 파일은 어느 쪽인지 모른다.
+/// ⚠️ **부르는 길은 다른데 돌려받는 것은 똑같다.** 좌표도 진단값도 같은
+/// 모양이라, 이 파일 아래쪽(판정·좌표 변환·크롭·화면)은 **플랫폼을 모른다.**
+/// 그 계약이 갈리면 **화면의 진단 줄이 두 플랫폼에서 다르게 보이기 시작한다.**
 ///
 /// ⚠️ **검출이 실패해도 앱은 그대로 돌아간다.** 부르는 쪽이 **기존 고정 가이드
 /// 상자로 되돌아간다** — 최악의 경우가 지금과 같도록 만든 것이 이 작업의
@@ -102,6 +105,12 @@ class CardRectDetector {
   static const _maxConsecutiveFailures = 5;
   bool get isDisabled => _consecutiveFailures >= _maxConsecutiveFailures;
 
+  /// 안드로이드에서 쓰는 검출 일꾼(별도 isolate).
+  ///
+  /// ⚠️ 아이폰에서는 만들지 않는다 — 그쪽은 네이티브 채널이 같은 역할을 한다.
+  CardRectWorker? _worker;
+  bool _workerSpawning = false;
+
   CardRectChannelState _channelState = CardRectChannelState.unknown;
 
   /// ⚠️ **"검출이 안 된다"에는 서로 다른 세 가지가 섞여 있다.**
@@ -156,16 +165,22 @@ class CardRectDetector {
         height: image.height,
         bytesPerRow: plane.bytesPerRow,
       );
-      final result = await _channel
-          .invokeMethod<Map<Object?, Object?>>('detect', <String, Object?>{
-            // Y(밝기) 평면만 보낸다. 사각형 검출에 색은 필요 없고, 색까지
-            // 보내면 프레임마다 옮기는 양이 세 배가 된다.
-            'luma': frame.bytes,
-            'width': frame.width,
-            'height': frame.height,
-            'bytesPerRow': frame.width,
-          })
-          .timeout(_timeout);
+      // ⚠️ **여기만 플랫폼별로 갈린다.** 아래는 전부 공용이다.
+      final result = Platform.isAndroid
+          ? await _detectWithWorker(frame)
+          : await _channel
+                .invokeMethod<Map<Object?, Object?>>(
+                  'detect',
+                  <String, Object?>{
+                    // Y(밝기) 평면만 보낸다. 사각형 검출에 색은 필요 없고,
+                    // 색까지 보내면 프레임마다 옮기는 양이 세 배가 된다.
+                    'luma': frame.bytes,
+                    'width': frame.width,
+                    'height': frame.height,
+                    'bytesPerRow': frame.width,
+                  },
+                )
+                .timeout(_timeout);
 
       // 여기까지 왔으면 **채널은 뚫려 있다.** 사각형을 못 찾은 것과
       // 채널이 없는 것은 다른 일이다.
@@ -218,6 +233,45 @@ class CardRectDetector {
     } finally {
       _inFlight = false;
     }
+  }
+
+  /// 안드로이드: 일꾼 isolate에 프레임을 보내고, **채널과 같은 모양**으로
+  /// 바꿔 돌려준다.
+  ///
+  /// ⚠️ 일꾼을 못 띄우면 [CardRectChannelState.missing]으로 남긴다 — 아이폰에서
+  /// 네이티브 등록을 빠뜨린 것과 **같은 성격의 결함**이고, 둘 다 화면에서는
+  /// "테두리가 안 보인다"로 똑같이 보이기 때문이다.
+  Future<Map<Object?, Object?>?> _detectWithWorker(DownsampledLuma frame) async {
+    var worker = _worker;
+    if (worker == null) {
+      // 띄우는 동안 들어온 프레임은 그냥 버린다 — 기다리면 프레임이 밀린다.
+      if (_workerSpawning) return null;
+      _workerSpawning = true;
+      worker = await CardRectWorker.spawn();
+      _workerSpawning = false;
+      if (worker == null) {
+        _consecutiveFailures = _maxConsecutiveFailures;
+        _channelState = CardRectChannelState.missing;
+        return null;
+      }
+      _worker = worker;
+    }
+
+    final result = await worker.detect(
+      frame.bytes,
+      width: frame.width,
+      height: frame.height,
+      timeout: _timeout,
+    );
+    return result?.toChannelMap();
+  }
+
+  /// 화면을 닫을 때 부른다. **안 부르면 isolate가 남는다.**
+  ///
+  /// 아이폰에서는 할 일이 없다 — 네이티브 채널은 앱이 들고 있다.
+  void dispose() {
+    _worker?.dispose();
+    _worker = null;
   }
 }
 
@@ -314,7 +368,11 @@ class CardRectDiagnostics {
       ' 밝기$meanLuma obs$observations';
 }
 
-/// 네이티브 채널이 지금 어떤 상태인가.
+/// 검출기가 지금 어떤 상태인가.
+///
+/// ⚠️ **부르는 길은 플랫폼마다 다르다** — 아이폰은 네이티브 채널, 안드로이드는
+/// 별도 isolate다. 그래서 화면·로그에는 "채널"이 아니라 **"검출기"**라고 쓴다.
+/// 안드로이드에서 "채널"이라고 하면 있지도 않은 것을 가리키게 된다.
 ///
 /// ⚠️ **[working]과 [missing]을 화면으로는 구분할 수 없다.** 둘 다 "테두리가
 /// 안 보이고 예전처럼 동작"으로 보인다. 그런데 앞은 설계대로이고 뒤는
@@ -327,7 +385,10 @@ enum CardRectChannelState {
   /// 채널이 응답한다. 사각형을 못 찾는 것은 **별개 문제**다.
   working,
 
-  /// ⚠️ 네이티브가 등록되지 않았다 — **결함**. `AppDelegate` 확인.
+  /// ⚠️ 검출기를 아예 띄우지 못했다 — **결함**.
+  ///
+  /// 아이폰이면 `AppDelegate`의 채널 등록을, 안드로이드면 isolate를 띄우지
+  /// 못한 것이다.
   missing,
 
   /// ⚠️ 채널은 있는데 오류·지연이 반복된다 — **결함**.

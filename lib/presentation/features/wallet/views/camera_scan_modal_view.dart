@@ -385,6 +385,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     // 이 화면을 벗어나면 회전 제한을 반드시 푼다 — 안 그러면 앱 전체가 세로로
     // 묶인다.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // 검출 일꾼(안드로이드의 별도 isolate)을 반드시 놓아준다 —
+    // 안 놓으면 화면을 여닫을 때마다 isolate가 쌓인다.
+    _rectDetector.dispose();
     _laserController.dispose();
     _controller?.dispose();
     super.dispose();
@@ -602,9 +605,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   String _rectDebugLabel() {
     final state = switch (_rectDetector.channelState) {
       CardRectChannelState.unknown => '대기',
-      CardRectChannelState.working => '채널OK',
-      CardRectChannelState.missing => '⚠️채널없음(결함)',
-      CardRectChannelState.failing => '⚠️채널오류(결함)',
+      CardRectChannelState.working => '검출기OK',
+      CardRectChannelState.missing => '⚠️검출기없음(결함)',
+      CardRectChannelState.failing => '⚠️검출기오류(결함)',
     };
     final found = _visibleDetection != null
         ? '명함잡힘'
@@ -638,7 +641,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
 
     if (_everFoundCardRect) {
       _rectStateLogged = true;
-      debugPrint('[CARDRECT] 채널 정상 — 사각형 검출 확인됨');
+      debugPrint('[CARDRECT] 검출기 정상 — 사각형 검출 확인됨');
       return;
     }
     if (DateTime.now().difference(startedAt) < _cardRectGrace) return;
@@ -647,18 +650,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     switch (_rectDetector.channelState) {
       case CardRectChannelState.missing:
         debugPrint(
-          '[CARDRECT] ⚠️ 결함: 네이티브 채널이 없습니다(MissingPlugin). '
-          'AppDelegate 등록을 확인하십시오 — 기존 가이드로 폴백합니다',
+          '[CARDRECT] ⚠️ 결함: 검출기를 띄우지 못했습니다. '
+          '아이폰이면 AppDelegate 등록, 안드로이드면 isolate를 확인하십시오 '
+          '— 기존 가이드로 폴백합니다',
         );
       case CardRectChannelState.failing:
-        debugPrint('[CARDRECT] ⚠️ 결함: 채널 오류·지연이 반복됩니다 — 기존 가이드로 폴백합니다');
+        debugPrint('[CARDRECT] ⚠️ 결함: 검출기 오류·지연이 반복됩니다 — 기존 가이드로 폴백합니다');
       case CardRectChannelState.working:
         debugPrint(
-          '[CARDRECT] 설계대로: 채널은 정상인데 '
+          '[CARDRECT] 설계대로: 검출기는 정상인데 '
           '${_cardRectGrace.inSeconds}초간 사각형을 못 찾아 조건을 해제합니다',
         );
       case CardRectChannelState.unknown:
-        debugPrint('[CARDRECT] ⚠️ 채널을 한 번도 부르지 못했습니다 — 프레임이 들어오는지 확인하십시오');
+        debugPrint('[CARDRECT] ⚠️ 검출기를 한 번도 부르지 못했습니다 — 프레임이 들어오는지 확인하십시오');
     }
   }
 
