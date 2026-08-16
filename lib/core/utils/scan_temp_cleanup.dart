@@ -88,6 +88,10 @@ Future<void> deleteQuietly(String? path) async {
 ///
 /// [maxAge]는 [shouldSweep]에 그대로 넘어간다 — 탈퇴 정리에서는
 /// `Duration.zero`를 줘 나이와 상관없이 전부 지운다.
+/// ⚠️ 이 함수가 보는 폴더는 **`Directory.systemTemp`**다. 안드로이드에서 그것은
+/// `code_cache`이고, 우리가 `card_scan_*`·`card_rot_*`를 쓰는 곳과 **같은
+/// 표현식이라 같은 폴더**다. 카메라 원본과 갤러리 사본이 있는 `cache`는
+/// **다른 폴더**이고 [sweepPickerAndCameraLeftovers]가 맡는다.
 Future<int> sweepScanTemp(
   Directory dir, {
   DateTime? now,
@@ -112,6 +116,158 @@ Future<int> sweepScanTemp(
     }
   } catch (_) {
     // 디렉터리를 못 열어도 조용히 넘어간다.
+  }
+  return removed;
+}
+
+// ---------------------------------------------------------------------------
+// 이미 쌓인 잔재 (2026-08-16, 추가 248)
+// ---------------------------------------------------------------------------
+//
+// 위 정리는 **새로 생기는 것**을 막는다. 그런데 그 정리가 없던 동안 쌓인 것이
+// 실기기에 그대로 있었다.
+//
+// | 무엇 | 실측(SM-F966N) | 누가 만드나 |
+// |---|---|---|
+// | `cache/CAP*.jpg` | **83장 · 198.5MB** | camera 플러그인이 촬영마다 |
+// | `cache/<UUID>/<사진>` | **22장 · 5.6MB** | image_picker가 갤러리 선택마다 |
+// | `cache/scaled_*` | 2장 · 0.11MB | image_picker가 재인코딩할 때 |
+//
+// 셋 다 **평문 명함·프로필 사진**이다. 저장본을 암호화하는 이유가 무력해진다.
+//
+// ## 지워도 되는 근거 — 짐작이 아니라 플러그인 소스로 확인했다
+//
+// - **CAP**: `ImageCaptureProxyApi.java:91-102`가 촬영마다 `File.createTempFile`
+//   로 만들어 **지역 변수**로 콜백에 넘기고 경로만 Dart로 준다. 플러그인에
+//   **지난 파일을 다시 찾는 코드도, 지우는 코드도 없다.** 즉 촬영이 끝난
+//   파일은 순수한 쓰레기다.
+// - **UUID 폴더**: `FileUtils.java:65`가 `new File(context.getCacheDir(), uuid)`
+//   로 **선택마다 새 폴더**를 만들어 사진을 복사한다.
+// - image_picker에는 앱이 죽었을 때 결과를 되찾는 장치(`ImagePickerCache`)가
+//   있지만, **우리 앱은 `retrieveLostData`를 부르지 않는다**(호출 0건). 그래서
+//   지난 사본을 지워도 되찾을 경로가 깨지지 않는다.
+//
+// ## ⚠️ 어디까지 이름·구조에 기대는가
+//
+// 오늘 **파일 주인을 이름 모양으로 짐작해 두 번 틀렸다**(추가 248 기록 참고).
+// 그래서 여기서는 **기대는 것을 최소로 줄이고 그것을 명시**한다.
+//
+// - 폴더 이름이 **UUID 모양인 것만** 본다. `WebView`·`Crash Reports`·`fm_cache`
+//   같은 다른 구성요소의 캐시는 모양이 달라 걸리지 않는다.
+// - 그 안에서 **이미지 확장자만** 지운다. image_picker가 복사하는 것이
+//   이미지뿐이므로, 다른 것이 들어 있다면 우리 것이 아니라는 뜻이다.
+// - **나이**로 한 번 더 막는다. 시점은 **우리가 아는 값**이다 — 이 파일들은
+//   한 번의 스캔 흐름 안에서 쓰이고 끝나므로, 오래된 것은 확실히 버려진 것이다.
+
+/// 카메라 플러그인이 촬영마다 만드는 원본 이름(`CAP…​.jpg`).
+bool isCameraCaptureName(String fileName) =>
+    fileName.startsWith('CAP') && fileName.toLowerCase().endsWith('.jpg');
+
+/// image_picker가 재인코딩할 때 만드는 사본 이름(`scaled_…`).
+bool isScaledCopyName(String fileName) => fileName.startsWith('scaled_');
+
+/// image_picker가 갤러리 선택마다 만드는 폴더 이름인가(UUID 모양).
+///
+/// `8-4-4-4-12` 16진수만 통과시킨다 — 다른 구성요소의 캐시 폴더
+/// (`WebView`·`Crash Reports`·`fm_cache`)는 걸리지 않는다.
+final RegExp _uuidDirPattern = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+  caseSensitive: false,
+);
+
+bool isPickerCacheDirName(String dirName) => _uuidDirPattern.hasMatch(dirName);
+
+/// 이미지 파일인가. UUID 폴더 안에서 **이것만** 지운다.
+bool isImageFileName(String fileName) {
+  final lower = fileName.toLowerCase();
+  return lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp') ||
+      lower.endsWith('.bmp') ||
+      lower.endsWith('.heic');
+}
+
+bool _isOldEnough(DateTime modified, DateTime now, Duration maxAge) {
+  if (maxAge == Duration.zero) return true;
+  return now.difference(modified) > maxAge;
+}
+
+/// 촬영 원본·갤러리 사본이 쌓인 **앱 캐시 폴더**를 쓸어낸다.
+///
+/// [cacheDir]는 `getTemporaryDirectory()`(안드로이드에서 `cache`)를 넘긴다 —
+/// [sweepScanTemp]가 보는 `Directory.systemTemp`(`code_cache`)와 **다른
+/// 폴더**다.
+///
+/// 지운 파일 수를 돌려준다. **어디서도 던지지 않는다** — 정리 실패로 촬영·
+/// 저장이 막히면 사용자가 잃는 것이 더 크다.
+Future<int> sweepPickerAndCameraLeftovers(
+  Directory cacheDir, {
+  DateTime? now,
+  Duration maxAge = kScanTempMaxAge,
+}) async {
+  final at = now ?? DateTime.now();
+  var removed = 0;
+  try {
+    if (!await cacheDir.exists()) return 0;
+    await for (final entity in cacheDir.list(followLinks: false)) {
+      final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      try {
+        if (entity is File) {
+          if (!isCameraCaptureName(name) && !isScaledCopyName(name)) continue;
+          if (!_isOldEnough((await entity.stat()).modified, at, maxAge)) {
+            continue;
+          }
+          await entity.delete();
+          removed++;
+        } else if (entity is Directory && isPickerCacheDirName(name)) {
+          removed += await _sweepPickerDir(entity, at, maxAge);
+        }
+      } catch (_) {
+        // 하나가 실패해도 나머지는 계속 본다.
+      }
+    }
+  } catch (_) {
+    // 폴더를 못 열어도 조용히 넘어간다.
+  }
+  return removed;
+}
+
+/// UUID 폴더 하나를 정리한다. 안의 **이미지 파일만** 지우고, 그래서 폴더가
+/// 비면 폴더까지 지운다(빈 폴더가 무한정 늘지 않게).
+///
+/// ⚠️ 이미지가 아닌 것이 들어 있으면 **폴더를 남긴다** — 우리 것이 아닐 수
+/// 있다는 신호이므로 지우지 않는 쪽으로 기운다.
+Future<int> _sweepPickerDir(
+  Directory dir,
+  DateTime at,
+  Duration maxAge,
+) async {
+  var removed = 0;
+  var leftSomething = false;
+  await for (final entity in dir.list(followLinks: false)) {
+    final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+    if (entity is! File || !isImageFileName(name)) {
+      leftSomething = true;
+      continue;
+    }
+    try {
+      if (!_isOldEnough((await entity.stat()).modified, at, maxAge)) {
+        leftSomething = true;
+        continue;
+      }
+      await entity.delete();
+      removed++;
+    } catch (_) {
+      leftSomething = true;
+    }
+  }
+  if (!leftSomething) {
+    try {
+      await dir.delete();
+    } catch (_) {
+      // 폴더가 안 지워져도 안의 사진은 이미 없어졌다 — 그것이 목적이다.
+    }
   }
   return removed;
 }

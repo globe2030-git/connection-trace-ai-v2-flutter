@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_native_splash/flutter_native_splash.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'core/app_version.dart';
 import 'core/services/app_check_service.dart';
@@ -74,11 +75,28 @@ void main() async {
   // 경로에 `await`를 더 얹었다가 앱이 통째로 안 뜬 전례가 있다(위 App Check).
   // 1시간이 지난 것만 지우므로 지금 쓰는 파일을 건드릴 일도 없다.
   unawaited(sweepScanTemp(Directory.systemTemp));
+  // 그리고 **이미 쌓여 있던 것**을 걷어낸다(추가 248). 위 정리는 `code_cache`를
+  // 보는데, 촬영 원본(`CAP*.jpg`)과 갤러리 사본(`<UUID>/사진`)은 **`cache`**에
+  // 있다 — 다른 폴더다. 실기기에서 촬영 원본만 83장·198.5MB였다.
+  unawaited(_sweepAccumulatedScanCache());
   _registerBundledFontLicense();
   // 설정 화면에 지금 실행 중인 빌드를 표시하기 위해 미리 읽어 둔다
   // (backlog 추가 77 — 낡은 빌드를 버그로 오인한 전례).
   await AppVersion.initialize();
   runApp(const ConnectionTraceApp());
+}
+
+/// 앱 캐시에 쌓인 **평문 촬영 원본·갤러리 사본**을 걷어낸다(추가 248).
+///
+/// 경로를 얻는 것부터 실패할 수 있어(플랫폼·초기화 시점) 따로 감싼다. 정리는
+/// 앱을 켜는 데 필요한 일이 아니므로 **실패해도 조용히 넘긴다** — 다음 실행에서
+/// 다시 시도한다.
+Future<void> _sweepAccumulatedScanCache() async {
+  try {
+    await sweepPickerAndCameraLeftovers(await getTemporaryDirectory());
+  } catch (_) {
+    // 무시한다.
+  }
 }
 
 /// 앱에 번들한 Pretendard 폰트의 라이선스를 "오픈소스 라이선스" 화면에
