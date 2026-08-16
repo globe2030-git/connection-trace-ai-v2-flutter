@@ -6,6 +6,21 @@
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
+		<!-- ⚠️ iOS는 **앱이 선언한 언어로만** 시스템 화면을 보여 준다(2026-08-16
+       실기기 확인). 이 목록에 한국어가 없어서, 애플이 한국어를 갖고 있는데도
+       문서 스캐너가 "Ready for next scan." "Position the document in view."
+       처럼 **영어로 나왔다.**
+
+       스캐너만의 문제가 아니다 — 사진 선택·공유·권한 창 등 **iOS가 그리는
+       모든 화면**이 영어였다. 앱 자체는 한글인데 시스템 화면만 영어라, 쓰는
+       사람에게는 앱이 반쯤 영어로 보인다.
+
+       ko를 먼저 둔다(기본 언어). en은 그대로 남겨 해외 기기에서도 뜨게 한다. -->
+		<key>CFBundleLocalizations</key>
+		<array>
+			<string>ko</string>
+			<string>en</string>
+		</array>
 		<!-- iOS는 여기에 적은 스킴만 canOpenURL로 조회할 수 있다. 없으면 카카오톡이
        깔려 있어도 "설치돼 있지 않다"로 판정된다(사용자 보고, 2026-08-10). -->
 		<key>LSApplicationQueriesSchemes</key>
