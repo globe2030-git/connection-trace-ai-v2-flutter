@@ -326,7 +326,15 @@ backlog 번호가 **세 번** 겹쳤고 F 상태표가 **세 줄** 실물과 달
 - 법적 고지 문서는 `firebase deploy --only hosting`으로 배포한다
   (Spark 무료 요금제로 가능, `public: docs/legal`).
 - Cloud Functions 배포는 Blaze 유료 요금제가 필요하다.
-- ⚠️ Android 릴리스가 아직 **debug 키스토어로 서명**돼 있다(P1-19).
+- ⚠️ **Android 서명은 워크트리마다 다르다.** 업로드 키는 실재하지만
+  (`~/keys/connectionsense-upload.jks`), 그것을 가리키는 `android/key.properties`가
+  **`.gitignore` 대상이라 git이 워크트리 사이로 옮겨 주지 않는다.** 2026-08-16
+  실측 결과 **네 워크트리 중 본체 하나에만 있었다.** 이 파일이 없으면
+  `build.gradle.kts`가 **경고 없이 debug 키로 폴백한다** — 릴리스를 본체가 아닌
+  워크트리에서 빌드하면 **debug 서명본이 조용히 나온다.** 빌드 전에
+  `ls android/key.properties`로 확인한다.
+  (예전 기록의 *"릴리스가 debug 키스토어로 서명돼 있다(P1-19)"*는 **낡았다** —
+  업로드 키 도입은 끝났고, 남은 위험은 위의 워크트리 문제다.)
 - **서명 키·인증서는 저장소 밖(예: `~/keys/`)에 두는 것을 원칙으로 한다.**
   루트 `.gitignore`에 `*.jks`/`*.keystore`/`key.properties`/`*.p8`/`*.p12`/
   서비스 계정 JSON을 넣어 뒀지만(2026-08-08), 그건 실수로 안에 들여놨을 때의
