@@ -49,11 +49,22 @@ bool isScanTempName(String fileName) =>
 
 /// [now] 기준으로 지워도 되는가.
 ///
-/// 이름이 맞고 **[kScanTempMaxAge]보다 오래됐을 때만** true. 방금 만든 파일은
-/// 지금 쓰이는 중일 수 있어 건드리지 않는다.
-bool shouldSweep(String fileName, DateTime modified, DateTime now) {
+/// 이름이 맞고 **[maxAge]보다 오래됐을 때만** true. 방금 만든 파일은 지금
+/// 쓰이는 중일 수 있어 건드리지 않는다.
+///
+/// [maxAge]에 `Duration.zero`를 주면 **나이를 따지지 않고 전부** 지운다 —
+/// 회원 탈퇴 정리처럼 "지금 쓰는 중인 것도 남기면 안 되는" 자리에서 쓴다.
+/// 방침이 "탈퇴 시 전부 파기"라고 적고 있어, 1시간이 안 된 파일이 남는 것
+/// 자체가 방침과 실물의 차이가 된다(2026-08-16).
+bool shouldSweep(
+  String fileName,
+  DateTime modified,
+  DateTime now, {
+  Duration maxAge = kScanTempMaxAge,
+}) {
   if (!isScanTempName(fileName)) return false;
-  return now.difference(modified) > kScanTempMaxAge;
+  if (maxAge == Duration.zero) return true;
+  return now.difference(modified) > maxAge;
 }
 
 /// 파일 하나를 조용히 지운다.
@@ -74,7 +85,14 @@ Future<void> deleteQuietly(String? path) async {
 ///
 /// 중간에 버려진 촬영(등록하지 않고 화면을 닫은 경우)이 여기서 걸린다.
 /// 실패해도 던지지 않는다.
-Future<int> sweepScanTemp(Directory dir, {DateTime? now}) async {
+///
+/// [maxAge]는 [shouldSweep]에 그대로 넘어간다 — 탈퇴 정리에서는
+/// `Duration.zero`를 줘 나이와 상관없이 전부 지운다.
+Future<int> sweepScanTemp(
+  Directory dir, {
+  DateTime? now,
+  Duration maxAge = kScanTempMaxAge,
+}) async {
   final at = now ?? DateTime.now();
   var removed = 0;
   try {
@@ -84,7 +102,7 @@ Future<int> sweepScanTemp(Directory dir, {DateTime? now}) async {
       final name = entity.uri.pathSegments.last;
       try {
         final stat = await entity.stat();
-        if (shouldSweep(name, stat.modified, at)) {
+        if (shouldSweep(name, stat.modified, at, maxAge: maxAge)) {
           await entity.delete();
           removed++;
         }

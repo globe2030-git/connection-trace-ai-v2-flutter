@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../data/models/my_profile_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/address_search_view.dart';
@@ -151,6 +153,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
         builder: (_) => const FilePickerModalView(),
       );
     }
+    // 이 화면은 **텍스트만 쓰고 이미지는 저장하지 않는다.** 그래서 스캔이 남긴
+    // 평문 사진 파일을 아무도 지우지 않는다 — 명함 등록 화면은 저장하면서
+    // 지우지만(`saveEncryptedCardImage`), 여기는 그 경로를 아예 안 지난다.
+    //
+    // 결과를 다 쓴 뒤에 지운다. 지금 지워도 되는 이유는 아래에서 `result`의
+    // **문자열 필드만** 읽고 파일은 다시 열지 않기 때문이다.
+    if (result != null) unawaited(deleteQuietly(result.imagePath));
     if (result == null || !mounted) return;
 
     setState(() {

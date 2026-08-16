@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 
 /// 관리자 전용 — 명함 이미지 여러 장을 한 번에 스캔해 파싱 결과를 표로 본다.
 ///
@@ -117,8 +118,24 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
 
   Future<void> _pickAndScan() async {
     final files = await OcrScannerService.pickImagesFromGallery();
-    if (files.isEmpty || !mounted) return;
-    await _runScan(files);
+    if (files.isEmpty) return;
+    // 갤러리에서 고르면 image_picker가 **앱 임시 폴더에 사본을 만든다.** 평문인
+    // 데다 일괄 스캔은 한 번에 수십 장이라 가장 많이 쌓이는 경로다(추가 243).
+    // 표는 이미 `_rows`에 들어 있고 내보내기(`_shareTsv`)는 앱 문서 폴더의
+    // `card_samples`를 쓰므로, 스캔이 끝나면 이 사본은 아무도 안 쓴다.
+    //
+    // ⚠️ 지우는 것은 **사본**이지 사진첩 원본이 아니다.
+    //
+    // ⚠️ `_scanFromAppFolder`가 부르는 쪽은 지우지 않는다 — 그건 사본이 아니라
+    // 검수용 원본 묶음(`card_samples`)이고, 지우면 다시 넣어야 한다.
+    try {
+      if (!mounted) return;
+      await _runScan(files);
+    } finally {
+      for (final file in files) {
+        await deleteQuietly(file.path);
+      }
+    }
   }
 
   Future<void> _runScan(List<XFile> files) async {
