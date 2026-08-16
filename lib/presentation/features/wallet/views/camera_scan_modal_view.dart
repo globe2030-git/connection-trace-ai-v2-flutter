@@ -572,12 +572,31 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     final shot = _pendingShot;
     if (shot == null) return;
     setState(() => _isCapturing = true);
+    XFile? baked;
     try {
-      final target = await _bakeRotation(shot, _pendingRotation);
-      final scanResult = await OcrScannerService.scanBusinessCard(target);
+      baked = await _bakeRotation(shot, _pendingRotation);
+      final scanResult = await OcrScannerService.scanBusinessCard(baked);
+      // ⚠️ 회전을 구우면 **평문 파일이 둘이 된다**(2026-08-16 실기기 확인).
+      //
+      //   크롭  card_scan_*.jpg  ← 여기서 지운다. 인식이 끝나면 아무도 안 쓴다
+      //   회전  card_rot_*.jpg   ← 넘겨받은 쪽이 저장 후 지운다
+      //
+      // 저장 지점(ContactImageService)은 넘겨받은 경로 하나만 지우므로,
+      // 회전을 누른 촬영마다 크롭본이 1MB씩 캐시에 남아 있었다. 저장본을
+      // 암호화하는 이유 자체를 무력화한다.
+      //
+      // 인식이 **끝난 뒤에** 지운다 — 확인 화면이 이 파일을 그리는 중이라
+      // 굽자마자 지우면 다시 그릴 때 빈 파일을 읽는다.
+      if (baked.path != shot.path) await deleteQuietly(shot.path);
       if (!mounted) return;
       Navigator.pop(context, scanResult);
     } catch (e) {
+      // 인식이 실패하면 이 사진은 버려진다(아래에서 `_pendingShot`을 비운다).
+      // 둘 다 넘겨줄 곳이 없으므로 여기서 지운다 — 이 경로도 새고 있었다.
+      await deleteQuietly(shot.path);
+      if (baked != null && baked.path != shot.path) {
+        await deleteQuietly(baked.path);
+      }
       if (!mounted) return;
       setState(() {
         _isCapturing = false;
@@ -615,6 +634,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 실패하면 원본을 쓴다. 회전을 못 했다고 인식 자체를 막는 것보다, 방향이
   /// 어긋난 채로라도 인식을 진행하는 편이 낫다 — [_cropToGuideFrame]이
   /// 크롭 실패 시 원본을 쓰는 것과 같은 판단이다.
+  ///
+  /// ⚠️ **새 파일을 만들 때 원본을 지우지 않는다.** 확인 화면이 아직 원본을
+  /// 그리고 있기 때문이다. 지우는 책임은 부르는 쪽([_confirmPendingShot])에
+  /// 있다 — 돌려준 경로가 [source]와 다르면 원본은 버려진 것이다.
   Future<XFile> _bakeRotation(XFile source, int degrees) async {
     if (!needsRebake(degrees)) return source;
     try {
