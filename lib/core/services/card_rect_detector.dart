@@ -52,6 +52,26 @@ import 'card_rect_worker.dart';
 ///
 /// 다음 사람이 네이티브를 붙일 때 본보기가 되므로 **짧고 읽기 쉽게** 둔다.
 /// 네이티브 쪽은 `ios/Runner/CardRectDetectorPlugin.swift`에 있다.
+/// 검출을 **끄고 켜는 스위치**(release 빌드 제외).
+///
+/// ## 왜 필요한가 — 2단계 대조
+///
+/// 두 경로를 나란히 재려면 **같은 기기에서 번갈아 켤 수 있어야** 한다. 그런데
+/// B′는 기존 촬영 화면 **안에** 들어갔기 때문에, 이 스위치가 없으면
+/// **"기존 고정 가이드"를 고를 방법이 아예 없다.**
+///
+/// | 스위치 | 무엇이 도나 |
+/// |---|---|
+/// | 켬(기본) | **B′** — 명함을 찾아 그 테두리대로 자른다 |
+/// | 끔 | **기존 고정 가이드 상자**로 자른다(예전 그대로) |
+///
+/// ⚠️ 끄면 **검출 코드가 아예 안 돈다** — 프레임도 안 보내고 테두리도 안 그린다.
+/// "그리기만 끄는" 것이 아니라 **경로 자체가 예전이 된다.** 그래야 비교가 된다.
+///
+/// 📌 이것은 **되돌림 장치이기도 하다.** 실기기에서 문제가 나면 코드를 되돌리기
+/// 전에 이 스위치부터 내려 확인할 수 있다.
+final ValueNotifier<bool> cardRectDetectionEnabled = ValueNotifier<bool>(true);
+
 class CardRectDetector {
   CardRectDetector({
     @visibleForTesting MethodChannel? channel,
@@ -142,6 +162,9 @@ class CardRectDetector {
     required int sensorOrientation,
   }) async {
     final supported = supportedOverride ?? isSupportedOnThisPlatform;
+    // ⚠️ 스위치가 내려가 있으면 **아무것도 하지 않는다.** 프레임도 안 보낸다 —
+    // 2단계 대조에서 "예전 경로"가 정말 예전이어야 하기 때문이다.
+    if (!cardRectDetectionEnabled.value) return null;
     if (!supported || isDisabled || _inFlight) return null;
     if (image.planes.isEmpty) return null;
 
@@ -193,21 +216,36 @@ class CardRectDetector {
       // `idevicesyslog`에 앱 로그가 안 올라오고 `flutter run`도 못 붙는다).
       // 이 값들이 없으면 *"왜 안 잡히는지"*를 추측하게 된다.
       final rawQuads = result['quads'];
+      final bufferSize = Size(image.width.toDouble(), image.height.toDouble());
+      final flat = rawQuads is List
+          ? rawQuads.map((e) => (e as num).toDouble()).toList()
+          : const <double>[];
+      final detection = flat.isEmpty
+          ? null
+          : detectionFromFlat(
+              flat,
+              bufferSize: bufferSize,
+              quarterTurns: quarterTurns,
+            );
+
+      // ⚠️ **떨어진 후보의 값도 남긴다.** "떨어졌다"만 보면 얼마나 모자랐는지
+      // 몰라 또 짐작하게 된다 — 이 기준을 두 번 짐작으로 정했다가 두 번 다
+      // 진짜 명함을 막았다.
       lastDiagnostics = CardRectDiagnostics(
         frameWidth: image.width,
         frameHeight: image.height,
         meanLuma: (result['meanLuma'] as num?)?.toInt() ?? -1,
         observations: (result['observations'] as num?)?.toInt() ?? -1,
         imageOk: result['imageOk'] as bool? ?? false,
+        topAreaFraction: detection == null
+            ? null
+            : cardQuadAreaFraction(detection.quad),
+        topAspectRatio: detection == null
+            ? null
+            : cardQuadAspectRatio(detection.quad, detection.displaySize),
       );
 
-      if (rawQuads is! List || rawQuads.isEmpty) return null;
-      final flat = rawQuads.map((e) => (e as num).toDouble()).toList();
-      return detectionFromFlat(
-        flat,
-        bufferSize: Size(image.width.toDouble(), image.height.toDouble()),
-        quarterTurns: quarterTurns,
-      );
+      return detection;
     } on TimeoutException {
       _consecutiveFailures++;
       _channelState = CardRectChannelState.failing;
@@ -353,6 +391,8 @@ class CardRectDiagnostics {
     required this.meanLuma,
     required this.observations,
     required this.imageOk,
+    this.topAreaFraction,
+    this.topAspectRatio,
   });
 
   final int frameWidth;
@@ -361,11 +401,27 @@ class CardRectDiagnostics {
   final int observations;
   final bool imageOk;
 
+  /// 가장 큰 후보의 **넓이 비율**과 **가로세로비**.
+  ///
+  /// ⚠️ **왜 이걸 띄우나**: 최소 넓이 기준을 두 번 짐작으로 정했고 **두 번 다
+  /// 진짜 명함을 막았다**(15% → 실측 6.7% → 폴드 편 화면에서는 그보다도 작아
+  /// 2%에서도 떨어졌다). *"떨어졌다"*만 보면 **얼마나 모자랐는지 몰라 또
+  /// 짐작하게 된다.** 값을 보여 주면 **재고 정할 수 있다.**
+  final double? topAreaFraction;
+  final double? topAspectRatio;
+
   /// 디버그 화면에 한 줄로 띄울 요약.
-  String get summary =>
-      '${frameWidth}x$frameHeight'
-      '${imageOk ? '' : ' ⚠️이미지실패'}'
-      ' 밝기$meanLuma obs$observations';
+  String get summary {
+    final area = topAreaFraction;
+    final ratio = topAspectRatio;
+    final shape = area == null || ratio == null
+        ? ''
+        : ' 넓이${(area * 100).toStringAsFixed(1)}%'
+              ' 비율${ratio.toStringAsFixed(2)}';
+    return '${frameWidth}x$frameHeight'
+        '${imageOk ? '' : ' ⚠️이미지실패'}'
+        ' 밝기$meanLuma obs$observations$shape';
+  }
 }
 
 /// 검출기가 지금 어떤 상태인가.

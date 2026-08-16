@@ -636,6 +636,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   void _logRectStateOnce() {
     if (_rectStateLogged) return;
     if (!CardRectDetector.isSupportedOnThisPlatform) return;
+    // ⚠️ **일부러 끈 것을 결함처럼 알리지 않는다**(2026-08-17 측정 중 발견).
+    //
+    // 2단계 대조에서 검출 스위치를 내리자 *"검출기를 한 번도 부르지
+    // 못했습니다"*가 떴다. **정상 동작인데 결함 문구가 나온 것**이다 —
+    // 그대로 두면 다음 사람이 **없는 문제를 찾는다.**
+    if (!cardRectDetectionEnabled.value) {
+      _rectStateLogged = true;
+      debugPrint('[CARDRECT] 검출 꺼짐(측정 스위치) — 기존 고정 가이드로 돕니다');
+      return;
+    }
     final startedAt = _streamStartedAt;
     if (startedAt == null) return;
 
@@ -708,7 +718,31 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         _lastDiagSummary = diagSummary;
       });
     }
+
+    // ⚠️ **판정과 숫자를 함께 남긴다**(2026-08-17 측정 중 추가).
+    //
+    // 판정 이름만 있으면 *"얼마나 모자랐는지"*를 몰라 기준을 **또 짐작으로**
+    // 고치게 된다 — 이 프로젝트가 두 번 그렇게 하다가 진짜 명함을 막았다.
+    //
+    // 안드로이드는 로그가 잡히므로 화면을 안 보고도 재는 값을 모을 수 있다
+    // (아이폰은 로그가 안 올라와 화면으로만 본다).
+    //
+    // ⚠️ 초당 8번 찍으면 정작 볼 로그가 묻힌다 — **1초에 한 번**으로 줄인다.
+    if (!kReleaseMode && detection != null) {
+      final shownAt = _lastRectLogAt;
+      if (shownAt == null ||
+          now.difference(shownAt) >= const Duration(seconds: 1)) {
+        _lastRectLogAt = now;
+        debugPrint(
+          '[CARDRECT] ${isCard ? "잡힘" : "떨어짐:${detection.verdict.name}"}'
+          ' · ${diagSummary ?? ""}',
+        );
+      }
+    }
   }
+
+  /// 위 로그를 1초에 한 번으로 줄이기 위한 시각.
+  DateTime? _lastRectLogAt;
 
   /// 프레임 전체를 다 볼 필요 없이 Y(밝기) 평면에서 격자 형태로 샘플링만
   /// 해서 가볍게 비교한다 — 매 프레임 호출되므로 연산량을 최소화해야 함.
@@ -789,8 +823,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       if (croppedFile == null) {
         // ⚠️ 어느 경로로 잘렸는지 화면에 남긴다 — 안 남기면 검출 크롭과
         // 폴백 크롭을 결과만 보고 구분할 수 없다.
-        if (!kReleaseMode) _lastCropSummary = '검출 크롭 실패 → 기존 가이드로 폴백';
+        // ⚠️ 아래 `_cropToGuideFrame`이 자기 숫자를 채운다. 여기서는
+        // **어느 경로로 갔는지만** 남긴다 — 그 구분이 없으면 결과만 보고
+        // 검출 크롭과 폴백 크롭을 나눌 수 없다.
+        final wasDetection =
+            cardRectDetectionEnabled.value &&
+            (_detectionAtCapture?.isCardLike ?? false);
         croppedFile = await _cropToGuideFrame(rawFile, screenSize);
+        if (!kReleaseMode && wasDetection) {
+          _lastCropSummary = '⚠️ 검출 크롭 실패 → ${_lastCropSummary ?? "가이드 폴백"}';
+        }
       }
 
       // 촬영 원본은 크롭이 끝나면 쓰이지 않는다. **평문이므로 바로 지운다**
@@ -1073,6 +1115,19 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         width: cropW.round(),
         height: cropH.round(),
       );
+
+      // ⚠️ **이 경로도 숫자를 남긴다**(2단계 대조). 검출 크롭만 크기를 찍고
+      // 있어서 **비교 대상이 없었다** — 나란히 놓을 수 없으면 "나아졌다"를
+      // 말할 수 없다.
+      if (!kReleaseMode) {
+        final long = cropW > cropH ? cropW.round() : cropH.round();
+        final over = long > kCardPhotoMaxLongSide;
+        _lastCropLongEdge = long;
+        _lastCropSummary =
+            '가이드 크롭 ${cropW.round()}x${cropH.round()} · 긴변 $long'
+            ' · 축소임계($kCardPhotoMaxLongSide) ${over ? "넘음 ✅" : "못넘음 ⚠️"}';
+        debugPrint('[CARDRECT] $_lastCropSummary');
+      }
 
       // 가이드 프레임이 세로로 길어서 사용자가 명함을 시계 방향으로 90도
       // 돌려 넣었으므로, 크롭한 결과물은 항상 옆으로 누운 상태다. 기기
