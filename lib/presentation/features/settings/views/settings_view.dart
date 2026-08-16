@@ -1202,6 +1202,18 @@ Future<bool> _cleanUpLocalArtifacts(
   //
   //      실패해도 던지지 않는다 — 여기서 멈추면 아래 정리가 통째로 밀린다.
   await sweepScanTemp(Directory.systemTemp, maxAge: Duration.zero);
+  //      촬영 원본(`CAP*.jpg`)과 갤러리 사본(`<UUID>/사진`)은 **다른 폴더**
+  //      (`cache`)에 있어 따로 걷어낸다(추가 248). 탈퇴하면 다시 쓸 일이 없으니
+  //      여기서도 나이를 따지지 않는다.
+  try {
+    await sweepPickerAndCameraLeftovers(
+      await getTemporaryDirectory(),
+      maxAge: Duration.zero,
+    );
+  } catch (e) {
+    hadFailure = true;
+    debugPrint('캐시 사진 정리 실패: ${e.runtimeType}');
+  }
 
   // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
   //    이전 사진이 그대로 보인다.
