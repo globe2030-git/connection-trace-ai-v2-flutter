@@ -11,6 +11,7 @@ import '../../../../core/models/ai_data_review_memory.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
+import '../../../../core/services/card_photo_backup_state.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
@@ -1092,6 +1093,13 @@ Future<bool> _cleanUpLocalArtifacts(
   // 1-1) 사진 개선 동의(기기 캐시). 남으면 같은 기기에서 다음 계정이 앞
   //      사람의 동의를 물려받는다.
   await PhotoImprovementConsentService().clearLocal();
+
+  // 1-1) 명함 사진 백업 상태(2026-08-16). contactId와 상태뿐이라 개인정보는
+  //      아니지만, 남겨 두면 **다른 계정으로 로그인했을 때 앞 사람의
+  //      "백업됨" 표시가 뒷사람 명함에 붙는다.** 명함 id는 계정마다 다르므로
+  //      대개 그냥 맞지 않는 기록으로 남지만, 지갑 목록의 표시를 어긋나게
+  //      만들 수 있어 함께 비운다.
+  await CardPhotoBackupStateService().clear();
 
   // 1-2) "AI에 보낼 정보" 화면이 들고 있던 직전 선택·메모(F-08). 기기에
   //      저장하지 않고 메모리에만 있지만, **같은 실행 안에서 계정을 갈아타면**
