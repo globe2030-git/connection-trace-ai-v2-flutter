@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -11,6 +12,7 @@ import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/frame_contrast.dart';
 import '../../../../core/utils/scan_rotation.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 
 class CameraScanModalView extends StatefulWidget {
@@ -182,6 +184,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 지난번에 버려진 임시 파일을 먼저 치운다(기다리지 않는다).
+    unawaited(_sweepOldScanTemp());
     // 이 화면은 **세로 전용**이다. 안내부터가 "명함을 시계 방향으로 90° 돌려서
     // 넣어주세요"이고, 가이드 프레임의 긴 변을 **화면 폭** 기준으로 잡는다.
     // 가로로 돌리면 폭이 높이보다 커져 가이드가 화면 밖으로 넘친다 — 실기기에서
@@ -497,6 +501,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 한 번뿐이고, 네 번 눌러 제자리로 온 경우에는 아예 굽지 않는다.
   int _pendingRotation = 0;
 
+  /// 중간에 버려진 촬영이 남긴 임시 파일을 쓸어 담는다(2026-08-16).
+  ///
+  /// 등록하지 않고 화면을 닫으면 크롭·회전 결과가 남는다. **1시간이 지난
+  /// 것만** 지운다 — 지금 쓰고 있는 파일을 건드리지 않기 위한 안전선이다.
+  Future<void> _sweepOldScanTemp() async {
+    await sweepScanTemp(Directory.systemTemp);
+  }
+
   Future<void> _capturePhoto() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _isCapturing)
@@ -517,6 +529,18 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       if (!mounted) return;
       final screenSize = MediaQuery.of(context).size;
       final croppedFile = await _cropToGuideFrame(rawFile, screenSize);
+
+      // 촬영 원본은 크롭이 끝나면 쓰이지 않는다. **평문이므로 바로 지운다**
+      // (2026-08-16). 실기기에서 이 파일들이 83장·198.5MB 쌓여 있었고,
+      // 저장된 명함은 16장뿐이었다 — 등록하지 않고 버린 촬영분까지 전부
+      // 남아 있었다는 뜻이다. 저장본을 암호화하는 이유가 무력해진다.
+      //
+      // ⚠️ 크롭이 실패하면 원본을 그대로 돌려주므로(같은 경로) 그때는
+      // 지우지 않는다. 지우면 방금 찍은 사진이 사라진다.
+      if (croppedFile.path != rawFile.path) {
+        await deleteQuietly(rawFile.path);
+      }
+
       if (!mounted) return;
       // 바로 인식하지 않고 먼저 보여준다 — 흐린 사진으로 인식을 돌리는 낭비와
       // "결과를 봐야 잘못 찍은 걸 아는" 문제를 없앤다.
@@ -571,6 +595,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
 
   /// 방금 찍은 사진을 버리고 다시 촬영 상태로 돌아간다.
   Future<void> _retakePendingShot() async {
+    // 버리는 사진은 확실히 안 쓰인다. 여기서 지운다(2026-08-16).
+    await deleteQuietly(_pendingShot?.path);
     setState(() {
       _pendingShot = null;
       // 돌려 둔 각도도 함께 버린다 — 다시 찍은 사진에 앞 사진의 각도가
