@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/card_photo_downscale.dart';
+import '../utils/scan_temp_cleanup.dart';
 import 'card_photo_backup_service.dart';
 import 'card_photo_backup_state.dart';
 import 'data_crypto_service.dart';
@@ -162,6 +163,14 @@ class ContactImageService {
             // 상태 기록이 실패해도 저장 자체는 이미 끝났다. 조용히 넘긴다.
             .catchError((_) {}),
       );
+      // 원본(촬영 임시 파일)은 여기까지 오면 쓰임이 끝났다. **평문이므로
+      // 지운다**(2026-08-16). 저장이 이 파일을 읽는 마지막 지점이라, 더 앞에서
+      // 지우면 저장이 빈 파일을 읽는다.
+      //
+      // ⚠️ 갤러리에서 고른 사진도 image_picker가 임시 폴더에 복사한 사본이라
+      // 지워도 원본 사진첩은 그대로다.
+      unawaited(deleteQuietly(sourcePath));
+
       return outPath;
     } catch (e) {
       // 개인정보가 로그에 남지 않도록 타입만 남긴다.
