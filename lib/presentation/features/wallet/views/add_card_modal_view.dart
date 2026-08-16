@@ -24,6 +24,7 @@ import '../../../common/address_search_view.dart';
 import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
+import 'scan_field_conflict_sheet.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
 
@@ -187,6 +188,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 되어 값이 누적된다. 앞면 값은 지키고 방금 것만 되돌리려면 어느 칸이
   /// 방금 채워졌는지 알아야 한다.
   final Set<String> _lastScanFilledKeys = {};
+
+  /// 이번 스캔에서 **충돌 선택으로 값이 바뀐 칸**의 바꾸기 전 값(F-01).
+  ///
+  /// `_lastScanFilledKeys`(비어 있던 칸을 채운 것)와 성격이 다르다. 저쪽은
+  /// 재촬영 때 **비우면** 되지만, 이쪽은 원래 값이 있던 칸이라 비우면 앞면에서
+  /// 읽은 값까지 사라진다 — **이전 값으로 되돌려야** 한다.
+  final Map<String, ({String text, String? snapshot})> _lastScanReplacedValues =
+      {};
 
   /// 이 명함을 지금까지 몇 번 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
   ///
@@ -465,6 +474,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     });
 
     // 이번 스캔이 어느 칸을 채웠는지 기억해 둔다(재촬영에서 되돌릴 대상).
+    // 충돌 선택으로 바뀐 칸은 아래에서 다시 채워진다.
+    _lastScanReplacedValues.clear();
     _lastScanFilledKeys
       ..clear()
       ..addAll(
@@ -570,6 +581,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       }
     });
 
+    // F-01 — 이미 값이 있는 칸에 **다른 값**이 들어온 경우를 사용자 눈앞에
+    // 꺼낸다. 위 `_fillIfEmpty`는 빈 칸만 채우므로, 앞면에서 읽은 칸에 뒷면이
+    // 다른 값을 읽어 오면 그 값이 **조용히 버려졌다.** 사용자는 그런 값이
+    // 있었다는 사실조차 몰랐다(앞면 휴대폰 / 뒷면 대표번호가 흔한 예다).
+    //
+    // 덮어쓰기(`새 명함으로 시작`)는 이미 사용자가 "전부 새 값"을 고른 것이라
+    // 다시 묻지 않는다.
+    if (!overwrite) {
+      await _resolveScanFieldConflicts(result);
+      if (!mounted) return;
+    }
+
     final missingFields = <String>[
       if (_nameController.text.trim().isEmpty) '이름',
       if (_companyController.text.trim().isEmpty) '회사명',
@@ -594,6 +617,86 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
 
     await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
+  }
+
+  /// 이번 스캔이 **이미 채워져 있던 칸**에 다른 값을 들고 온 경우, 칸마다
+  /// 어느 값을 쓸지 고르게 한다(F-01).
+  ///
+  /// 부딪히는 칸이 하나도 없으면 아무것도 묻지 않는다 — 대부분의 뒷면 스캔은
+  /// 빈 칸만 채우므로 이 물음이 뜨지 않는다.
+  Future<void> _resolveScanFieldConflicts(OcrScanResult result) async {
+    // 칸마다 "무엇을 같은 값으로 볼지"가 다르다. 전화는 구분자를, 이름은
+    // 음절 사이 공백을, 이메일은 대소문자를 무시한다.
+    const fields = <(String key, String label, ScanValueKind kind)>[
+      ('name', '이름', ScanValueKind.name),
+      ('company', '회사명', ScanValueKind.text),
+      ('title', '직함 / 부서', ScanValueKind.text),
+      ('address', '회사 주소', ScanValueKind.text),
+      ('addressDetail', '상세주소', ScanValueKind.text),
+      ('postal', '우편번호', ScanValueKind.text),
+      ('mobile', '휴대폰 번호', ScanValueKind.phone),
+      ('office', '사무실 전화번호', ScanValueKind.phone),
+      ('email', '이메일', ScanValueKind.email),
+    ];
+    final scannedValues = <String, String>{
+      'name': result.name,
+      'company': result.company,
+      'title': result.title,
+      'address': result.address,
+      'addressDetail': result.addressDetail,
+      'postal': result.postalCode,
+      'mobile': result.phone,
+      'office': result.officePhone,
+      'email': result.email,
+    };
+
+    final conflicts = <ScanFieldConflict>[];
+    for (final (key, label, kind) in fields) {
+      final controller = _controllerFor(key);
+      if (controller == null) continue;
+      final current = controller.text;
+      final scanned = scannedValues[key] ?? '';
+      if (!ScanConflict.valuesConflict(
+        existing: current,
+        scanned: scanned,
+        kind: kind,
+      )) {
+        continue;
+      }
+      conflicts.add(
+        ScanFieldConflict(
+          key: key,
+          label: label,
+          currentValue: current.trim(),
+          scannedValue: scanned.trim(),
+        ),
+      );
+    }
+    if (conflicts.isEmpty) return;
+
+    final picked = await showScanFieldConflictSheet(
+      context,
+      conflicts: conflicts,
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+
+    setState(() {
+      picked.forEach((key, value) {
+        final controller = _controllerFor(key);
+        if (controller == null) return;
+        // 재촬영은 "방금 스캔이 바꾼 것"을 되돌리는 동작이다. 여기서 바뀐 칸은
+        // **비우는 것이 아니라 이전 값으로 돌려놓아야** 앞면에서 읽은 값이
+        // 날아가지 않는다. 그래서 바꾸기 전 값을 들고 있는다.
+        _lastScanReplacedValues[key] = (
+          text: controller.text,
+          snapshot: _ocrParsedSnapshot[key],
+        );
+        _setTextFromStart(controller, value);
+        // 파서가 준 값이 실제로 이 칸에 들어갔으므로 스냅샷에도 남긴다 —
+        // 저장 시점에 "사용자가 고쳤는지"를 이 값과 비교해 판단한다.
+        _ocrParsedSnapshot[key] = value;
+      });
+    });
   }
 
   /// 스캔 한 번이 끝날 때마다 **다음에 무엇을 할지** 묻는다.
@@ -703,6 +806,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           _ocrParsedSnapshot.remove(key);
         }
         _lastScanFilledKeys.clear();
+        // 충돌 선택으로 바뀐 칸은 **비우지 않고 이전 값으로 되돌린다**(F-01).
+        // 비우면 앞면에서 읽은 값까지 함께 사라진다.
+        _lastScanReplacedValues.forEach((key, previous) {
+          final controller = _controllerFor(key);
+          if (controller != null) {
+            _setTextFromStart(controller, previous.text);
+          }
+          final snapshot = previous.snapshot;
+          if (snapshot == null) {
+            _ocrParsedSnapshot.remove(key);
+          } else {
+            _ocrParsedSnapshot[key] = snapshot;
+          }
+        });
+        _lastScanReplacedValues.clear();
         // 방금 찍은 사진도 후보에서 뺀다.
         if (_scannedCardImages.isNotEmpty) {
           _scannedCardImages.removeLast();
