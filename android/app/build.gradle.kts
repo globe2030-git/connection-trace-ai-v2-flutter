@@ -91,5 +91,21 @@ flutter {
 // 명함에 한글이 들어가는 게 기본 시나리오라 한국어 모델을 명시적으로 포함시킨다.
 dependencies {
     implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    // 명함 테두리 검출(B′). 안드로이드에는 아이폰의 Vision 같은 OS 기본
+    // 검출이 없어 OpenCV로 직접 찾는다.
+    //
+    // ⚠️ **미리 빌드된 것을 받아 쓴다.** Dart에서 바로 부르는 `dartcv4`도
+    // 되긴 하지만(실측 확인), 그쪽은 **OpenCV 소스를 우리 기계에서 컴파일**
+    // 하는데 그 과정이 경로를 따옴표 없이 셸에 넘긴다. 저장소가 있는 볼륨
+    // 이름이 `X31(VM)` — **괄호가 들어 있어** 빌드가 깨진다:
+    //
+    //     /bin/sh: syntax error near unexpected token `('
+    //
+    // 기성품은 컴파일 단계가 없어 그 문제가 아예 생기지 않는다.
+    // 자세한 경위는 `CardRectDetectorPlugin.kt` 머리말과 backlog 추가 273.
+    //
+    // 용량 실측(2026-08-16): `dartcv4`는 arm64 네이티브 +10.5MB였다.
+    // 이쪽 증분은 붙인 뒤 다시 잰다.
+    implementation("org.opencv:opencv:4.14.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

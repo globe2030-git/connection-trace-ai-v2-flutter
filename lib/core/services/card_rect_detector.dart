@@ -31,12 +31,14 @@ import '../utils/card_quad_geometry.dart';
 ///
 /// | 플랫폼 | 엔진 | 상태 |
 /// |---|---|---|
-/// | iOS | `VNDetectRectanglesRequest` | ✅ 이 파일이 붙인다 |
-/// | Android | OpenCV(`dartcv4`) | ⏳ 아직 — [isSupportedOnThisPlatform]가 false |
+/// | iOS | `VNDetectRectanglesRequest` | ✅ |
+/// | Android | OpenCV(기성 `org.opencv:opencv`) | ✅ |
 ///
-/// ⚠️ **안드로이드가 아직 없어도 앱은 그대로 돌아간다.** 검출이 없으면 부르는
-/// 쪽이 **기존 고정 가이드 상자로 되돌아간다** — 최악의 경우가 지금과 같도록
-/// 만든 것이 이 작업의 안전선이다.
+/// **둘이 같은 채널·같은 응답 모양**을 쓴다. 이 파일은 어느 쪽인지 모른다.
+///
+/// ⚠️ **검출이 실패해도 앱은 그대로 돌아간다.** 부르는 쪽이 **기존 고정 가이드
+/// 상자로 되돌아간다** — 최악의 경우가 지금과 같도록 만든 것이 이 작업의
+/// 안전선이다.
 ///
 /// ## ⚠️ 이 저장소의 첫 MethodChannel
 ///
@@ -80,11 +82,16 @@ class CardRectDetector {
   /// 이 플랫폼에서 검출이 되나.
   ///
   /// ⚠️ 웹·데스크톱에서 `Platform`을 만지면 예외가 난다. `kIsWeb`을 먼저 본다.
+  ///
+  /// | 플랫폼 | 엔진 | 어디 |
+  /// |---|---|---|
+  /// | iOS | `VNDetectRectanglesRequest` | `ios/Runner/CardRectDetectorPlugin.swift` |
+  /// | Android | OpenCV(기성 `org.opencv:opencv`) | `android/.../CardRectDetectorPlugin.kt` |
+  ///
+  /// **둘이 같은 채널·같은 응답 모양을 쓴다.** 이 파일은 어느 쪽인지 모른다.
   static bool get isSupportedOnThisPlatform {
     if (kIsWeb) return false;
-    // 안드로이드는 OpenCV(dartcv4) 도입 후에 켠다. 지금 켜면 매 프레임
-    // 네이티브를 불러 실패만 받는다.
-    return Platform.isIOS;
+    return Platform.isIOS || Platform.isAndroid;
   }
 
   /// 검출 시도가 실패한 횟수. 연달아 실패하면 아예 끈다.
