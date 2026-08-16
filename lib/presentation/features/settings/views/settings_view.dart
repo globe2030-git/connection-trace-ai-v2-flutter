@@ -8,6 +8,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/models/ai_data_review_memory.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
@@ -1187,6 +1188,20 @@ Future<bool> _cleanUpLocalArtifacts(
   //      저장하지 않고 메모리에만 있지만, **같은 실행 안에서 계정을 갈아타면**
   //      앞 사람이 제3자에 대해 쓴 문장이 뒷사람 화면에 뜬다.
   AiDataReviewMemory.clear();
+
+  // 1-3) 촬영·선택 과정의 **평문 임시 파일**(2026-08-16, 추가 243).
+  //
+  //      `deleteAllCardImages`가 지우는 것은 암호문(`contact_card_*.enc`)이고,
+  //      그 원본이 된 평문 사진은 별개로 임시 폴더에 남는다. 명함 주인(제3자)의
+  //      이름·전화가 인쇄된 사진이라 **탈퇴하고도 남으면 방침이 약속한
+  //      "탈퇴 시 전부 파기"가 실물에서 지켜지지 않는다.**
+  //
+  //      평소 쓸어담기는 "1시간이 지난 것만" 지우지만(지금 쓰는 파일을 건드리지
+  //      않기 위한 안전선), 탈퇴는 다시 쓸 일이 없으므로 **나이를 따지지 않고
+  //      전부** 지운다.
+  //
+  //      실패해도 던지지 않는다 — 여기서 멈추면 아래 정리가 통째로 밀린다.
+  await sweepScanTemp(Directory.systemTemp, maxAge: Duration.zero);
 
   // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
   //    이전 사진이 그대로 보인다.

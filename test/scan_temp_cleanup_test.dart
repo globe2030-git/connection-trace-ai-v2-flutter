@@ -55,6 +55,31 @@ void main() {
         isFalse,
       );
     });
+
+    // 탈퇴 정리(추가 243) — 방침이 "탈퇴 시 전부 파기"라고 적고 있어, 1시간이
+    // 안 된 파일이 남는 것 자체가 방침과 실물의 차이가 된다.
+    test('maxAge가 0이면 방금 만든 것도 지운다 — 탈퇴 정리', () {
+      expect(
+        shouldSweep('card_scan_1.jpg', now, now, maxAge: Duration.zero),
+        isTrue,
+      );
+      expect(
+        shouldSweep(
+          'card_rot_1.jpg',
+          now.subtract(const Duration(seconds: 1)),
+          now,
+          maxAge: Duration.zero,
+        ),
+        isTrue,
+      );
+    });
+
+    test('maxAge가 0이어도 남의 파일은 안 지운다', () {
+      expect(
+        shouldSweep('CAP123.jpg', now, now, maxAge: Duration.zero),
+        isFalse,
+      );
+    });
   });
 
   group('deleteQuietly — 던지지 않는다', () {
@@ -104,6 +129,23 @@ void main() {
     test('없는 폴더에도 던지지 않는다', () async {
       final removed = await sweepScanTemp(Directory('/없는/폴더'));
       expect(removed, 0);
+    });
+
+    test('탈퇴 정리(maxAge 0)는 방금 만든 것까지 쓸어낸다', () async {
+      final dir = await Directory.systemTemp.createTemp('scan_sweep_all_test');
+      final fresh = File('${dir.path}/card_scan_new.jpg')
+        ..writeAsStringSync('a');
+      final rot = File('${dir.path}/card_rot_new.jpg')..writeAsStringSync('b');
+      final theirs = File('${dir.path}/CAP_new.jpg')..writeAsStringSync('c');
+
+      final removed = await sweepScanTemp(dir, maxAge: Duration.zero);
+
+      expect(removed, 2);
+      expect(fresh.existsSync(), isFalse);
+      expect(rot.existsSync(), isFalse);
+      expect(theirs.existsSync(), isTrue, reason: '남의 파일은 여전히 남긴다');
+
+      await dir.delete(recursive: true);
     });
   });
 }
