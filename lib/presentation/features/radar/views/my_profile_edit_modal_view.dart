@@ -237,10 +237,18 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
         source: ImageSource.gallery,
         imageQuality: 90,
       );
-      if (picked == null || !mounted) return;
+      if (picked == null) return;
       final docsDir = await getApplicationDocumentsDirectory();
       final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
       await File(picked.path).copy(savedPath);
+      // 복사가 끝나면 고른 사본은 쓰임이 끝났다 — **평문이므로 지운다**
+      // (추가 247). 실기기에서 이 사본이 그대로 남아 있었다
+      // (`cache/scaled_743.png`, 2026-08-14자).
+      //
+      // ⚠️ `!mounted`로 먼저 빠져나가면 안 된다. 사진을 고르는 사이 화면이
+      // 닫히는 경우가 있는데, 그때가 **아무도 안 지우는** 경우다. 그래서
+      // 복사·삭제를 먼저 하고 화면 갱신만 mounted로 막는다.
+      unawaited(deleteQuietly(picked.path));
       await evictImageFileCache(savedPath);
       if (!mounted) return;
       setState(() {
