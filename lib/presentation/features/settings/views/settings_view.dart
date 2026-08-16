@@ -302,8 +302,10 @@ class SettingsView extends StatelessWidget {
                   //    빌드에 그대로 나가면 **고장난 기능으로 보인다**(2026-08-15,
                   //    빌드 직전에 발견).
                   // 플래그를 켤 때 rules 배포도 함께 해야 이 토글이 동작한다.
-                  if (CardPhotoBackupService.kCardPhotoBackupEnabled)
+                  if (CardPhotoBackupService.kCardPhotoBackupEnabled) ...[
+                    _CardPhotoBackupStatusRow(uid: auth.firebaseUid),
                     _PhotoImprovementConsentRow(uid: auth.firebaseUid),
+                  ],
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.aiChip,
@@ -728,6 +730,80 @@ class _SettingsRow extends StatelessWidget {
 /// 켜지게 두면 **기기에만 켜진 동의**가 생겨, 회사는 동의를 못 받았는데
 /// 사용자 화면에는 동의한 것처럼 보인다. 그래서 로그인 전에는 스위치를
 /// 비활성화한다.
+
+/// 명함 사진 백업 현황 — **미리 알리기 위한 자리**(2026-08-16).
+///
+/// ## 왜 필요한가
+///
+/// 한도(무료 200장)에 걸린 것을 **기기를 바꾼 뒤에 알면 그때는 이탈**이다.
+/// 사진 백업은 충전을 부르는 지렛대가 아니라 **보험**이라, 필요한 순간에
+/// 없으면 "충전해야지"가 아니라 "이 앱 못 믿겠다"가 된다.
+///
+/// 그래서 **80%(기본 한도 기준 160장)부터 미리 알린다.**
+///
+/// ⚠️ **조용히 안 올라가면 안 된다**는 원칙이 이 화면의 이유다 — 이 저장소는
+/// *"의도한 실패도 사용자 눈에는 결함이다"*로 이미 한 번 다쳤다(HANDOFF 0-21).
+///
+/// ⚠️ 플래그가 꺼져 있는 동안에는 아예 그리지 않는다(호출 쪽에서 가른다).
+class _CardPhotoBackupStatusRow extends StatefulWidget {
+  const _CardPhotoBackupStatusRow({required this.uid});
+
+  final String? uid;
+
+  @override
+  State<_CardPhotoBackupStatusRow> createState() =>
+      _CardPhotoBackupStatusRowState();
+}
+
+class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
+  CardPhotoBackupSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = widget.uid;
+    final quota = uid == null
+        ? await CardPhotoQuotaService().cachedOrDefault()
+        : await CardPhotoQuotaService().fetch(uid);
+    final map = await CardPhotoBackupStateService().load();
+    if (!mounted) return;
+    setState(() => _summary = summarize(map, quota));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _summary;
+    if (s == null) return const SizedBox.shrink();
+
+    // ⚠️ 손실만 말하지 않는다. **무엇이 되는지**를 먼저 말한다 — 숫자만 보여
+    // 주면 "내 사진이 위험한가?"로 읽힌다.
+    final String subtitle;
+    if (s.isFull) {
+      subtitle =
+          '백업 ${s.synced}/${s.quota}장 · 한도에 닿아 새 사진은 '
+          '백업되지 않습니다. 기기를 바꾸면 복원되지 않습니다';
+    } else if (s.isNearFull) {
+      subtitle = '백업 ${s.synced}/${s.quota}장 · 곧 한도에 닿습니다';
+    } else {
+      subtitle = '백업 ${s.synced}/${s.quota}장 · 기기를 바꿔도 복원됩니다';
+    }
+
+    return _SettingsRow(
+      icon: AppIcon(
+        AppIconId.aiDataInfo,
+        size: 22,
+        color: s.needsAttention ? AppColors.destructive : AppColors.accentText,
+      ),
+      title: '명함 사진 백업',
+      subtitle: subtitle,
+    );
+  }
+}
+
 class _PhotoImprovementConsentRow extends StatefulWidget {
   const _PhotoImprovementConsentRow({required this.uid});
 

@@ -184,3 +184,73 @@ class CardPhotoBackupStateService {
     }
   }
 }
+
+/// 백업 현황 한 묶음 — **안내와 관측이 같은 재료를 쓴다**(2026-08-16).
+///
+/// ## 왜 하나로 묶나
+///
+/// 사용자에게 보여줄 것("200장 중 160장 백업됨")과 우리가 알아야 할 것
+/// ("한도에 닿은 사람이 있나")이 **같은 숫자**다. 따로 만들면 어긋난다.
+///
+/// ⚠️ **관측이 없으면 "낮게 시작해 나중에 올린다"가 성립하지 않는다.** 올릴
+/// 시점을 알 수단이 없기 때문이다(손익/원가 세션 조건 ①). 지금은 **기기 안에서만**
+/// 센다 — 서버로 집계를 보내려면 방침을 먼저 봐야 한다(오늘 "AI 이용 일별 집계"를
+/// 뺀 것과 같은 구조: **하지도 않는 처리를 고지하지 않듯, 고지 없이 집계를
+/// 보내지도 않는다**).
+class CardPhotoBackupSummary {
+  const CardPhotoBackupSummary({
+    required this.synced,
+    required this.quotaExceeded,
+    required this.failed,
+    required this.quota,
+  });
+
+  /// 서버에 올라간 장수.
+  final int synced;
+
+  /// 한도를 넘어 **올리지 않은** 장수. 실패가 아니라 정책이다.
+  final int quotaExceeded;
+
+  /// 올리려다 **실패한** 장수. 다시 시도할 수 있다.
+  final int failed;
+
+  /// 이 이용자의 한도(서버 값 또는 기본값).
+  final int quota;
+
+  /// 남은 장수.
+  int get remaining => quota - synced < 0 ? 0 : quota - synced;
+
+  /// **한도에 닿았나.** 닿으면 새 사진이 안 올라간다.
+  bool get isFull => synced >= quota;
+
+  /// **미리 알려야 하는 구간인가**(80% 이상, 아직 한도 안).
+  ///
+  /// ⚠️ 한도에 닿은 뒤에는 false다 — **"곧 찹니다"와 "찼습니다"는 다른 안내**다.
+  bool get isNearFull => !isFull && synced >= (quota * 0.8).floor();
+
+  /// 사용자에게 알릴 것이 있나(경고 구간이거나, 안 올라간 것이 있거나).
+  bool get needsAttention => isNearFull || isFull || quotaExceeded > 0 || failed > 0;
+}
+
+/// 상태 지도와 한도로 현황을 만든다.
+CardPhotoBackupSummary summarize(CardPhotoBackupStateMap map, int quota) {
+  var synced = 0, quotaExceeded = 0, failed = 0;
+  for (final raw in map.raw.values) {
+    switch (stateFromName(raw)) {
+      case CardPhotoBackupState.synced:
+        synced++;
+      case CardPhotoBackupState.quotaExceeded:
+        quotaExceeded++;
+      case CardPhotoBackupState.failed:
+        failed++;
+      case null:
+        break;
+    }
+  }
+  return CardPhotoBackupSummary(
+    synced: synced,
+    quotaExceeded: quotaExceeded,
+    failed: failed,
+    quota: quota,
+  );
+}
