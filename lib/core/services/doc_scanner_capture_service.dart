@@ -53,6 +53,7 @@
 library;
 
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:cunning_document_scanner/cunning_document_scanner.dart';
 import 'package:flutter/foundation.dart';
@@ -193,7 +194,10 @@ class DocScannerCaptureService {
       // finally보다 먼저 return해서 이 정리를 건너뛰었다.
       await deleteQuietly(srcPath);
       await _cleanPluginCacheQuietly();
-      await sweepMlKitScannerCache();
+      // ⚠️ **`getTemporaryDirectory()`다. `Directory.systemTemp`가 아니다.**
+      // 앞의 것은 `cache`, 뒤의 것은 `code_cache`이고 **ML Kit은 `cache`에
+      // 쓴다.** 이걸 틀리면 조용히 아무것도 안 지운다(2026-08-16 실측).
+      await _sweepMlKitCacheQuietly();
     }
   }
 
@@ -244,6 +248,15 @@ class DocScannerCaptureService {
   ///
   /// 정리가 실패했다고 촬영을 막으면 사용자가 잃는 것(명함)이 얻는 것(용량)보다
   /// 크다 — [deleteQuietly]와 같은 판단이다.
+  /// ML Kit 원본 폴더를 비운다. 경로를 얻는 것부터 실패할 수 있어 감싼다.
+  static Future<void> _sweepMlKitCacheQuietly() async {
+    try {
+      await sweepMlKitScannerCache(await getTemporaryDirectory());
+    } catch (_) {
+      // 무시한다. 다음 촬영에서 다시 걸린다.
+    }
+  }
+
   static Future<void> _cleanPluginCacheQuietly() async {
     try {
       await CunningDocumentScanner.cleanCache();
@@ -288,11 +301,29 @@ const String kMlKitScannerCacheDir = 'mlkit_docscan_ui_client';
 /// 짐작해 두 번 틀렸다"*고 했는데, 여기는 **짐작이 아니라 폴더 이름으로 주인이
 /// 특정된다.**
 ///
+/// ## ⚠️ 캐시는 폴더가 **둘**이다 — 어느 쪽을 보는지가 이 함수의 전부다
+///
+/// 처음 구현은 `Directory.systemTemp`를 기본값으로 썼다. **틀렸다.**
+///
+/// ```
+/// Directory.systemTemp  →  code_cache/     ← 우리 card_scan_* 이 사는 곳
+/// ML Kit이 쓰는 곳       →  cache/          ← 실제 원본이 사는 곳
+/// ```
+///
+/// `code_cache/mlkit_docscan_ui_client`는 **아예 없어서** 이 함수가 *"폴더가
+/// 없네"* 하고 즉시 나갔고, **진짜 폴더는 아무도 안 건드렸다.** 실기기에서
+/// 평문 3장·1.6MB가 남아 있는 것으로 확인했다(2026-08-16).
+///
+/// 📌 `tool/README.md`가 이미 경고한 그 함정이다 — *"캐시는 폴더가 둘이다.
+/// 어느 쪽을 보는지부터 정하고 재라."* **경고를 적어 두고도 새 코드가 같은
+/// 자리에 빠졌다.**
+///
+/// 그래서 **부르는 쪽이 폴더를 넘기게** 했다. 기본값을 두면 그 기본값이 또
+/// 틀릴 수 있고, **틀려도 조용하다**(없는 폴더는 예외도 안 낸다).
+///
 /// ⚠️ **던지지 않는다** — 정리 실패로 촬영을 막지 않는다([deleteQuietly]와 같은 판단).
-Future<void> sweepMlKitScannerCache([Directory? cacheRoot]) async {
-  final dir = Directory(
-    '${(cacheRoot ?? Directory.systemTemp).path}/$kMlKitScannerCacheDir',
-  );
+Future<void> sweepMlKitScannerCache(Directory cacheRoot) async {
+  final dir = Directory('${cacheRoot.path}/$kMlKitScannerCacheDir');
   try {
     if (!await dir.exists()) return;
     await for (final entity in dir.list()) {

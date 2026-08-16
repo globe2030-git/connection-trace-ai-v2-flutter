@@ -129,6 +129,40 @@ void main() {
 
       expect(await outsider.exists(), isTrue);
     });
+
+    // ⚠️ 이 검사가 2026-08-16에 생긴 이유:
+    //
+    // 처음 구현은 `Directory.systemTemp`를 **기본값**으로 썼다. 그런데
+    // `systemTemp`는 `code_cache`이고 **ML Kit은 `cache`에 쓴다.** 없는 폴더를
+    // 보고 있었으므로 함수는 **예외도 안 내고 조용히 아무것도 안 지웠다.**
+    //
+    // 그때 이 파일의 검사들은 **전부 통과했다** — 폴더를 직접 넘겨 줬기
+    // 때문이다. **기본값을 아무도 안 밟았다.**
+    //
+    // 그래서 기본값을 없애 부르는 쪽이 반드시 넘기게 했고, 아래로 **"엉뚱한
+    // 폴더를 주면 조용히 실패한다"**는 성질을 못 박는다. 다음 사람이 이걸
+    // 보면 "왜 안 지워지지"에서 폴더부터 의심한다.
+    test('⚠️ 엉뚱한 폴더를 주면 조용히 아무것도 안 한다 — 이것이 실제 결함이었다',
+        () async {
+      final wrong = await Directory.systemTemp.createTemp('wrong_root_');
+      final right = await Directory.systemTemp.createTemp('right_root_');
+      final mlkit = Directory('${right.path}/$kMlKitScannerCacheDir');
+      await mlkit.create(recursive: true);
+      final leftover = File('${mlkit.path}/1234.jpg');
+      await leftover.writeAsBytes([0xFF, 0xD8, 0xFF, 0x00]);
+
+      // 엉뚱한 폴더 — 던지지도, 지우지도 않는다.
+      await expectLater(sweepMlKitScannerCache(wrong), completes);
+      expect(await leftover.exists(), isTrue,
+          reason: '엉뚱한 폴더를 줬으니 남아 있어야 한다 — 조용한 실패다');
+
+      // 맞는 폴더 — 지운다.
+      await sweepMlKitScannerCache(right);
+      expect(await leftover.exists(), isFalse);
+
+      await wrong.delete(recursive: true);
+      await right.delete(recursive: true);
+    });
   });
 
   group('픽셀 수 — 2단계에서 축소 임계(1,600)와 견줄 값', () {
