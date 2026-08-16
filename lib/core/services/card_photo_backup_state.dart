@@ -171,6 +171,26 @@ class CardPhotoBackupStateService {
   Future<void> record(String contactId, CardPhotoBackupState state) async =>
       _save((await load()).withState(contactId, state));
 
+  /// 서버 실물에서 알아낸 것들을 `synced`로 한꺼번에 적는다(2026-08-16,
+  /// 추가 256).
+  ///
+  /// 재설치하면 이 저장소가 통째로 비어 한도 카운터가 0이 된다. 서버에는
+  /// 사진이 그대로 있으므로 **한도를 또 처음부터 채울 수 있다** — 한도가
+  /// 천장 구실을 못 하게 된다.
+  ///
+  /// ⚠️ **덮어쓰지 않고 덧붙인다.** 기존 기록이 있으면 그쪽이 더 자세하다
+  /// (`failed`·`quota` 같은 사유까지 들어 있다). 여기서 지우면 그 사유가
+  /// 사라진다.
+  Future<void> markSyncedAll(Iterable<String> contactIds) async {
+    final ids = contactIds.where((id) => id.isNotEmpty).toList();
+    if (ids.isEmpty) return;
+    var map = await load();
+    for (final id in ids) {
+      map = map.withState(id, CardPhotoBackupState.synced);
+    }
+    await _save(map);
+  }
+
   Future<void> forget(String contactId) async =>
       _save((await load()).without(contactId));
 

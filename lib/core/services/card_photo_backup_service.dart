@@ -124,6 +124,42 @@ class CardPhotoBackupService {
   /// 잡으면 규칙이 막을 파일을 메모리로 읽으려다 OOM이 날 수 있다.
   static const int _maxDownloadBytes = 5 * 1024 * 1024;
 
+  /// 서버에 **실제로** 올라가 있는 명함 사진의 contactId 집합(2026-08-16,
+  /// 추가 256).
+  ///
+  /// 재설치 뒤 한도 카운터를 되살리는 데 쓴다 — 카운터가 기기에만 있어서
+  /// 앱을 다시 깔면 0으로 돌아가는데, 서버에는 사진이 그대로 있다.
+  ///
+  /// ## ⚠️ 실패와 "없음"을 구분한다 — 이게 이 함수의 요점이다
+  ///
+  /// 목록을 **못 읽으면 `null`**, 읽었는데 비었으면 **빈 집합**이다. 둘을
+  /// 섞으면 회선이 나쁠 때 카운터가 **0으로 떨어져 한도가 느슨해지는
+  /// 방향**으로 틀린다. 부르는 쪽은 `null`이면 **아무것도 하지 않아야 한다.**
+  ///
+  /// [download]가 `bool`이라 이 구분을 못 하는 것과 대비된다 — 그래서 개수를
+  /// 셀 때는 다운로드 성공 수가 아니라 이 목록을 쓴다.
+  ///
+  /// ⚠️ **이 경로는 아직 실물에서 통과한 적이 없다.** `storage.rules`의
+  /// `users/{uid}/{allPaths=**}`에 `allow read`가 있어 규칙상 열려 있어야
+  /// 하지만(Storage에서 read는 get과 list를 함께 덮는다), 플래그가 꺼져 있어
+  /// 한 번도 돌지 않았다. 실패해도 호출부가 조용히 넘어가도록 짜 둔 이유다.
+  Future<Set<String>?> listSyncedContactIds(String uid) async {
+    if (!kCardPhotoBackupEnabled) return null;
+    try {
+      final listing = await _bucket.ref('users/$uid/cards').listAll();
+      return listing.items
+          .map((item) => item.name)
+          .where((name) => name.endsWith(_extension))
+          .map((name) => name.substring(0, name.length - _extension.length))
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    } catch (e) {
+      // ⚠️ 빈 집합이 아니라 null이다. 위 문단 참고.
+      debugPrint('명함 사진 서버 목록 조회 실패: ${e.runtimeType}');
+      return null;
+    }
+  }
+
   /// 명함 1건의 서버 사진을 지운다. 사용자가 그 명함을 삭제했을 때 부른다.
   ///
   /// 이미 없으면 성공으로 친다 — 삭제는 멱등이어야 한다. 여기서 실패를

@@ -252,6 +252,49 @@ class ContactImageService {
 
   /// 로컬에 암호문 파일이 없는 명함들을 서버에서 내려받는다.
   ///
+  /// 재설치로 비어 버린 백업 상태를 **서버 실물로 되살린다**(2026-08-16,
+  /// 추가 256).
+  ///
+  /// ## 무엇이 문제였나
+  ///
+  /// 한도 판정의 재료인 `syncedCount`는 `SharedPreferences` 한 곳에만 있다.
+  /// **앱을 지웠다 깔면 0으로 돌아가는데 서버에는 사진이 그대로 있다** — 그래서
+  /// 한도 200장을 **한 번 더** 채울 수 있었다. 악의가 아니라 **기기 변경·재설치
+  /// 라는, 이 기능을 만든 이유 그 자체가 한도를 무너뜨리는 경로**였다.
+  ///
+  /// 원가로는 큰 금액이 아니다(1인 400장이어도 월 ₩3.9). 문제는 **한도가 천장
+  /// 구실을 못 하게 되는 것**이다 — 천장에 구멍이 있으면 "최악이어도 여기까지"를
+  /// 말할 수 없다.
+  ///
+  /// ## 왜 이 자리인가
+  ///
+  /// 복원은 곧 "로컬에 파일이 없다"는 뜻이고, 그게 정확히 이 결함이 드러나는
+  /// 순간이다. 별도 진입점을 만들면 **부르는 것을 잊는 자리**가 하나 더 생긴다.
+  ///
+  /// ## ⚠️ 기록이 있으면 건드리지 않는다
+  ///
+  /// 비어 있을 때만 되살린다. 기존 기록에는 `failed`·`quota` 같은 **사유까지**
+  /// 들어 있어 서버 목록보다 자세하다.
+  ///
+  /// ## ⚠️ 못 읽었으면 아무것도 하지 않는다
+  ///
+  /// [CardPhotoBackupService.listSyncedContactIds]는 실패를 `null`로, "없음"을
+  /// 빈 집합으로 돌려준다. **실패를 0으로 적으면 한도가 느슨해지는 방향으로
+  /// 틀린다** — 그건 지금 고치려는 결함과 같은 모양이다. 그래서 `null`이면
+  /// 조용히 넘어가고 다음 복원 때 다시 시도한다.
+  Future<void> _restoreBackupStateIfEmpty(String uid) async {
+    try {
+      if ((await _backupState.load()).raw.isNotEmpty) return;
+      final onServer = await _photoBackup.listSyncedContactIds(uid);
+      if (onServer == null || onServer.isEmpty) return;
+      await _backupState.markSyncedAll(onServer);
+      debugPrint('사진 백업 상태 복구: ${onServer.length}건');
+    } catch (e) {
+      // 복구 실패가 복원 자체를 막아서는 안 된다 — 사진을 되찾는 것이 먼저다.
+      debugPrint('사진 백업 상태 복구 실패: ${e.runtimeType}');
+    }
+  }
+
   /// 기기를 바꾸거나 앱을 다시 깔면 로컬 `.enc` 파일이 **하나도 없다.** 명함
   /// 텍스트는 Firestore에서 복원되는데 사진만 비는 상태가 이때 생긴다.
   ///
@@ -268,6 +311,7 @@ class ContactImageService {
     if (!CardPhotoBackupService.kCardPhotoBackupEnabled) return {};
     final ids = contactIds.toList();
     if (ids.isEmpty) return {};
+    await _restoreBackupStateIfEmpty(uid);
     final restored = <String, String>{};
     try {
       final docsDir = await getApplicationDocumentsDirectory();
