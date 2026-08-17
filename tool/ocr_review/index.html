@@ -265,6 +265,14 @@
   <button class="btn" id="btnImgs">이미지 폴더</button>
   <span class="counter" id="counter"></span>
   <span class="spacer"></span>
+  <label class="hint" for="filterField">볼 것만</label>
+  <select id="filterField" title="어떤 칸을 볼지"></select>
+  <select id="filterMode" title="어떤 장을 볼지">
+    <option value="all">전부</option>
+    <option value="undone">아직 확인 안 한 장</option>
+    <option value="empty">그 칸이 빈 장</option>
+    <option value="suspect">⚠️ 빈데 원문엔 있어 보이는 장</option>
+  </select>
   <button class="btn" id="btnSaveWork" disabled>진행 저장</button>
   <button class="btn" id="btnLoadWork">진행 불러오기</button>
   <button class="btn" id="btnSummary" disabled>집계</button>
@@ -274,6 +282,7 @@
   ⚠️ 이 브라우저는 <b>자동 저장이 막혀 있습니다</b>(<code>file://</code>에서 흔합니다).
   중간중간 <b>진행 저장</b>을 눌러 파일로 남기세요 — 창을 닫으면 검수한 내용이 사라집니다.
 </div>
+<div id="fieldWarn" style="display:none;padding:8px 14px;background:var(--edit-bg);color:var(--edit);font-size:13px"></div>
 <div class="bar"><i id="progress"></i></div>
 
 <main>
@@ -338,6 +347,7 @@
 // 검수 대상 칸. TSV 머리글 이름과 같아야 한다.
 const FIELDS = ['이름','회사','직함','휴대폰','사무실','팩스','이메일','홈페이지','우편번호','주소','상세주소'];
 const STORE_KEY = 'ocr-review-v1';
+const FIELDS_KEY = 'ocr-review-fields-v1';
 
 // 자동 저장이 되는 브라우저인지 먼저 확인한다.
 //
@@ -370,6 +380,31 @@ function load() {
 function save() {
   if (!canStore) return;
   try { localStorage.setItem(STORE_KEY, JSON.stringify(answers)); } catch {}
+  try { localStorage.setItem(FIELDS_KEY, FIELDS.join(',')); } catch {}
+}
+
+// ⚠️ **칸을 새로 만들면 이미 검수한 장에도 그 칸이 빈 채로 생긴다.**
+//
+// 2026-08-17에 팩스·홈페이지 칸을 만들었는데, 그 전에 검수한 24장은 두 칸이
+// 빈 채로 "확인함"이 되어 있었다. 아무도 그 칸을 본 적이 없는데 **본 것으로
+// 세어졌다.**
+//
+// 그래서 칸 목록이 바뀌면 알린다. **검수를 통째로 되돌리지는 않는다** — 이미
+// 본 다른 칸까지 버리는 것은 손해가 더 크다. 대신 **새 칸만 거르개로 훑으면
+// 된다**고 말해 준다.
+function warnIfFieldsGrew() {
+  if (!canStore) return;
+  let before = '';
+  try { before = localStorage.getItem(FIELDS_KEY) || ''; } catch {}
+  if (!before) return;
+  const added = FIELDS.filter((f) => !before.split(',').includes(f));
+  if (!added.length) return;
+  const box = $('#fieldWarn');
+  box.style.display = '';
+  box.innerHTML = `⚠️ <b>칸이 늘었습니다: ${added.join(' · ')}</b> —
+    이미 “확인함”인 장에도 이 칸은 <b>빈 채로 생겼고 아무도 본 적이 없습니다.</b>
+    위 <b>볼 것만</b>에서 그 칸을 고르고 <b>⚠️ 빈데 원문엔 있어 보이는 장</b>을
+    골라 훑으세요.`;
 }
 
 function download(text, filename, mime) {
@@ -422,6 +457,7 @@ $('#btnTsv').onclick = async () => {
   $('#btnExport').disabled = false;
   $('#btnSummary').disabled = false;
   $('#btnSaveWork').disabled = false;
+  warnIfFieldsGrew();
   render();
 };
 
@@ -444,6 +480,55 @@ function firstUndone() {
   return i === -1 ? 0 : i;
 }
 
+// ── 볼 것만 거르기 ────────────────────────────────────────────────
+//
+// 📌 **빈 칸은 그냥 지나가진다.** 이 도구는 인식값을 미리 깔고 시작하는데,
+// 인식이 못 찾은 칸은 **빈 채로** 깔린다. 103장을 넘기다 보면 빈 칸은 눈에
+// 안 띄어서 "봤다"고 표시된 장에도 빈 칸이 그대로 남는다.
+//
+// ⚠️ 2026-08-17에 그 일이 실제로 났다 — 팩스 칸이 103장 중 64장 비어 있었고,
+// 그 상태로 잰 팩스 정확도가 파서를 나쁘게 보이게 만들었다(추가 282).
+// 같은 날 로고 표기(278)·씨앗값(280)까지 세 번, 전부 "파서가 아니라 자가
+// 틀린" 경우였다.
+//
+// 그래서 **한 칸만 골라 그 칸이 빈 장만 훑는** 길을 낸다. 칸을 늘릴 때마다
+// 처음부터 103장을 다시 넘길 필요가 없다.
+
+// 원문에 이 칸의 값이 있어 보이는가 — **어림짐작이다.** 라벨 낱말로만 본다.
+const HINTS = {
+  팩스: /(?:fax|팩스|\bF[\s.:]*\d)/i,
+  홈페이지: /(?:https?:\/\/|www\.)/i,
+  이메일: /@/,
+  휴대폰: /01[016-9]/,
+  사무실: /(?:tel|전화|\bT[\s.:]*\d)/i,
+  우편번호: /\b\d{5}\b/,
+};
+
+function valueOf(row, f) {
+  const a = answers[key(row)]?.fields;
+  if (a && a[f] !== undefined) return String(a[f]).trim();
+  return String(row[f] || '').trim();
+}
+
+// 지금 거르개로 볼 장들의 **번호 목록**. 비면 전부 본다.
+function viewList() {
+  const f = $('#filterField').value;
+  const mode = $('#filterMode').value;
+  const out = [];
+  rows.forEach((r, i) => {
+    const done = !!answers[key(r)]?.done;
+    let keep = true;
+    if (mode === 'undone') keep = !done;
+    else if (mode === 'empty') keep = !valueOf(r, f);
+    else if (mode === 'suspect') {
+      const h = HINTS[f];
+      keep = !valueOf(r, f) && !!h && h.test(r['원문'] || '');
+    }
+    if (keep) out.push(i);
+  });
+  return out.length ? out : rows.map((_, i) => i);
+}
+
 function render() {
   const row = rows[idx];
   if (!row) return;
@@ -451,7 +536,11 @@ function render() {
   const saved = answers[name] || {};
   rot = 0;
 
-  $('#counter').textContent = `${idx + 1} / ${rows.length}`;
+  const v = viewList();
+  const at = v.indexOf(idx);
+  $('#counter').textContent = v.length === rows.length
+    ? `${idx + 1} / ${rows.length}`
+    : `${at === -1 ? '?' : at + 1} / ${v.length}  (전체 ${rows.length}장 중)`;
   $('#fileName').textContent = name;
   const doneCount = rows.filter((r) => answers[key(r)]?.done).length;
   $('#progress').style.width = `${(doneCount / rows.length) * 100}%`;
@@ -597,9 +686,24 @@ function commit(done) {
   save();
 }
 
+// ⚠️ 이동은 **거른 목록 안에서** 한다. 안 그러면 "볼 것만"을 골라 놓고
+// 다음을 눌렀을 때 안 볼 장으로 넘어간다.
+function step(delta) {
+  const v = viewList();
+  let at = v.indexOf(idx);
+  if (at === -1) {                       // 지금 장이 목록에 없으면 가장 가까운 뒤쪽으로
+    at = v.findIndex((i) => i >= idx);
+    if (at === -1) at = v.length - 1;
+    idx = v[at];
+    return;
+  }
+  at = Math.min(v.length - 1, Math.max(0, at + delta));
+  idx = v[at];
+}
+
 function go(delta) {
   commit(answers[key(rows[idx])]?.done || false);
-  idx = Math.min(rows.length - 1, Math.max(0, idx + delta));
+  step(delta);
   render();
 }
 
@@ -610,9 +714,23 @@ function go(delta) {
 // 강제하지 않는다.
 function goForward() {
   commit(true);
-  if (idx < rows.length - 1) idx += 1;
+  step(1);
   render();
 }
+
+// 거르개 채우기. 칸을 바꾸면 그 칸이 빈 첫 장으로 뛴다.
+(function initFilter() {
+  const sel = $('#filterField');
+  sel.innerHTML = FIELDS.map((f) => `<option value="${f}">${f}</option>`).join('');
+  sel.value = '팩스';
+  const jump = () => {
+    const v = viewList();
+    if (v.length) idx = v.includes(idx) ? idx : v[0];
+    render();
+  };
+  sel.onchange = jump;
+  $('#filterMode').onchange = jump;
+})();
 
 $('#btnNext').onclick = goForward;
 $('#btnPrev').onclick = () => go(-1);
