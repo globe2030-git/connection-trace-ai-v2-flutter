@@ -21,6 +21,7 @@ import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/services/card_rect_detector.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import 'card_rect_overlay.dart';
+import 'manual_crop_view.dart';
 
 class CameraScanModalView extends StatefulWidget {
   /// 지금 찍는 면("앞면"/"뒷면"). 화면 아래에 항상 띄운다.
@@ -958,6 +959,88 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     await _startAutoCaptureStream();
   }
 
+  /// 손으로 자르기(F-03, 추가 290).
+  ///
+  /// 자동 테두리 검출을 기본으로 쓰지 않기로 하면서, 자동이 잘못 잘랐을 때
+  /// **사람이 고칠 길이 없었다.** 지금까지는 다시 찍는 것이 유일했다.
+  ///
+  /// ⚠️ **회전을 먼저 굽는다.** 화면에서 돌린 각도와 자르는 좌표를 함께
+  /// 다루면 좌표계가 둘이 되고, 그건 실기기에서만 드러나는 종류의 어긋남이다
+  /// (추가 273). 똑바로 선 사진을 넘기고, 돌아온 뒤에는 각도를 0으로 되돌린다.
+  ///
+  /// ⚠️ **자동 자르기가 쓰는 워프를 그대로 쓴다.** 새 자르기 코드를 만들지
+  /// 않는다 — 만들면 두 코드가 서로 다르게 틀리기 시작한다.
+  Future<void> _cropPendingShotByHand() async {
+    final shot = _pendingShot;
+    if (shot == null || _isCapturing) return;
+
+    final upright = await _bakeRotation(shot, _pendingRotation);
+    if (!mounted) return;
+
+    final picked = await Navigator.of(context).push<ManualCropResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ManualCropView(imagePath: upright.path),
+      ),
+    );
+    if (!mounted) return;
+
+    if (picked == null || picked.corners.length != 4) {
+      // 취소했다 — 구운 파일이 원본과 다르면 버린다.
+      if (upright.path != shot.path) await deleteQuietly(upright.path);
+      return;
+    }
+
+    setState(() => _isCapturing = true);
+    try {
+      final outPath =
+          '${Directory.systemTemp.path}/card_scan_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final result = await compute(
+        warpCardToFile,
+        CardWarpRequest(
+          sourcePath: upright.path,
+          // ⚠️ 화면 크기를 **사진 비율과 같게** 준다. 그러면 워프가 쓰는
+          // "가시 영역"이 사진 전체가 되어, 정규 좌표가 그대로 통한다.
+          // 새 좌표 변환을 만들지 않으려는 것이다.
+          visibleCornersFlat: [
+            for (final c in picked.corners) ...[c.dx, c.dy],
+          ],
+          screenWidth: picked.imageSize.width,
+          screenHeight: picked.imageSize.height,
+          outputPath: outPath,
+          // 사람이 모서리를 직접 짚었으니 여백을 더하지 않는다.
+          margin: 0,
+        ),
+      );
+      if (!mounted) return;
+      if (result == null) {
+        _toastCropFailed();
+        return;
+      }
+      // 자른 결과가 새 원본이 된다. 이전 것들은 버린다.
+      final previous = shot.path;
+      setState(() {
+        _pendingShot = XFile(result.path);
+        _pendingRotation = 0;
+        _lastCropLongEdge = result.longEdge;
+      });
+      if (upright.path != previous) await deleteQuietly(upright.path);
+      await deleteQuietly(previous);
+    } catch (_) {
+      if (mounted) _toastCropFailed();
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
+    }
+  }
+
+  void _toastCropFailed() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('자르지 못했습니다. 다시 해 주세요.')));
+  }
+
   /// 화면에서 돌린 각도를 실제 이미지에 굽는다(F-03).
   ///
   /// [degrees]가 0이면 **원본을 그대로 돌려준다** — 네 번 눌러 제자리로 온
@@ -1744,6 +1827,26 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     Icons.rotate_right,
                                     size: 20,
                                   ),
+                                ),
+                                const SizedBox(width: 12),
+                                // F-03: 자동이 잘못 잘랐을 때 **사람이 고치는
+                                // 유일한 길**이다(자동 검출을 기본으로 안 쓰기로
+                                // 했으므로). 지금까지는 다시 찍는 것뿐이었다.
+                                OutlinedButton(
+                                  onPressed: _isCapturing
+                                      ? null
+                                      : _cropPendingShotByHand,
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.white,
+                                    side: const BorderSide(
+                                      color: Colors.white54,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.crop, size: 20),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

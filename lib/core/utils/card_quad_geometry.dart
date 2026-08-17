@@ -526,3 +526,62 @@ Size perspectiveOutputSize(List<Offset> sourcePixels) {
   final height = math.max(left, right).round().clamp(1, 20000);
   return Size(width.toDouble(), height.toDouble());
 }
+
+// ── 손으로 자르기(F-03, 추가 290) ────────────────────────────────────────
+//
+// 확인 화면은 사진을 `BoxFit.contain`으로 그린다(전체가 보여야 귀퉁이를 끌 수
+// 있으므로). 프리뷰의 cover 방식과 **맞추는 규칙이 다르다** — 그래서 위쪽
+// [visibleImageRect]를 그대로 쓸 수 없다.
+//
+// ⚠️ 두 규칙을 한 함수로 합치려다 실기기에서 좌표가 어긋난 적이 있다.
+// **따로 두고 이름으로 구분한다.**
+
+/// `BoxFit.contain`으로 [boxSize] 안에 그렸을 때 **이미지가 실제로 차지하는
+/// 사각형**(상자 좌표).
+///
+/// 남는 자리는 위아래 또는 좌우에 띠로 남는다(레터박스).
+Rect containImageRect(Size imageSize, Size boxSize) {
+  if (imageSize.width <= 0 ||
+      imageSize.height <= 0 ||
+      boxSize.width <= 0 ||
+      boxSize.height <= 0) {
+    return Rect.fromLTWH(0, 0, boxSize.width, boxSize.height);
+  }
+  final scale = math.min(
+    boxSize.width / imageSize.width,
+    boxSize.height / imageSize.height,
+  );
+  final w = imageSize.width * scale;
+  final h = imageSize.height * scale;
+  return Rect.fromLTWH((boxSize.width - w) / 2, (boxSize.height - h) / 2, w, h);
+}
+
+/// 상자 좌표 → **이미지 정규 좌표(0~1)**.
+///
+/// ⚠️ 0~1로 **자른다**(clamp). 손가락이 사진 밖으로 나가도 귀퉁이는 사진
+/// 안에 머물러야 한다 — 밖으로 나간 귀퉁이로 자르면 검은 띠가 섞여 들어온다.
+Offset containPointToImageNormalized(
+  Offset boxPoint,
+  Size imageSize,
+  Size boxSize,
+) {
+  final rect = containImageRect(imageSize, boxSize);
+  if (rect.width <= 0 || rect.height <= 0) return Offset.zero;
+  return Offset(
+    ((boxPoint.dx - rect.left) / rect.width).clamp(0.0, 1.0),
+    ((boxPoint.dy - rect.top) / rect.height).clamp(0.0, 1.0),
+  );
+}
+
+/// 이미지 정규 좌표(0~1) → 상자 좌표. 귀퉁이 손잡이를 그릴 때 쓴다.
+Offset imageNormalizedToContainPoint(
+  Offset normalized,
+  Size imageSize,
+  Size boxSize,
+) {
+  final rect = containImageRect(imageSize, boxSize);
+  return Offset(
+    rect.left + normalized.dx * rect.width,
+    rect.top + normalized.dy * rect.height,
+  );
+}
