@@ -2537,8 +2537,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final ctx = node.context;
       if (ctx == null) return;
       // 칸을 뷰포트 중앙쯤에 두어 키보드 위로 확실히 올린다.
-      // ignore: use_build_context_synchronously
+      //
+      // ⚠️ ignore 주석은 **경고가 찍히는 줄 바로 위**에 있어야 한다. 예전에는
+      // 호출이 한 줄이라 위에 붙여 뒀는데, `dart format`이 인자를 줄바꿈하자
+      // 주석과 경고 지점이 어긋나 경고가 되살아났다(analyze 19 → 20).
       Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
         ctx,
         alignment: 0.5,
         duration: const Duration(milliseconds: 250),
