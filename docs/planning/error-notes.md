@@ -130,7 +130,7 @@ SPM→CocoaPods 전환 직후라 터미널에서 `flutter build ios`로 만든 �
 산출물(`build/ios/iphoneos/`)과, Xcode가 실제로 기기에 설치할 때 쓰는
 자기만의 DerivedData(`~/Library/Developer/Xcode/DerivedData/Runner-*`)가
 서로 다른 시점의 프로젝트 상태를 반영한 채 섞여 있었을 가능성이 높음.
-프로젝트가 외장 볼륨(`/Volumes/X31(VM)/Claude/...`)에 있는 것도 "stale
+프로젝트가 외장 볼륨(`~/Claude/...`)에 있는 것도 "stale
 file outside allowed root paths" 경고가 유독 많이 뜨는 것과 관련 있어
 보임(Xcode 빌드 시스템이 비표준 볼륨 경로를 덜 신뢰하는 경향).
 

@@ -48,7 +48,7 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
     비용 근거는 [`app-rename-b-plan-cost-2026-08-16.md`](./app-rename-b-plan-cost-2026-08-16.md).
   - ⚠️ 그 대가로 패키지명은 **영원히** `com.connectiontrace.connection_trace_ai_flutter`
     로 남는다(옛 이름 잔재). 이용자에게 보이는 자리는 아니다.
-- **위치**: `/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter`
+- **위치**: `~/Claude/connection-trace-ai-v2-flutter`
 - **스택**: Flutter (Dart), 상태관리는 `provider` 패키지, 로컬 저장은
   `shared_preferences`(일반 데이터) + `flutter_secure_storage`(AI API 키).
   **현재 코드 기준으로는 아직 백엔드 서버 없음** — 전부 클라이언트에서 직접
@@ -1163,7 +1163,7 @@ kCardPhotoBackupEnabled = true
 
 ✅ **그 뒤 지갑 세션이 전부 커밋했다**(2026-08-15 확인). 백업했던 6개 파일이
 `origin/feat/ai-credit-wallet`에 모두 들어간 것을 확인하고,
-`/Volumes/X31(VM)/Claude/_wip-backup-2026-08-15/`는 **삭제했다** — 원본이
+`~/Claude/_wip-backup-2026-08-15/`는 **삭제했다** — 원본이
 안전해진 뒤에도 사본을 남겨 두면 어느 쪽이 최신인지 헷갈린다.
 
 📌 **다음에 같은 상황이 오면**: 다른 세션의 미커밋 작업을 발견하면 **손대지 말고
@@ -1435,7 +1435,7 @@ worktree로 나눠 작업했고, PM 세션이 병합 순서를 조율했다.
 
 | 자료 | 위치 | 내용 |
 |---|---|---|
-| **테스터 피드백 통합본** | `/Volumes/X31(VM)/커넥션센스_앱_빌드6_7_테스트_피드백_통합_정리.docx` | 빌드6·7을 합쳐 다시 번호를 매긴 판. 오류 14·기능개선 15·OCR권고 7·확인 2 |
+| **테스터 피드백 통합본** | `/Volumes/X31/커넥션센스_앱_빌드6_7_테스트_피드백_통합_정리.docx` | 빌드6·7을 합쳐 다시 번호를 매긴 판. 오류 14·기능개선 15·OCR권고 7·확인 2 |
 | 명함 표본 **103장** | 기기 `app_flutter/card_samples/` (`adb ... run-as`로 접근) + 맥 `~/Downloads/명함검수_이미지/` | 인식 측정용 원본. 앱의 일괄 스캔이 읽는 곳도 기기 쪽 경로다 |
 | 일괄 스캔 결과 | `~/Downloads/scan_result.tsv` | **원문(rawLines) 칸 포함** — 이게 있어야 맥에서 재생 측정이 된다 |
 
@@ -1699,7 +1699,7 @@ analyze 19 info(기준선) / test 182건 전부 통과. 원격 push 완료.
   파일이 실수로 거기 섞여 들어가 있던 걸 발견해 제거하고, 이후 전부
   `git worktree`로 격리된 `feat/charge-screen-ui` 브랜치에서만 작업시켰다.
   **이 브랜치는 커밋되지 않은 채 별도 워크트리에 남아 있다**:
-  `/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter-charge-screen/`
+  `~/Claude/connection-trace-ai-v2-flutter-charge-screen/`
   (브랜치 `feat/charge-screen-ui`, origin/main 최신 `464d8b5` 기준). 다음
   세션이 리뷰 후 커밋·PR 여부를 결정하면 된다 — 본체 저장소
   (`connection-trace-ai-v2-flutter/`)에는 이 작업의 흔적이 전혀 없다.

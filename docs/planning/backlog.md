@@ -2,6 +2,48 @@
 
 ## 작업 로그
 
+### 2026-08-17 (추가 285) — 볼륨 이름에서 괄호를 없앴다 + 낡은 경로 정리
+
+사용자 지시: **"괄호가 있으면 문제가 되는 것 같아서 `/Volumes/X31(VM)`을
+`/Volumes/X31`로 바꿨어"**
+
+📌 **뿌리를 없앤 조치다.** 2026-08-16에 `dartcv4` 빌드가 깨진 원인이 **패키지가
+아니라 경로의 괄호**였다(추가 273) — OpenCV 빌드 스크립트가 따옴표 없이 셸에
+넘겼다. 그때는 **저장소만** 괄호 없는 자리(`~/Claude/`)로 옮겨 풀었는데,
+**볼륨 이름이 그대로라 다른 도구에서 또 날 수 있었다.**
+
+### 함께 드러난 것 — 문서가 **두 번 낡아 있었다**
+
+저장소는 8/16에 `~/Claude/`로 옮겼는데 **문서 11개가 아직 옛 볼륨 경로를
+가리키고 있었다.**
+
+```
+.claude/skills/run-app/SKILL.md      cd "/Volumes/X31(VM)/Claude/..."
+docs/planning/HANDOFF.md             위치: /Volumes/X31(VM)/Claude/...
+QA_CHECKLIST.md · RESUME.md · admin-manual.md · error-notes.md …
+```
+
+⚠️ **볼륨 이름으로 바꾸지 않고 `~/Claude/`로 고쳤다.** 저장소는 거기 있고,
+`/Volumes/X31/Claude/`로 고쳤다면 **또 틀린 곳을 가리키게 된다.** 볼륨 루트에
+있는 파일(피드백 통합본 docx)만 `/Volumes/X31/`로 바꿨다.
+
+📌 **경로가 낡는 것은 옮길 때가 아니라 옮긴 뒤에 드러난다.** 8/16 이동 때
+`git worktree repair`는 했지만 **문서는 아무도 안 봤다.**
+
+### ⚠️ 빌드 생성물은 저장소 밖 문제다
+
+`ios/Flutter/Generated.xcconfig` 등 셋이 아직 옛 경로를 가리킨다. **git이 추적
+하지 않는 생성물**이라 `flutter pub get`으로 다시 만들어진다. ⚠️ 그 전에 iOS
+빌드를 걸면 **없는 경로를 찾아 깨진다.**
+
+### 손대지 않은 것
+
+| | 왜 |
+|---|---|
+| `~/.claude/projects/-Volumes-X31-VM--…` | 대화 기록 폴더는 **경로로 이름이 붙는다.** 지금 메모리가 그 안에 있어 건드리면 잃는다 |
+| `card_rect_opencv.dart`의 `X31(VM)` | **역사 기록이다.** 무엇이 문제였는지는 그 이름이 있어야 읽힌다 |
+| `~/.claude/settings.json` | ⚠️ **사용자 설정이라 PM이 고치지 않는다.** 신뢰 저장소 경로가 낡았음을 사용자에게 알렸다 |
+
 ### 2026-08-17 (추가 284) — ⚠️ 검수 결과로 **돌아올 길이 없었다**
 
 사용자가 팩스를 채우러 검수 도구를 다시 열었더니 **아무것도 없었다.**
@@ -6618,7 +6660,7 @@ info(기준선)/test 182 통과. **실기기 QA 도중 심야라 중단** — �
 제거하고, `git worktree`로 격리된 `feat/charge-screen-ui` 브랜치 전용 작업
 공간을 만들어 2단계를 그 안에서만 진행시켰다. 세션 종료 후에도 남아있도록
 worktree를 임시 스크래치 경로에서 **영구 경로로 이전**:
-`/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter-charge-screen/`
+`~/Claude/connection-trace-ai-v2-flutter-charge-screen/`
 (브랜치 `feat/charge-screen-ui`, 커밋 안 함 — 리뷰 후 사용자가 커밋 여부 결정).
 
 **새 파일**:
@@ -11042,9 +11084,9 @@ Android 패키지명(`com.connectiontrace.connection_trace_ai_flutter`), iOS
 
 사용자가 CLI에서 `/ct-planner`를 쓰려다가 "이 대화창 말고 CLI에서 개발을
 이어가려면 어떻게 쓰는지" 물어봄 — 점검해보니 `ct-planner`/`ct-developer`/
-`ct-qa`(전역 `/Volumes/X31(VM)/Claude/.claude/agents/`)가 지금의 Flutter
+`ct-qa`(전역 `~/Claude/.claude/agents/`)가 지금의 Flutter
 프로젝트가 아니라 **예전 React/Vite/Capacitor 프로토타입
-(`/Volumes/X31(VM)/Claude/connection-trace-ai-v2`, 다른 저장소)**을
+(`~/Claude/connection-trace-ai-v2`, 다른 저장소)**을
 대상으로 만들어져 있었다는 걸 발견 — 그대로 썼으면 완전히 다른 스택
 기준으로 판단했을 것.
 
