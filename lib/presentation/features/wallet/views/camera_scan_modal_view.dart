@@ -1659,7 +1659,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               // ⚠️ **B′로 자를 때는 안 그린다.** 그때 자르는
                               // 자리는 **파란 테두리**이지 이 상자가 아니다 —
                               // 남겨 두면 "어느 것이 잘리는 자리냐"가 또 헷갈린다.
-                              if (!(useDetectionCrop && detectedQuad != null))
+                              // ⚠️ **B′일 때는 아예 안 그린다**(사용자 지시).
+                              // 그때 잘리는 자리는 **파란 테두리**라 이 선은
+                              // 쓸모가 없고, 상자가 둘이면 헷갈리기만 한다.
+                              // 고정 가이드로 자를 때만 뜻이 있다.
+                              if (!useDetectionCrop)
                                 Container(
                                   width: guideSize.width * kGuideCropMargin,
                                   height: guideSize.height * kGuideCropMargin,
@@ -1703,8 +1707,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     // 움직이는 것**이고, **흰 상자는 "이쯤 두세요"
                                     // 라는 고정된 안내**다. 그러니 반응하지 않는
                                     // 것이 맞다.
+                                    // 📌 B′에서는 **이 상자 하나만 남는다**
+                                    // (바깥 선을 안 그리므로). 그래서 옅게 두면
+                                    // 어디에 둘지 안 보인다 — 또렷하게 둔다.
                                     color: useDetectionCrop
-                                        ? Colors.white.withValues(alpha: 0.22)
+                                        ? Colors.white.withValues(alpha: 0.75)
                                         : (_isFrameStable
                                               ? AppColors.accent
                                               : Colors.white),
