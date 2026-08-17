@@ -1690,20 +1690,27 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     // 잘리는 상자를 가린 셈이라, 찍어 보면 테두리와
                                     // 결과가 어긋나 보인다.
                                     //
-                                    // 그래서 **자르기를 검출로 할 때만** 물린다.
-                                    color:
-                                        (detectedQuad != null &&
-                                            useDetectionCrop)
-                                        ? Colors.white.withValues(alpha: 0.18)
+                                    // ⚠️ **B′로 자를 때는 이 상자를 가만히 둔다**
+                                    // (실기기 지적: *"흰 가이드가 파란 테두리
+                                    // 움직일 때 같이 움직이니 헷갈리네"*).
+                                    //
+                                    // 예전에는 검출 여부에 따라 밝기·굵기가
+                                    // 바뀌었다. 검출은 붙었다 떨어졌다 하므로
+                                    // **흰 상자가 파란 테두리를 따라 깜빡인다** —
+                                    // 두 개가 함께 움직이는 것처럼 보인다.
+                                    //
+                                    // 📌 B′에서는 역할이 갈린다. **파란 테두리가
+                                    // 움직이는 것**이고, **흰 상자는 "이쯤 두세요"
+                                    // 라는 고정된 안내**다. 그러니 반응하지 않는
+                                    // 것이 맞다.
+                                    color: useDetectionCrop
+                                        ? Colors.white.withValues(alpha: 0.22)
                                         : (_isFrameStable
                                               ? AppColors.accent
                                               : Colors.white),
-                                    width:
-                                        _isFrameStable &&
-                                            !(detectedQuad != null &&
-                                                useDetectionCrop)
-                                        ? 3
-                                        : 1.5,
+                                    width: useDetectionCrop
+                                        ? 1.5
+                                        : (_isFrameStable ? 3 : 1.5),
                                   ),
                                 ),
                                 child: Stack(
