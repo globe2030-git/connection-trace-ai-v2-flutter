@@ -14,6 +14,8 @@ import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/card_photo_downscale.dart';
 import '../../../../core/utils/card_quad_warp.dart';
 import '../../../../core/utils/frame_contrast.dart';
+// ⚠️ 측정 전용 — backlog 277이 끝나면 이 import와 쓰는 곳을 함께 지운다.
+import '../../../../core/utils/measure_sample_sink.dart';
 import '../../../../core/utils/scan_rotation.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/services/card_rect_detector.dart';
@@ -587,6 +589,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 다시 찍을지는 사용자가 고른다 — 이미 *"글자가 또렷한가요?"* 관문이 있다.
   int? _lastCropLongEdge;
 
+  /// ⚠️ 측정 전용 — 마지막으로 남긴 측정본 파일 이름. 277이 끝나면 지운다.
+  String? _lastMeasureSavedName;
+
   /// 마지막 크롭 결과 요약(release 빌드 제외).
   ///
   /// ⚠️ **이 숫자가 이번 작업의 갈림길이다.** 잘라낸 긴 변이 축소 임계
@@ -880,6 +885,28 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     XFile? baked;
     try {
       baked = await _bakeRotation(shot, _pendingRotation);
+
+      // ⚠️ **측정 전용 — 277이 끝나면 지운다.**
+      //
+      // 2단계 대조에 쓸 크롭본을 `card_samples`에 남긴다. 일괄 스캔이 그
+      // 폴더를 읽는데, 크롭본은 임시 파일이라 여기를 지나면 지워진다 —
+      // 그 한 칸을 잇는 것이다.
+      //
+      // ⚠️ release에서는 `kDebugMode` 때문에 **코드가 아예 안 돈다.**
+      // 스위치가 켜져 있어도 마찬가지다.
+      //
+      // 어느 경로로 찍었는지를 파일 이름에 남긴다 — 그래야 경로별로 갈라
+      // 채점할 수 있다.
+      final keptPath = await keepCropForMeasurement(
+        File(baked.path),
+        pathLabel: cardRectDetectionEnabled.value ? 'on' : 'off',
+      );
+      if (keptPath != null && mounted) {
+        // ⚠️ 저장 **경로**를 보여 준다. "저장했습니다"만으로는 정말 생겼는지
+        // 알 수 없다 — 이 저장소가 여러 번 겪은 자리다.
+        setState(() => _lastMeasureSavedName = keptPath.split('/').last);
+      }
+
       final scanResult = await OcrScannerService.scanBusinessCard(baked);
       // ⚠️ 회전을 구우면 **평문 파일이 둘이 된다**(2026-08-16 실기기 확인).
       //
@@ -1620,6 +1647,20 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     color: AppColors.accent,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            // ⚠️ 측정 전용 — 남긴 파일 이름을 눈으로 확인하게
+                            // 한다. 277이 끝나면 지운다.
+                            if (kDebugMode && _lastMeasureSavedName != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '측정본 저장: $_lastMeasureSavedName',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.amberAccent,
+                                    fontSize: 11,
                                   ),
                                 ),
                               ),
