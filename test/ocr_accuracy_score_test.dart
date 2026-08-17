@@ -50,9 +50,29 @@ const _fields = [
   '상세주소',
 ];
 
-/// 비교 전 정규화. 앞뒤 공백과 연속 공백만 정리한다 — 그 이상 손대면
+/// 비교 전 정규화. 공백과 **칸막이 기호**만 정리한다 — 그 이상 손대면
 /// "맞다고 쳐 주는" 범위가 슬금슬금 넓어져 정확도가 부풀려진다.
-String _norm(String v) => v.trim().replaceAll(RegExp(r'\s+'), ' ');
+///
+/// ## 왜 칸막이 기호를 무시하나 (2026-08-17, 추가 286)
+///
+/// 명함에 `부장 | 스포츠기획팀`처럼 **막대기로 칸을 나눠 인쇄**한 것이 흔한데,
+/// **OCR이 그 막대기를 읽을 때도 있고 놓칠 때도 있다.** 그래서 같은 값이
+/// 막대기 하나 때문에 틀린 것으로 세어졌다(card_20 · card_113).
+///
+/// ⚠️ **정답은 "명함에 뭐라고 쓰여 있나"이지 "인식이 뭘 읽을 수 있나"가
+/// 아니다.** 읽을 수 있는 것만 정답으로 적으면 **정답지가 파서를 따라가게
+/// 되고**, 그건 씨앗값 문제(추가 280)와 같은 자리다. 그래서 정답지를
+/// 되돌리지 않고 **자를 고쳤다.**
+///
+/// ## ⚠️ `/`는 **일부러 안 지운다**
+///
+/// `/`는 칸막이가 아니라 **내용**인 경우가 많다 — `영업대표/부장`,
+/// `Module/Pack개발그룹`, 홈페이지의 `https://`. 지우면 값이 달라진다.
+/// 실측에서도 `/` 때문에 틀린 장은 없었다. **근거가 있는 것만 넓힌다.**
+String _norm(String v) => v
+    .replaceAll(RegExp(r'[|·｜]'), ' ')
+    .trim()
+    .replaceAll(RegExp(r'\s+'), ' ');
 
 Map<String, Map<String, String>> _readTsv(File file, String keyColumn) {
   final lines = file.readAsLinesSync().where((l) => l.trim().isNotEmpty);
@@ -72,6 +92,35 @@ Map<String, Map<String, String>> _readTsv(File file, String keyColumn) {
 }
 
 void main() {
+  // ⚠️ 자(채점 기준)를 넓히는 것은 위험하다. **넓힌 만큼만 넓혔는지** 여기서
+  // 고정한다. 이 검사가 없으면 "맞다고 쳐 주는" 범위가 슬금슬금 넓어져
+  // 정확도가 부풀려진다 — 이 저장소가 실제로 겪은 일이다(추가 198·212).
+  group('비교 자 — 넓힌 만큼만 넓혔나 (추가 286)', () {
+    test('칸막이 기호는 무시한다', () {
+      // 명함에 인쇄된 막대기를 OCR이 읽을 때도, 놓칠 때도 있다.
+      expect(_norm('부장 | 스포츠기획팀'), _norm('부장 스포츠기획팀'));
+      expect(_norm('경영지원실 인사팀 | 팀장'), _norm('경영지원실 인사팀 팀장'));
+      expect(_norm('가·나'), _norm('가 나'));
+    });
+
+    test('⚠️ `/`는 무시하지 않는다 — 칸막이가 아니라 내용이다', () {
+      // `영업대표/부장`, `Module/Pack개발그룹`, `https://…`
+      expect(_norm('영업대표/부장'), isNot(_norm('영업대표 부장')));
+      expect(_norm('https://a.com'), 'https://a.com');
+    });
+
+    test('⚠️ 글자와 숫자는 손대지 않는다', () {
+      expect(_norm('02-1234-5678'), '02-1234-5678');
+      expect(_norm('(주)한빛'), '(주)한빛');
+      expect(_norm('a@b.co.kr'), 'a@b.co.kr');
+    });
+
+    test('⚠️ 서로 다른 값이 같아지지 않는다', () {
+      expect(_norm('부장'), isNot(_norm('차장')));
+      expect(_norm('02-1234-5678'), isNot(_norm('02-1234-5679')));
+    });
+  });
+
   test('정답지 대비 필드별 정확도', () {
     final scanPath = Platform.environment['TSV'];
     final truthPath = Platform.environment['TRUTH'];
