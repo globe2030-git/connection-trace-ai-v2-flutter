@@ -41,7 +41,7 @@ A(" * 구성은 빌드6 피드백 문서의 형식을 따랐다 — 기기 환�
 A(" * 우리가 고친 순서가 아니라 **테스터가 앱을 여는 순서**로.")
 A(" */")
 A("")
-A("const APP_VERSION = '____________';   // 예: '1.0.0+8 (a1b2c3d)'")
+A("const APP_VERSION = '1.0.0+8';   // 배포할 때마다 바꾼다")
 A("")
 A("function makeForm() {")
 A(f"  const form = FormApp.create({js(S.TITLE + ' (' + S.SUBTITLE + ')')});")
