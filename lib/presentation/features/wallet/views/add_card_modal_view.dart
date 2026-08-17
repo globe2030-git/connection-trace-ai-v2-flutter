@@ -234,6 +234,29 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// **버리는 것이 확정된 지점**뿐이다(재촬영 / 새 명함으로 시작 / 화면 닫힘).
   ///
   /// 던지지 않는다. 정리가 실패해도 등록은 계속돼야 한다.
+  /// 스캔한 면 하나를 목록에서 뺀다(추가 293).
+  ///
+  /// ⚠️ **파일도 지운다.** 이건 제3자의 평문 명함 사진이라, 화면에서만 빼고
+  /// 임시 파일을 남기면 그게 곧 우리가 닷새에 걸쳐 막은 그 문제다
+  /// (추가 248·269·275).
+  ///
+  /// 📌 대표로 고른 면을 빼면 **첫 장이 대표가 된다** — 대표가 없는 상태를
+  /// 만들지 않는다. 마지막 한 장까지 빼면 스캔 이미지가 없는 상태로 돌아간다.
+  void _removeScannedFace(int index) {
+    if (index < 0 || index >= _scannedCardImages.length) return;
+    final removed = _scannedCardImages.removeAt(index);
+    unawaited(deleteQuietly(removed.path));
+    setState(() {
+      if (_scannedCardImages.isEmpty) {
+        _selectedScanIndex = -1;
+      } else if (_selectedScanIndex == index) {
+        _selectedScanIndex = 0;
+      } else if (_selectedScanIndex > index) {
+        _selectedScanIndex -= 1;
+      }
+    });
+  }
+
   void _discardScanFiles(Iterable<String> paths) {
     for (final p in paths) {
       unawaited(deleteQuietly(p));
@@ -1504,23 +1527,57 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 final isSelected = i == _selectedScanIndex;
                 return GestureDetector(
                   onTap: () => setState(() => _selectedScanIndex = i),
-                  child: Container(
+                  child: SizedBox(
                     width: 92,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.accent
-                            : AppColors.borderSubtle,
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: Image.file(
-                        File(_scannedCardImages[i].path),
-                        fit: BoxFit.cover,
-                      ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : AppColors.borderSubtle,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: Image.file(
+                                File(_scannedCardImages[i].path),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // ⚠️ **빼는 길**(추가 293, 실기기 지적).
+                        //
+                        // 실수로 **다른 사람 명함**을 한 장 더 찍었는데 이 화면에서
+                        // 지울 수가 없었다 — 고르는 것만 되고 빼는 것이 없었다.
+                        // 그러면 남의 명함이 그대로 저장된다.
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: IconButton(
+                            iconSize: 16,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                            icon: const CircleAvatar(
+                              radius: 10,
+                              backgroundColor: Colors.black54,
+                              child: Icon(
+                                Icons.close,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                            tooltip: '이 면 빼기',
+                            onPressed: () => _removeScannedFace(i),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -2881,51 +2938,75 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                             ),
                             const SizedBox(height: 8),
                             if (_scannedRawLines.isNotEmpty)
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: _scannedRawLines.map((line) {
-                                  return InkWell(
-                                    onTap: () =>
-                                        _showQuickFieldMapperSheet(line),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accent.withValues(
-                                          alpha: 0.1,
+                              // ⚠️ **칩 너비를 화면에 맞춘다**(추가 293, 실기기 지적).
+                              //
+                              // 예전에는 길이 제한이 없어, OCR이 한 줄로 길게 읽으면
+                              // (`wwW.CREAMHOUSE.CO.KR T.02 508 2712 F.070 5084…`)
+                              // **화면 밖으로 넘쳤다** — debug에서는 노란 줄무늬가
+                              // 뜨고 **release에서는 경고 없이 잘린다.** 보이지
+                              // 않을 뿐 더 나쁘다.
+                              //
+                              // 📌 글자는 줄여 보여도 **누를 때는 원문 전체**를
+                              // 넘긴다. 칩은 고르는 손잡이지 읽는 곳이 아니다.
+                              LayoutBuilder(
+                                builder: (context, constraints) => Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _scannedRawLines.map((line) {
+                                    return InkWell(
+                                      onTap: () =>
+                                          _showQuickFieldMapperSheet(line),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: constraints.maxWidth,
                                         ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.accent.withValues(
-                                            alpha: 0.3,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
                                           ),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            line,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textPrimary,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accent.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.accent
+                                                  .withValues(alpha: 0.3),
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.touch_app_outlined,
-                                            size: 13,
-                                            color: AppColors.accentText,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  line,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              const Icon(
+                                                Icons.touch_app_outlined,
+                                                size: 13,
+                                                color: AppColors.accentText,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }).toList(),
+                                    );
+                                  }).toList(),
+                                ),
                               )
                             else
                               Text(
