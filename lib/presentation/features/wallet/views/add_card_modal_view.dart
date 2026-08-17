@@ -234,6 +234,38 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// **버리는 것이 확정된 지점**뿐이다(재촬영 / 새 명함으로 시작 / 화면 닫힘).
   ///
   /// 던지지 않는다. 정리가 실패해도 등록은 계속돼야 한다.
+  /// 세 번째 면이 들어왔을 때 묻는다(추가 293).
+  ///
+  /// ⚠️ **막지 않는다.** 접이식·부록면이 있는 명함도 있어서 세 장 이상이 늘
+  /// 잘못은 아니다. 다만 **다른 사람 명함을 잘못 찍은 경우가 훨씬 흔하고**,
+  /// 그때 그냥 저장되면 **남의 명함이 이 사람 명함으로 남는다.**
+  Future<void> _askThirdFace() async {
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('면이 세 장이 됐어요'),
+        content: const Text(
+          '명함은 보통 앞면과 뒷면 두 장이에요.\n'
+          '혹시 다른 사람 명함을 찍으셨나요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('방금 찍은 면 빼기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('그대로 두기'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    // 대화상자를 그냥 닫으면(null) **빼지 않는다** — 사용자가 고르지 않은 것을
+    // 지우는 쪽으로 해석하면 안 된다.
+    if (keep == false) _removeScannedFace(_scannedCardImages.length - 1);
+  }
+
   /// 스캔한 면 하나를 목록에서 뺀다(추가 293).
   ///
   /// ⚠️ **파일도 지운다.** 이건 제3자의 평문 명함 사진이라, 화면에서만 빼고
@@ -857,6 +889,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         // 메모는 채우지 않는다 — 위 `overwrite` 분기와 같은 이유다.
       }
     });
+
+    // ⚠️ **명함은 앞뒤 두 면이다**(추가 293, 사용자 지적).
+    //
+    // 세 번째 면이 들어오면 **다른 명함을 잘못 찍었을 가능성이 높다.** 실제로
+    // 그런 일이 있었고, 그때는 뺄 방법도 없어 남의 명함이 그대로 저장될 뻔했다.
+    //
+    // 📌 **막지 않고 묻는다.** 앞뒤가 아니라 접이식·부록면이 있는 명함도 있어서
+    // 세 장 이상이 늘 잘못은 아니다. 고르는 것은 사용자다.
+    if (_scannedCardImages.length >= 3) {
+      await _askThirdFace();
+    }
 
     // F-01 — 이미 값이 있는 칸에 **다른 값**이 들어온 경우를 사용자 눈앞에
     // 꺼낸다. 위 `_fillIfEmpty`는 빈 칸만 채우므로, 앞면에서 읽은 칸에 뒷면이
