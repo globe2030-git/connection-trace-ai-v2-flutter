@@ -534,19 +534,39 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 이 스위치부터 내려 확인할 수 있다.
   Widget _buildCardRectDebugSwitch() {
     if (kReleaseMode) return const SizedBox.shrink();
+    // ⚠️ 스위치를 둘로 갈랐다(추가 293). 예전에는 하나가 **검출과 자르기를
+    // 같이** 켜서, *"빈 화면 촬영만 막고 자르기는 예전 것"*이 불가능했다.
+    return Column(
+      children: [
+        _debugToggle(
+          notifier: cardRectDetectionEnabled,
+          onLabel: '[측정] 검출: 켬 (빈 화면·손 자동촬영 막기)',
+          offLabel: '[측정] 검출: 끔 (막지 않음)',
+        ),
+        _debugToggle(
+          notifier: cardRectCropEnabled,
+          onLabel: '[측정] 자르기: B′ 테두리',
+          offLabel: '[측정] 자르기: 기존 고정 가이드',
+        ),
+      ],
+    );
+  }
+
+  Widget _debugToggle({
+    required ValueNotifier<bool> notifier,
+    required String onLabel,
+    required String offLabel,
+  }) {
     return ValueListenableBuilder<bool>(
-      valueListenable: cardRectDetectionEnabled,
-      builder: (_, useDetection, _) => Padding(
+      valueListenable: notifier,
+      builder: (_, value, _) => Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Row(
           children: [
-            Switch(
-              value: useDetection,
-              onChanged: (v) => cardRectDetectionEnabled.value = v,
-            ),
+            Switch(value: value, onChanged: (v) => notifier.value = v),
             Expanded(
               child: Text(
-                useDetection ? '[측정] 자르기: B′ 테두리 검출' : '[측정] 자르기: 기존 고정 가이드',
+                value ? onLabel : offLabel,
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textSecondary,
