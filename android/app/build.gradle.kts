@@ -43,6 +43,33 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+    }
+
+    packaging {
+        jniLibs {
+            // ⚠️ **x86_64(에뮬레이터용) 네이티브를 APK에서 뺀다**
+            // (2026-08-17 사용자 결정).
+            //
+            // OpenCV가 들어오면서 ABI마다 네이티브가 붙는다. 스토어는 기기에
+            // 맞는 ABI 하나만 내려보내므로 **실사용자 용량과는 무관**하지만,
+            // **테스터 배포는 APK를 통째로 보내서** 그대로 걸린다 —
+            // 지금이 테스터 배포 단계다.
+            //
+            // ⚠️ **`defaultConfig { ndk { abiFilters } }`로는 안 됐다**
+            // (2026-08-17 실측 — 넣고 빌드했더니 x86_64가 그대로였다).
+            // Flutter의 gradle 플러그인이 그 설정을 덮는 것으로 보인다.
+            // 그래서 **포장 단계에서 뺀다.**
+            //
+            // 짝으로 `tool/build_app.sh`의 `--target-platform`도 있어야 한다 —
+            // 그쪽은 Flutter·Dart가 만드는 .so를, 여기는 **외부 패키지 AAR이
+            // 넣는 .so**(ML Kit 11.6MB 등)를 맡는다.
+            //
+            // 잃는 것: **에뮬레이터에서 앱을 못 돌린다.** ⚠️ 다만 이 저장소는
+            // ML Kit이 arm64 시뮬레이터를 지원하지 않아 **이미 에뮬레이터에서
+            // OCR을 못 돌린다** — 잃는 범위가 그만큼이다.
+            excludes += setOf("lib/x86_64/**", "lib/x86/**")
+        }
     }
 
     signingConfigs {

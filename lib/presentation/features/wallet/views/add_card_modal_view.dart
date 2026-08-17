@@ -17,6 +17,7 @@ import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
+import '../../../../core/services/card_rect_detector.dart';
 import '../../../../core/services/doc_scanner_capture_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/utils/scan_conflict.dart';
@@ -439,8 +440,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 비교가 안 된다. 이 스위치는 그 측정을 위한 도구다.
   ///
   /// 📌 **2단계가 끝나면 지운다.**
+  /// ⚠️ **2단계 대조가 끝나면 지울 임시 스위치들이다.**
+  ///
+  /// 세 경로를 같은 기기에서 번갈아 재기 위해 있다. **재는 일이 끝나면
+  /// 기본값 하나만 남기고 이 스위치들과 진 경로를 지운다** — 제품 원칙의
+  /// *"같은 일을 하는 진입점 셋 이상은 만들지 않는다"*(추가 261)에 걸린다.
+  ///
+  /// release 빌드에는 안 보이므로 지금 사용자에게 닿지는 않는다. 다만
+  /// **지우는 시점을 적어 두지 않으면 그대로 남는다.**
+  ///
+  /// | 스위치 | 끔 | 켬 |
+  /// |---|---|---|
+  /// | 촬영 경로 | 우리 촬영 화면 | A안 문서 스캐너 |
+  /// | 테두리 검출 | **기존 고정 가이드**(예전 그대로) | **B′**(명함을 찾아 자름) |
+  ///
+  /// ⚠️ **`kDebugMode`가 아니라 `!kReleaseMode`**다. 아이폰 debug 빌드는
+  /// 디버거 없이 뜨지 않아(2026-08-16 실측) **debug 전용이면 아이폰에서
+  /// 스위치를 아예 쓸 수 없다.**
   Widget _buildDocScannerDebugSwitch() {
-    if (!kDebugMode) return const SizedBox.shrink();
+    if (kReleaseMode) return const SizedBox.shrink();
     return ValueListenableBuilder<bool>(
       valueListenable: docScannerCaptureEnabled,
       builder: (_, useDocScanner, _) => Padding(
@@ -453,7 +471,42 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             ),
             Expanded(
               child: Text(
-                useDocScanner ? '[debug] 촬영: 문서 스캐너(신규)' : '[debug] 촬영: 가이드 상자(기존)',
+                useDocScanner ? '[측정] 촬영: A안 문서 스캐너' : '[측정] 촬영: 우리 화면',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 테두리 검출(B′) 켜기/끄기 — ⚠️ **2단계 대조용 임시 스위치.**
+  ///
+  /// 끄면 **검출 코드가 아예 안 돈다.** 프레임도 안 보내고 테두리도 안 그리며,
+  /// 자르기도 기존 고정 가이드 상자로 간다 — **경로 자체가 예전이 된다.**
+  /// 그래야 나란히 재는 것이 뜻이 있다.
+  ///
+  /// 📌 되돌림 장치이기도 하다. 실기기에서 문제가 나면 코드를 되돌리기 전에
+  /// 이 스위치부터 내려 확인할 수 있다.
+  Widget _buildCardRectDebugSwitch() {
+    if (kReleaseMode) return const SizedBox.shrink();
+    return ValueListenableBuilder<bool>(
+      valueListenable: cardRectDetectionEnabled,
+      builder: (_, useDetection, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(
+              value: useDetection,
+              onChanged: (v) => cardRectDetectionEnabled.value = v,
+            ),
+            Expanded(
+              child: Text(
+                useDetection ? '[측정] 자르기: B′ 테두리 검출' : '[측정] 자르기: 기존 고정 가이드',
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textSecondary,
@@ -2608,6 +2661,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
 
                   _buildDocScannerDebugSwitch(),
+                  _buildCardRectDebugSwitch(),
 
                   const SizedBox(height: 12),
 
