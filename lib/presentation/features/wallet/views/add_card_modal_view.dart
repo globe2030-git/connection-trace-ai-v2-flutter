@@ -234,6 +234,61 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// **버리는 것이 확정된 지점**뿐이다(재촬영 / 새 명함으로 시작 / 화면 닫힘).
   ///
   /// 던지지 않는다. 정리가 실패해도 등록은 계속돼야 한다.
+  /// 세 번째 면이 들어왔을 때 묻는다(추가 293).
+  ///
+  /// ⚠️ **막지 않는다.** 접이식·부록면이 있는 명함도 있어서 세 장 이상이 늘
+  /// 잘못은 아니다. 다만 **다른 사람 명함을 잘못 찍은 경우가 훨씬 흔하고**,
+  /// 그때 그냥 저장되면 **남의 명함이 이 사람 명함으로 남는다.**
+  Future<void> _askThirdFace() async {
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('면이 세 장이 됐어요'),
+        content: const Text(
+          '명함은 보통 앞면과 뒷면 두 장이에요.\n'
+          '혹시 다른 사람 명함을 찍으셨나요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('방금 찍은 면 빼기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('그대로 두기'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    // 대화상자를 그냥 닫으면(null) **빼지 않는다** — 사용자가 고르지 않은 것을
+    // 지우는 쪽으로 해석하면 안 된다.
+    if (keep == false) _removeScannedFace(_scannedCardImages.length - 1);
+  }
+
+  /// 스캔한 면 하나를 목록에서 뺀다(추가 293).
+  ///
+  /// ⚠️ **파일도 지운다.** 이건 제3자의 평문 명함 사진이라, 화면에서만 빼고
+  /// 임시 파일을 남기면 그게 곧 우리가 닷새에 걸쳐 막은 그 문제다
+  /// (추가 248·269·275).
+  ///
+  /// 📌 대표로 고른 면을 빼면 **첫 장이 대표가 된다** — 대표가 없는 상태를
+  /// 만들지 않는다. 마지막 한 장까지 빼면 스캔 이미지가 없는 상태로 돌아간다.
+  void _removeScannedFace(int index) {
+    if (index < 0 || index >= _scannedCardImages.length) return;
+    final removed = _scannedCardImages.removeAt(index);
+    unawaited(deleteQuietly(removed.path));
+    setState(() {
+      if (_scannedCardImages.isEmpty) {
+        _selectedScanIndex = -1;
+      } else if (_selectedScanIndex == index) {
+        _selectedScanIndex = 0;
+      } else if (_selectedScanIndex > index) {
+        _selectedScanIndex -= 1;
+      }
+    });
+  }
+
   void _discardScanFiles(Iterable<String> paths) {
     for (final p in paths) {
       unawaited(deleteQuietly(p));
@@ -534,19 +589,39 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 이 스위치부터 내려 확인할 수 있다.
   Widget _buildCardRectDebugSwitch() {
     if (kReleaseMode) return const SizedBox.shrink();
+    // ⚠️ 스위치를 둘로 갈랐다(추가 293). 예전에는 하나가 **검출과 자르기를
+    // 같이** 켜서, *"빈 화면 촬영만 막고 자르기는 예전 것"*이 불가능했다.
+    return Column(
+      children: [
+        _debugToggle(
+          notifier: cardRectDetectionEnabled,
+          onLabel: '[측정] 검출: 켬 (빈 화면·손 자동촬영 막기)',
+          offLabel: '[측정] 검출: 끔 (막지 않음)',
+        ),
+        _debugToggle(
+          notifier: cardRectCropEnabled,
+          onLabel: '[측정] 자르기: B′ 테두리',
+          offLabel: '[측정] 자르기: 기존 고정 가이드',
+        ),
+      ],
+    );
+  }
+
+  Widget _debugToggle({
+    required ValueNotifier<bool> notifier,
+    required String onLabel,
+    required String offLabel,
+  }) {
     return ValueListenableBuilder<bool>(
-      valueListenable: cardRectDetectionEnabled,
-      builder: (_, useDetection, _) => Padding(
+      valueListenable: notifier,
+      builder: (_, value, _) => Padding(
         padding: const EdgeInsets.only(top: 4),
         child: Row(
           children: [
-            Switch(
-              value: useDetection,
-              onChanged: (v) => cardRectDetectionEnabled.value = v,
-            ),
+            Switch(value: value, onChanged: (v) => notifier.value = v),
             Expanded(
               child: Text(
-                useDetection ? '[측정] 자르기: B′ 테두리 검출' : '[측정] 자르기: 기존 고정 가이드',
+                value ? onLabel : offLabel,
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textSecondary,
@@ -814,6 +889,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         // 메모는 채우지 않는다 — 위 `overwrite` 분기와 같은 이유다.
       }
     });
+
+    // ⚠️ **명함은 앞뒤 두 면이다**(추가 293, 사용자 지적).
+    //
+    // 세 번째 면이 들어오면 **다른 명함을 잘못 찍었을 가능성이 높다.** 실제로
+    // 그런 일이 있었고, 그때는 뺄 방법도 없어 남의 명함이 그대로 저장될 뻔했다.
+    //
+    // 📌 **막지 않고 묻는다.** 앞뒤가 아니라 접이식·부록면이 있는 명함도 있어서
+    // 세 장 이상이 늘 잘못은 아니다. 고르는 것은 사용자다.
+    if (_scannedCardImages.length >= 3) {
+      await _askThirdFace();
+    }
 
     // F-01 — 이미 값이 있는 칸에 **다른 값**이 들어온 경우를 사용자 눈앞에
     // 꺼낸다. 위 `_fillIfEmpty`는 빈 칸만 채우므로, 앞면에서 읽은 칸에 뒷면이
@@ -1484,23 +1570,57 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 final isSelected = i == _selectedScanIndex;
                 return GestureDetector(
                   onTap: () => setState(() => _selectedScanIndex = i),
-                  child: Container(
+                  child: SizedBox(
                     width: 92,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.accent
-                            : AppColors.borderSubtle,
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: Image.file(
-                        File(_scannedCardImages[i].path),
-                        fit: BoxFit.cover,
-                      ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : AppColors.borderSubtle,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: Image.file(
+                                File(_scannedCardImages[i].path),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // ⚠️ **빼는 길**(추가 293, 실기기 지적).
+                        //
+                        // 실수로 **다른 사람 명함**을 한 장 더 찍었는데 이 화면에서
+                        // 지울 수가 없었다 — 고르는 것만 되고 빼는 것이 없었다.
+                        // 그러면 남의 명함이 그대로 저장된다.
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: IconButton(
+                            iconSize: 16,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                            icon: const CircleAvatar(
+                              radius: 10,
+                              backgroundColor: Colors.black54,
+                              child: Icon(
+                                Icons.close,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                            tooltip: '이 면 빼기',
+                            onPressed: () => _removeScannedFace(i),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -2861,51 +2981,75 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                             ),
                             const SizedBox(height: 8),
                             if (_scannedRawLines.isNotEmpty)
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: _scannedRawLines.map((line) {
-                                  return InkWell(
-                                    onTap: () =>
-                                        _showQuickFieldMapperSheet(line),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accent.withValues(
-                                          alpha: 0.1,
+                              // ⚠️ **칩 너비를 화면에 맞춘다**(추가 293, 실기기 지적).
+                              //
+                              // 예전에는 길이 제한이 없어, OCR이 한 줄로 길게 읽으면
+                              // (`wwW.CREAMHOUSE.CO.KR T.02 508 2712 F.070 5084…`)
+                              // **화면 밖으로 넘쳤다** — debug에서는 노란 줄무늬가
+                              // 뜨고 **release에서는 경고 없이 잘린다.** 보이지
+                              // 않을 뿐 더 나쁘다.
+                              //
+                              // 📌 글자는 줄여 보여도 **누를 때는 원문 전체**를
+                              // 넘긴다. 칩은 고르는 손잡이지 읽는 곳이 아니다.
+                              LayoutBuilder(
+                                builder: (context, constraints) => Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _scannedRawLines.map((line) {
+                                    return InkWell(
+                                      onTap: () =>
+                                          _showQuickFieldMapperSheet(line),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: constraints.maxWidth,
                                         ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.accent.withValues(
-                                            alpha: 0.3,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
                                           ),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            line,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textPrimary,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accent.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.accent
+                                                  .withValues(alpha: 0.3),
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.touch_app_outlined,
-                                            size: 13,
-                                            color: AppColors.accentText,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  line,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              const Icon(
+                                                Icons.touch_app_outlined,
+                                                size: 13,
+                                                color: AppColors.accentText,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }).toList(),
+                                    );
+                                  }).toList(),
+                                ),
                               )
                             else
                               Text(

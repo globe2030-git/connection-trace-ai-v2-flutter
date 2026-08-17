@@ -89,9 +89,37 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   static const _requiredStableDuration = Duration(milliseconds: 200);
   static const _sampleGridSize = 24;
   static const _autoCaptureWarmup = Duration(milliseconds: 900);
+
+  /// **다시 찍기** 뒤 자동 촬영을 잠깐 멈추는 시간(추가 293).
+  ///
+  /// ⚠️ 다시 찍기를 누르면 명함은 **그대로 화면에 있다.** 예전에는 워밍업
+  /// 0.9초만 지나면 **곧바로 또 찍혔다** — 사용자는 다시 겨눌 틈도, 나갈 틈도
+  /// 없었다. 실기기에서 *"다시찍기 할 때는 X가 터치되지 않음"*으로 나타났다
+  /// (곧바로 다시 확인 화면이 떠서 누를 대상이 사라진 것이다).
+  ///
+  /// 📌 자동 촬영을 **끄는 것이 아니라 미루는 것**이다. 이 시간이 지나고도
+  /// 명함이 가만히 있으면 평소처럼 찍힌다.
+  static const _retakeCooldown = Duration(seconds: 3);
+
+  /// 이 시각까지는 자동 촬영을 하지 않는다.
+  DateTime? _autoCaptureBlockedUntil;
   // 카메라는 초당 30~60프레임을 보내지만 흔들림 판단에는 8fps면
   // 충분하다. 나머지 프레임은 즉시 버려 CPU·배터리 사용을 줄인다.
   static const _frameAnalysisInterval = Duration(milliseconds: 125);
+
+  /// 테두리 검출을 **얼마 만에 한 번** 돌릴지(추가 293).
+  ///
+  /// ⚠️ 흔들림 판단(24×24 격자 표본)은 싸지만 **검출은 비싸다** — 안드로이드는
+  /// OpenCV, 아이폰은 Vision이 매 프레임 돈다. 실기기에서 **발열이 느껴진다**는
+  /// 지적을 받아 검출만 따로 늦춘다.
+  ///
+  /// 📌 흔들림 판단은 8fps 그대로 둔다. 같이 늦추면 **자동 촬영 반응이 함께
+  /// 둔해진다** — 그건 사용자가 바로 느낀다.
+  ///
+  /// 명함을 놓고 잠깐 멈추는 동작이라 **초당 세 번이면 충분하다.**
+  static const _rectDetectionInterval = Duration(milliseconds: 320);
+
+  DateTime? _lastRectDetectAt;
 
   /// 가이드 프레임 안쪽 밝기의 **표준편차** 하한. 이 아래면 "볼 것이 없다"로
   /// 보고 자동 촬영하지 않는다.
@@ -229,7 +257,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   CardRectDetection? _detectionAtCapture;
 
   /// 검출 결과가 이 시간 안에 들어왔어야 "지금 명함이 보인다"로 친다.
-  static const _cardRectFreshness = Duration(milliseconds: 500);
+  ///
+  /// ⚠️ **[_rectDetectionInterval]보다 넉넉히 길어야 한다.** 발열 때문에 검출
+  /// 주기를 0.32초로 늘렸는데(추가 293), 예전 값 0.5초를 그대로 두면 검출이
+  /// 조금만 늦어도 *"명함이 안 보인다"*가 되어 **테두리가 깜빡이고 자동 촬영이
+  /// 어긋난다.** 주기의 세 배쯤 준다.
+  static const _cardRectFreshness = Duration(milliseconds: 900);
 
   /// ⚠️ **되돌림 장치.** 스트림을 시작하고 이 시간이 지나도록 사각형을 한
   /// 번도 못 찾으면 검출 조건을 뺀다.
@@ -250,14 +283,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   }
 
   /// 자동 촬영에 "사각형이 잡혔을 것"을 요구하나.
-  bool get _requiresCardRect {
-    if (!CardRectDetector.isSupportedOnThisPlatform) return false;
-    if (_rectDetector.isDisabled) return false;
-    if (_everFoundCardRect) return true;
-    final startedAt = _streamStartedAt;
-    if (startedAt == null) return false;
-    return DateTime.now().difference(startedAt) < _cardRectGrace;
-  }
+  bool get _requiresCardRect => requiresCardRectGate(
+    supported: CardRectDetector.isSupportedOnThisPlatform,
+    detectorDisabled: _rectDetector.isDisabled,
+    // ⚠️ **시간이 아니라 검출기 상태로** 정한다. 예전에는 몇 초 안에 못 잡으면
+    // 조건을 풀어 줬는데, 실기기에서 **빈 벽과 손바닥이 6초 뒤 그대로 찍혔다** —
+    // 유예가 곧 "6초 뒤에는 아무거나 찍는다"였다(추가 293).
+    detectorAnswering:
+        _rectDetector.channelState == CardRectChannelState.working,
+  );
 
   @override
   void initState() {
@@ -460,6 +494,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     // 카메라가 막 열렸을 때 자동 노출/초점이 안정되기 전까지는 안정 여부
     // 판단을 건너뛴다 — 오탐(초점 잡는 중인데 "안정됨"으로 오인) 방지.
     final startedAt = _streamStartedAt;
+    // 다시 찍기 직후에는 잠깐 쉰다 — 겨누고 나갈 틈을 준다.
+    final blockedUntil = _autoCaptureBlockedUntil;
+    if (blockedUntil != null && now.isBefore(blockedUntil)) return;
     if (startedAt != null && now.difference(startedAt) < _autoCaptureWarmup) {
       return;
     }
@@ -470,7 +507,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     // ⚠️ `image`의 바이트는 이 콜백이 끝나면 카메라가 재사용한다. 아래
     // [CardRectDetector.detect]는 **첫 await 전에** 바이트를 읽어 채널
     // 메시지로 넘기므로 안전하다. 그 순서를 바꾸면 조용히 깨진 프레임을 본다.
-    unawaited(_runRectDetection(image));
+    // ⚠️ 검출은 흔들림 판단보다 **드물게** 돌린다(발열).
+    final lastDetectAt = _lastRectDetectAt;
+    if (lastDetectAt == null ||
+        now.difference(lastDetectAt) >= _rectDetectionInterval) {
+      _lastRectDetectAt = now;
+      unawaited(_runRectDetection(image));
+    }
 
     final sample = _sampleLuma(image);
     final previous = _previousLumaSample;
@@ -833,7 +876,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         // **어느 경로로 갔는지만** 남긴다 — 그 구분이 없으면 결과만 보고
         // 검출 크롭과 폴백 크롭을 나눌 수 없다.
         final wasDetection =
-            cardRectDetectionEnabled.value &&
+            cardRectCropEnabled.value &&
             (_detectionAtCapture?.isCardLike ?? false);
         croppedFile = await _cropToGuideFrame(rawFile, screenSize);
         if (!kReleaseMode && wasDetection) {
@@ -900,7 +943,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // 채점할 수 있다.
       final keptPath = await keepCropForMeasurement(
         File(baked.path),
-        pathLabel: cardRectDetectionEnabled.value ? 'on' : 'off',
+        pathLabel: cardRectCropEnabled.value ? 'on' : 'off',
       );
       if (keptPath != null && mounted) {
         // ⚠️ 저장 **경로**를 보여 준다. "저장했습니다"만으로는 정말 생겼는지
@@ -955,6 +998,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // 따라붙으면 사용자가 돌린 적 없는 방향으로 나온다.
       _pendingRotation = 0;
       _isCapturing = false;
+      _autoCaptureBlockedUntil = DateTime.now().add(_retakeCooldown);
     });
     await _startAutoCaptureStream();
   }
@@ -1083,8 +1127,41 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 모드 때와 동일하게 유지하는 게 핵심이라, 긴 변 크기는 화면 폭 기준을
   /// 그대로 쓰고 짧은 변은 비율로 계산한다. 화면이 유난히 작아 긴 변이
   /// 세로 공간을 넘칠 때만 안전장치로 줄인다.
+  /// 가이드 상자보다 **얼마나 넓게 자르는지**.
+  ///
+  /// ⚠️ **자르는 쪽과 그리는 쪽이 같은 값을 봐야 한다.** 예전에는 자르는 쪽에만
+  /// 있어서, 화면의 흰 상자는 *"여기까지 나옵니다"*처럼 보이는데 실제로는 20%
+  /// 더 나왔다 — 실기기에서 *"찍힌 결과가 가이드와 맞지 않는다"*로 나타났다
+  /// (추가 293). 값은 그대로 두고 **보이게** 했다.
+  ///
+  /// 📌 이 값을 줄이면 안 된다. 0으로 만든 적이 있고 그때 **글자가 30~40%
+  /// 잘렸다**(사용자 제보 2026-08-14). 자세한 내력은 쓰는 쪽 주석에 있다.
+  static const kGuideCropMargin = 1.2;
+
+  /// 가이드 상자의 **긴 변이 화면 폭에서 차지하는 비율**.
+  ///
+  /// ## ⚠️ 줄일 때는 반드시 실기기에서 **초점**을 확인할 것
+  ///
+  /// 이 값을 줄이면 사용자가 명함을 **더 가까이** 대게 된다. 예전에 가이드를
+  /// 화면 **높이** 기준으로 잡았다가, 렌즈 최소 초점 거리보다 가까워져
+  /// **초점이 영영 안 맞는** 문제가 있었다(2026-08-06 실기기,
+  /// *"가이드에 맞추려 가까이 가면서 초점을 못맞춤"*).
+  ///
+  /// ## 왜 줄였나 (2026-08-17, 추가 293)
+  ///
+  /// 실기기에서 *"흰색 가이드가 너무 크네"* — 가이드가 화면을 거의 채워서
+  /// 명함이 가운데 작게 놓이고, **찍힌 사진에 배경이 많이 들어갔다**
+  /// (`가이드 크롭 1636x2934`).
+  ///
+  /// 📌 배경이 많이 들어가는 **근본 원인은 가이드가 큰 것**이지 자르기 여유가
+  /// 아니다. 여유([kGuideCropMargin])는 글자 잘림을 막는 장치라 건드리지 않았다.
+  ///
+  /// 0.86 → 0.74로 **한 단계만** 줄였다. 이 저장소는 이런 값을 크게 바꿨다가
+  /// 두 번 되돌린 적이 있다(자르기 여유 1.5 → 1.0 → 1.2).
+  static const kGuideLongEdgeRatio = 0.74;
+
   Size _guideFrameSizeFor(Size screenSize) {
-    var longEdge = screenSize.width * 0.86;
+    var longEdge = screenSize.width * kGuideLongEdgeRatio;
     // 화면이 낮으면(가로 방향, 폴더블 펼침) 가이드가 세로로 넘친다. 위아래
     // 안내 문구와 촬영 버튼이 함께 들어가야 하므로 **높이의 0.72까지만** 쓴다.
     //
@@ -1118,6 +1195,12 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 넘는지가 이 작업의 갈림길이다 — 안 넘으면 `contact_image_service`가
   /// 축소를 건너뛰어 저장본이 커지고 **무료 200장 한도의 근거가 흔들린다.**
   Future<XFile?> _cropByDetectedQuad(XFile rawFile, Size screenSize) async {
+    // ⚠️ **검출이 켜졌다고 자르기까지 바꾸지 않는다**(추가 293).
+    //
+    // 예전에는 스위치 하나가 둘을 같이 켰다. 검출을 "빈 화면 막기"에만 쓰기로
+    // 하면서 갈랐다 — 자르기는 추가 277에서 **안 쓰기로 정한 것**이라
+    // 기본 꺼짐이다. 이 줄이 없으면 검출을 켜는 순간 자르기까지 B′로 바뀐다.
+    if (!cardRectCropEnabled.value) return null;
     final detection = _detectionAtCapture;
     if (detection == null || !detection.isCardLike) return null;
 
@@ -1204,7 +1287,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // ⚠️ **이 값을 더 줄이려면 먼저 재라.** 0으로 만든 적이 있고(`8fb5ff3`)
       // 그때 글자가 30~40% 잘렸다. 줄이기 전에 **자동 촬영한 실물 사진을 열어
       // 네 귀퉁이가 온전한지** 확인할 것.
-      const margin = 1.2;
+      const margin = kGuideCropMargin;
       final guideSize = _guideFrameSizeFor(screenSize);
       final guideW = guideSize.width * margin;
       final guideH = guideSize.height * margin;
@@ -1281,6 +1364,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
 
     // 검출된 테두리를 화면 좌표(가시 좌표)로 옮긴다(B′). null이면 예전처럼
     // 고정 가이드 상자만 보인다.
+    // 자르기까지 검출로 하는가. **가이드 상자를 물릴지**가 여기 걸린다 —
+    // 자르기가 꺼져 있으면 잘리는 자리는 여전히 고정 가이드다.
+    final useDetectionCrop = cardRectCropEnabled.value;
     final detection = _visibleDetection;
     final detectedQuad = detection == null
         ? null
@@ -1500,196 +1586,272 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
             // 이 형태는 **내용이 들어가면 지금과 똑같이 가운데 정렬**되고,
             // 넘칠 때만 스크롤된다. 작은 화면·가로 화면·안내가 늘어난 경우를
             // 한꺼번에 막는다.
-            LayoutBuilder(
-              builder: (context, constraints) => SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (!_isFrameStable)
+            //
+            // ⚠️⚠️ **터치를 먹지 않게 감싼다**(추가 293, 실기기 지적).
+            //
+            // 이 스크롤 판은 Stack 안에서 **화면 전체를 덮는다.** 그러면 그
+            // 아래 깔린 **X(닫기)와 셔터가 눌리지 않는다** — 넘침을 고치면서
+            // 조용히 생긴 결함이고, 사용자에게는 *"X가 터치되지 않는다"*로만
+            // 보였다.
+            //
+            // 📌 이 안에는 **누를 것이 하나도 없다**(가이드 틀·안내 문구·레이저).
+            // 그래서 통째로 터치를 흘려보낸다.
+            IgnorePointer(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (!_isFrameStable)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(
+                                    Icons.rotate_90_degrees_cw,
+                                    color: Colors.white70,
+                                    size: 16,
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    '명함을 시계 방향으로 90° 돌려서 넣어주세요',
+                                    style: TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          // ⭐ **실제로 잘리는 자리**(추가 293).
+                          //
+                          // 자르기는 가이드 상자보다 [kGuideCropMargin]배 넓다 —
+                          // 명함 끝 글자가 잘리는 것을 막으려고 일부러 그렇게
+                          // 뒀다. 그런데 화면에는 안쪽 상자만 보여서, 실기기에서
+                          // *"찍힌 결과가 가이드와 맞지 않는다"*는 지적을 받았다.
+                          //
+                          // ⚠️ **여유를 줄이지 않고 보이게 한다.** 줄이면 글자가
+                          // 잘린다(0으로 만든 적이 있고 30~40% 잘렸다). 안쪽
+                          // 상자는 **명함을 놓는 자리**, 이 옅은 선은 **사진에
+                          // 담기는 자리**다.
+                          // ⚠️ **Stack으로 겹친다.** 처음에는 Column의 형제로
+                          // 뒀다가 **감싸지 않고 아래에 따로 그려졌다** —
+                          // 실기기에서 상자가 둘로 따로 보였다. 바깥 선은
+                          // 안쪽 상자를 **둘러싸야** 뜻이 있다.
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              // ⚠️ **B′로 자를 때는 안 그린다.** 그때 자르는
+                              // 자리는 **파란 테두리**이지 이 상자가 아니다 —
+                              // 남겨 두면 "어느 것이 잘리는 자리냐"가 또 헷갈린다.
+                              // ⚠️ **B′일 때는 아예 안 그린다**(사용자 지시).
+                              // 그때 잘리는 자리는 **파란 테두리**라 이 선은
+                              // 쓸모가 없고, 상자가 둘이면 헷갈리기만 한다.
+                              // 고정 가이드로 자를 때만 뜻이 있다.
+                              if (!useDetectionCrop)
+                                Container(
+                                  width: guideSize.width * kGuideCropMargin,
+                                  height: guideSize.height * kGuideCropMargin,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      width: 1,
+                                    ),
+                                  ),
+                                ),
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                width: guideSize.width,
+                                height: guideSize.height,
+                                decoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    // ⚠️ **실제로 잘리는 자리를 흐리게 만들면 안 된다**
+                                    // (추가 293, 실기기 지적).
+                                    //
+                                    // 예전에는 검출 테두리가 붙으면 이 상자를 물렸다.
+                                    // 그런데 **자르기가 꺼져 있으면 잘리는 자리는
+                                    // 여전히 이 상자**다 — 안 잘리는 테두리를 강조하고
+                                    // 잘리는 상자를 가린 셈이라, 찍어 보면 테두리와
+                                    // 결과가 어긋나 보인다.
+                                    //
+                                    // ⚠️ **B′로 자를 때는 이 상자를 가만히 둔다**
+                                    // (실기기 지적: *"흰 가이드가 파란 테두리
+                                    // 움직일 때 같이 움직이니 헷갈리네"*).
+                                    //
+                                    // 예전에는 검출 여부에 따라 밝기·굵기가
+                                    // 바뀌었다. 검출은 붙었다 떨어졌다 하므로
+                                    // **흰 상자가 파란 테두리를 따라 깜빡인다** —
+                                    // 두 개가 함께 움직이는 것처럼 보인다.
+                                    //
+                                    // 📌 B′에서는 역할이 갈린다. **파란 테두리가
+                                    // 움직이는 것**이고, **흰 상자는 "이쯤 두세요"
+                                    // 라는 고정된 안내**다. 그러니 반응하지 않는
+                                    // 것이 맞다.
+                                    // 📌 B′에서는 **이 상자 하나만 남는다**
+                                    // (바깥 선을 안 그리므로). 그래서 옅게 두면
+                                    // 어디에 둘지 안 보인다 — 또렷하게 둔다.
+                                    color: useDetectionCrop
+                                        ? Colors.white.withValues(alpha: 0.75)
+                                        : (_isFrameStable
+                                              ? AppColors.accent
+                                              : Colors.white),
+                                    width: useDetectionCrop
+                                        ? 1.5
+                                        : (_isFrameStable ? 3 : 1.5),
+                                  ),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    // Animated Scanning Laser Line
+                                    AnimatedBuilder(
+                                      animation: _laserController,
+                                      builder: (context, child) {
+                                        return Positioned(
+                                          top:
+                                              _laserController.value *
+                                              (guideSize.height - 10),
+                                          left: 10,
+                                          right: 10,
+                                          child: Container(
+                                            height: 2,
+                                            color: AppColors.accentText,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    // Corner Guides
+                                    const Positioned(
+                                      top: 12,
+                                      left: 12,
+                                      child: Icon(
+                                        Icons.crop_free,
+                                        color: Colors.white70,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    const Positioned(
+                                      bottom: 12,
+                                      right: 12,
+                                      child: Icon(
+                                        Icons.crop_free,
+                                        color: Colors.white70,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           Container(
-                            margin: const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
+                              horizontal: 16,
                               vertical: 8,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.black.withValues(alpha: 0.6),
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: Row(
+                            child: Column(
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(
-                                  Icons.rotate_90_degrees_cw,
-                                  color: Colors.white70,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 6),
+                              children: [
                                 Text(
-                                  '명함을 시계 방향으로 90° 돌려서 넣어주세요',
+                                  _isFrameStable
+                                      ? '고정됨 · 자동으로 촬영합니다'
+                                      : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
                                   style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
+                                    color: _isFrameStable
+                                        ? AppColors.accent
+                                        : AppColors.textSecondary,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              ],
-                            ),
-                          ),
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          width: guideSize.width,
-                          height: guideSize.height,
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              // 검출 테두리가 붙어 있으면 고정 가이드를 물린다 —
-                              // 상자가 둘이면 어디에 맞춰야 할지 헷갈린다. 지우지
-                              // 않고 흐리게만 두는 이유는, 검출이 끊기면 이것이
-                              // 다시 앞으로 나와야 하기 때문이다(폴백).
-                              color: detectedQuad != null
-                                  ? Colors.white.withValues(alpha: 0.18)
-                                  : (_isFrameStable
-                                        ? AppColors.accent
-                                        : Colors.white),
-                              width: _isFrameStable && detectedQuad == null
-                                  ? 3
-                                  : 1.5,
-                            ),
-                          ),
-                          child: Stack(
-                            children: [
-                              // Animated Scanning Laser Line
-                              AnimatedBuilder(
-                                animation: _laserController,
-                                builder: (context, child) {
-                                  return Positioned(
-                                    top:
-                                        _laserController.value *
-                                        (guideSize.height - 10),
-                                    left: 10,
-                                    right: 10,
-                                    child: Container(
-                                      height: 2,
-                                      color: AppColors.accentText,
-                                    ),
-                                  );
-                                },
-                              ),
-                              // Corner Guides
-                              const Positioned(
-                                top: 12,
-                                left: 12,
-                                child: Icon(
-                                  Icons.crop_free,
-                                  color: Colors.white70,
-                                  size: 20,
-                                ),
-                              ),
-                              const Positioned(
-                                bottom: 12,
-                                right: 12,
-                                child: Icon(
-                                  Icons.crop_free,
-                                  color: Colors.white70,
-                                  size: 20,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _isFrameStable
-                                    ? '고정됨 · 자동으로 촬영합니다'
-                                    : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
-                                style: TextStyle(
-                                  color: _isFrameStable
-                                      ? AppColors.accent
-                                      : AppColors.textSecondary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              // ⚠️ **검출이 도는지 화면으로 판정할 수 있게 한다**(B′).
-                              //
-                              // 왜 로그가 아니라 화면인가: 이 기기에서는 앱 로그를
-                              // 볼 방법이 없다 — `flutter run`이 앱에 못 붙고
-                              // `idevicesyslog`에도 앱이 찍는 줄이 하나도 안 올라온다
-                              // (2026-08-16 실측, iOS 26).
-                              //
-                              // 이 줄이 없으면 **아래 넷을 화면에서 구분할 수 없다** —
-                              // 전부 "테두리가 안 보인다"로 똑같이 보인다.
-                              //
-                              //   채널 없음     ← 결함(네이티브 등록 누락)
-                              //   이미지 실패   ← 결함(폭·행길이 어긋남)
-                              //   Vision 미검출 ← 설계대로(조명·거리)
-                              //   우리가 걸러냄 ← 판정 기준 문제
-                              //
-                              // ⚠️ 이 줄이 아예 안 보이면 **낡은 빌드가 깔린 것**이다.
-                              // release 빌드에는 나오지 않는다.
-                              if (!kReleaseMode &&
-                                  CardRectDetector.isSupportedOnThisPlatform)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    '검출 ${_rectDebugLabel()}',
-                                    style: const TextStyle(
-                                      color: Colors.lightGreenAccent,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ),
-                              // 디버그 빌드에서만 보이는 실측값(대비 / 지배톤).
-                              // 자동 촬영 임계값을 **추측으로 정했다가 진짜 명함을
-                              // 막는 회귀**를 냈다. 실제 장면의 숫자를 읽을 수 있어야
-                              // 제대로 정할 수 있다. release 빌드에는 안 나온다.
-                              if (kDebugMode && _debugMetrics != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  // 누르면 범위를 지우고 다시 잰다 — 장면을 바꿔
-                                  // 가며 값을 읽을 때 쓴다.
-                                  child: GestureDetector(
-                                    onTap: () => setState(() {
-                                      _debugContrastMin = null;
-                                      _debugContrastMax = null;
-                                      _debugToneMin = null;
-                                      _debugToneMax = null;
-                                      _debugMetrics = null;
-                                    }),
+                                // ⚠️ **검출이 도는지 화면으로 판정할 수 있게 한다**(B′).
+                                //
+                                // 왜 로그가 아니라 화면인가: 이 기기에서는 앱 로그를
+                                // 볼 방법이 없다 — `flutter run`이 앱에 못 붙고
+                                // `idevicesyslog`에도 앱이 찍는 줄이 하나도 안 올라온다
+                                // (2026-08-16 실측, iOS 26).
+                                //
+                                // 이 줄이 없으면 **아래 넷을 화면에서 구분할 수 없다** —
+                                // 전부 "테두리가 안 보인다"로 똑같이 보인다.
+                                //
+                                //   채널 없음     ← 결함(네이티브 등록 누락)
+                                //   이미지 실패   ← 결함(폭·행길이 어긋남)
+                                //   Vision 미검출 ← 설계대로(조명·거리)
+                                //   우리가 걸러냄 ← 판정 기준 문제
+                                //
+                                // ⚠️ 이 줄이 아예 안 보이면 **낡은 빌드가 깔린 것**이다.
+                                // release 빌드에는 나오지 않는다.
+                                if (!kReleaseMode &&
+                                    CardRectDetector.isSupportedOnThisPlatform)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
                                     child: Text(
-                                      '$_debugMetrics '
-                                      '(기준 $_minCenterContrast / '
-                                      '$_minDominantToneRatio · '
-                                      '${_contentGateEnabled ? "적용중" : "관찰만"}'
-                                      ' · 눌러서 초기화)',
+                                      '검출 ${_rectDebugLabel()}',
                                       style: const TextStyle(
-                                        color: Colors.amberAccent,
+                                        color: Colors.lightGreenAccent,
                                         fontSize: 11,
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
+                                // 디버그 빌드에서만 보이는 실측값(대비 / 지배톤).
+                                // 자동 촬영 임계값을 **추측으로 정했다가 진짜 명함을
+                                // 막는 회귀**를 냈다. 실제 장면의 숫자를 읽을 수 있어야
+                                // 제대로 정할 수 있다. release 빌드에는 안 나온다.
+                                if (kDebugMode && _debugMetrics != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    // 누르면 범위를 지우고 다시 잰다 — 장면을 바꿔
+                                    // 가며 값을 읽을 때 쓴다.
+                                    child: GestureDetector(
+                                      onTap: () => setState(() {
+                                        _debugContrastMin = null;
+                                        _debugContrastMax = null;
+                                        _debugToneMin = null;
+                                        _debugToneMax = null;
+                                        _debugMetrics = null;
+                                      }),
+                                      child: Text(
+                                        '$_debugMetrics '
+                                        '(기준 $_minCenterContrast / '
+                                        '$_minDominantToneRatio · '
+                                        '${_contentGateEnabled ? "적용중" : "관찰만"}'
+                                        ' · 눌러서 초기화)',
+                                        style: const TextStyle(
+                                          color: Colors.amberAccent,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1703,6 +1865,28 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                   color: Colors.black,
                   child: Column(
                     children: [
+                      // ⚠️ **확인 화면에도 닫기를 둔다**(추가 293, 실기기 지적).
+                      //
+                      // 이 판은 화면을 통째로 덮으므로 **머리말의 X가 가려지고
+                      // 터치도 먹힌다.** 사용자에게는 *"X가 눌리지 않는다"*로만
+                      // 보인다 — 확인 화면에서 나갈 길이 아예 없었다.
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SafeArea(
+                          bottom: false,
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                            // ⚠️ **닫기는 인식 중에도 눌려야 한다.** 막아 뒀더니
+                            // "다시 찍기를 눌렀는데 곧바로 또 찍혀서 X가 안
+                            // 눌린다"가 됐다 — 나갈 길이 다시 없어졌다.
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ),
                       Expanded(
                         child: Center(
                           // 파일을 다시 굽지 않고 화면에서만 돌린다 — 누르는

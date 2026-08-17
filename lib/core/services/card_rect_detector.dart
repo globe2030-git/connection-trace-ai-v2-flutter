@@ -88,7 +88,39 @@ import 'card_rect_worker.dart';
 ///
 /// 📌 이것은 **되돌림 장치이기도 하다.** 실기기에서 문제가 나면 코드를 되돌리기
 /// 전에 이 스위치부터 내려 확인할 수 있다.
-final ValueNotifier<bool> cardRectDetectionEnabled = ValueNotifier<bool>(false);
+/// ## ⚠️ 2026-08-17 — **스위치를 둘로 갈랐다** (추가 293)
+///
+/// 예전에는 이 하나가 **검출과 자르기를 같이** 켰다. 그래서 *"빈 화면 촬영만
+/// 막고 자르기는 예전 것을 쓰자"*가 **불가능했다** — 켜면 자르기까지 바뀌었다.
+///
+/// ```
+/// cardRectDetectionEnabled  검출을 돌린다   → 빈 화면·손을 자동 촬영에서 막는다
+/// cardRectCropEnabled       자르기를 B′로   → 기본 꺼짐(추가 277에서 안 쓰기로 함)
+/// ```
+///
+/// **검출은 기본 켬**이다. 실기기에서 두 기기로 확인했다(추가 293) —
+/// 빈 책상·손은 판정에서 떨어지고, 명함은 양쪽 다 잡혔다(비율 1.80).
+final ValueNotifier<bool> cardRectDetectionEnabled = ValueNotifier<bool>(true);
+
+/// 자르기까지 **검출된 테두리로** 할지(B′).
+///
+/// ## ✅ 사용자 확정 (2026-08-17) — **켠다**
+///
+/// 추가 277에서는 껐다. *"인식률이 나아진다는 증거가 없다"*는 이유였다.
+/// **그 판단의 근거가 그 뒤 달라졌다.**
+///
+/// | | 그때 | 지금 |
+/// |---|---|---|
+/// | 검출이 되나 | 아이폰에서 *"후보없음"* | **두 기기 다 잡음**(비율 1.80) |
+/// | 재는 자 | ⚠️ 틀린 정답지 | 103장 전수 검수본 |
+/// | 표본 | 5~6장 | 103장 |
+///
+/// 📌 그때 판정을 못 낸 것은 **검출이 나빠서가 아니라 잴 수가 없어서**였다.
+///
+/// ⚠️ **아직 안 잰 것**: 잘린 결과의 인식률. B′는 명함만 잘라 깔끔하지만
+/// **멀리서 찍으면 해상도가 떨어진다**(예전 측정 1,208~2,353px로 들쭉날쭉).
+/// 검출이 실패하면 **기존 고정 가이드로 되돌아간다** — 최악이 지금과 같다.
+final ValueNotifier<bool> cardRectCropEnabled = ValueNotifier<bool>(true);
 
 class CardRectDetector {
   CardRectDetector({
@@ -297,7 +329,9 @@ class CardRectDetector {
   /// ⚠️ 일꾼을 못 띄우면 [CardRectChannelState.missing]으로 남긴다 — 아이폰에서
   /// 네이티브 등록을 빠뜨린 것과 **같은 성격의 결함**이고, 둘 다 화면에서는
   /// "테두리가 안 보인다"로 똑같이 보이기 때문이다.
-  Future<Map<Object?, Object?>?> _detectWithWorker(DownsampledLuma frame) async {
+  Future<Map<Object?, Object?>?> _detectWithWorker(
+    DownsampledLuma frame,
+  ) async {
     var worker = _worker;
     if (worker == null) {
       // 띄우는 동안 들어온 프레임은 그냥 버린다 — 기다리면 프레임이 밀린다.
