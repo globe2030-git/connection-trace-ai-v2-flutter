@@ -1216,6 +1216,8 @@ PODS:
     - Firebase/Functions (= 12.17.0)
     - firebase_core
     - Flutter
+  - cunning_document_scanner (3.0.1):
+    - Flutter
   - Firebase/Auth (12.17.0):
     - Firebase/CoreOnly
     - FirebaseAuth (~> 12.17.0)
@@ -1568,6 +1570,7 @@ DEPENDENCIES:
   - camera_avfoundation (from `.symlinks/plugins/camera_avfoundation/ios`)
   - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
   - cloud_functions (from `.symlinks/plugins/cloud_functions/ios`)
+  - cunning_document_scanner (from `.symlinks/plugins/cunning_document_scanner/ios`)
   - firebase_app_check (from `.symlinks/plugins/firebase_app_check/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
@@ -1643,6 +1646,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/cloud_firestore/ios"
   cloud_functions:
     :path: ".symlinks/plugins/cloud_functions/ios"
+  cunning_document_scanner:
+    :path: ".symlinks/plugins/cunning_document_scanner/ios"
   firebase_app_check:
     :path: ".symlinks/plugins/firebase_app_check/ios"
   firebase_auth:
@@ -1694,6 +1699,7 @@ SPEC CHECKSUMS:
   camera_avfoundation: 5675ca25298b6f81fa0a325188e7df62cc217741
   cloud_firestore: 511375ce1aea4e819e2df382fb1a141015cb8c60
   cloud_functions: 2830ef3170b23784800335888af15c6c856ced91
+  cunning_document_scanner: 67b252b6753f84608b04a9004c6a8145be187cea
   Firebase: e8400c058702940d53f31fc0653e4e7a06332326
   firebase_app_check: 5da86a4ec92047b87f16009122e2c0e23864516e
   firebase_auth: 3e82fa3e632856cd5a8e2bedf458d682740c8168

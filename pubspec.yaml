@@ -110,10 +110,19 @@ dependencies:
   # 인덱스 기반 스크롤(ItemScrollController.scrollTo)을 제공하는 이 패키지를 쓴다.
   scrollable_positioned_list: ^0.3.8
   cunning_document_scanner: ^3.0.1
+  dartcv4: ^2.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 명함 테두리 검출(B′) 테스트에서 가짜 카메라 프레임을 만들기 위함.
+  # camera 패키지가 이미 끌어오는 것이지만, 테스트가 직접 import하므로
+  # 여기에 적어 둔다(안 적으면 analyze가 경고한다).
+  #
+  # ⚠️ 왜 가짜 프레임이 필요한가: 네이티브 채널을 다루는 코드는 실기기가
+  # 없으면 한 줄도 검사할 수 없는데, 검사 못 하는 자리가 바로 이 저장소가
+  # 반복해서 결함을 낸 자리다.
+  camera_platform_interface: ^2.13.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
