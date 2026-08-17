@@ -1133,6 +1133,49 @@ class OcrScannerService {
   /// 줄에 전화("tel"/"전화"/"phone") 라벨이 함께 있지는 않을 때만 팩스로
   /// 판단한다 — 한 줄에 대표전화와 팩스가 같이 있으면(드묾) 기존처럼 앞선
   /// 번호를 사무실 전화로 쓴다.
+  /// 구분자 — 라벨과 번호 사이에 흔히 끼는 것들.
+  static final _labelGapRegExp = RegExp(r'[\s.:()\-]');
+  static final _letterRegExp = RegExp(r'[A-Za-z가-힣]');
+
+  /// 번호 바로 앞에 **팩스 라벨**이 붙은 구간을 모은다.
+  ///
+  /// ⚠️ [_looksLikeFaxLine]은 **줄 전체**로 판단해서, `Tel 02-… Fax 070-…`처럼
+  /// **한 줄에 전화와 팩스가 같이 있으면 통째로 꺼진다**(tel이 있으면 false).
+  /// 103장에서 팩스를 놓친 16장이 **전부** 그 모양이었다(추가 282) — 줄 판단
+  /// 하나로는 못 잡는다. 그래서 번호마다 제 라벨을 본다.
+  static List<(int, int)> _faxLabeledRanges(
+    String lookup,
+    RegExp numberRegExp,
+  ) {
+    final out = <(int, int)>[];
+    for (final m in numberRegExp.allMatches(lookup)) {
+      if (_hasFaxLabelBefore(lookup, m.start)) out.add((m.start, m.end));
+    }
+    return out;
+  }
+
+  /// [start] 바로 앞이 팩스 라벨인가.
+  static bool _hasFaxLabelBefore(String s, int start) {
+    var i = start - 1;
+    while (i >= 0 && _labelGapRegExp.hasMatch(s[i])) {
+      i--;
+    }
+    if (i < 0) return false;
+    final head = s.substring(0, i + 1);
+    if (head.toLowerCase().endsWith('fax')) return true;
+    if (head.endsWith('팩스')) return true;
+    // 한 글자 `F`. 실측에서 **가장 흔한 모양**이다(놓친 16장 중 9장).
+    //
+    // ⚠️ 앞이 글자면 그건 낱말의 끝이지 라벨이 아니다 — `…of 02-…`처럼.
+    // 이 저장소가 부분 문자열로 반복해 데인 자리라(추가 178·180·182·183)
+    // 처음부터 경계를 건다.
+    if (head.toLowerCase().endsWith('f')) {
+      final prev = i - 1;
+      return prev < 0 || !_letterRegExp.hasMatch(s[prev]);
+    }
+    return false;
+  }
+
   static bool _looksLikeFaxLine(String line) {
     final lower = line.toLowerCase();
     final hasFax = lower.contains('fax') || line.contains('팩스');
@@ -1335,8 +1378,20 @@ class OcrScannerService {
     final mobileRegExp = RegExp(r'01[0-9][-.\s)]?\d{3,4}[-.\s]?\d{4}');
     // 02(서울)/031~069(지역 국번) 외에 070(인터넷전화)도 요즘 명함에 흔히
     // 쓰이는데 빠져 있었음 — 회사 전화번호가 있어도 인식이 안 되는 원인이었음.
+    // ⚠️ 구분자에 **쉼표**를 넣는다. OCR이 점을 쉼표로 읽는 일이 잦다
+    // (`Tel 02.3468,0020` — card_51). 예전에는 그 줄의 사무실 전화를 통째로
+    // 놓쳤다.
+    //
+    // 그리고 **대표번호(15xx·16xx·17xx·18xx)**를 더한다. `0`으로 시작하지 않아
+    // 위 규칙에 안 걸렸고, 실측 103장에서 두 장이 그것 때문에 사무실 전화가
+    // 빈 값이었다(`T. 18779920` · `T1588-3112`).
+    //
+    // ⚠️ 앞에 숫자나 하이픈이 오면 **긴 번호의 일부**다(`010-1588-3112`).
+    // 그때는 대표번호로 보지 않는다 — 이 저장소가 부분 문자열로 반복해 데인
+    // 자리라(추가 178·180·182·183) 처음부터 막는다.
     final officeRegExp = RegExp(
-      r'0(2|[3-6][0-9]|70)[-.\s)]?\d{3,4}[-.\s]?\d{4}',
+      r'0(2|[3-6][0-9]|70)[-.\s,)]?\d{3,4}[-.\s,]?\d{4}'
+      r'|(?<![\d-])1[5-8]\d{2}[-.\s,]?\d{4}',
     );
     // 국가번호(+82) 표기. 실제 명함에서 흔한데 앞의 `0`이 없어 위 두 규칙에
     // 통째로 안 걸렸다 — `+82-10-8977-9661`, `82.10.6355.6919` 둘 다 전화번호가
@@ -1538,9 +1593,32 @@ class OcrScannerService {
         matchedRanges.add((mobileMatch.start, mobileMatch.end));
         matchedContactField = true;
       }
-      final officeMatch = intlMatches.isNotEmpty
-          ? null
-          : officeRegExp.firstMatch(phoneLookup);
+      // ⚠️ **번호마다 라벨을 따로 본다.** 줄 전체로 판단하면
+      // `Tel 02-… Fax 070-…`처럼 한 줄에 둘 다 있는 명함에서 규칙이 꺼진다.
+      final faxRanges = intlMatches.isNotEmpty
+          ? const <(int, int)>[]
+          : _faxLabeledRanges(phoneLookup, officeRegExp);
+      if (faxRanges.isNotEmpty) {
+        final r = faxRanges.first;
+        fax ??= _normalizePhone(phoneLookup.substring(r.$1, r.$2));
+        // ⚠️ 배정과 무관하게 구간은 지운다 — 안 지우면 남은 글자가 이름·회사
+        // 자리로 흘러간다(추가 181에서 실제로 3장이 그렇게 망가졌다).
+        matchedRanges.addAll(faxRanges);
+        matchedContactField = true;
+      }
+      // 팩스로 가려낸 번호는 사무실 후보에서 뺀다.
+      //
+      // 📌 이게 없으면 **앞 번호가 깨진 줄에서 팩스가 사무실 칸을 차지한다** —
+      // `T02-6360-69/LĻ F 02-6360-6930`(card_115)에서 앞 번호는 규칙에 안
+      // 걸리고 뒤의 팩스가 첫 매칭이 된다. 사용자가 그 번호로 전화를 건다.
+      RegExpMatch? officeMatch;
+      if (intlMatches.isEmpty) {
+        for (final m in officeRegExp.allMatches(phoneLookup)) {
+          if (faxRanges.any((r) => r.$1 == m.start)) continue;
+          officeMatch = m;
+          break;
+        }
+      }
       if (officeMatch != null) {
         // 팩스 번호가 사무실 전화로 잘못 들어가는 문제(실제 명함에서 흔함 —
         // "fax 070-...", "팩스 02-..."). 팩스 라벨이 붙은 줄이면 사무실
@@ -2440,6 +2518,11 @@ class OcrScannerService {
       if (digits.length == 9) {
         return '02-${digits.substring(2, 5)}-${digits.substring(5)}';
       }
+    }
+    // 대표번호(15xx·16xx·17xx·18xx)는 **네 자리씩 끊는다** — `1877-9920`.
+    // 자릿수 규칙(3-3-4)에 맡기면 `187-799-20` 꼴이 된다.
+    if (digits.length == 8 && RegExp(r'^1[5-8]').hasMatch(digits)) {
+      return '${digits.substring(0, 4)}-${digits.substring(4)}';
     }
     if (digits.length == 11) {
       return '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}';
