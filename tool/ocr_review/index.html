@@ -275,6 +275,7 @@
   </select>
   <button class="btn" id="btnSaveWork" disabled>진행 저장</button>
   <button class="btn" id="btnLoadWork">진행 불러오기</button>
+  <button class="btn" id="btnLoadTruth">정답지 불러오기</button>
   <button class="btn" id="btnSummary" disabled>집계</button>
   <button class="btn primary" id="btnExport" disabled>정답지 내보내기</button>
 </header>
@@ -731,6 +732,40 @@ function goForward() {
   sel.onchange = jump;
   $('#filterMode').onchange = jump;
 })();
+
+// ⚠️ **내보낸 정답지를 다시 읽어들이는 길이 없었다.**
+//
+// 이 도구는 검수 결과를 브라우저(localStorage)에 담는데, Chrome은 `file://`
+// 에서 그것을 막는다. 그래서 2026-08-17에 103장을 검수하고 **정답지로
+// 내보낸 뒤 창을 닫자, 도구 안에는 아무것도 안 남았다.** 다시 열면 빈
+// 상태이고, 그대로 내보내면 **138곳 고친 것이 통째로 덮인다.**
+//
+// "진행 불러오기"는 이 도구가 저장한 JSON만 읽는다. **사람이 실제로 손에
+// 쥐고 있는 것은 정답지 TSV**이므로, 그것으로도 돌아올 수 있어야 한다.
+$('#btnLoadTruth').onclick = async () => {
+  const [file] = await pick('.tsv,.txt,text/*', false, false);
+  if (!file) return;
+  const t = parseTsv(await file.text());
+  if (!t.length || !('파일명' in t[0])) { alert('정답지 TSV가 아닙니다.'); return; }
+  const cols = FIELDS.filter((f) => `정답_${f}` in t[0]);
+  if (!cols.length) { alert('"정답_이름" 같은 칸이 없습니다. 정답지가 맞습니까?'); return; }
+  let n = 0;
+  for (const r of t) {
+    const name = r['파일명'];
+    if (!name) continue;
+    const fields = {};
+    for (const f of FIELDS) fields[f] = r[`정답_${f}`] || '';
+    answers[name] = { fields, done: (r['확인함'] || '').trim() === 'Y' };
+    n += 1;
+  }
+  save();
+  // ⚠️ 정답지에 없던 칸은 빈 값으로 들어온다. 그 칸은 아무도 본 적이 없다.
+  const missing = FIELDS.filter((f) => !cols.includes(f));
+  alert(`${n}장을 되살렸습니다.` +
+    (missing.length ? `\n\n⚠️ 이 정답지에 없던 칸: ${missing.join(' · ')}\n` +
+      `그 칸은 빈 채로 들어왔고 아무도 본 적이 없습니다. "볼 것만"으로 훑으세요.` : ''));
+  if (rows.length) { idx = firstUndone(); render(); }
+};
 
 $('#btnNext').onclick = goForward;
 $('#btnPrev').onclick = () => go(-1);
