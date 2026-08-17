@@ -156,7 +156,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         final result = await OcrScannerService.scanBusinessCard(file);
         row = _BatchRow(fileName: fileName, result: result);
       } catch (e) {
-        row = _BatchRow(fileName: fileName, errorType: e.runtimeType.toString());
+        row = _BatchRow(
+          fileName: fileName,
+          errorType: e.runtimeType.toString(),
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -221,10 +224,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         files.addAll(images.map((f) => XFile(f.path)));
       }
       await SharePlus.instance.share(
-        ShareParams(
-          files: files,
-          subject: '명함 인식 검수 자료',
-        ),
+        ShareParams(files: files, subject: '명함 인식 검수 자료'),
       );
     } catch (e) {
       _toast('내보내지 못했습니다(${e.runtimeType}).');
@@ -252,7 +252,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           '직함',
           '휴대폰',
           '사무실',
+          '팩스',
           '이메일',
+          '홈페이지',
           '우편번호',
           '주소',
           '상세주소',
@@ -271,7 +273,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.title ?? '',
           r?.phone ?? '',
           r?.officePhone ?? '',
+          r?.fax ?? '',
           r?.email ?? '',
+          r?.website ?? '',
           r?.postalCode ?? '',
           r?.address ?? '',
           r?.addressDetail ?? '',
@@ -337,7 +341,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
             decoration: BoxDecoration(
               color: AppColors.accent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.2),
+              ),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,7 +354,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
                   child: Text(
                     '선택한 이미지는 기기 안에서만 처리하며 서버로 보내지 않습니다. '
                     '명함 주인의 개인정보가 그대로 표시되니 화면 공유에 주의하세요.',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -361,7 +370,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: _running ? null : _pickAndScan,
-                icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+                icon: const Icon(
+                  Icons.photo_library_outlined,
+                  color: Colors.white,
+                ),
                 label: Text(
                   _running ? '스캔 중… ($_done / $_total)' : '명함 이미지 여러 장 선택',
                   style: const TextStyle(
@@ -487,12 +499,17 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
             _field('직함', r.title),
             _field('휴대폰', r.phone),
             _field('사무실', r.officePhone),
+            _field('팩스', r.fax),
             _field('이메일', r.email),
-            _field('주소', [
-              r.postalCode,
-              r.address,
-              r.addressDetail,
-            ].where((s) => s.trim().isNotEmpty).join(' ')),
+            _field('홈페이지', r.website),
+            _field(
+              '주소',
+              [
+                r.postalCode,
+                r.address,
+                r.addressDetail,
+              ].where((s) => s.trim().isNotEmpty).join(' '),
+            ),
           ],
         ],
       ),

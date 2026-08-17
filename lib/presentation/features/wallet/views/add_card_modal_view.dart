@@ -210,6 +210,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 그 전에는 횟수 개념이 없어 세 번, 네 번 찍으면 계속 누적됐고 "여기서
   /// 끝났다"는 지점도 없었다. 이 값으로 안내 문구와 초기화 시점을 정한다.
   int _scanCount = 0;
+
   /// "여기서 완료"로 스캔 흐름을 **끝냈는지**.
   ///
   /// 끝낸 뒤 사용자가 다시 촬영을 시작하면 그것은 **새 스캔 흐름**이다. 이
@@ -330,7 +331,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _watchOcrBadge('postal', _postalCodeController);
     _watchOcrBadge('mobile', _phoneController);
     _watchOcrBadge('office', _officePhoneController);
+    _watchOcrBadge('fax', _faxController);
     _watchOcrBadge('email', _emailController);
+    _watchOcrBadge('website', _websiteController);
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
@@ -586,8 +589,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       if (!mounted) return null;
       // 권한 거부는 "실패"가 아니라 사용자가 막은 것이라 문구를 따로 준다 —
       // "인식에 실패했습니다"만 보면 무엇을 해야 할지 알 수 없다.
-      final denied = e is CunningDocumentScannerException &&
-          e.code == 'permission_denied';
+      final denied =
+          e is CunningDocumentScannerException && e.code == 'permission_denied';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -683,7 +686,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       'postal': (_postalCodeController, result.postalCode),
       'mobile': (_phoneController, result.phone),
       'office': (_officePhoneController, result.officePhone),
+      'fax': (_faxController, result.fax),
       'email': (_emailController, result.email),
+      'website': (_websiteController, result.website),
     };
     fieldSources.forEach((key, src) {
       final (controller, parsedValue) = src;
@@ -774,7 +779,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _setTextFromStart(_postalCodeController, result.postalCode);
         _setTextFromStart(_phoneController, result.phone);
         _setTextFromStart(_officePhoneController, result.officePhone);
+        _setTextFromStart(_faxController, result.fax);
         _setTextFromStart(_emailController, result.email);
+        _setTextFromStart(_websiteController, result.website);
         _tagsController.text = result.tags.join(', ');
         // ⚠️ 메모 칸은 **비운 채로 둔다.** 예전에는 여기에 "AI OCR 스캔으로 자동
         // 추출된 명함 텍스트 정보입니다."를 넣었는데, 그건 사용자가 쓰지 않은
@@ -798,7 +805,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _fillIfEmpty(_postalCodeController, result.postalCode);
         _fillIfEmpty(_phoneController, result.phone);
         _fillIfEmpty(_officePhoneController, result.officePhone);
+        _fillIfEmpty(_faxController, result.fax);
         _fillIfEmpty(_emailController, result.email);
+        _fillIfEmpty(_websiteController, result.website);
         if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
           _tagsController.text = result.tags.join(', ');
         }
@@ -2528,11 +2537,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final ctx = node.context;
       if (ctx == null) return;
       // 칸을 뷰포트 중앙쯤에 두어 키보드 위로 확실히 올린다.
-      // ignore: use_build_context_synchronously
-      Scrollable.ensureVisible(ctx,
-          alignment: 0.5,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut);
+      //
+      // ⚠️ ignore 주석은 **경고가 찍히는 줄 바로 위**에 있어야 한다. 예전에는
+      // 호출이 한 줄이라 위에 붙여 뒀는데, `dart format`이 인자를 줄바꿈하자
+      // 주석과 경고 지점이 어긋나 경고가 되살아났다(analyze 19 → 20).
+      Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      );
     });
   }
 
@@ -2564,8 +2579,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
           // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
           child: SingleChildScrollView(
-            keyboardDismissBehavior:
-                ScrollViewKeyboardDismissBehavior.onDrag,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -3108,6 +3122,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 6-2. 팩스 (선택)
                   _buildFormField(
                     controller: _faxController,
+                    ocrKey: 'fax',
                     focusNode: _faxFocusNode,
                     order: 6.6,
                     nextFocusNode: _emailFocusNode,
@@ -3143,6 +3158,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 7-1. 웹사이트 (선택)
                   _buildFormField(
                     controller: _websiteController,
+                    ocrKey: 'website',
                     focusNode: _websiteFocusNode,
                     order: 7.5,
                     nextFocusNode: _tagsFocusNode,
