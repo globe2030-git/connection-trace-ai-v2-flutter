@@ -18,6 +18,8 @@ import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/card_rect_detector.dart';
+// ⚠️ 측정 전용 — backlog 277이 끝나면 이 import와 쓰는 곳을 함께 지운다.
+import '../../../../core/utils/measure_sample_sink.dart';
 import '../../../../core/services/doc_scanner_capture_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/utils/scan_conflict.dart';
@@ -472,6 +474,41 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             Expanded(
               child: Text(
                 useDocScanner ? '[측정] 촬영: A안 문서 스캐너' : '[측정] 촬영: 우리 화면',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ⚠️⚠️ **측정 전용 — backlog 277이 끝나면 통째로 지운다.**
+  ///
+  /// 켜면 촬영한 크롭본을 `card_samples`에 남긴다. 일괄 스캔이 그 폴더를
+  /// 읽으므로, **같은 명함을 경로마다 찍어 나란히 채점**할 수 있게 된다.
+  ///
+  /// ⚠️ **평문 명함 사진이 기기에 쌓인다.** 우리가 닷새에 걸쳐 다섯 군데서
+  /// 막은 바로 그것이라(아이폰 262.7MB · 안드로이드 204MB), **재는 동안만
+  /// 켜고 끝나면 지운다.** release 빌드에서는 켜도 코드가 안 돈다.
+  Widget _buildMeasureSampleSwitch() {
+    if (!kDebugMode) return const SizedBox.shrink();
+    return ValueListenableBuilder<bool>(
+      valueListenable: cardCropKeepForMeasurement,
+      builder: (_, keep, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(
+              value: keep,
+              onChanged: (v) => cardCropKeepForMeasurement.value = v,
+            ),
+            Expanded(
+              child: Text(
+                keep ? '[측정] ⚠️ 크롭본 남기는 중(평문)' : '[측정] 크롭본 안 남김',
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.textSecondary,
@@ -2662,6 +2699,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                   _buildDocScannerDebugSwitch(),
                   _buildCardRectDebugSwitch(),
+                  _buildMeasureSampleSwitch(),
 
                   const SizedBox(height: 12),
 
