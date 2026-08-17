@@ -64,7 +64,7 @@ Blaze로 전환하면 Firebase가 프로젝트 기준 기본 예산(₩5,000/월
 터미널에서 프로젝트 루트로 이동한 뒤 실행한다.
 
 ```bash
-cd "/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter"
+cd ~/Claude/connection-trace-ai-v2-flutter
 ```
 
 인터랙티브 프롬프트(`firebase functions:secrets:set GEMINI_API_KEY`만
