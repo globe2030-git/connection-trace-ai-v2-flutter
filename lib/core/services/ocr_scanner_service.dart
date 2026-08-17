@@ -444,6 +444,22 @@ class OcrScannerService {
     'Bio',
     '바이오',
     '글로벌',
+    // 2026-08-17: 103장 전수 측정에서 **회사 60%**로 가장 낮게 나왔고, 틀린
+    // 39건 중 26건이 *"OCR은 제대로 읽었는데 파서가 못 고른 것"*이었다
+    // (추가 280). 그중 한 덩어리가 **기관 접미사가 목록에 없어서** 생겼다.
+    //
+    // 접미사가 있으면 `_trimCompanyAroundKeyword`가 그 토큰만 남겨 준다 —
+    // 슬로건이 뒤에 길게 붙은 줄에서 기관명만 뽑아낸다.
+    //
+    //   `SSiS 한국사회보장정보원 국민 맞춤형 복지를 실현하는 디지털 플랫폼 전문기관`
+    //     → `한국사회보장정보원`
+    //
+    // ⚠️ 위 '연구원을 넣지 않는다'와 같은 기준으로 골랐다 — **다른 단어에
+    // 부분 문자열로 걸릴 여지가 거의 없는 것만.** '원'·'회' 같은 한 글자나
+    // '지원'(지원팀)처럼 흔한 조각은 넣지 않는다.
+    '협회',
+    '학회',
+    '정보원',
   ];
 
   // 회사명에 위 키워드가 하나도 안 걸릴 때(예: "Sovargen", "SSiS
@@ -1149,6 +1165,91 @@ class OcrScannerService {
     // 다음 쓰레기가 회사명 자리를 채웠다(추가 182).
     if (idx == -1) return null;
     return leftover.removeAt(idx);
+  }
+
+  /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
+  ///
+  /// 103장 전수 측정(추가 280)에서 회사 오류의 한 덩어리가 *"회사명은 맞게
+  /// 골랐는데 앞뒤에 뭐가 붙어 있는 것"*이었다. 고르기를 다시 하는 것보다
+  /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
+  /// 갑자기 다른 값으로 바뀌지 않는다.**
+  static String _tidyCompany(String company) =>
+      _stripCompanyTitleTail(_stripCompanyLogoPrefix(company));
+
+  /// 회사명 앞에 남은 **짝 없는 닫는 괄호**를 뗀다
+  /// (`)유에이엠코리아텍(주)` → `유에이엠코리아텍(주)`).
+  ///
+  /// ## ⚠️ 로고 글자는 **일부러 안 뗀다** — 재 보고 물린 것이다
+  ///
+  /// 처음에는 `GO 선호라이팅 (주)` → `선호라이팅 (주)`처럼 앞의 로고 토큰도
+  /// 뗐다. `SK telecom`의 `SK`를 지우지 않으려고 *"뒤쪽에 회사 접미사가 있을
+  /// 때만"*이라는 안전장치까지 걸었다. 그런데 103장으로 재 보니 **3장을 얻고
+  /// 9장을 잃었다**(회사 64% → 60%).
+  ///
+  /// 원인은 파서가 아니라 **정답지였다. 로고를 회사명에 넣을지가 장마다
+  /// 다르다.**
+  ///
+  /// ```
+  /// card_23 · card_38   "SSiS 한국사회보장정보원"   ← 로고 포함
+  /// card_125            "한국사회보장정보원"        ← 같은 기관인데 로고 제외
+  /// KYWA 한국청소년활동진흥원(4장) · kmong (주) 크몽(2장) · DMP Company
+  /// ```
+  ///
+  /// ⚠️ **어느 쪽으로 만들어도 한쪽은 틀린다.** 규칙을 더 정교하게 짜서 풀
+  /// 문제가 아니라, **정답지에서 로고를 어떻게 적을지 먼저 정해야** 하는
+  /// 문제였다.
+  ///
+  /// ## ✅ 사용자 확정 (2026-08-17) — **인쇄된 그대로 넣는다**
+  ///
+  /// 그래서 이 함수는 **로고 글자를 떼지 않는다.** 위 검사 둘이 그것을
+  /// 고정한다. ⚠️ **다시 떼도록 고치지 말 것.**
+  ///
+  /// 정답지도 그 규칙으로 맞췄다. 어긋난 행은 **하나뿐이었다**(card_125).
+  ///
+  /// 📌 사진 석 장을 직접 보고 알게 된 것 — 사용자가 실제로 적용해 온 기준은
+  /// *"인쇄된 그대로"*보다 정확하다. **글자로 인쇄된 이름은 넣고, 그림 로고를
+  /// OCR이 글자로 잘못 읽은 것은 안 넣는다.**
+  ///
+  /// ```
+  /// card_13   `sto` 그림 로고 → OCR이 "std"로 읽음 → 정답 `서울관광재단`
+  /// card_65   `sh`  그림 로고 → OCR이 "GO"로  읽음 → 정답 `선호라이팅 (주)`
+  /// card_125  `SSiS` 글자 이름                     → 정답에 포함
+  /// ```
+  ///
+  /// ⚠️ **파서는 이 둘을 구분할 수 없다.** 그림 로고를 잘못 읽은 것이나 진짜
+  /// 이름이나, 파서에는 똑같은 글자로 도착한다. 그러니 "떼기"로는 풀 수 없다.
+  /// 남은 오류(`GO`·`std`를 회사명으로 **골라 버리는** 경우)는 떼기가 아니라
+  /// **고르는 순서** 쪽 문제다.
+  static String _stripCompanyLogoPrefix(String company) =>
+      company.trim().replaceFirst(RegExp(r'^[)\]}·|]+\s*'), '');
+
+  /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
+  ///
+  /// 회사 접미사가 있는 줄은 `_trimCompanyAroundKeyword`를 거치는데, 그 함수는
+  /// **25자 이하이거나 토큰이 4개 미만이면 자르지 않는다.** 짧은 회사명 뒤에
+  /// 직함이 붙은 흔한 모양이 그 그물을 그대로 빠져나간다.
+  ///
+  /// ⚠️ **직함 칸은 건드리지 않는다.** 뗀 직함을 직함 칸으로 옮기고 싶지만,
+  /// 그러면 이 변경이 회사뿐 아니라 직함 숫자까지 흔든다. 추가 278은 **회사
+  /// 칸만** 손보기로 한 작업이다(직함은 오류의 42%가 OCR 오독이라 방법이
+  /// 다르다 — 추가 280).
+  static String _stripCompanyTitleTail(String company) {
+    final tokens = company
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (tokens.length < 2) return company.trim();
+    final idx = tokens.indexWhere(
+      (t) => _titleKeywords.any((k) => _containsCi(t, k)),
+    );
+    // 맨 앞 토큰이 직함이면 회사명이 통째로 사라진다 — 그건 자르지 않는다.
+    if (idx <= 0) return company.trim();
+    final head = tokens.sublist(0, idx).join(' ');
+    // ⚠️ 남는 쪽에 회사 접미사가 있어야 자른다. 없으면 회사명인지 확신할 수
+    // 없고, 확신 없이 자르면 멀쩡한 값을 깎는다.
+    final headHasSuffix = _companyKeywords.any((k) => _containsCi(head, k));
+    return headHasSuffix ? head : company.trim();
   }
 
   /// 이 줄이 **회사명 모양**인지. 약한 폴백에서 후보를 거르는 데만 쓴다 —
@@ -2147,8 +2248,11 @@ class OcrScannerService {
       companySource = OcrCompanySource.keyword;
     }
     final companyFromKeyword = companyLine;
-    final company =
-        companyFromKeyword ?? _pickCompanyFromLeftover(leftover) ?? '';
+    // ⚠️ 두 갈래(키워드 확정 · leftover 고르기)가 여기서 합쳐진다. 회사명
+    // 다듬기는 **이 한 곳에서만** 한다 — 갈래마다 손보면 한쪽만 고쳐진다.
+    final company = _tidyCompany(
+      companyFromKeyword ?? _pickCompanyFromLeftover(leftover) ?? '',
+    );
     if (companyFromKeyword == null) {
       companySource = company.isEmpty
           ? OcrCompanySource.none
