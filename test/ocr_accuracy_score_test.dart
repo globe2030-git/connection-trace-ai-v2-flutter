@@ -42,7 +42,9 @@ const _fields = [
   '직함',
   '휴대폰',
   '사무실',
+  '팩스',
   '이메일',
+  '홈페이지',
   '우편번호',
   '주소',
   '상세주소',
@@ -149,7 +151,9 @@ void main() {
           '직함' => parsed.title,
           '휴대폰' => parsed.phone,
           '사무실' => parsed.officePhone,
+          '팩스' => parsed.fax,
           '이메일' => parsed.email,
+          '홈페이지' => parsed.website,
           '우편번호' => parsed.postalCode,
           '주소' => parsed.address,
           _ => parsed.addressDetail,
@@ -174,9 +178,7 @@ void main() {
       final judged = ok + bad + missed + over;
       totalOk += ok;
       totalJudged += judged;
-      final rate = judged == 0
-          ? '—'
-          : '${(100 * ok / judged).round()}%';
+      final rate = judged == 0 ? '—' : '${(100 * ok / judged).round()}%';
       rows.add(
         '${field.padRight(5)} 일치$ok 틀림$bad 미검출$missed 오검출$over '
         '둘다빔$both → $rate',
