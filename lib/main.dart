@@ -92,10 +92,44 @@ void main() async {
 /// 앱을 켜는 데 필요한 일이 아니므로 **실패해도 조용히 넘긴다** — 다음 실행에서
 /// 다시 시도한다.
 Future<void> _sweepAccumulatedScanCache() async {
+  // ⚠️ **폴더를 둘 다 훑는다** (2026-08-17).
+  //
+  // 원래는 `getTemporaryDirectory()` 하나만 봤다. 그런데 실기기(아이폰)에서
+  // **59장·262.7MB가 그대로 남아 있었다** — 같은 실행에서 `sweepScanTemp(
+  // Directory.systemTemp)`는 파일을 지웠는데 이쪽만 아무것도 못 지웠다.
+  //
+  // | | 안드로이드 | 아이폰 |
+  // |---|---|---|
+  // | `Directory.systemTemp` | `code_cache` | `<컨테이너>/tmp` |
+  // | `getTemporaryDirectory()` | `cache` | `<컨테이너>/tmp` |
+  //
+  // 안드로이드에서는 **다른 폴더**라 둘 다 봐야 하고, 아이폰에서는 같은
+  // 폴더라 한 번만 돌면 된다. **둘 다 넘기고 같으면 한 번만 돈다.**
+  //
+  // ⚠️ `getTemporaryDirectory()`는 플러그인을 거치므로 **실패할 수 있다.**
+  // 그때 예전 코드는 조용히 아무것도 안 했다 — 그러면 정리가 통째로 멈추는데
+  // **화면상으로는 아무 표시가 없다.** `Directory.systemTemp`는 플러그인 없이
+  // 얻으므로 그 경우에도 남는다.
+  final seen = <String>{};
+  for (final dir in <Directory?>[
+    Directory.systemTemp,
+    await _temporaryDirectoryOrNull(),
+  ]) {
+    if (dir == null || !seen.add(dir.path)) continue;
+    try {
+      await sweepPickerAndCameraLeftovers(dir);
+    } catch (_) {
+      // 한 폴더가 실패해도 나머지는 계속 본다.
+    }
+  }
+}
+
+/// 플러그인으로 얻는 임시 폴더. 실패하면 null.
+Future<Directory?> _temporaryDirectoryOrNull() async {
   try {
-    await sweepPickerAndCameraLeftovers(await getTemporaryDirectory());
+    return await getTemporaryDirectory();
   } catch (_) {
-    // 무시한다.
+    return null;
   }
 }
 

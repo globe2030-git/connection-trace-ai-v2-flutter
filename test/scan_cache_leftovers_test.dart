@@ -137,4 +137,106 @@ void main() {
       expect(await sweepPickerAndCameraLeftovers(Directory('/없는/폴더')), 0);
     });
   });
+
+  group('⚠️ 아이폰 — 촬영 원본이 두 칸 아래에 있다 (2026-08-17 실측)', () {
+    // 이 정리는 **안드로이드의 평평한 구조**를 전제로 쓰였다(`cache/CAP*.jpg`).
+    // 아이폰은 `tmp/camera/pictures/CAP_*.jpg`라 **걸리지 않았고**, 실기기에
+    // **59장·262.7MB**가 닷새 넘게 남아 있었다. 전부 평문 명함이다.
+    late Directory cache;
+
+    setUp(() {
+      cache = Directory.systemTemp.createTempSync('ios_cam_');
+    });
+    tearDown(() {
+      if (cache.existsSync()) cache.deleteSync(recursive: true);
+    });
+
+    Directory picturesDir() =>
+        Directory('${cache.path}/camera/pictures')..createSync(recursive: true);
+
+    test('⚠️ camera/pictures 안의 촬영 원본을 지운다 — 이게 안 돼서 새고 있었다', () async {
+      final dir = picturesDir();
+      final a = File('${dir.path}/CAP_1111.jpg')..writeAsStringSync('a');
+      final b = File('${dir.path}/CAP_2222.jpg')..writeAsStringSync('b');
+
+      final removed = await sweepPickerAndCameraLeftovers(
+        cache,
+        maxAge: Duration.zero,
+      );
+
+      expect(removed, 2);
+      expect(a.existsSync(), isFalse);
+      expect(b.existsSync(), isFalse);
+    });
+
+    test('안드로이드의 평평한 구조도 그대로 지운다 — 회귀 방지', () async {
+      final flat = File('${cache.path}/CAP_flat.jpg')..writeAsStringSync('a');
+      final nested = File('${picturesDir().path}/CAP_nested.jpg')
+        ..writeAsStringSync('b');
+
+      final removed = await sweepPickerAndCameraLeftovers(
+        cache,
+        maxAge: Duration.zero,
+      );
+
+      expect(removed, 2);
+      expect(flat.existsSync(), isFalse);
+      expect(nested.existsSync(), isFalse);
+    });
+
+    test('⚠️ 남의 파일은 그 폴더 안에서도 안 지운다', () async {
+      final dir = picturesDir();
+      final ours = File('${dir.path}/CAP_ours.jpg')..writeAsStringSync('a');
+      final theirs = File('${dir.path}/somebody_else.dat')
+        ..writeAsStringSync('b');
+
+      final removed = await sweepPickerAndCameraLeftovers(
+        cache,
+        maxAge: Duration.zero,
+      );
+
+      expect(removed, 1);
+      expect(ours.existsSync(), isFalse);
+      expect(theirs.existsSync(), isTrue, reason: '이름이 다르면 우리 것이 아니다');
+    });
+
+    test('나이 조건은 여기서도 지킨다 — 지금 쓰고 있는 파일을 지우지 않는다', () async {
+      // 방금 만든 파일이라 실제 수정 시각이 "지금"이다. 기준 시각을 5분
+      // 뒤로 놓고 한 시간짜리 나이 조건을 걸면 **아직 어리다**.
+      final fresh = File('${picturesDir().path}/CAP_fresh.jpg')
+        ..writeAsStringSync('a');
+
+      final removed = await sweepPickerAndCameraLeftovers(
+        cache,
+        now: DateTime.now().add(const Duration(minutes: 5)),
+        maxAge: const Duration(hours: 1),
+      );
+
+      expect(removed, 0);
+      expect(fresh.existsSync(), isTrue);
+    });
+
+    test('폴더는 남긴다 — 촬영 중인 흐름과 부딪히지 않게', () async {
+      final dir = picturesDir();
+      File('${dir.path}/CAP_1.jpg').writeAsStringSync('a');
+
+      await sweepPickerAndCameraLeftovers(cache, maxAge: Duration.zero);
+
+      expect(dir.existsSync(), isTrue);
+    });
+
+    test('videos 같은 다른 칸이 있어도 훑는다', () async {
+      final videos = Directory('${cache.path}/camera/videos')
+        ..createSync(recursive: true);
+      final v = File('${videos.path}/CAP_v.jpg')..writeAsStringSync('a');
+
+      final removed = await sweepPickerAndCameraLeftovers(
+        cache,
+        maxAge: Duration.zero,
+      );
+
+      expect(removed, 1);
+      expect(v.existsSync(), isFalse);
+    });
+  });
 }
