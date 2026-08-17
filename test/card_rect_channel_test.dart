@@ -64,7 +64,25 @@ void main() {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
-  tearDown(() => messenger.setMockMethodCallHandler(channel, null));
+  // ⚠️ **검사가 제품 기본값에 기대면 안 된다**(2026-08-17).
+  //
+  // 이 파일은 원래 `cardRectDetectionEnabled`가 켜져 있는 것을 전제로 돌았다.
+  // 그래서 **기본값을 끄자 7건이 한꺼번에 깨졌다** — 채널을 아예 안 부르므로
+  // 상태가 `unknown`에서 움직이지 않는다.
+  //
+  // 코드가 틀린 것이 아니라 **검사가 전제를 안 적어 둔 것**이었다. 여기서
+  // 명시적으로 켜고, 끝나면 되돌린다. 그러면 **기본값이 어느 쪽이든 이 검사는
+  // 같은 것을 잰다.**
+  late bool savedEnabled;
+  setUp(() {
+    savedEnabled = cardRectDetectionEnabled.value;
+    cardRectDetectionEnabled.value = true;
+  });
+
+  tearDown(() {
+    cardRectDetectionEnabled.value = savedEnabled;
+    messenger.setMockMethodCallHandler(channel, null);
+  });
 
   test('아직 안 불러 봤으면 unknown', () {
     expect(
