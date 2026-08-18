@@ -71,6 +71,6 @@ test("planFreeGrant: 음수 입력은 0으로 방어(잔액이 깎이는 사고 
   assert.equal(plan.carryOver, 0);
 });
 
-test("DEFAULT_FREE_CREDITS는 확정값 10(monetization-referral-implementation-spec-2026-08-14.md §1)", () => {
-  assert.equal(DEFAULT_FREE_CREDITS, 10);
+test("DEFAULT_FREE_CREDITS는 확정값 20(2026-08-18 사용자 확정 — 하루 한도 폐지와 한 쌍)", () => {
+  assert.equal(DEFAULT_FREE_CREDITS, 20);
 });
