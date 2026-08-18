@@ -2,7 +2,7 @@
 
 **작성일시**: 2026년 7월 31일  
 **저장소 이름**: `connection-trace-ai-v2-flutter`  
-**저장소 경로**: `~/Claude/connection-trace-ai-v2-flutter`  
+**저장소 경로**: `/Volumes/X31/Claude/connection-trace-ai-v2-flutter`  
 **테스트 브랜치**: `main`  
 **실행 명령**: `flutter run -d chrome`
 

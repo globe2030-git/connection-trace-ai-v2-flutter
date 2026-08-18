@@ -2,6 +2,75 @@
 
 ## 작업 로그
 
+### 2026-08-18 (추가 299) — 저장소를 `/Volumes/X31/Claude/`로 옮겼다 + 낡은 경로 정리
+
+사용자 지시: **"connectionsense 관련 개발 소스를 /Volumes/X31/Claude 아래로
+옮겨서 계속 개발하고 싶어"** (자료는 내장 SSD `~/Claude/`에 있었다).
+
+```
+~/Claude/connection-trace-ai-v2-flutter{,-docs,-feature,-wallet}
+  →  /Volumes/X31/Claude/connection-trace-ai-v2-flutter{,-docs,-feature,-wallet}
+```
+
+`rsync -aHAX`(빌드 산출물·`.gitignore` 대상 포함) → 차이 없음 재검사 → 원본 삭제.
+미푸시 커밋 0건, 스태시 3건 보존, `git status` 4곳 모두 깨끗.
+
+### 옮기면 반드시 따라오는 세 가지
+
+| | 무엇을 했나 |
+|---|---|
+| **워크트리 연결** | `.git` 파일이 본체 절대경로를 가리킨다 — 본체에서 `git worktree repair <경로 3개>` |
+| **Flutter 생성물** | `ios/Flutter/Generated.xcconfig`·`flutter_export_environment.sh`·`ephemeral/*.env`에 옛 경로가 박힌다 — 체크아웃 4곳 모두 `flutter pub get` (⚠️ 그 전에 iOS 빌드를 걸면 없는 경로를 찾아 깨진다, 추가 285) |
+| **문서** | 아래 참조 |
+
+📌 **괄호 문제는 재발하지 않는다.** 볼륨 이름이 `X31(VM)` → `X31`로 바뀐 뒤라
+(추가 285) `dartcv4`가 깨졌던 뿌리(추가 273)가 없다. 그래서 `~/Claude/`를 떠나
+볼륨으로 돌아갈 수 있었다.
+
+### 문서는 또 낡아 있었다 — **이번엔 옮기면서 같이 고쳤다**
+
+추가 285의 교훈(*"경로가 낡는 것은 옮길 때가 아니라 옮긴 뒤에 드러난다"*)을
+적용해, 이동과 **같은 작업 단위**로 고쳤다. 고친 곳:
+
+```
+HANDOFF.md(위치) · RESUME.md · QA_CHECKLIST.md · HANDOVER_NOTES.md
+admin-manual.md · handover-tester-feedback-audit-2026-08-17.md
+.claude/skills/run-app/SKILL.md · .claude/agents/flutter-ui-designer.md
+```
+
+⚠️ **이번엔 `~/Claude/`가 아니라 볼륨 경로를 그대로 적었다.** 추가 285에서는
+반대로 판단했는데(볼륨 경로를 적으면 또 틀린 곳을 가리킨다), 그때는 저장소가
+홈에 있었기 때문이다. **경로는 "지금 있는 자리"를 적는 것이 원칙이다.**
+
+### 곁가지로 드러난 것 — **문서가 없어진 워크트리를 가리키고 있었다**
+
+`HANDOFF.md`와 P1-2 표가 충전 화면 UI를 두고 *"아직 커밋 안 됨, 별도
+워크트리(`…-charge-screen/`)에 있음"*이라고 적고 있었다. 실측하니 **그
+워크트리도 브랜치 `feat/charge-screen-ui`도 로컬·origin 어디에도 없고**, 작업은
+`main`에 들어가 있었다(`ai_charge_view.dart`, `357ad1c`~`a593604`). 서술을
+고치고 **당시 기록은 인용으로 남겼다** — 결론만 갈아치우면 왜 어긋났는지가
+사라진다(CLAUDE.md 4절).
+
+### 손대지 않은 것
+
+| | 왜 |
+|---|---|
+| `backlog.md`의 옛 경로들 | **시간순 기록이다.** 그때 어디에 있었는지가 사실이다 |
+| `card_rect_opencv.dart`의 `X31(VM)` | 같은 이유(추가 285에서도 남겼다). **현재 위치를 말하는 문장만** 고쳤다 |
+| `~/keys/connectionsense-upload.jks` | 저장소 **밖**에 두는 것이 원칙(CLAUDE.md 6절). `android/key.properties`가 절대경로로 가리켜 이동 영향 없음 |
+| `~/.claude/projects/-Volumes-X31-Claude-…` | 대화 기록 폴더는 경로로 이름이 붙는다 |
+
+⚠️ **다시 외장 볼륨이다.** 2026-08-06 iOS 사고(`error-notes.md`)에서 *"stale
+file outside allowed root paths"* 경고가 외장 볼륨과 관련 있어 보였다 —
+재발하면 코드가 아니라 **DerivedData부터** 턴다. 그 경고를 `error-notes.md`에
+덧붙였다.
+
+`analyze 19` · `test 692` — **둘 다 옮긴 자리에서 다시 돌렸다.** 특히
+`flutter test`는 `dartcv4`가 cmake를 타므로(CLAUDE.md 3절) **볼륨을 옮긴 뒤
+실제로 통과하는지가 이번 이동의 진짜 검증**이다.
+
+---
+
 ### 2026-08-18 (추가 298) — 테스터 빌드 8: 버전을 올린다 (사용자 확정)
 
 사용자 지시: **"1.0.0+8로 올려"** · 배포 예정 **오늘 11시**.
