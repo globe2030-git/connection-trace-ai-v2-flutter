@@ -51,8 +51,8 @@ open tool/ocr_review/index.html
 ### 채점
 
 ```bash
-TSV=~/Downloads/scan_result.tsv \
-TRUTH=~/Downloads/ocr_truth.tsv \
+TSV=~/card-ocr-data/scan_result.tsv \
+TRUTH=~/card-ocr-data/ocr_truth.tsv \
 flutter test test/ocr_accuracy_score_test.dart
 ```
 
@@ -138,8 +138,8 @@ B′       명함 X px → 그대로 1326    → 축소 없음      → 명함 X
 
 **정답지와 TSV에는 실존 인물의 이름·전화·이메일·주소가 그대로 들어갑니다.**
 
-- ⚠️ **저장소에 넣지 마십시오.** `~/Downloads/` 같은 곳에 두고 **결과는 숫자만**
-  문서에 남깁니다
+- ⚠️ **저장소에 넣지 마십시오.** `~/card-ocr-data/`(권한 700)에 두고 **결과는
+  숫자만** 문서에 남깁니다
 - 검수 도구는 **로컬 전용**입니다(네트워크 없음)
 - ⚠️ 로그·PR 본문에 **값을 적지 마십시오.** *"이름 92%"*는 되고 *"김○○이 틀렸다"*는
   안 됩니다

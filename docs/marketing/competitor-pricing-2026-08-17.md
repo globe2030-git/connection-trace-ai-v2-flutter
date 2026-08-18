@@ -156,6 +156,7 @@ AI 회당 원가        1.07원 (2027년부터 2.14원)
 
 ## 관련
 
-- `~/Downloads/커넥션센스_과금정산_논의자료_2026-08-17.docx` — 과금 논의 본문
+- `connection-sense-assets/문서/커넥션센스_과금정산_논의자료_2026-08-17.docx` —
+  과금 논의 본문 (저장소 밖, `/Volumes/X31/Claude/` 아래)
 - `card-photo-quota-recommendation-2026-08-16.md` — 사진 한도·원가
 - 추가 291
