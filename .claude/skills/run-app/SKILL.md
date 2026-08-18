@@ -130,7 +130,7 @@ grep -nE "EXCEPTION|Unhandled|FlutterError|E/flutter|RenderFlex|overflow" "$LOG"
 - 어느 빌드인지 확인: 앱의 **설정 → 앱 버전**에 커밋 해시가 박혀 있다
   (`tool/build_app.sh`로 빌드한 경우). 낡은 빌드를 버그로 오인한 전례가 있다.
 - 기기 저장소 실물 덤프·서버 실물 조회 절차는 `tool/README.md`와
-  `docs/planning/HANDOFF.md` "0-2"에 있다. 저장·복원 관련 변경은 화면만 보고
+  `docs/planning/sessions/2026-08.md` "0-2"에 있다. 저장·복원 관련 변경은 화면만 보고
   끝내지 말고 여기까지 간다.
 - 앱 패키지명: `com.connectiontrace.connection_trace_ai_flutter`
 
