@@ -7,13 +7,15 @@
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tester_survey_spec as S
+from assets_dir import assets_path
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-OUT = os.path.expanduser('~/Downloads/커넥션센스_테스터_확인및질문지_2026-08-18.docx')
+OUT = assets_path('문서', '커넥션센스_테스터_확인및질문지_2026-08-18.docx')
 FONT = 'Apple SD Gothic Neo'
 
 d = Document()

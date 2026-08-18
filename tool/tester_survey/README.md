@@ -5,9 +5,14 @@
 
 ```
 tool/tester_survey_spec.py    ← ⭐ 문항은 여기만 고친다
-tool/make_tester_doc.py       → ~/Downloads/…확인및질문지_….docx
-tool/make_tester_form.py      → ~/Downloads/…설문_구글폼_만들기.gs
+tool/make_tester_doc.py       → connection-sense-assets/문서/…확인및질문지_….docx
+tool/make_tester_form.py      → connection-sense-assets/문서/…설문_구글폼_만들기.gs
 ```
+
+📌 **산출물은 저장소 밖 `connection-sense-assets/문서/`에 떨어진다**(CLAUDE.md 4장).
+자리를 정하는 것은 `tool/assets_dir.py` 한 곳이고, 폴더가 없으면 **만들지 않고
+멈춘다** — 옛 코드처럼 조용히 엉뚱한 자리에 떨어지지 않게. 다른 자리에 두었으면
+`CS_ASSETS_DIR=/경로 python3 …`로 알려준다.
 
 ⚠️ **두 곳에 따로 적으면 반드시 어긋난다.** 워드에서 고치고 구글폼을 안 고치면,
 같은 배포에 서로 다른 질문이 나간다.

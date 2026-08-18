@@ -69,8 +69,8 @@ Safari는 대개 자동 저장이 된다. 어느 쪽이든 검수가 끝나면 �
 정답지를 내보낸 뒤 이렇게 돌리면 **필드별 정확도**가 나온다.
 
 ```bash
-TSV=~/Downloads/scan_result.tsv \
-TRUTH=~/Downloads/ocr_truth.tsv \
+TSV=~/card-ocr-data/scan_result.tsv \
+TRUTH=~/card-ocr-data/ocr_truth.tsv \
 flutter test test/ocr_accuracy_score_test.dart
 ```
 
