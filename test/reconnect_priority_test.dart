@@ -436,4 +436,75 @@ void main() {
       expect(ReconnectPriorityService.registeredAtOf(contact, _now), at);
     });
   });
+
+  // -------------------------------------------------------------------
+  // 문구 — 0일일 때 한국어가 깨지던 자리 (추가 313)
+  //
+  // 실기기에서 **"오늘째 연락 없음"**이 그대로 화면에 실렸다. 규칙은 이
+  // 파일이 촘촘히 덮고 있었는데 **문구는 아무도 안 보고 있었다.**
+  //
+  // ⚠️ 아래 테스트는 **실제로 그 문구가 나오는 경로**를 타야 한다. 처음에
+  // 썼던 판본은 `nextFollowUpAt`만 세워 두고 검사했는데, 그러면 이유가
+  // "다시 연락하기로 한 때"로 빠져 **문구를 안 거치고도 통과**했다.
+  // 통과하는데 아무것도 안 보는 테스트가 제일 나쁘다.
+  // -------------------------------------------------------------------
+  group('문구 — 0일 (추가 313)', () {
+    test('⚠️ "오늘 전 연락"이 아니라 "오늘 연락"이다', () {
+      // 오늘 연락해서 반응이 좋았고, 후속 시점도 오늘 — 이유 ①로 간다.
+      final contact = _contact(
+        name: '오늘반응좋음',
+        registeredAt: DateTime(2026, 1, 1),
+        outcome: 'good',
+        outcomeAt: _now.subtract(const Duration(hours: 2)),
+        nextFollowUpAt: _now.subtract(const Duration(hours: 1)),
+      );
+
+      final text = ReconnectPriorityService.pick(
+        contacts: [contact],
+        now: _now,
+      ).single.reason.text;
+
+      expect(text, contains('오늘 연락'));
+      expect(text, isNot(contains('오늘 전')), reason: '"오늘 전 연락"은 말이 안 된다');
+    });
+
+    test('⭐ 하루 이상 지난 자리는 예전 그대로 "N일 전"이다', () {
+      final contact = _contact(
+        name: '사흘전반응좋음',
+        registeredAt: DateTime(2026, 1, 1),
+        outcome: 'good',
+        outcomeAt: _now.subtract(const Duration(days: 3)),
+        nextFollowUpAt: _now.subtract(const Duration(hours: 1)),
+      );
+
+      expect(
+        ReconnectPriorityService.pick(
+          contacts: [contact],
+          now: _now,
+        ).single.reason.text,
+        contains('3일 전'),
+      );
+    });
+
+    test('⭐ 방치 문구는 예전 그대로 "N째 연락 없음"이다', () {
+      final contact = _contact(
+        name: '오래방치',
+        registeredAt: _now.subtract(const Duration(days: 40)),
+      );
+
+      expect(
+        ReconnectPriorityService.pick(
+          contacts: [contact],
+          now: _now,
+        ).single.reason.text,
+        contains('째 연락 없음'),
+      );
+    });
+
+    // 📌 방치 0일은 **지금 규칙으로는 후보가 되지 않는다** — 후보가 되려면
+    // 30일을 넘거나 후속 시점이 됐어야 하는데, 후자는 이유 ①로 빠진다.
+    // 그래서 "오늘째 연락 없음"은 실기기에서 임계값을 낮춰야 보였다.
+    // 문구 함수를 고친 것은 **그 자리가 언제든 열릴 수 있어서**이지,
+    // 지금 사용자가 보고 있다는 뜻이 아니다. 여기에 적어 둔다.
+  });
 }
