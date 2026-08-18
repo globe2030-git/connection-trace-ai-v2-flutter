@@ -4,9 +4,9 @@
 **구글 설문(원격·자동 집계)** 두 가지로 나가는데, **문항은 한 곳에만 적는다.**
 
 ```
-tool/tester_survey_spec.py    ← ⭐ 문항은 여기만 고친다
-tool/make_tester_doc.py       → connection-sense-assets/문서/…확인및질문지_….docx
-tool/make_tester_form.py      → connection-sense-assets/문서/…설문_구글폼_만들기.gs
+tool/tester_survey/tester_survey_spec.py  ← ⭐ 문항은 여기만 고친다
+tool/tester_survey/make_tester_doc.py     → connection-sense-assets/문서/…확인및질문지_….docx
+tool/tester_survey/make_tester_form.py    → connection-sense-assets/문서/…설문_구글폼_만들기.gs
 ```
 
 📌 **산출물은 저장소 밖 `connection-sense-assets/문서/`에 떨어진다**(CLAUDE.md 4장).
@@ -23,8 +23,8 @@ tool/make_tester_form.py      → connection-sense-assets/문서/…설문_구�
 
 ```bash
 python3 -m pip install python-docx      # 처음 한 번만
-python3 tool/make_tester_doc.py         # 워드
-python3 tool/make_tester_form.py        # 구글폼 스크립트
+python3 tool/tester_survey/make_tester_doc.py   # 워드
+python3 tool/tester_survey/make_tester_form.py  # 구글폼 스크립트
 ```
 
 ### 구글 설문 만들기 (5분)
@@ -80,8 +80,14 @@ python3 tool/make_tester_form.py        # 구글폼 스크립트
 ### 값은 "사시겠습니까"로 묻지 않는다
 
 ⚠️ **테스터는 공짜로 쓰고 있어 후하게 답한다.** 그래서
-*"얼마짜리로 느꼈나"* → *"3,300원이면 비싸다/싸다"* 순으로 묻고,
+*"얼마짜리로 느꼈나"* → *"1,000원이면 비싸다/싸다"* 순으로 묻고,
 **"안 낼 것 같다"도 좋은 답**이라고 미리 적어 둔다.
+
+⚠️ **던지는 값은 확정된 사다리의 최저 티어여야 한다.** 2026-08-18까지 이 문항은
+*"30회에 3,300원"*이었는데, 그 3,300원은 **한국 스토어의 소액 가격 자리**
+(1,100·2,200·3,300·5,500)에서 따온 것이지 우리 티어가 아니었다. 확정된 사다리
+(추가 303·917f061)의 최저 티어는 **₩1,000 = 30회**다. 없는 값에 대한 반응을
+모으면 그 답으로는 아무것도 정할 수 없다.
 
 ### AI는 두 갈래로 나눠 묻는다
 
