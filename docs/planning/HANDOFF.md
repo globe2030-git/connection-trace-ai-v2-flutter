@@ -48,7 +48,11 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
     비용 근거는 [`app-rename-b-plan-cost-2026-08-16.md`](./app-rename-b-plan-cost-2026-08-16.md).
   - ⚠️ 그 대가로 패키지명은 **영원히** `com.connectiontrace.connection_trace_ai_flutter`
     로 남는다(옛 이름 잔재). 이용자에게 보이는 자리는 아니다.
-- **위치**: `~/Claude/connection-trace-ai-v2-flutter`
+- **위치**: `/Volumes/X31/Claude/connection-trace-ai-v2-flutter`
+  (2026-08-18에 내장 SSD `~/Claude/`에서 옮겼다 — 추가 299)
+  - 같은 자리에 워크트리 3개가 붙어 있다: `-docs` · `-feature` · `-wallet`
+    (`feat/ai-credit-wallet`). ⚠️ 점유 규칙은 CLAUDE.md 4-2절 —
+    `git status`가 아니라 `git branch --show-current`로 주인을 확인한다.
 - **스택**: Flutter (Dart), 상태관리는 `provider` 패키지, 로컬 저장은
   `shared_preferences`(일반 데이터) + `flutter_secure_storage`(AI API 키).
   **현재 코드 기준으로는 아직 백엔드 서버 없음** — 전부 클라이언트에서 직접
@@ -1698,11 +1702,13 @@ analyze 19 info(기준선) / test 182건 전부 통과. 원격 push 완료.
   `fix/weather-summary-b`로 체크아웃돼 미커밋 변경분이 있는 상태였다 — 신규
   파일이 실수로 거기 섞여 들어가 있던 걸 발견해 제거하고, 이후 전부
   `git worktree`로 격리된 `feat/charge-screen-ui` 브랜치에서만 작업시켰다.
-  **이 브랜치는 커밋되지 않은 채 별도 워크트리에 남아 있다**:
-  `~/Claude/connection-trace-ai-v2-flutter-charge-screen/`
-  (브랜치 `feat/charge-screen-ui`, origin/main 최신 `464d8b5` 기준). 다음
-  세션이 리뷰 후 커밋·PR 여부를 결정하면 된다 — 본체 저장소
-  (`connection-trace-ai-v2-flutter/`)에는 이 작업의 흔적이 전혀 없다.
+  ⚠️ **아래 "커밋되지 않은 워크트리에 남아 있다"는 서술은 낡았다**(2026-08-18
+  실측). 그 워크트리(`connection-trace-ai-v2-flutter-charge-screen/`)도 브랜치
+  `feat/charge-screen-ui`도 **로컬·origin 어디에도 없고**, 이 작업은 `main`에
+  들어가 있다 — `lib/presentation/features/settings/views/ai_charge_view.dart`
+  (커밋 `357ad1c` → `4088e01` → `a593604`). 당시 기록은 다음과 같았다:
+  *"이 브랜치는 커밋되지 않은 채 별도 워크트리에 남아 있다"*(origin/main 최신
+  `464d8b5` 기준).
 - 검증: `flutter analyze`(0 error/warning, info 19건 그대로) +
   `flutter test`(147건 전부 통과) 둘 다 PM이 직접 그 워크트리에서 재실행해
   확인함. 실기기 QA는 의도적으로 생략(다른 기능과 묶어 배치 QA 예정).
@@ -2120,7 +2126,7 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 | # | 항목 | 근거 | 규모 | 담당 |
 |---|---|---|---|---|
 | P1-1 | **소모성(충전) 상품 등록** — App Store Connect/Play Console에 소모성 SKU 4종(**1,000/3,000/5,000/10,000원**) | **2026-08-11 결정(추가 153): 충전형 확정.** 가격 4단계는 정해졌고 **각 티어 제공 회수는 직원 테스트 기간 AI 비용 실측(`aiAuditLogs`) 후 손익 분석으로 확정** — **2026-08-14 회수까지 확정(추가 222): 10/33/60/130회.** `config/billing.tiers`를 이 값으로 채우면 되고(관리자 데이터, 코드 아님), 기존 2026-08-11 결정분의 나머지 3티어(30,000/50,000/100,000원)는 `active:false`로 비활성 처리. ⚠️ 등록 전에 **수수료 15% 신청 먼저**(`admin-manual.md` 3-4 — Apple Small Business Program은 신청 안 하면 30%) | 소 | 사용자 |
-| P1-2 | 인앱결제(IAP) 클라이언트 연동(`in_app_purchase`) — **소모성 구매 + 소진(consume) 처리** | **UI 셸은 완료(2026-08-11, 추가 163, 0-12)** — 설정 → "AI 충전" 화면이 `config/billing`을 동적으로 읽어 표시하지만, 구매 버튼은 전부 비활성("충전 준비 중"). 아직 커밋 안 됨, 별도 워크트리(`connection-trace-ai-v2-flutter-charge-screen/`, 브랜치 `feat/charge-screen-ui`)에 있음 — 남은 일은 `in_app_purchase` 연동 + 버튼 활성화 + 소진 처리 | 중 | 개발 |
+| P1-2 | 인앱결제(IAP) 클라이언트 연동(`in_app_purchase`) — **소모성 구매 + 소진(consume) 처리** | **UI 셸은 완료(2026-08-11, 추가 163, 0-12)** — 설정 → "AI 충전" 화면이 `config/billing`을 동적으로 읽어 표시하지만, 구매 버튼은 전부 비활성("충전 준비 중"). ⚠️ 예전 기록의 *"아직 커밋 안 됨, 별도 워크트리에 있음"*은 **낡았다** — 2026-08-18 실측 결과 `main`에 병합돼 있다(`ai_charge_view.dart`, `357ad1c`~`a593604`) — 남은 일은 `in_app_purchase` 연동 + 버튼 활성화 + 소진 처리 | 중 | 개발 |
 | P1-3 | 결제 동의/고지 UI — **소모성 기준으로 범위 재검토** | 충전형은 구독의 "결제 30일 전 사전 동의" 의무를 비껴간다(추가 153). 다만 전자상거래법상 표시·청약철회(미사용 충전분 환불) 고지는 필요 — 필요한 최소 범위를 다시 산정할 것 | 소~중 | UI디자이너 + 개발 |
 | P1-4 | 서버측 영수증 검증 + **크레딧 지급** Cloud Function | 구독 상태 동기화 대신 **구매 영수증 검증 → `users/{uid}` 크레딧(잔여 횟수) 지급** 구조. 같은 영수증 중복 지급 방지(트랜잭션) 필수. **스키마·규칙은 준비 완료(2026-08-11, 추가 154)**: 지급량은 `config/billing.tiers`(관리자 콘솔 "충전 관리"에서 편집)를 읽고, 지급 시 `purchases/{id}`에 기록을 남긴다(규칙상 서버만 쓰기 가능, 배포됨). 콘솔의 CS 조회·정산 화면이 이 기록을 소비한다. **정확한 트랜잭션 알고리즘(transactionId를 문서ID로 써서 `tx.create()` 멱등 + 환불 시 `paidBalance`만 회수)은 추가 168 스펙 3-4절에 구현 청사진으로 정리됨** | 대 | 개발 |
 | P1-5 | AI 한도 로직 개편 — 고정 일/월 한도 → **무료 10회 + 크레딧 차감** | 지금 `functions/src/index.ts`는 `DAILY_LIMIT`/`MONTHLY_LIMIT` 고정값. 무료 10회(횟수 변경 가능성 있음 — 사용자, 추가 153) 소진 후 크레딧 차감으로 바꾼다. **2026-08-12 상세 설계 완료(추가 168, `docs/planning/ai-credit-wallet-spec.md`)** — 무료 1회성(리셋 없음, 확정), `config/billing.model` 플래그로 전환, `freeBalance`/`paidBalance` 2버킷(무료 먼저 소진·환불은 충전분만 회수). P0-11은 wallet 전환 완료 시 자동 무의미해짐(스펙 9절). **2026-08-14 착수 단위로 더 세분화됨(추가 222, `docs/planning/monetization-referral-engineering-spec-2026-08-14.md` U1~U4)** — 이 스펙이 P1-5 실제 구현 순서다 | 중 | 개발 |

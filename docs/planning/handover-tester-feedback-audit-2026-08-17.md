@@ -103,7 +103,7 @@ E-12가 그 예입니다. **"종결"이라 적힌 것 중에도 있을 수 있�
 
 | | |
 |---|---|
-| **작업 폴더** | `~/Claude/connection-trace-ai-v2-flutter-docs` (이 폴더) |
+| **작업 폴더** | `/Volumes/X31/Claude/connection-trace-ai-v2-flutter-docs` (이 폴더) |
 | **브랜치** | `docs/tester-feedback-audit` (main `c8a2b8a`에서 이미 팜) |
 | **backlog 번호** | ⚠️ **PM에게 요청하십시오.** 스스로 매기지 마십시오 |
 | 기준선 | `analyze 19` · `test 655` |
