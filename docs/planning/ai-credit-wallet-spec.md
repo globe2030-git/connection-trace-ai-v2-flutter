@@ -500,6 +500,12 @@ Phase 0에 포함). ⚠️ `docs/admin/` 파일 수정은 이번 세션 범위 �
 **따라서 전환 체크리스트에 이 항목은 추가되지 않는다.** 5절 Phase 1은 그대로
 `config/billing.model`을 바꾸는 것으로 끝난다.
 
+⚠️ **"바꾼다"가 아니라 "만든다"다(2026-08-18 실측).** `config/billing` 문서에
+**`model` 필드는 아직 존재하지 않는다** — 있는 것은 `freeCredits`·`tiers`·
+`updatedAt` 셋뿐이다. 없으면 `resolveBillingModel`이 `'reset'`으로 폴백하므로
+지금 동작은 설계대로지만, 전환하는 날 **관리자 콘솔에서 토글을 찾으면 없다.**
+Phase 0의 *"`config/billing.model` 필드 추가(기본값 `'reset'`)"* 가 먼저다.
+
 **아직 답이 필요한 것: 없음.**
 
 ---
