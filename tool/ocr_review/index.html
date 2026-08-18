@@ -81,6 +81,25 @@
   .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .btn:disabled { opacity: .45; cursor: default; }
   .spacer { flex: 1; }
+  /* 버튼을 단계별로 묶는다 — 어느 것이 시작이고 어느 것이 끝인지 이름만으로는
+     알기 어렵다는 지적을 받았다(2026-08-18). 묶고, 그 위에 무엇을 하는 자리인지
+     적는다. */
+  .group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    position: relative;
+  }
+  .glabel {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    margin-right: 2px;
+  }
   .counter { color: var(--muted); font-variant-numeric: tabular-nums; }
   .bar { flex: none; height: 3px; background: var(--line); }
   .bar > i { display: block; height: 100%; background: var(--ok); width: 0; }
@@ -253,6 +272,13 @@
   #summary { display: none; padding: 16px; overflow: auto; }
   #summary.on { display: block; }
   #summary table { max-width: 560px; }
+  .filekinds { border-collapse: collapse; margin: 8px 0; }
+  .filekinds th {
+    text-align: left; vertical-align: top; white-space: nowrap;
+    padding: 6px 12px 6px 0; font-weight: 700;
+  }
+  .filekinds th code { font-weight: 400; font-size: 11px; color: var(--muted); }
+  .filekinds td { vertical-align: top; padding: 6px 0; }
   #summary th, #summary td { border-bottom: 1px solid var(--line); padding: 6px 10px 6px 0; }
   #summary td { font-variant-numeric: tabular-nums; }
 </style>
@@ -261,23 +287,45 @@
 
 <header>
   <h1>명함 인식 검수</h1>
-  <button class="btn" id="btnTsv">TSV 불러오기</button>
-  <button class="btn" id="btnImgs">이미지 폴더</button>
+  <span class="group">
+    <span class="glabel">① 열기</span>
+    <button class="btn" id="btnTsv"
+      title="앱에서 뽑은 인식 결과 파일(scan_result.tsv)을 엽니다. 여기서 시작합니다.">인식 결과 열기</button>
+    <button class="btn" id="btnImgs"
+      title="명함 사진이 든 폴더를 엽니다. 사진과 인식 결과를 나란히 놓고 보기 위해서입니다.">명함 사진 열기</button>
+  </span>
+
+  <span class="group">
+    <span class="glabel">② 이어하기</span>
+    <button class="btn" id="btnLoadTruth"
+      title="지난번에 저장한 정답지(ocr_truth.tsv)를 불러옵니다. 이미 채운 정답과 ✓ 표시가 되살아납니다.">지난 정답지</button>
+    <button class="btn" id="btnLoadWork"
+      title="중간 저장 파일(ocr_review_progress.json)을 불러옵니다. 다른 컴퓨터에서 하던 작업을 이어받을 때 씁니다.">중간 저장분</button>
+  </span>
+
   <span class="counter" id="counter"></span>
   <span class="spacer"></span>
-  <label class="hint" for="filterField">볼 것만</label>
-  <select id="filterField" title="어떤 칸을 볼지"></select>
-  <select id="filterMode" title="어떤 장을 볼지">
-    <option value="all">전부</option>
-    <option value="undone">아직 확인 안 한 장</option>
-    <option value="empty">그 칸이 빈 장</option>
-    <option value="suspect">⚠️ 빈데 원문엔 있어 보이는 장</option>
-  </select>
-  <button class="btn" id="btnSaveWork" disabled>진행 저장</button>
-  <button class="btn" id="btnLoadWork">진행 불러오기</button>
-  <button class="btn" id="btnLoadTruth">정답지 불러오기</button>
-  <button class="btn" id="btnSummary" disabled>집계</button>
-  <button class="btn primary" id="btnExport" disabled>정답지 내보내기</button>
+
+  <span class="group">
+    <span class="glabel">볼 것 고르기</span>
+    <select id="filterField" title="어떤 칸을 볼지"></select>
+    <select id="filterMode" title="어떤 장을 볼지">
+      <option value="all">전부</option>
+      <option value="undone">아직 확인 안 한 장</option>
+      <option value="empty">그 칸이 빈 장</option>
+      <option value="suspect">⚠️ 빈데 원문엔 있어 보이는 장</option>
+    </select>
+    <button class="btn" id="btnSummary" disabled
+      title="지금까지 매긴 정답으로 칸별 정확도를 계산해 보여 줍니다.">정확도 보기</button>
+  </span>
+
+  <span class="group">
+    <span class="glabel">③ 저장</span>
+    <button class="btn" id="btnSaveWork" disabled
+      title="하던 작업을 그대로 파일로 남깁니다(.json). 아직 정답지가 아니라 '작업 상태'입니다 — 나중에 ②로 이어받습니다.">중간 저장</button>
+    <button class="btn primary" id="btnExport" disabled
+      title="완성된 정답지를 파일로 내보냅니다(ocr_truth.tsv). 정확도를 재는 자가 됩니다 — 이것이 최종 산출물입니다.">정답지 저장</button>
+  </span>
 </header>
 <div id="warn" style="display:none;padding:8px 14px;background:var(--edit-bg);color:var(--edit);font-size:13px">
   ⚠️ 이 브라우저는 <b>자동 저장이 막혀 있습니다</b>(<code>file://</code>에서 흔합니다).
@@ -290,12 +338,32 @@
   <section id="intro">
     <h2>실물과 인식 결과를 나란히 놓고 정답을 남기는 도구</h2>
     <ol>
-      <li><b>TSV 불러오기</b> — 관리자 화면의 일괄 스캔에서 저장한 <code>scan_result.tsv</code>
-        (<code>원문</code> 칸이 있어야 합니다)</li>
-      <li><b>이미지 폴더</b> — <code>card_01.png</code> 같은 원본이 든 폴더 (건너뛰어도 됩니다)</li>
+      <li><b>① 열기 → 인식 결과 열기</b> — 관리자 화면의 일괄 스캔에서 저장한
+        <code>scan_result.tsv</code> (<code>원문</code> 칸이 있어야 합니다)</li>
+      <li><b>① 열기 → 명함 사진 열기</b> — <code>card_01.png</code> 같은 원본이 든 폴더
+        (건너뛰어도 됩니다)</li>
       <li>한 장씩 보면서 틀린 칸만 고치고 <kbd>Ctrl</kbd>+<kbd>Enter</kbd>로 다음 장</li>
-      <li>끝나면 <b>정답지 내보내기</b></li>
+      <li>끝나면 <b>③ 저장 → 정답지 저장</b></li>
     </ol>
+
+    <div class="note">
+      <b>파일이 두 가지라 헷갈리기 쉽습니다.</b> 이름이 비슷한데 쓰임이 다릅니다.
+      <table class="filekinds">
+        <tr>
+          <th>정답지<br><code>ocr_truth.tsv</code></th>
+          <td><b>결과물입니다.</b> 각 칸의 정답이 담깁니다. 인식률을 재는 <b>자</b>가
+            되고, 다음 검수 때 <b>② 이어하기 → 지난 정답지</b>로 불러옵니다.</td>
+        </tr>
+        <tr>
+          <th>중간 저장<br><code>…progress.json</code></th>
+          <td><b>작업 상태입니다.</b> 어디까지 봤는지, 무엇을 ✓ 했는지가 함께 담깁니다.
+            <b>하다 말고 덮을 때</b> 쓰고, <b>② 이어하기 → 중간 저장분</b>으로
+            되살립니다. 다른 컴퓨터로 옮길 때도 이것을 씁니다.</td>
+        </tr>
+      </table>
+      한 장씩 볼 때마다 브라우저에도 자동으로 남지만, <b>브라우저를 지우면 같이
+      사라집니다.</b> 오래 걸리는 작업이면 중간 저장을 한 번씩 눌러 두세요.
+    </div>
     <div class="note">
       <b>이 도구는 네트워크를 쓰지 않습니다.</b> 명함은 제3자의 개인정보라, 파일을
       브라우저 안에서만 읽고 아무 데도 보내지 않습니다. 진행 상황은 이 브라우저에만
