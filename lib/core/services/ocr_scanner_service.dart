@@ -2,6 +2,44 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 
+/// OCR이 읽은 **한 줄과 그 줄이 명함 위 어디에 있었는지.**
+///
+/// ## 왜 좌표를 들고 다니나 (R-05)
+///
+/// 지금 파서는 **글자 내용**으로 칸을 정한다(`(주)`가 붙었으면 회사 …).
+/// 그런데 103장 실측에서 **회사 오류 39건 중 26건이 "OCR은 읽었는데 파서가
+/// 못 고른 것"**이었다. 사람은 내용이 아니라 **위치와 크기**로 안다 — 위쪽
+/// 큰 글씨는 회사, 가운데 제일 큰 글씨는 이름, 아래 작은 글씨는 주소다.
+///
+/// 그 판단을 하려면 좌표가 파서까지 와야 하는데, 예전에는
+/// `({String text, double height})`만 넘겨 **높이 말고는 다 버렸다.**
+///
+/// ⚠️ **이 타입을 넓혔다고 파서가 좌표를 쓰기 시작하는 것은 아니다.** 지금은
+/// **실어 나르기만** 한다. 분류에 쓰는 것은 다음 단계이고, 그전에 **좌표가
+/// 담긴 스캔 결과로 기준선을 다시 재야** 한다(추가 317).
+typedef OcrLineBox = ({
+  String text,
+
+  /// 글자 높이. 이름 판정의 폴백 근거로 이미 쓰고 있다.
+  double height,
+
+  /// 줄의 위쪽 y좌표(픽셀). 위일수록 작다.
+  double top,
+
+  /// 줄의 왼쪽 x좌표(픽셀).
+  double left,
+
+  /// 줄의 가로 폭(픽셀).
+  double width,
+});
+
+/// 좌표를 모르는 자리에서 줄을 만든다(테스트 통로·폴백).
+///
+/// ⚠️ 0을 "왼쪽 맨 위"로 읽으면 안 된다. **모른다는 뜻**이다 — 좌표를 쓰는
+/// 쪽은 값이 전부 0인 목록을 만나면 좌표 판단을 건너뛰어야 한다.
+OcrLineBox lineBoxOf(String text, {double height = 0}) =>
+    (text: text, height: height, top: 0, left: 0, width: 0);
+
 /// 명함에서 이름을 "어떤 경로로" 뽑았는지. 값(이름 자체)이 아니라 방법만
 /// 남긴다 — 약한 폴백(leftoverFallback)의 비율이 높으면 그만큼 파서가
 /// 확신 없이 찍고 있다는 뜻이라, 인식 품질 측정의 핵심 신호다.
@@ -136,6 +174,17 @@ class OcrScanResult {
   /// 스캔된 원문 줄 목록 (터치 퀵 매핑 UI 지원용)
   final List<String> rawLines;
 
+  /// [rawLines]와 **같은 순서**로, 각 줄이 명함 위 어디에 있었는지(R-05).
+  ///
+  /// ⚠️ **비어 있을 수 있다.** 테스트 통로나 좌표를 모르는 경로로 만든
+  /// 결과에는 안 담긴다. 쓰는 쪽은 길이가 [rawLines]와 같은지 먼저 본다 —
+  /// 다르면 좌표 판단을 건너뛴다.
+  ///
+  /// 왜 남기나: 파서를 고쳐도 **다시 재려면 스캔을 다시 돌려야** 하는데,
+  /// 좌표가 결과에 안 남으면 재스캔을 해도 좌표 규칙을 검증할 수 없다.
+  /// 일괄 스캔 TSV가 이 값을 함께 내보낸다(추가 317).
+  final List<OcrLineBox> rawLineBoxes;
+
   /// 이 결과가 "어떻게" 만들어졌는지에 대한 형태 정보(내용 없음). 인식 품질
   /// 측정용이라 앱 화면에는 안 쓴다. 테스트에서 만든 결과 등에는 없을 수 있어
   /// nullable.
@@ -144,6 +193,7 @@ class OcrScanResult {
   const OcrScanResult({
     required this.rawText,
     this.rawLines = const [],
+    this.rawLineBoxes = const [],
     required this.name,
     required this.company,
     required this.title,
@@ -248,7 +298,7 @@ class OcrScannerService {
   /// 순서가 뒤섞이기 쉽다(왼쪽 단 중간 줄 다음에 오른쪽 단 줄이 끼어드는 식).
   /// 각 줄의 실제 화면 좌표(boundingBox)를 기준으로 위→아래, 같은 줄 안에서는
   /// 왼→오 순으로 다시 정렬해 실제 명함을 읽는 순서에 가깝게 재구성한다.
-  static List<({String text, double height})> _extractOrderedLines(
+  static List<OcrLineBox> _extractOrderedLines(
     RecognizedText recognizedText,
   ) {
     final allLines = <TextLine>[];
@@ -292,7 +342,24 @@ class OcrScannerService {
           final height = row
               .map((l) => l.boundingBox.height)
               .reduce((a, b) => a > b ? a : b);
-          return (text: text, height: height);
+          // 한 행에 좌우로 여러 줄이 묶였으면 **행 전체를 감싸는 상자**를 준다.
+          // 왼쪽 끝에서 오른쪽 끝까지가 그 행이 차지한 자리다.
+          final top = row
+              .map((l) => l.boundingBox.top.toDouble())
+              .reduce((a, b) => a < b ? a : b);
+          final left = row
+              .map((l) => l.boundingBox.left.toDouble())
+              .reduce((a, b) => a < b ? a : b);
+          final right = row
+              .map((l) => l.boundingBox.right.toDouble())
+              .reduce((a, b) => a > b ? a : b);
+          return (
+            text: text,
+            height: height,
+            top: top,
+            left: left,
+            width: right - left,
+          );
         })
         .where((l) => l.text.isNotEmpty)
         .toList();
@@ -918,8 +985,8 @@ class OcrScannerService {
   /// ⚠️ 조건을 좁게 잡는다: 앞 줄에 **01X + 4자리로 끝나는 미완성 번호**가 있고
   /// (뒤에 숫자가 더 없어야 한다), 뒤 줄이 **숫자 4자리만** 있는 줄이어야 한다.
   /// 없는 번호를 만들어 내지 않기 위해서다 — 잇는 숫자는 둘 다 원문에 있다.
-  static List<({String text, double height})> _joinSplitPhoneNumbers(
-    List<({String text, double height})> lineData,
+  static List<OcrLineBox> _joinSplitPhoneNumbers(
+    List<OcrLineBox> lineData,
   ) {
     final incomplete = RegExp(r'01[016789][-.\s]?\d{4}(?![\d\s.\-]*\d)');
     final onlyFourDigits = RegExp(r'^\s*(\d{4})\s*$');
@@ -937,8 +1004,22 @@ class OcrScannerService {
           m.end,
           '${m.group(0)!.replaceAll(RegExp(r'\D'), '')}${tail.group(1)}',
         );
-        out[i] = (text: joined, height: out[i].height);
-        out[j] = (text: '', height: out[j].height);
+        // 좌표는 **합쳐진 쪽(i)의 것을 그대로 둔다.** 번호가 두 줄로 갈렸을
+        // 뿐 자리는 앞줄의 자리다. j는 비우므로 아래에서 걸러진다.
+        out[i] = (
+          text: joined,
+          height: out[i].height,
+          top: out[i].top,
+          left: out[i].left,
+          width: out[i].width,
+        );
+        out[j] = (
+          text: '',
+          height: out[j].height,
+          top: out[j].top,
+          left: out[j].left,
+          width: out[j].width,
+        );
         break;
       }
     }
@@ -1322,17 +1403,26 @@ class OcrScannerService {
   /// 쓰지 않는다.
   @visibleForTesting
   static OcrScanResult parseLinesForTesting(List<String> lines) =>
-      _parse([for (final l in lines) (text: l, height: 0.0)], '');
+      _parse([for (final l in lines) lineBoxOf(l)], '');
 
   /// 글자 높이까지 넣어 파싱 규칙을 검증하는 테스트 통로 — 이름을 규칙으로
   /// 확신하지 못했을 때 글자 크기 폴백이 제대로 동작하는지 확인하는 용도.
   @visibleForTesting
   static OcrScanResult parseLinesForTestingWithHeights(
     List<({String text, double height})> lineData,
-  ) => _parse(lineData, '');
+  ) => _parse([
+    for (final l in lineData) lineBoxOf(l.text, height: l.height),
+  ], '');
+
+  /// 좌표까지 넣어 파싱 규칙을 검증하는 통로 — R-05(좌표 기반 분류)가 붙으면
+  /// 여기로 검증한다. 위 두 통로는 좌표를 0으로 채우므로 **좌표 규칙을 못
+  /// 본다.**
+  @visibleForTesting
+  static OcrScanResult parseLinesForTestingWithBoxes(List<OcrLineBox> lineData) =>
+      _parse(lineData, '');
 
   static OcrScanResult _parse(
-    List<({String text, double height})> lineData,
+    List<OcrLineBox> lineData,
     String imagePath,
   ) {
     // 자간을 벌려 인쇄한 글자를 먼저 붙인다. 모든 칸이 같은 규칙을 보게 하려고
@@ -1342,6 +1432,9 @@ class OcrScannerService {
         (
           text: _restoreBrokenPhones(_collapseCharSpacing(l.text)),
           height: l.height,
+          top: l.top,
+          left: l.left,
+          width: l.width,
         ),
     ];
     lineData = _joinSplitPhoneNumbers(lineData);
@@ -2465,6 +2558,7 @@ class OcrScannerService {
       // 기본값 const []가 그대로 나가 UI가 **조용히 안 뜬다**(2026-08-13
       // 실기기 확인, backlog 추가 178).
       rawLines: lines,
+      rawLineBoxes: lineData,
       name: name,
       company: company,
       title: title,
