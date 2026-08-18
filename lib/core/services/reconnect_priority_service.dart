@@ -340,7 +340,7 @@ class ReconnectPriorityService {
     if (memoExcerpt != null) {
       final head = neglectedDays == null
           ? '연락 기록 없음'
-          : '${_durationTextOf(neglectedDays)}째 연락 없음';
+          : _neglectedTextOf(neglectedDays);
       return ReconnectReason._(
         kind: ReconnectReasonKind.memoOnly,
         text: _joinWithMemo(head, memoExcerpt),
@@ -352,7 +352,7 @@ class ReconnectPriorityService {
     if (neglectedDays != null) {
       return ReconnectReason._(
         kind: ReconnectReasonKind.neglectedOnly,
-        text: '${_durationTextOf(neglectedDays)}째 연락 없음',
+        text: _neglectedTextOf(neglectedDays),
       );
     }
 
@@ -397,10 +397,30 @@ class ReconnectPriorityService {
     };
   }
 
-  /// "3일 전" / "2주 전" / "5개월 전".
+  /// "3일 전" / "2주 전" / "5개월 전". 오늘이면 **"오늘"**이다.
+  ///
+  /// ⚠️ 예전에는 `'${_durationTextOf(days)} 전'`으로 한 줄이었는데,
+  /// `_durationTextOf(0)`이 `'오늘'`이라 **"오늘 전 연락"**이 나왔다. 부르는
+  /// 쪽이 이 값 뒤에 "연락"·"카톡"을 붙이므로 그대로 화면에 실린다.
+  /// 실기기에서 잡혔다(2026-08-18, 추가 313).
   static String _agoTextOf(DateTime at, DateTime now) {
     final days = now.difference(at).inDays;
-    return '${_durationTextOf(days < 0 ? 0 : days)} 전';
+    if (days <= 0) return '오늘';
+    return '${_durationTextOf(days)} 전';
+  }
+
+  /// "31일째 연락 없음" / "3주째 연락 없음". **0일이면 "아직 연락 없음"**이다.
+  ///
+  /// ⚠️ 예전에는 부르는 쪽이 `'${_durationTextOf(d)}째 연락 없음'`으로
+  /// 직접 이어 붙였는데, 0일이면 **"오늘째 연락 없음"**이 됐다. 한국어가 안
+  /// 되는 문장이라 실기기에서 바로 눈에 띄었다(2026-08-18, 추가 313).
+  ///
+  /// 📌 30일 기준에서는 방치 0일이 후보가 되지 않지만, **사용자가 후속 알림
+  /// 날짜를 오늘로 잡으면** 방치 규칙과 무관하게 후보가 되므로 실사용에서도
+  /// 닿는다.
+  static String _neglectedTextOf(int days) {
+    if (days <= 0) return '아직 연락 없음';
+    return '${_durationTextOf(days)}째 연락 없음';
   }
 
   /// 기간을 사람이 읽는 단위로. 오늘이면 '오늘'.
