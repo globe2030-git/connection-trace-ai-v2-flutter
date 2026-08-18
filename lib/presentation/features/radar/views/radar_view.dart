@@ -583,12 +583,17 @@ class _RadarViewState extends State<RadarView> {
                             );
                           });
                           if (!group.isGrouped) return tiles;
+                          // 머리글만으로는 묶음이 "닫히지" 않는다 — 아래로
+                          // 이어지는 낱개 카드까지 묶음으로 읽힌다. 그래서
+                          // 속한 카드들을 들여쓰기 + 왼쪽 세로선으로 감싼다
+                          // (추가 313, 실기기에서 "2명" 밑에 5장이 이어져
+                          // 보였다).
                           return [
                             SameAddressGroupHeader(
                               address: group.address,
                               count: group.contacts.length,
                             ),
-                            ...tiles,
+                            SameAddressGroupBody(children: tiles.toList()),
                           ];
                         }),
                       ],
