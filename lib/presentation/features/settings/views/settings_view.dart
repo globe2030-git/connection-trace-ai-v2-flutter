@@ -30,6 +30,7 @@ import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
 import '../../radar/views/my_profile_edit_modal_view.dart';
+import '../../../../data/repositories/billing_config_repository.dart';
 import 'ai_charge_view.dart';
 import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
@@ -550,18 +551,7 @@ class SettingsView extends StatelessWidget {
                       MaterialPageRoute(builder: (_) => const InquiryView()),
                     ),
                   ),
-                  _SettingsRow(
-                    icon: const Icon(
-                      Icons.bolt_outlined,
-                      color: AppColors.accentText,
-                      size: 22,
-                    ),
-                    title: 'AI 충전',
-                    subtitle: '무료 횟수 소진 후 충전 상품 안내',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const AiChargeView()),
-                    ),
-                  ),
+                  const _AiChargeRow(),
                 ],
               ),
             ],
@@ -746,6 +736,76 @@ class _SettingsRow extends StatelessWidget {
 /// *"의도한 실패도 사용자 눈에는 결함이다"*로 이미 한 번 다쳤다(HANDOFF 0-21).
 ///
 /// ⚠️ 플래그가 꺼져 있는 동안에는 아예 그리지 않는다(호출 쪽에서 가른다).
+/// 설정의 "AI 충전" 줄.
+///
+/// ## 왜 줄을 감추지 않고 "준비중"으로 두나
+///
+/// 판매 중인 티어가 없으면 충전 화면은 *"지금은 판매 중인 충전 상품이 없어요"*
+/// 안내만 그린다(`ai_charge_view.dart`). 그런데 **설정의 줄 자체는 그대로
+/// 보여서**, 테스터가 눌러 들어가 빈 화면을 만나게 된다. 2026-08-18 사용자
+/// 결정으로 **줄은 남기되 "준비중"으로 표시**한다 — 없애 버리면 기능이 아예
+/// 없는 것처럼 보이고, 그대로 두면 빈 화면으로 데려간다.
+///
+/// ## 왜 하드코딩하지 않고 `config/billing`을 읽나
+///
+/// 티어를 켜고 끄는 것은 **관리자 데이터이지 코드가 아니다**. 하드코딩하면
+/// 스토어 오픈 때 "준비중"을 떼기 위해 새 빌드가 필요해지고, 그동안 켜진
+/// 상품을 "준비중"이라 부르게 된다. 판매 중인 티어가 **하나라도 있으면**
+/// 평소처럼 눌러 들어가고, 없으면 준비중이다.
+///
+/// ⚠️ **읽는 동안과 실패했을 때도 "준비중"이다.** 빈 화면으로 데려가는 것보다
+/// 준비중이라고 말하는 쪽이 낫다 — 이 판단이 뒤집히면 아래 `_openable`을 보라.
+class _AiChargeRow extends StatefulWidget {
+  const _AiChargeRow();
+
+  @override
+  State<_AiChargeRow> createState() => _AiChargeRowState();
+}
+
+class _AiChargeRowState extends State<_AiChargeRow> {
+  /// 판매 중인 티어가 확인됐을 때만 true. 읽기 전·실패는 false(=준비중).
+  bool _openable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final config = await BillingConfigRepository().fetchConfig();
+      if (!mounted) return;
+      // fetchConfig()가 active·credits로 이미 걸러 준다. 비어 있으면 판매 없음.
+      setState(() => _openable = config != null && config.tiers.isNotEmpty);
+    } catch (_) {
+      // 설정 화면이 과금 설정을 못 읽었다고 깨질 이유는 없다. 준비중으로 둔다.
+      if (mounted) setState(() => _openable = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsRow(
+      icon: const Icon(
+        Icons.bolt_outlined,
+        color: AppColors.accentText,
+        size: 22,
+      ),
+      title: 'AI 충전',
+      subtitle: _openable
+          ? '무료 횟수 소진 후 충전 상품 안내'
+          : '충전 상품을 준비하고 있습니다',
+      value: _openable ? null : '준비중',
+      onTap: _openable
+          ? () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AiChargeView()),
+            )
+          : null,
+    );
+  }
+}
+
 class _CardPhotoBackupStatusRow extends StatefulWidget {
   const _CardPhotoBackupStatusRow({required this.uid});
 
