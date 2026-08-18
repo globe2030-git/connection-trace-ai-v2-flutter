@@ -68,7 +68,7 @@
 |---|---|---|
 | 호출 1회당 실제 토큰(prompt/candidates/thoughts/total) | A | `aiAuditLogs` — 이미 충분함, **새 계측 불필요** |
 | 호출 1회당 실제 원가(KRW) | A(계산) | 2절 공식 |
-| 무료 10회 → 첫 충전 전환율 | **B(집계만 없음)** | 원재료(`aiAuditLogs`의 uid, `purchases`의 uid)는 있지만, 아직 IAP 미구현이라 `purchases`가 비어 있어 지금은 계산 불가 — IAP 연동(P1-2/P1-4) 이후 항목. pnl 문서 15-2절의 "4% 손익분기" 검증에 씀 |
+| 무료 20회 → 첫 충전 전환율 | **B(집계만 없음)** | 원재료(`aiAuditLogs`의 uid, `purchases`의 uid)는 있지만, 아직 IAP 미구현이라 `purchases`가 비어 있어 지금은 계산 불가 — IAP 연동(P1-2/P1-4) 이후 항목. pnl 문서 15-2절의 "4% 손익분기" 검증에 씀 |
 
 ### ③ 로직 헛점
 
