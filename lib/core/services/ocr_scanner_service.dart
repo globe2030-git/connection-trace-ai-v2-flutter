@@ -111,7 +111,16 @@ class OcrScanResult {
   final String title;
   final String phone;
   final String officePhone;
+  // 팩스 번호. 파서는 예전에도 팩스 줄을 **알아보기는** 했지만, 사무실 전화로
+  // 잘못 들어가는 것을 막으려고 **버리기만** 했다. 그래서 명함 데이터에는
+  // 팩스 칸이 있는데도(ContactModel.fax) 촬영으로는 **절대 채워지지 않았다**
+  // — 손으로 입력할 때만 채워졌다. 이제 알아본 값을 여기에 담는다.
+  final String fax;
   final String email;
+  // 홈페이지. 예전에는 직함 칸을 더럽히지 않으려고 **걷어내 버렸다**
+  // (`www.edenpat.com 파트너 변리사`처럼 한 줄로 붙어 읽히는 명함이 흔하다).
+  // 버리는 대신 이 칸으로 보낸다.
+  final String website;
   final String address;
   // 층/호수/동 같은 상세주소 — 명함에서 기본 주소와 다른 줄에 따로 인식되는
   // 경우가 많아서(addressRegExp가 한 줄 단위로만 매칭됨) 별도 필드로 분리해
@@ -140,7 +149,11 @@ class OcrScanResult {
     required this.title,
     required this.phone,
     required this.officePhone,
+    // ⚠️ 기본값을 둔다 — 이 두 칸은 나중에 추가된 것이라, 이미 있는 호출부와
+    // 검사 코드가 통째로 깨지지 않게 한다.
+    this.fax = '',
     required this.email,
+    this.website = '',
     required this.address,
     this.addressDetail = '',
     this.postalCode = '',
@@ -207,7 +220,10 @@ class OcrScannerService {
 
       // Dual-Pass OCR: 마진 크롭으로 텍스트가 극히 일부만 읽혔거나 잘린 경우
       // (인식된 총 길이 < 8), 원본 이미지 전체로 2차 풀 스캔을 시도한다.
-      final totalLen = orderedLines.fold<int>(0, (sum, l) => sum + l.text.length);
+      final totalLen = orderedLines.fold<int>(
+        0,
+        (sum, l) => sum + l.text.length,
+      );
       if (totalLen < 8) {
         debugPrint('OCR 1차 크롭 결과 부족($totalLen자) -> 2차 풀 스캔 자동 실행');
         final rawInput = InputImage.fromFilePath(imageFile.path);
@@ -215,7 +231,8 @@ class OcrScannerService {
             .processImage(rawInput)
             .timeout(const Duration(seconds: 15));
         final rawOrdered = _extractOrderedLines(rawRecognized);
-        if (rawOrdered.fold<int>(0, (sum, l) => sum + l.text.length) > totalLen) {
+        if (rawOrdered.fold<int>(0, (sum, l) => sum + l.text.length) >
+            totalLen) {
           orderedLines = rawOrdered;
         }
       }
@@ -363,13 +380,7 @@ class OcrScannerService {
   /// ⚠️ 여기에도 짧은 약어는 넣지 않는다(`_containsCi`가 부분 문자열이다).
   /// '기사'는 "전기기사"(자격증)뿐 아니라 "운전기사"(직업)에도 걸리고,
   /// '노무사'·'세무사'·'회계사'는 **그 사람의 직함 자체**인 경우가 많아 뺐다.
-  static const _qualificationMarkers = [
-    '감리원',
-    '감리사',
-    '심사원',
-    '기술사',
-    '지도사',
-  ];
+  static const _qualificationMarkers = ['감리원', '감리사', '심사원', '기술사', '지도사'];
 
   static const _companyKeywords = [
     '주식회사',
@@ -433,6 +444,22 @@ class OcrScannerService {
     'Bio',
     '바이오',
     '글로벌',
+    // 2026-08-17: 103장 전수 측정에서 **회사 60%**로 가장 낮게 나왔고, 틀린
+    // 39건 중 26건이 *"OCR은 제대로 읽었는데 파서가 못 고른 것"*이었다
+    // (추가 280). 그중 한 덩어리가 **기관 접미사가 목록에 없어서** 생겼다.
+    //
+    // 접미사가 있으면 `_trimCompanyAroundKeyword`가 그 토큰만 남겨 준다 —
+    // 슬로건이 뒤에 길게 붙은 줄에서 기관명만 뽑아낸다.
+    //
+    //   `SSiS 한국사회보장정보원 국민 맞춤형 복지를 실현하는 디지털 플랫폼 전문기관`
+    //     → `한국사회보장정보원`
+    //
+    // ⚠️ 위 '연구원을 넣지 않는다'와 같은 기준으로 골랐다 — **다른 단어에
+    // 부분 문자열로 걸릴 여지가 거의 없는 것만.** '원'·'회' 같은 한 글자나
+    // '지원'(지원팀)처럼 흔한 조각은 넣지 않는다.
+    '협회',
+    '학회',
+    '정보원',
   ];
 
   // 회사명에 위 키워드가 하나도 안 걸릴 때(예: "Sovargen", "SSiS
@@ -582,7 +609,15 @@ class OcrScannerService {
   /// 두 글자 성씨. 첫 글자만 보면 놓친다(`남궁현`의 `남`은 목록에 있지만,
   /// `황보`·`제갈`·`선우`는 첫 글자가 흔한 성씨가 아닌 경우가 있다).
   static const _compoundSurnames = {
-    '남궁', '황보', '선우', '제갈', '사공', '서문', '독고', '동방', '어금',
+    '남궁',
+    '황보',
+    '선우',
+    '제갈',
+    '사공',
+    '서문',
+    '독고',
+    '동방',
+    '어금',
   };
 
   /// 이 토큰이 **성씨로 시작하는가**. 위 목록의 용도 설명 참고.
@@ -638,8 +673,7 @@ class OcrScannerService {
   /// 숫자 없는 상세주소(건물명)를 알아보는 접미사. 주소 바로 다음 줄이 이
   /// 접미사로 끝나면 상세주소로 본다("SK T-타워", card_03). 조직명과 겹치는
   /// 접미사(센터·관·타운 등)는 이름·회사명을 삼킬 수 있어 넣지 않는다.
-  static final _buildingNameRegExp =
-      RegExp(r'(타워|빌딩|빌|플라자|프라자|스퀘어|캐슬|팰리스)$');
+  static final _buildingNameRegExp = RegExp(r'(타워|빌딩|빌|플라자|프라자|스퀘어|캐슬|팰리스)$');
 
   /// 주소로 읽히는 구간만 지운 나머지. 이름 후보를 찾을 때 쓴다 —
   /// 지명이 이름 규칙에 잘 걸려서 주소 구간은 봐서는 안 되지만, 줄 전체를
@@ -775,8 +809,7 @@ class OcrScannerService {
   /// 명함에 적힌 라벨은 **작성자가 직접 밝힌 정보**라 패턴 추정보다 정확하다.
   static const _mobileLabelPattern =
       r'\b(H\.?P|M\.?P|C\.?P|MOBILE|CELL)\b|\bH\.|\bM\.|휴대폰|휴대전화|핸드폰';
-  static const _officeLabelPattern =
-      r'\b(TEL|PHONE|OFFICE)\b|\bT\.|대표전화|전화';
+  static const _officeLabelPattern = r'\b(TEL|PHONE|OFFICE)\b|\bT\.|대표전화|전화';
 
   /// 한 줄에 **한 종류의 라벨만** 있을 때 그 종류를 돌려준다. 두 종류가 섞여
   /// 있으면(`M.010-… T.02-…`) 어느 번호가 어느 라벨인지 이 방식으로는 못
@@ -962,7 +995,10 @@ class OcrScannerService {
     // 이메일 → URL → 숫자 순으로 걷어낸다(이메일이 URL 규칙에 먼저 걸리지
     // 않도록 순서가 중요하다).
     s = s.replaceAll(RegExp(r'[\w.+-]+@[\w.-]+'), ' ');
-    s = s.replaceAll(RegExp(r'(https?://|www\.)[^\s]+', caseSensitive: false), ' ');
+    s = s.replaceAll(
+      RegExp(r'(https?://|www\.)[^\s]+', caseSensitive: false),
+      ' ',
+    );
     s = s.replaceAll(RegExp(r'\d'), ' ');
     s = s.replaceAll(_contactLabelPattern, ' ');
     final letters = s.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '');
@@ -971,8 +1007,7 @@ class OcrScannerService {
 
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
-  static bool _hasHangul(String s) =>
-      RegExp(r'[가-힣ㄱ-ㆎ]').hasMatch(s);
+  static bool _hasHangul(String s) => RegExp(r'[가-힣ㄱ-ㆎ]').hasMatch(s);
 
   static bool _containsCi(String haystack, String needle) =>
       haystack.toUpperCase().contains(needle.toUpperCase());
@@ -1056,7 +1091,8 @@ class OcrScannerService {
     final consumed = <int>{};
     final buffer = StringBuffer();
     for (final idx in candidateIndexes) {
-      if (tokens[idx].length == 1 && _singleHangulRegExp.hasMatch(tokens[idx])) {
+      if (tokens[idx].length == 1 &&
+          _singleHangulRegExp.hasMatch(tokens[idx])) {
         buffer.write(tokens[idx]);
         consumed.add(idx);
       } else {
@@ -1097,6 +1133,49 @@ class OcrScannerService {
   /// 줄에 전화("tel"/"전화"/"phone") 라벨이 함께 있지는 않을 때만 팩스로
   /// 판단한다 — 한 줄에 대표전화와 팩스가 같이 있으면(드묾) 기존처럼 앞선
   /// 번호를 사무실 전화로 쓴다.
+  /// 구분자 — 라벨과 번호 사이에 흔히 끼는 것들.
+  static final _labelGapRegExp = RegExp(r'[\s.:()\-]');
+  static final _letterRegExp = RegExp(r'[A-Za-z가-힣]');
+
+  /// 번호 바로 앞에 **팩스 라벨**이 붙은 구간을 모은다.
+  ///
+  /// ⚠️ [_looksLikeFaxLine]은 **줄 전체**로 판단해서, `Tel 02-… Fax 070-…`처럼
+  /// **한 줄에 전화와 팩스가 같이 있으면 통째로 꺼진다**(tel이 있으면 false).
+  /// 103장에서 팩스를 놓친 16장이 **전부** 그 모양이었다(추가 282) — 줄 판단
+  /// 하나로는 못 잡는다. 그래서 번호마다 제 라벨을 본다.
+  static List<(int, int)> _faxLabeledRanges(
+    String lookup,
+    RegExp numberRegExp,
+  ) {
+    final out = <(int, int)>[];
+    for (final m in numberRegExp.allMatches(lookup)) {
+      if (_hasFaxLabelBefore(lookup, m.start)) out.add((m.start, m.end));
+    }
+    return out;
+  }
+
+  /// [start] 바로 앞이 팩스 라벨인가.
+  static bool _hasFaxLabelBefore(String s, int start) {
+    var i = start - 1;
+    while (i >= 0 && _labelGapRegExp.hasMatch(s[i])) {
+      i--;
+    }
+    if (i < 0) return false;
+    final head = s.substring(0, i + 1);
+    if (head.toLowerCase().endsWith('fax')) return true;
+    if (head.endsWith('팩스')) return true;
+    // 한 글자 `F`. 실측에서 **가장 흔한 모양**이다(놓친 16장 중 9장).
+    //
+    // ⚠️ 앞이 글자면 그건 낱말의 끝이지 라벨이 아니다 — `…of 02-…`처럼.
+    // 이 저장소가 부분 문자열로 반복해 데인 자리라(추가 178·180·182·183)
+    // 처음부터 경계를 건다.
+    if (head.toLowerCase().endsWith('f')) {
+      final prev = i - 1;
+      return prev < 0 || !_letterRegExp.hasMatch(s[prev]);
+    }
+    return false;
+  }
+
   static bool _looksLikeFaxLine(String line) {
     final lower = line.toLowerCase();
     final hasFax = lower.contains('fax') || line.contains('팩스');
@@ -1131,6 +1210,91 @@ class OcrScannerService {
     return leftover.removeAt(idx);
   }
 
+  /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
+  ///
+  /// 103장 전수 측정(추가 280)에서 회사 오류의 한 덩어리가 *"회사명은 맞게
+  /// 골랐는데 앞뒤에 뭐가 붙어 있는 것"*이었다. 고르기를 다시 하는 것보다
+  /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
+  /// 갑자기 다른 값으로 바뀌지 않는다.**
+  static String _tidyCompany(String company) =>
+      _stripCompanyTitleTail(_stripCompanyLogoPrefix(company));
+
+  /// 회사명 앞에 남은 **짝 없는 닫는 괄호**를 뗀다
+  /// (`)유에이엠코리아텍(주)` → `유에이엠코리아텍(주)`).
+  ///
+  /// ## ⚠️ 로고 글자는 **일부러 안 뗀다** — 재 보고 물린 것이다
+  ///
+  /// 처음에는 `GO 선호라이팅 (주)` → `선호라이팅 (주)`처럼 앞의 로고 토큰도
+  /// 뗐다. `SK telecom`의 `SK`를 지우지 않으려고 *"뒤쪽에 회사 접미사가 있을
+  /// 때만"*이라는 안전장치까지 걸었다. 그런데 103장으로 재 보니 **3장을 얻고
+  /// 9장을 잃었다**(회사 64% → 60%).
+  ///
+  /// 원인은 파서가 아니라 **정답지였다. 로고를 회사명에 넣을지가 장마다
+  /// 다르다.**
+  ///
+  /// ```
+  /// card_23 · card_38   "SSiS 한국사회보장정보원"   ← 로고 포함
+  /// card_125            "한국사회보장정보원"        ← 같은 기관인데 로고 제외
+  /// KYWA 한국청소년활동진흥원(4장) · kmong (주) 크몽(2장) · DMP Company
+  /// ```
+  ///
+  /// ⚠️ **어느 쪽으로 만들어도 한쪽은 틀린다.** 규칙을 더 정교하게 짜서 풀
+  /// 문제가 아니라, **정답지에서 로고를 어떻게 적을지 먼저 정해야** 하는
+  /// 문제였다.
+  ///
+  /// ## ✅ 사용자 확정 (2026-08-17) — **인쇄된 그대로 넣는다**
+  ///
+  /// 그래서 이 함수는 **로고 글자를 떼지 않는다.** 위 검사 둘이 그것을
+  /// 고정한다. ⚠️ **다시 떼도록 고치지 말 것.**
+  ///
+  /// 정답지도 그 규칙으로 맞췄다. 어긋난 행은 **하나뿐이었다**(card_125).
+  ///
+  /// 📌 사진 석 장을 직접 보고 알게 된 것 — 사용자가 실제로 적용해 온 기준은
+  /// *"인쇄된 그대로"*보다 정확하다. **글자로 인쇄된 이름은 넣고, 그림 로고를
+  /// OCR이 글자로 잘못 읽은 것은 안 넣는다.**
+  ///
+  /// ```
+  /// card_13   `sto` 그림 로고 → OCR이 "std"로 읽음 → 정답 `서울관광재단`
+  /// card_65   `sh`  그림 로고 → OCR이 "GO"로  읽음 → 정답 `선호라이팅 (주)`
+  /// card_125  `SSiS` 글자 이름                     → 정답에 포함
+  /// ```
+  ///
+  /// ⚠️ **파서는 이 둘을 구분할 수 없다.** 그림 로고를 잘못 읽은 것이나 진짜
+  /// 이름이나, 파서에는 똑같은 글자로 도착한다. 그러니 "떼기"로는 풀 수 없다.
+  /// 남은 오류(`GO`·`std`를 회사명으로 **골라 버리는** 경우)는 떼기가 아니라
+  /// **고르는 순서** 쪽 문제다.
+  static String _stripCompanyLogoPrefix(String company) =>
+      company.trim().replaceFirst(RegExp(r'^[)\]}·|]+\s*'), '');
+
+  /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
+  ///
+  /// 회사 접미사가 있는 줄은 `_trimCompanyAroundKeyword`를 거치는데, 그 함수는
+  /// **25자 이하이거나 토큰이 4개 미만이면 자르지 않는다.** 짧은 회사명 뒤에
+  /// 직함이 붙은 흔한 모양이 그 그물을 그대로 빠져나간다.
+  ///
+  /// ⚠️ **직함 칸은 건드리지 않는다.** 뗀 직함을 직함 칸으로 옮기고 싶지만,
+  /// 그러면 이 변경이 회사뿐 아니라 직함 숫자까지 흔든다. 추가 278은 **회사
+  /// 칸만** 손보기로 한 작업이다(직함은 오류의 42%가 OCR 오독이라 방법이
+  /// 다르다 — 추가 280).
+  static String _stripCompanyTitleTail(String company) {
+    final tokens = company
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .toList();
+    if (tokens.length < 2) return company.trim();
+    final idx = tokens.indexWhere(
+      (t) => _titleKeywords.any((k) => _containsCi(t, k)),
+    );
+    // 맨 앞 토큰이 직함이면 회사명이 통째로 사라진다 — 그건 자르지 않는다.
+    if (idx <= 0) return company.trim();
+    final head = tokens.sublist(0, idx).join(' ');
+    // ⚠️ 남는 쪽에 회사 접미사가 있어야 자른다. 없으면 회사명인지 확신할 수
+    // 없고, 확신 없이 자르면 멀쩡한 값을 깎는다.
+    final headHasSuffix = _companyKeywords.any((k) => _containsCi(head, k));
+    return headHasSuffix ? head : company.trim();
+  }
+
   /// 이 줄이 **회사명 모양**인지. 약한 폴백에서 후보를 거르는 데만 쓴다 —
   /// 회사 키워드로 확정된 줄은 이 검사를 거치지 않는다.
   ///
@@ -1157,10 +1321,8 @@ class OcrScannerService {
   /// 따로 검증할 수 있도록 테스트 전용 통로를 열어둔다. 실제 앱 코드에서는
   /// 쓰지 않는다.
   @visibleForTesting
-  static OcrScanResult parseLinesForTesting(List<String> lines) => _parse(
-    [for (final l in lines) (text: l, height: 0.0)],
-    '',
-  );
+  static OcrScanResult parseLinesForTesting(List<String> lines) =>
+      _parse([for (final l in lines) (text: l, height: 0.0)], '');
 
   /// 글자 높이까지 넣어 파싱 규칙을 검증하는 테스트 통로 — 이름을 규칙으로
   /// 확신하지 못했을 때 글자 크기 폴백이 제대로 동작하는지 확인하는 용도.
@@ -1177,7 +1339,10 @@ class OcrScannerService {
     // 파싱 맨 앞에서 한 번만 정리한다(사용자 제안 2026-08-14).
     lineData = [
       for (final l in lineData)
-        (text: _restoreBrokenPhones(_collapseCharSpacing(l.text)), height: l.height),
+        (
+          text: _restoreBrokenPhones(_collapseCharSpacing(l.text)),
+          height: l.height,
+        ),
     ];
     lineData = _joinSplitPhoneNumbers(lineData);
     final lines = [for (final l in lineData) l.text];
@@ -1200,11 +1365,33 @@ class OcrScannerService {
     // 지역번호를 괄호로 감싼 표기("(02)855-5900")가 실제 명함에서 흔해서,
     // 괄호 닫힘도 구분자로 허용한다 — 안 그러면 지역번호 뒤 ')'에서 매칭이
     // 끊겨 번호 전체를 못 찾는다.
+    // 홈페이지. `http(s)://`와 `www.`로 시작하는 형태만 본다.
+    //
+    // ⚠️ **도메인처럼 보이는 것을 다 잡으면 안 된다.** 이메일의 뒷부분
+    // (`hong@edenpat.com`)이 그대로 걸리고, 회사명에 점이 들어간 표기
+    // (`A.I. 파트너스`)도 걸린다. 그래서 접두어가 확실한 것만 홈페이지로 본다.
+    // 실제로 `_stripContacts`가 예전부터 이 두 형태만 걷어내 왔다.
+    final websiteRegExp = RegExp(
+      r'(https?://|www\.)[^\s]+',
+      caseSensitive: false,
+    );
     final mobileRegExp = RegExp(r'01[0-9][-.\s)]?\d{3,4}[-.\s]?\d{4}');
     // 02(서울)/031~069(지역 국번) 외에 070(인터넷전화)도 요즘 명함에 흔히
     // 쓰이는데 빠져 있었음 — 회사 전화번호가 있어도 인식이 안 되는 원인이었음.
+    // ⚠️ 구분자에 **쉼표**를 넣는다. OCR이 점을 쉼표로 읽는 일이 잦다
+    // (`Tel 02.3468,0020` — card_51). 예전에는 그 줄의 사무실 전화를 통째로
+    // 놓쳤다.
+    //
+    // 그리고 **대표번호(15xx·16xx·17xx·18xx)**를 더한다. `0`으로 시작하지 않아
+    // 위 규칙에 안 걸렸고, 실측 103장에서 두 장이 그것 때문에 사무실 전화가
+    // 빈 값이었다(`T. 18779920` · `T1588-3112`).
+    //
+    // ⚠️ 앞에 숫자나 하이픈이 오면 **긴 번호의 일부**다(`010-1588-3112`).
+    // 그때는 대표번호로 보지 않는다 — 이 저장소가 부분 문자열로 반복해 데인
+    // 자리라(추가 178·180·182·183) 처음부터 막는다.
     final officeRegExp = RegExp(
-      r'0(2|[3-6][0-9]|70)[-.\s)]?\d{3,4}[-.\s]?\d{4}',
+      r'0(2|[3-6][0-9]|70)[-.\s,)]?\d{3,4}[-.\s,]?\d{4}'
+      r'|(?<![\d-])1[5-8]\d{2}[-.\s,]?\d{4}',
     );
     // 국가번호(+82) 표기. 실제 명함에서 흔한데 앞의 `0`이 없어 위 두 규칙에
     // 통째로 안 걸렸다 — `+82-10-8977-9661`, `82.10.6355.6919` 둘 다 전화번호가
@@ -1251,10 +1438,13 @@ class OcrScannerService {
     // 나중에 휴대폰 라벨이 붙은 다른 01X 번호가 나오면 자리를 바꾸기 위해 둔다.
     var mobileCameFromOfficeLabel = false;
     String? office;
+    String? fax;
+    String? website;
     String? email;
     String? address;
     String? addressDetail;
     String? postalCode;
+
     /// 주소와 한 줄로 뭉쳐 나온 이름 후보. 확정하지 않고 "빈자리 재검증"까지
     /// 들고 간다 — 자세한 이유는 아래 주소 처리부 주석 참조.
     String? nameHintBeforeAddress;
@@ -1307,6 +1497,26 @@ class OcrScannerService {
         matchedRanges.add((emailMatch.start, emailMatch.end));
         matchedContactField = true;
       }
+      // 홈페이지. ⚠️ **이메일을 먼저 처리한 뒤에 본다** — 순서가 바뀌면
+      // `www` 없이 도메인만 있는 이메일 뒷부분과 겹칠 여지가 생긴다.
+      //
+      // ⚠️⚠️ **값만 담고 줄은 건드리지 않는다.** 여기서 구간을 지웠더니
+      // 기존 검사 하나가 깨졌다 — `Www.HANBIT.CO.KR` 줄이 *"HANBIT은 로고지
+      // 사람 이름이 아니다"* 라는 **근거로 쓰이고 있었고**, 줄을 걷어내자 그
+      // 근거가 사라져 로고가 이름 칸에 들어갔다. 홈페이지 주소를 직함·회사
+      // 칸에서 걷어내는 일은 예전부터 `_stripContacts`가 따로 하고 있으니,
+      // 여기서 또 지울 이유가 없다.
+      final websiteMatch = websiteRegExp.firstMatch(line);
+      if (websiteMatch != null) {
+        // 이메일 안에 들어 있는 도메인은 홈페이지가 아니다.
+        final insideEmail =
+            emailMatch != null &&
+            websiteMatch.start >= emailMatch.start &&
+            websiteMatch.end <= emailMatch.end;
+        if (!insideEmail) {
+          website ??= websiteMatch.group(0)!.replaceAll(RegExp(r'[,.;]+$'), '');
+        }
+      }
       // OCR이 전화번호 라벨("M "/"T ") 바로 뒤에 오는 숫자 0을 알파벳 O로
       // 잘못 읽는 경우가 실기기에서 확인됐다(예: "M 010-..." → "MO10-...").
       // 휴대폰/사무실 전화 패턴 매칭에만 쓰는 임시 정규화 버전을 따로 만들어
@@ -1345,11 +1555,15 @@ class OcrScannerService {
           i--;
         }
         final label = i >= 0 ? phoneLookup[i].toUpperCase() : '';
-        final isFax = label == 'F' ||
+        final isFax =
+            label == 'F' ||
             (intlMatches.length == 1 && _looksLikeFaxLine(line));
         matchedRanges.add((m.start, m.end));
         matchedContactField = true;
-        if (isFax) continue;
+        if (isFax) {
+          fax ??= domestic;
+          continue;
+        }
         if (domestic.startsWith('01')) {
           mobile ??= domestic;
         } else {
@@ -1379,16 +1593,43 @@ class OcrScannerService {
         matchedRanges.add((mobileMatch.start, mobileMatch.end));
         matchedContactField = true;
       }
-      final officeMatch = intlMatches.isNotEmpty
-          ? null
-          : officeRegExp.firstMatch(phoneLookup);
+      // ⚠️ **번호마다 라벨을 따로 본다.** 줄 전체로 판단하면
+      // `Tel 02-… Fax 070-…`처럼 한 줄에 둘 다 있는 명함에서 규칙이 꺼진다.
+      final faxRanges = intlMatches.isNotEmpty
+          ? const <(int, int)>[]
+          : _faxLabeledRanges(phoneLookup, officeRegExp);
+      if (faxRanges.isNotEmpty) {
+        final r = faxRanges.first;
+        fax ??= _normalizePhone(phoneLookup.substring(r.$1, r.$2));
+        // ⚠️ 배정과 무관하게 구간은 지운다 — 안 지우면 남은 글자가 이름·회사
+        // 자리로 흘러간다(추가 181에서 실제로 3장이 그렇게 망가졌다).
+        matchedRanges.addAll(faxRanges);
+        matchedContactField = true;
+      }
+      // 팩스로 가려낸 번호는 사무실 후보에서 뺀다.
+      //
+      // 📌 이게 없으면 **앞 번호가 깨진 줄에서 팩스가 사무실 칸을 차지한다** —
+      // `T02-6360-69/LĻ F 02-6360-6930`(card_115)에서 앞 번호는 규칙에 안
+      // 걸리고 뒤의 팩스가 첫 매칭이 된다. 사용자가 그 번호로 전화를 건다.
+      RegExpMatch? officeMatch;
+      if (intlMatches.isEmpty) {
+        for (final m in officeRegExp.allMatches(phoneLookup)) {
+          if (faxRanges.any((r) => r.$1 == m.start)) continue;
+          officeMatch = m;
+          break;
+        }
+      }
       if (officeMatch != null) {
         // 팩스 번호가 사무실 전화로 잘못 들어가는 문제(실제 명함에서 흔함 —
         // "fax 070-...", "팩스 02-..."). 팩스 라벨이 붙은 줄이면 사무실
         // 전화로 배정하지 않는다. 단 번호 자체는 줄에서 걷어내야 이름/회사로
         // 오분류되지 않으므로, 배정과 무관하게 매칭 구간은 지운다.
-        if (office == null && !_looksLikeFaxLine(line)) {
-          office = _normalizePhone(officeMatch.group(0)!);
+        if (_looksLikeFaxLine(line)) {
+          // 팩스 줄이다 — 예전에는 배정하지 않고 **버렸다.** 이제 팩스 칸에
+          // 담는다. 사무실 전화로는 여전히 넣지 않는다.
+          fax ??= _normalizePhone(officeMatch.group(0)!);
+        } else {
+          office ??= _normalizePhone(officeMatch.group(0)!);
         }
         matchedRanges.add((officeMatch.start, officeMatch.end));
         matchedContactField = true;
@@ -1430,7 +1671,8 @@ class OcrScannerService {
 
       // 광역시/도로 시작하는 주소를 먼저 보고, 없으면 "시/군/구 + 로/길 +
       // 숫자" 형태(도/시 생략 주소)로 보완한다.
-      final addressMatch = addressRegExp.firstMatch(line) ??
+      final addressMatch =
+          addressRegExp.firstMatch(line) ??
           roadAddressNoProvinceRegExp.firstMatch(line);
       if (address == null && addressMatch != null) {
         // 주소 앞에 "06193 서울특별시..."처럼 우편번호(5자리)가 붙어 있으면
@@ -1451,8 +1693,9 @@ class OcrScannerService {
         // 정확히 5자리 독립 토큰만 받아, 전화·건물번호 조각을 우편번호로
         // 오인하지 않는다.
         if (postalCode == null) {
-          final inlinePostal =
-              RegExp(r'(?<!\d)\d{5}(?!\d)').firstMatch(beforeAddress);
+          final inlinePostal = RegExp(
+            r'(?<!\d)\d{5}(?!\d)',
+          ).firstMatch(beforeAddress);
           if (inlinePostal != null) postalCode = inlinePostal.group(0);
         }
         // 주소 앞에 남은 텍스트가 **사람 이름**인 경우가 실측 103장 중 7장에서
@@ -1672,6 +1915,7 @@ class OcrScannerService {
     // 셋 다 못 찾은 나머지는 예전처럼 "남은 줄 중 앞에서부터" 순서로 채운다.
     String? titleLine;
     String? companyLine;
+
     /// 이름 후보를 **강·약 두 갈래로 나눠 담는다** (2026-08-14).
     ///
     /// 예전에는 변수 하나에 먼저 걸린 것을 담고 끝냈다(선착순). 그래서 명함
@@ -1814,9 +2058,7 @@ class OcrScannerService {
       // 났다(실제 명함 SSIS에서 확인된 회귀 — "국민"이 이름으로 잘못
       // 뽑힘). 로고 오인식 텍스트가 섞인 경우(한글+영문 혼용)만 노리는
       // 검사이므로, 한글이 아닌 문자가 섞여 있을 때만 시도한다.
-      final hasNonHangul = line
-          .replaceAll(RegExp(r'[가-힣\s]'), '')
-          .isNotEmpty;
+      final hasNonHangul = line.replaceAll(RegExp(r'[가-힣\s]'), '').isNotEmpty;
       if (nameLineStrong == null && nameLineWeak == null && hasNonHangul) {
         final tokens = line
             .split(_whitespaceSplitRegExp)
@@ -1896,7 +2138,8 @@ class OcrScannerService {
     // 뜬 "M."을 보고 인식이 됐다고 오해하고, 저장하면 그대로 인맥 이름이 된다.
     // 값을 지어내지 않는다는 원칙(CLAUDE.md)과도 같은 방향이다.
     leftover.removeWhere(
-      (candidate) => candidate.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '').length < 2,
+      (candidate) =>
+          candidate.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '').length < 2,
     );
 
     // 남는 후보가 없어져 이름이 빈 값이 되는 것도 **의도한 결과**다. 로고를
@@ -2083,7 +2326,11 @@ class OcrScannerService {
       companySource = OcrCompanySource.keyword;
     }
     final companyFromKeyword = companyLine;
-    final company = companyFromKeyword ?? _pickCompanyFromLeftover(leftover) ?? '';
+    // ⚠️ 두 갈래(키워드 확정 · leftover 고르기)가 여기서 합쳐진다. 회사명
+    // 다듬기는 **이 한 곳에서만** 한다 — 갈래마다 손보면 한쪽만 고쳐진다.
+    final company = _tidyCompany(
+      companyFromKeyword ?? _pickCompanyFromLeftover(leftover) ?? '',
+    );
     if (companyFromKeyword == null) {
       companySource = company.isEmpty
           ? OcrCompanySource.none
@@ -2113,7 +2360,8 @@ class OcrScannerService {
     // 직함 칸에서 웹사이트·이메일을 걷어낸다. OCR이 홈페이지 주소를 직함 줄과
     // 붙여 읽는 경우가 흔한데(`www.edenpat.com 파트너 변리사`), 그대로 두면
     // 직함 칸에 URL이 섞여 저장된다(103장 표본 card_10·card_103, 추가 197).
-    // 웹사이트 필드가 생기면 그쪽으로 보내면 되고, 지금은 버린다.
+    // 값 자체는 위에서 홈페이지 칸으로 이미 담았고, 여기서는 직함 줄에 남은
+    // 찌꺼기를 지우는 일만 한다.
     var title = _stripContacts(
       titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : ''),
     ).replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -2142,9 +2390,12 @@ class OcrScannerService {
     // 이미 다른 칸이 가져간 값(회사·직함·주소)은 후보에서 뺀다 — 한 값이 두
     // 칸에 동시에 들어가면 사용자가 지우는 수고가 늘어난다.
     if (name.isEmpty) {
-      final taken = [company, title, address ?? '', addressDetail ?? '']
-          .where((v) => v.isNotEmpty)
-          .join(' ');
+      final taken = [
+        company,
+        title,
+        address ?? '',
+        addressDetail ?? '',
+      ].where((v) => v.isNotEmpty).join(' ');
       // ⚠️ 여기는 **가장 약한 폴백**이라 기준을 가장 빡빡하게 잡는다. 처음
       // 느슨하게 열었더니 이름 채움이 18장 늘었는데 그중 8장이 쓰레기였다
       // (`경기도`·`영등포구`·`서울시`·`성수역`·`서대문구`). 추가 182에서 겪은
@@ -2219,7 +2470,9 @@ class OcrScannerService {
       title: title,
       phone: mobile ?? '',
       officePhone: office ?? '',
+      fax: fax ?? '',
       email: email ?? '',
+      website: website ?? '',
       addressDetail: addressDetail ?? '',
       postalCode: postalCode ?? '',
       address: address ?? '',
@@ -2265,6 +2518,11 @@ class OcrScannerService {
       if (digits.length == 9) {
         return '02-${digits.substring(2, 5)}-${digits.substring(5)}';
       }
+    }
+    // 대표번호(15xx·16xx·17xx·18xx)는 **네 자리씩 끊는다** — `1877-9920`.
+    // 자릿수 규칙(3-3-4)에 맡기면 `187-799-20` 꼴이 된다.
+    if (digits.length == 8 && RegExp(r'^1[5-8]').hasMatch(digits)) {
+      return '${digits.substring(0, 4)}-${digits.substring(4)}';
     }
     if (digits.length == 11) {
       return '${digits.substring(0, 3)}-${digits.substring(3, 7)}-${digits.substring(7)}';

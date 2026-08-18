@@ -1,5 +1,6 @@
 import 'package:geolocator/geolocator.dart';
 import '../utils/geo_utils.dart';
+import '../utils/location_quality.dart';
 
 enum DeviceLocationAccess {
   serviceDisabled,
@@ -13,6 +14,13 @@ abstract interface class LocationGateway {
   Future<DeviceLocationAccess> checkAccess();
   Future<DeviceLocationAccess> requestPermission();
   Future<GeoPosition?> getCurrentPosition();
+
+  /// 직전 [getCurrentPosition]이 얻은 위치의 **품질**(E-12).
+  ///
+  /// 반환값을 바꾸지 않고 따로 둔 이유: `GeoPosition`은 좌표 계산 전반에 쓰여
+  /// 거기에 품질을 얹으면 관계없는 코드가 다 바뀐다. **품질은 "직전 측위"의
+  /// 성질이지 좌표의 성질이 아니다.**
+  LocationFixQuality get lastFixQuality;
   Future<bool> openAppPermissionSettings();
   Future<bool> openDeviceLocationSettings();
 }
@@ -23,6 +31,11 @@ abstract interface class LocationGateway {
 /// [requestPermission]을 호출하지 않으며, 위치를 얻지 못했을 때 가짜 좌표를
 /// 반환하지 않는다.
 class LocationService implements LocationGateway {
+  LocationFixQuality _lastFixQuality = LocationFixQuality.unknown;
+
+  @override
+  LocationFixQuality get lastFixQuality => _lastFixQuality;
+
   @override
   Future<DeviceLocationAccess> checkAccess() async {
     try {
@@ -79,6 +92,9 @@ class LocationService implements LocationGateway {
           timeLimit: fixTimeout,
         ),
       );
+      // 방금 잰 것이므로 나이는 없다. 오차는 OS가 준 값을 그대로 쓴다 —
+      // 우리가 추정하지 않는다(E-12).
+      _lastFixQuality = LocationFixQuality(accuracyMeters: position.accuracy);
       return GeoPosition(lat: position.latitude, lng: position.longitude);
     } catch (_) {
       // 새 측위가 실패(대개 시간 초과)해도 곧바로 포기하지 않는다 — OS가 들고
@@ -91,10 +107,23 @@ class LocationService implements LocationGateway {
   Future<GeoPosition?> _recentLastKnownPosition() async {
     try {
       final last = await Geolocator.getLastKnownPosition();
-      if (last == null) return null;
-      if (!isLastKnownUsable(last.timestamp, DateTime.now())) return null;
+      if (last == null) {
+        _lastFixQuality = LocationFixQuality.unknown;
+        return null;
+      }
+      if (!isLastKnownUsable(last.timestamp, DateTime.now())) {
+        _lastFixQuality = LocationFixQuality.unknown;
+        return null;
+      }
+      // ⚠️ 여기가 E-12의 핵심이다 — **오래된 위치를 쓰고 있다는 사실**을
+      // 여태 아무도 몰랐다. 나이를 남겨 화면이 말할 수 있게 한다.
+      _lastFixQuality = LocationFixQuality(
+        accuracyMeters: last.accuracy,
+        age: DateTime.now().difference(last.timestamp),
+      );
       return GeoPosition(lat: last.latitude, lng: last.longitude);
     } catch (_) {
+      _lastFixQuality = LocationFixQuality.unknown;
       return null;
     }
   }

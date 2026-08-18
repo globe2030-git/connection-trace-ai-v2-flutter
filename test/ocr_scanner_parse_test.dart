@@ -164,7 +164,12 @@ void main() {
 
   group('영문 표기 케이스', () {
     test('영문 전용 이름/회사명 + 영문 직함', () {
-      final r = parse(['ABC Company', 'David Kim', 'Sales Manager', 'M 010-4444-5555']);
+      final r = parse([
+        'ABC Company',
+        'David Kim',
+        'Sales Manager',
+        'M 010-4444-5555',
+      ]);
       expect(r.title, contains('Manager'));
       expect(r.company, 'ABC Company');
       expect(r.name, 'David Kim');
@@ -331,7 +336,12 @@ void main() {
 
   group('주소 변형', () {
     test('지번 주소(로/길 없이 동만)', () {
-      final r = parse(['테스트(주)', '홍길동', '서울특별시 강남구 역삼동 123-45', 'M 010-1234-5678']);
+      final r = parse([
+        '테스트(주)',
+        '홍길동',
+        '서울특별시 강남구 역삼동 123-45',
+        'M 010-1234-5678',
+      ]);
       expect(r.address, contains('역삼동'));
     });
     test('우편번호 + 도로명 + 상세주소 같은 줄, 콤마 구분', () {
@@ -433,32 +443,29 @@ void main() {
       expect(r.company, 'Sovargen');
     });
 
-    test(
-      '로고 오인식 텍스트가 이름과 다른 줄로 인식되는 경우 — "DA"가 단독 줄',
-      () {
-        // 2026-08-07: 위 "한 줄로 뭉친" 수정을 실기기에 반영했는데도
-        // "이정현은 회사명에 DA로 로고값이 들어오고"로 재제보. 같은
-        // 카드를 다시 스캔해도 ML Kit이 줄을 나누는 방식이 매번 같지
-        // 않아서, 이번엔 "DA"가 이름과 안 붙고 leftover에 독립된 줄로
-        // 들어갔다 — leftover 맨 앞이 "DA"라 그대로 회사명이 됐다.
-        // 줄 결합 형태에 기대지 않고 _pickCompanyFromLeftover가 짧은
-        // 로고 잡음 후보를 건너뛰도록 고쳤다.
-        final r = parse([
-          '이정현',
-          'DA',
-          '상무(실장)',
-          '경영기획실',
-          'M 010-6282-1922',
-          'T 070-5222-2771',
-          'E rosielee@sovargen.com',
-          '06223 서울특별시 강남구 논현로86길 16, 2층(역삼동, 제포빌딩)',
-          'Sovargen',
-        ]);
-        expect(r.name, '이정현');
-        expect(r.company, isNot('DA'));
-        expect(r.company, contains('Sovargen'));
-      },
-    );
+    test('로고 오인식 텍스트가 이름과 다른 줄로 인식되는 경우 — "DA"가 단독 줄', () {
+      // 2026-08-07: 위 "한 줄로 뭉친" 수정을 실기기에 반영했는데도
+      // "이정현은 회사명에 DA로 로고값이 들어오고"로 재제보. 같은
+      // 카드를 다시 스캔해도 ML Kit이 줄을 나누는 방식이 매번 같지
+      // 않아서, 이번엔 "DA"가 이름과 안 붙고 leftover에 독립된 줄로
+      // 들어갔다 — leftover 맨 앞이 "DA"라 그대로 회사명이 됐다.
+      // 줄 결합 형태에 기대지 않고 _pickCompanyFromLeftover가 짧은
+      // 로고 잡음 후보를 건너뛰도록 고쳤다.
+      final r = parse([
+        '이정현',
+        'DA',
+        '상무(실장)',
+        '경영기획실',
+        'M 010-6282-1922',
+        'T 070-5222-2771',
+        'E rosielee@sovargen.com',
+        '06223 서울특별시 강남구 논현로86길 16, 2층(역삼동, 제포빌딩)',
+        'Sovargen',
+      ]);
+      expect(r.name, '이정현');
+      expect(r.company, isNot('DA'));
+      expect(r.company, contains('Sovargen'));
+    });
 
     test('로고 오인식 텍스트가 이름과 다른 줄로 인식되는 경우 — "A"가 단독 줄', () {
       // 같은 재제보에서 "최서연은 회사명에 A 가 들어옴"도 함께 확인됐다 —
@@ -620,12 +627,7 @@ void main() {
     });
 
     test('도/시 이름 없이 "강남구 테헤란로 123"으로 시작하는 주소', () {
-      final r = parse([
-        '주식회사 커넥션',
-        '홍길동',
-        '강남구 테헤란로 123',
-        'M 010-1234-5678',
-      ]);
+      final r = parse(['주식회사 커넥션', '홍길동', '강남구 테헤란로 123', 'M 010-1234-5678']);
       expect(r.address, '강남구 테헤란로 123');
     });
 
@@ -713,11 +715,7 @@ void main() {
   // continue하므로, 한 번 잘못 걸리면 회사명은 영영 못 채운다.
   group('키워드가 부분 문자열로 걸리지 않는다 (2026-08-13 회귀 방지)', () {
     test('회사명 속 "SPORTS"를 직함으로 오인하지 않는다', () {
-      final r = parse([
-        'NELSON SPORTS, INC.',
-        'John Smith',
-        'Sales Manager',
-      ]);
+      final r = parse(['NELSON SPORTS, INC.', 'John Smith', 'Sales Manager']);
       expect(r.company, 'NELSON SPORTS, INC.');
       expect(r.title, 'Sales Manager');
     });
@@ -733,20 +731,13 @@ void main() {
     });
 
     test('직함 "Technical Director"를 회사명으로 오인하지 않는다 — 속의 "Tech"', () {
-      final r = parse([
-        '주식회사 커넥션센스',
-        'John Smith',
-        'Technical Director',
-      ]);
+      final r = parse(['주식회사 커넥션센스', 'John Smith', 'Technical Director']);
       expect(r.company, '주식회사 커넥션센스');
       expect(r.title, 'Technical Director');
     });
 
     test('부서명 "Global Sales Division"이 회사명 자리를 뺏지 않는다', () {
-      final r = parse([
-        'Global Sales Division',
-        'John Smith',
-      ]);
+      final r = parse(['Global Sales Division', 'John Smith']);
       expect(r.company, isNot('Global Sales Division'));
     });
   });
@@ -759,45 +750,27 @@ void main() {
   //     차지했다("이름에 기업명이 들어가는 경우가 많다"는 사용자 보고).
   group('회사명 줄이 직함으로 소비되지 않는다 (2026-08-13 회귀 방지)', () {
     test('"○○대리점"이 직함이 되지 않는다 — 속의 "대리"', () {
-      final r = parse([
-        '한빛전자 강남대리점',
-        '남궁현',
-        '010-0000-0000',
-      ]);
+      final r = parse(['한빛전자 강남대리점', '남궁현', '010-0000-0000']);
       expect(r.company, '한빛전자 강남대리점');
       expect(r.name, '남궁현');
       expect(r.title, isNot(contains('대리점')));
     });
 
     test('"○○관리사무소"가 직함이 되지 않는다 — 속의 "사원"', () {
-      final r = parse([
-        '한빛사원아파트관리사무소',
-        '남궁현',
-        '010-0000-0000',
-      ]);
+      final r = parse(['한빛사원아파트관리사무소', '남궁현', '010-0000-0000']);
       expect(r.company, '한빛사원아파트관리사무소');
       expect(r.name, '남궁현');
     });
 
     test('자격증 줄이 직함 자리를 차지하지 않는다 — 속의 "수석"', () {
-      final r = parse([
-        '(주)한빛정보기술',
-        '남궁현',
-        '정보시스템수석감리원',
-        '010-0000-0000',
-      ]);
+      final r = parse(['(주)한빛정보기술', '남궁현', '정보시스템수석감리원', '010-0000-0000']);
       expect(r.company, '(주)한빛정보기술');
       expect(r.name, '남궁현');
       expect(r.title, isNot('정보시스템수석감리원'));
     });
 
     test('정상 직함 "수석연구원"은 그대로 직함이다 — 회귀 확인', () {
-      final r = parse([
-        '(주)한빛정보기술',
-        '남궁현',
-        '수석연구원',
-        '010-0000-0000',
-      ]);
+      final r = parse(['(주)한빛정보기술', '남궁현', '수석연구원', '010-0000-0000']);
       expect(r.title, '수석연구원');
       expect(r.name, '남궁현');
     });
@@ -847,21 +820,12 @@ void main() {
     });
 
     test('한글 이름은 로고 판정에 걸리지 않는다 — 회귀 확인', () {
-      final r = parse([
-        'HANBIT',
-        '남궁현',
-        '상무',
-        'Www.HANBIT.CO. KR',
-      ]);
+      final r = parse(['HANBIT', '남궁현', '상무', 'Www.HANBIT.CO. KR']);
       expect(r.name, '남궁현');
     });
 
     test('회사명과 무관한 영문 이름은 그대로 이름이다 — 회귀 확인', () {
-      final r = parse([
-        'NELSON SPORTS, INC.',
-        'John Smith',
-        'Sales Manager',
-      ]);
+      final r = parse(['NELSON SPORTS, INC.', 'John Smith', 'Sales Manager']);
       expect(r.name, 'John Smith');
       expect(r.company, 'NELSON SPORTS, INC.');
     });
@@ -899,23 +863,13 @@ void main() {
 
     test('일반명사 필터는 완전 일치일 때만 적용된다 — 회사명 보존', () {
       // 부분 문자열로 걸렀다면 "기업은행"까지 걸려 회사명이 사라진다.
-      final r = parse([
-        '기업은행 강남지점',
-        '남궁현',
-        '차장',
-        '010-0000-0000',
-      ]);
+      final r = parse(['기업은행 강남지점', '남궁현', '차장', '010-0000-0000']);
       expect(r.company, contains('기업은행'));
       expect(r.name, '남궁현');
     });
 
     test('조사로 끝나지 않는 한글 이름은 그대로 둔다 — 회귀 확인', () {
-      final r = parse([
-        '(주)한빛정보기술',
-        '남궁현',
-        '상무',
-        '010-0000-0000',
-      ]);
+      final r = parse(['(주)한빛정보기술', '남궁현', '상무', '010-0000-0000']);
       expect(r.name, '남궁현');
     });
 
@@ -932,45 +886,27 @@ void main() {
     });
 
     test('연락처 라벨만 남은 줄은 회사명도 되지 않는다 — "Tel Fax 070-…", "Fax."', () {
-      final r = parse([
-        'Tel  Fax 070-0000-0000',
-        'Fax.',
-        '남궁현',
-        '상무',
-      ]);
+      final r = parse(['Tel  Fax 070-0000-0000', 'Fax.', '남궁현', '상무']);
       expect(r.company, isNot(contains('Fax')));
       expect(r.company, isNot(contains('Tel')));
       expect(r.name, '남궁현');
     });
 
     test('웹사이트+라벨만 있는 줄도 회사명이 되지 않는다', () {
-      final r = parse([
-        'www.hanbit.co.kr E-mail',
-        '한빛하우스(주)',
-        '남궁현',
-      ]);
+      final r = parse(['www.hanbit.co.kr E-mail', '한빛하우스(주)', '남궁현']);
       expect(r.company, '한빛하우스(주)');
     });
 
     test('라벨과 겹치는 글자를 품은 회사명은 지켜진다 — "SK telecom"', () {
       // 부분 문자열로 지웠다면 "telecom"에서 TEL이 잘려 나갔을 것이다.
       // 단어 경계로만 지우므로 멀쩡히 남아야 한다.
-      final r = parse([
-        'SK telecom',
-        '남궁현',
-        '상무',
-        '010-0000-0000',
-      ]);
+      final r = parse(['SK telecom', '남궁현', '상무', '010-0000-0000']);
       expect(r.company, 'SK telecom');
       expect(r.name, '남궁현');
     });
 
     test('라벨 잔여물("M.")은 이름이 되지 않는다', () {
-      final r = parse([
-        'M.',
-        '(주)한빛정보기술',
-        '010-0000-0000',
-      ]);
+      final r = parse(['M.', '(주)한빛정보기술', '010-0000-0000']);
       expect(r.name, isNot('M.'));
     });
   });
@@ -1054,12 +990,7 @@ void main() {
     test('".co.kr" 도메인이 회사 키워드 "Co."에 걸리지 않는다', () {
       // 실측: "서비스 : www.elancer.co.kr 회사: …"가 회사명으로 확정됐다.
       // 도메인의 .co.가 키워드 'Co.'에 걸린 것 — URL을 걷어낸 뒤 판정한다.
-      final r = parse([
-        '서비스 : www.hanbit.co.kr',
-        '한빛하우스(주)',
-        '남궁현',
-        '상무',
-      ]);
+      final r = parse(['서비스 : www.hanbit.co.kr', '한빛하우스(주)', '남궁현', '상무']);
       expect(r.company, '한빛하우스(주)');
     });
 
@@ -1098,12 +1029,7 @@ void main() {
   // 필드가 "존재하지만 비어 있는" 상태는 화면을 열어보기 전에는 안 드러난다.
   group('rawLines — 터치 퀵 매핑 UI에 넘길 원문 줄 (2026-08-13 회귀 방지)', () {
     test('인식한 줄이 그대로 rawLines에 담긴다', () {
-      final input = [
-        '주식회사 커넥션센스',
-        '홍길동',
-        '대표이사',
-        'M 010-1234-5678',
-      ];
+      final input = ['주식회사 커넥션센스', '홍길동', '대표이사', 'M 010-1234-5678'];
       final r = parse(input);
       expect(r.rawLines, input);
     });
@@ -1139,21 +1065,13 @@ void main() {
     test('주소 바로 다음 줄의 이름이 상세주소로 먹히지 않는다', () {
       // 예전에는 주소 다음 줄을 **무조건** 상세주소로 삼았다. 명함에서 주소
       // 아래에 이름이나 회사명이 오는 배치가 흔해 그대로 사라졌다.
-      final r = parse([
-        '서울특별시 강남구 테헤란로 152',
-        '남궁현',
-        '(주)한빛',
-      ]);
+      final r = parse(['서울특별시 강남구 테헤란로 152', '남궁현', '(주)한빛']);
       expect(r.name, '남궁현');
       expect(r.company, '(주)한빛');
     });
 
     test('진짜 상세주소(숫자 포함)는 그대로 상세주소로 간다', () {
-      final r = parse([
-        '서울특별시 강남구 테헤란로 152',
-        '한컴타워 3층',
-        '남궁현',
-      ]);
+      final r = parse(['서울특별시 강남구 테헤란로 152', '한컴타워 3층', '남궁현']);
       expect(r.addressDetail, '한컴타워 3층');
       expect(r.name, '남궁현');
     });
@@ -1165,10 +1083,7 @@ void main() {
   // 없다는 것이 이 구조의 핵심이다.
   group('빈자리 재검증 — 주소와 뭉친 이름 (2026-08-14)', () {
     test('주소와 한 줄로 붙어 나온 이름을 건진다', () {
-      final r = parse([
-        '박병훈 서울특별시 은평구 통일로 65길 26, 7층',
-        'M 010-1234-5678',
-      ]);
+      final r = parse(['박병훈 서울특별시 은평구 통일로 65길 26, 7층', 'M 010-1234-5678']);
       expect(r.name, '박병훈');
       expect(r.address, '서울특별시 은평구 통일로 65길 26');
     });
@@ -1180,10 +1095,7 @@ void main() {
 
     test('다른 규칙이 이름을 이미 찾았으면 힌트를 쓰지 않는다', () {
       // 재검증은 **빈 칸에만** 작동해야 한다. 확신 경로를 덮어쓰면 안 된다.
-      final r = parse([
-        '한빛 서울특별시 강남구 테헤란로 152',
-        '남궁현',
-      ]);
+      final r = parse(['한빛 서울특별시 강남구 테헤란로 152', '남궁현']);
       expect(r.name, '남궁현');
     });
   });
@@ -1193,22 +1105,13 @@ void main() {
   // 나빠질 수 없다.
   group('빈자리 재검증 — 직함·원문에서 이름 건지기 (2026-08-14)', () {
     test('직함 칸에 섞여 들어간 이름을 떼어내고 직함도 정리한다 — card_102', () {
-      final r = parse([
-        '기업부설연구소',
-        '김효성 연구소장 GIT',
-        '010-1234-5678',
-      ]);
+      final r = parse(['기업부설연구소', '김효성 연구소장 GIT', '010-1234-5678']);
       expect(r.name, '김효성');
       expect(r.title, isNot(contains('김효성')));
     });
 
     test('원문 어디에도 못 찾았을 때 마지막으로 줄 전체를 훑는다 — card_134', () {
-      final r = parse([
-        '삼성SDI',
-        '중대형 Module/Pack개발그룹',
-        '최호준',
-        'SAMSUNG SDI',
-      ]);
+      final r = parse(['삼성SDI', '중대형 Module/Pack개발그룹', '최호준', 'SAMSUNG SDI']);
       expect(r.name, '최호준');
     });
 
@@ -1242,11 +1145,7 @@ void main() {
     });
 
     test('이름을 이미 찾았으면 재검증이 덮어쓰지 않는다', () {
-      final r = parse([
-        '홍길동',
-        '김효성 연구소장',
-        '(주)한빛정보기술',
-      ]);
+      final r = parse(['홍길동', '김효성 연구소장', '(주)한빛정보기술']);
       expect(r.name, '홍길동');
     });
   });
@@ -1295,11 +1194,7 @@ void main() {
     });
 
     test('부서명이 이어지는 줄은 이어붙이지 않는다 — 오탐 방지', () {
-      final r = parse([
-        '디지털 커뮤니케이션 파트 / 책임',
-        '(주)한빛정보기술',
-        '010-0000-0000',
-      ]);
+      final r = parse(['디지털 커뮤니케이션 파트 / 책임', '(주)한빛정보기술', '010-0000-0000']);
       expect(r.name, isEmpty);
     });
   });
@@ -1391,9 +1286,7 @@ void main() {
     });
 
     test('상세주소는 층·호까지만 남긴다', () {
-      final r = parse([
-        '서울특별시 서대문구 경기대로 47 진양빌딩 5층 한국청소년활동진흥원',
-      ]);
+      final r = parse(['서울특별시 서대문구 경기대로 47 진양빌딩 5층 한국청소년활동진흥원']);
       expect(r.addressDetail, '진양빌딩 5층');
       expect(r.company, '한국청소년활동진흥원');
     });
@@ -1455,6 +1348,192 @@ void main() {
         '1893',
       ]);
       expect(r.phone, isNot('010-4548-1893'));
+    });
+  });
+
+  // 103장 전수 측정에서 **회사 60%**로 가장 낮았다. 틀린 39건 중 26건이
+  // *"OCR은 제대로 읽었는데 파서가 못 고른 것"*이라 고르기를 손봤다(추가 278).
+  group('회사 칸 — 읽어 놓고 못 고르던 것들 (추가 278)', () {
+    test('기관 접미사 뒤에 슬로건이 길게 붙어 있어도 기관명만 남긴다', () {
+      final r = parse([
+        'SSiS 한국사회보장정보원 국민 맞춤형 복지를 실현하는 디지털 플랫폼 전문기관',
+        '이현석',
+        '건강보건사업부 | 부장',
+      ]);
+      expect(r.company, contains('한국사회보장정보원'));
+      expect(r.company, isNot(contains('맞춤형')));
+    });
+
+    test('회사명 뒤에 직함이 붙어 있으면 직함을 뗀다 — card_15·card_17', () {
+      final r = parse(['(주)제이투이 영업대표/부장', '서울특별시 성동구 연무장5가길 25, 704호']);
+      expect(r.company, '(주)제이투이');
+    });
+
+    test('⚠️ 앞 토큰이 직함이면 자르지 않는다 — 회사명이 통째로 사라진다', () {
+      final r = parse(['부장 (주)제이투이']);
+      expect(r.company, contains('제이투이'));
+    });
+
+    test('짝 없는 닫는 괄호는 뗀다 — card_112', () {
+      final r = parse([')유에이엠코리아텍(주)', '홍길동']);
+      expect(r.company, '유에이엠코리아텍(주)');
+    });
+
+    // ⚠️⚠️ 아래 둘은 **하지 않기로 한 것**을 지킨다. 로고를 떼도록 만들었다가
+    // 103장으로 재 보고 물렸다 — 3장 얻고 **9장 잃었다**(회사 64% → 60%).
+    // 정답지가 로고를 넣을지 말지 **장마다 다르기** 때문이라, 규칙을 정교하게
+    // 짜서 풀 문제가 아니다. 근거는 `_stripCompanyLogoPrefix` 주석에 있다.
+    test('📌 회사명 앞의 로고 글자를 떼지 않는다 — 정답지가 로고를 포함한다', () {
+      final r = parse(['KYWA 한국청소년활동진흥원', '홍길동', '기획팀 | 대리']);
+      expect(r.company, 'KYWA 한국청소년활동진흥원');
+    });
+
+    test('📌 진짜 회사명의 첫 토큰을 자르지 않는다 — SK telecom', () {
+      final r = parse(['SK telecom', '홍길동']);
+      expect(r.company, contains('SK'));
+    });
+  });
+
+  // ⚠️ 이 두 칸은 **명함 데이터에는 예전부터 있었는데 인식이 안 뽑았다.**
+  // 팩스는 "사무실 전화로 잘못 들어가는 것을 막으려고" 알아본 뒤 **버렸고**,
+  // 홈페이지는 "직함 칸을 더럽히지 않으려고" **걷어내 버렸다**. 그래서 손으로
+  // 입력할 때만 채워지고, 촬영으로는 **항상 비어 있었다**(2026-08-17 확인).
+  group('팩스 — 알아본 값을 버리지 않고 담는다', () {
+    test('팩스 라벨이 붙은 번호를 팩스 칸에 담는다', () {
+      final r = parse(['(주)한빛정보기술 홍길동 부장', 'FAX. 02-555-1234']);
+      expect(r.fax, '02-555-1234');
+    });
+
+    test('📌 팩스가 사무실 전화 칸을 차지하지 않는다 — 예전 회귀 보호', () {
+      // 이 성질 때문에 원래 팩스를 버렸다. 담기 시작해도 이건 그대로여야 한다.
+      final r = parse(['(주)한빛정보기술 홍길동 부장', '팩스 070-1234-5678']);
+      expect(r.officePhone, isEmpty);
+      expect(r.fax, '070-1234-5678');
+    });
+
+    test('한 줄에 T·F·M이 국제표기로 붙어 있어도 셋을 갈라 담는다 — card_05', () {
+      final r = parse([
+        '홍길동 이사',
+        'T+82 (0)32-760-2037 F+82 (0)32-760-2826 M+82 (0)10-8707-2411',
+      ]);
+      expect(r.officePhone, '032-760-2037');
+      expect(r.fax, '032-760-2826');
+      expect(r.phone, '010-8707-2411');
+    });
+
+    test('팩스가 없으면 빈 값이다 — 지어내지 않는다', () {
+      final r = parse(['(주)한빛정보기술 홍길동 부장', 'TEL. 02-555-1234']);
+      expect(r.fax, isEmpty);
+      expect(r.officePhone, '02-555-1234');
+    });
+  });
+
+  // 103장에서 팩스를 놓친 16장을 다 뜯어보니 **전부 원문에는 있었다.**
+  // 오독은 한 건도 없었다 — 파서가 안 고른 것뿐이다(추가 282).
+  //
+  // ⚠️ 원인은 `_looksLikeFaxLine`이 **줄 전체**로 판단하는 것이었다. 한국
+  // 명함은 `Tel … Fax …`처럼 **한 줄에 둘 다** 적는 경우가 흔한데, 그러면
+  // "fax가 있고 tel이 없을 때만"이라는 조건이 통째로 꺼진다.
+  group('팩스 — 번호마다 제 라벨을 본다 (추가 282)', () {
+    test('한 글자 F 라벨을 알아본다 — 놓친 16장 중 9장이 이 모양', () {
+      final r = parse(['홍길동 부장', 'T 031-5178-1621 F031-5178-1599']);
+      expect(r.officePhone, '031-5178-1621');
+      expect(r.fax, '031-5178-1599');
+    });
+
+    test('⭐ 한 줄에 Tel과 Fax가 같이 있어도 갈라 담는다', () {
+      // 예전에는 이 줄에서 팩스를 **하나도** 못 담았다.
+      final r = parse(['홍길동 부장', 'Tel 02-6053-9142 Fax 070-7600-0812']);
+      expect(r.officePhone, '02-6053-9142');
+      expect(r.fax, '070-7600-0812');
+    });
+
+    test('점으로 끊는 표기도 갈라 담는다 — card_26·card_52', () {
+      final r = parse(['홍길동 부장', 'T. 02.6177.7586 F.02.6177.7587']);
+      expect(r.officePhone, '02-6177-7586');
+      expect(r.fax, '02-6177-7587');
+    });
+
+    test('⭐ 앞 번호가 깨져도 팩스가 사무실 칸을 차지하지 않는다 — card_115', () {
+      // OCR이 앞 번호를 `02-6360-69/LĻ`로 읽어 규칙에 안 걸린다. 예전에는
+      // 뒤의 **팩스가 첫 매칭이 되어 사무실 칸에 들어갔다.**
+      // ⚠️ 사용자가 그 번호로 전화를 건다 — 빈 칸이 틀린 번호보다 낫다.
+      final r = parse([
+        '홍길동 과장',
+        'T02-6360-69/LĻ F 02-6360-6930 MO10-5024-8727',
+      ]);
+      expect(r.fax, '02-6360-6930');
+      expect(r.officePhone, isNot('02-6360-6930'));
+      expect(r.phone, '010-5024-8727');
+    });
+
+    test('⚠️ 낱말 끝의 f는 라벨이 아니다', () {
+      // 부분 문자열 함정 — 이 저장소가 반복해 데인 자리다(추가 178·180·182).
+      final r = parse(['홍길동 Staff', 'Staff 02-1234-5678']);
+      expect(r.fax, isEmpty);
+    });
+
+    test('⭐ 대표번호(15xx·18xx)도 사무실 전화로 잡는다', () {
+      // `0`으로 시작하지 않아 규칙에 안 걸렸다. 실측 103장에서 두 장이
+      // 그것 때문에 사무실 전화가 빈 값이었다.
+      final r = parse(['홍길동 부장', 'T. 18779920', 'F. 031 715 7873']);
+      expect(r.officePhone, '1877-9920');
+      expect(r.fax, '031-715-7873');
+    });
+
+    test('대표번호와 팩스가 한 줄에 붙어 있어도 갈라 담는다 — card_123', () {
+      final r = parse(['홍길동 부장', 'T1588-3112 F02-468-8251']);
+      expect(r.officePhone, '1588-3112');
+      expect(r.fax, '02-468-8251');
+    });
+
+    test('⚠️ 긴 번호 안의 15xx는 대표번호가 아니다', () {
+      // `010-1588-3112`의 뒷부분을 사무실 전화로 뜯어 가면 안 된다.
+      final r = parse(['홍길동 부장', 'M 010-1588-3112']);
+      expect(r.phone, '010-1588-3112');
+      expect(r.officePhone, isEmpty);
+    });
+
+    test('OCR이 점을 쉼표로 읽어도 잡는다 — card_51', () {
+      final r = parse(['홍길동 부장', 'Tel 02.3468,0020 Fax 02.6008.2059']);
+      expect(r.officePhone, '02-3468-0020');
+      expect(r.fax, '02-6008-2059');
+    });
+
+    test('팩스만 있는 줄은 예전처럼 사무실로 안 간다', () {
+      final r = parse(['(주)한빛정보기술 홍길동 부장', '팩스 070-1234-5678']);
+      expect(r.fax, '070-1234-5678');
+      expect(r.officePhone, isEmpty);
+    });
+  });
+
+  group('홈페이지 — 걷어내던 것을 칸으로 보낸다', () {
+    test('직함과 한 줄로 붙어 있어도 홈페이지만 뽑는다 — card_10·card_103', () {
+      final r = parse(['이든특허법률사무소 김이든', 'www.edenpat.com 파트너 변리사']);
+      expect(r.website, 'www.edenpat.com');
+      // 예전 성질 유지 — 직함 칸에 주소가 섞이지 않는다.
+      expect(r.title, isNot(contains('www')));
+    });
+
+    test('https:// 형태도 잡는다', () {
+      final r = parse(['(주)한빛정보기술 홍길동', 'https://hanbit.co.kr']);
+      expect(r.website, 'https://hanbit.co.kr');
+    });
+
+    test('⚠️ 이메일 뒷부분을 홈페이지로 오해하지 않는다', () {
+      final r = parse(['(주)한빛정보기술 홍길동', 'hong@hanbit.co.kr']);
+      expect(r.email, 'hong@hanbit.co.kr');
+      expect(r.website, isEmpty);
+    });
+
+    test('끝에 붙은 구두점은 뗀다', () {
+      final r = parse(['(주)한빛정보기술 홍길동', 'www.hanbit.co.kr,']);
+      expect(r.website, 'www.hanbit.co.kr');
+    });
+
+    test('홈페이지가 없으면 빈 값이다', () {
+      final r = parse(['(주)한빛정보기술 홍길동 부장']);
+      expect(r.website, isEmpty);
     });
   });
 }

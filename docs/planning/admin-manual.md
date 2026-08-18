@@ -64,7 +64,7 @@ Blaze로 전환하면 Firebase가 프로젝트 기준 기본 예산(₩5,000/월
 터미널에서 프로젝트 루트로 이동한 뒤 실행한다.
 
 ```bash
-cd "/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter"
+cd /Volumes/X31/Claude/connection-trace-ai-v2-flutter
 ```
 
 인터랙티브 프롬프트(`firebase functions:secrets:set GEMINI_API_KEY`만
@@ -192,7 +192,7 @@ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 |---|---|---|
 | App Check 강제 | 코드 `enforceAppCheck` | ✅ 켜짐(2026-08-08) |
 | 동시 인스턴스 상한 | 코드 `functions/src/index.ts`의 `maxInstances` | 3 |
-| 사용자별 호출 한도 | 코드 `DAILY_LIMIT`/`MONTHLY_LIMIT` | 10/일, 100/월 |
+| 사용자별 호출 한도 | 코드 `DAILY_LIMIT`/`MONTHLY_LIMIT` | **20/일, 100/월**(실측 2026-08-18). ⛔ **제도 폐지** — 충전형 확정으로 회차 한도는 없어지고 **잔액이 상한**이 된다. 상수 제거는 지갑 전환(P1-5)과 **같은 배포**로 나간다 |
 | Gemini 월 지출 한도 | [AI Studio — spend cap](https://aistudio.google.com/spend) | **확인 필요** |
 
 > `maxInstances`가 3인 이유: 값을 지정하지 않았는데도 이미 3이 잡혀 있었다.

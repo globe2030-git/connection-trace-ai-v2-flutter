@@ -2,7 +2,9 @@ import 'package:flutter/foundation.dart';
 import '../../../../core/services/location_consent_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/proximity_settings_service.dart';
+import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/utils/geo_utils.dart';
+import '../../../../core/utils/location_quality.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/models/proximity_settings.dart';
 import '../../../../data/repositories/contacts_repository.dart';
@@ -27,6 +29,16 @@ class RadarViewModel extends ChangeNotifier {
 
   ProximitySettings _settings = const ProximitySettings();
   GeoPosition? _currentPosition;
+
+  /// 사용자가 지도에서 직접 찍은 거리 기준점(F-13). `null`이면 내 현재 위치가
+  /// 기준이다.
+  ///
+  /// **기기에 저장하지 않는다(사용자 결정, 2026-08-16).** 바로 아래 감지 반경은
+  /// 저장하므로(추가 139) 여기만 빠진 것처럼 보이지만, 빠뜨린 것이 아니다.
+  /// 기준점은 "내일 갈 동네를 잠깐 살펴본다"는 **일시적 조작**이라, 앱을 껐다
+  /// 켰는데 엉뚱한 동네가 기준으로 남아 있으면 "왜 내 위치가 아니지"가 된다.
+  /// 저장을 넣으면 검증 등급도 부분 테스트에서 전체 테스트로 올라간다.
+  GeoPosition? _anchorPosition;
   LocationConsentRecord _locationConsent = LocationConsentRecord.unknown;
   LocationAccessState _locationAccessState = LocationAccessState.loading;
   bool _isRefreshingLocation = false;
@@ -79,6 +91,18 @@ class RadarViewModel extends ChangeNotifier {
 
   ProximitySettings get settings => _settings;
   GeoPosition? get currentPosition => _currentPosition;
+
+  /// 지도에서 지정한 기준점. 지정하지 않았으면 `null`.
+  GeoPosition? get anchorPosition => _anchorPosition;
+
+  /// 지금 거리 기준이 내 위치가 아닌지. 화면에 "지금 기준이 어디인가"를
+  /// 밝히는 데 쓴다 — 이걸 숨기면 거리가 달라진 이유를 알 수 없다.
+  bool get isUsingCustomAnchor => _anchorPosition != null;
+
+  /// **거리 계산의 유일한 기준점.** 지도의 반경 원·핀 거리, 목록의 거리·정렬이
+  /// 모두 이 한 값을 본다. 화면마다 따로 기준을 두면 같은 사람이 지도와
+  /// 목록에서 다른 거리로 보인다.
+  GeoPosition? get referencePosition => _anchorPosition ?? _currentPosition;
   bool get isRefreshingLocation => _isRefreshingLocation;
   bool get usingRealGps => _currentPosition != null;
   bool get isLocationInitialized =>
@@ -89,6 +113,25 @@ class RadarViewModel extends ChangeNotifier {
       _locationAccessState == LocationAccessState.consentRequired;
   LocationConsentRecord get locationConsent => _locationConsent;
   LocationAccessState get locationAccessState => _locationAccessState;
+
+  /// 지금 쓰는 내 위치가 믿을 만한지 한 줄로. 알릴 것이 없으면 null(E-12).
+  ///
+  /// ⚠️ **오차를 감지 반경과 견준다.** *"300m면 나쁘다"*는 말이 성립하지 않는다 —
+  /// 반경 10km에서 300m는 무시할 만하고, 반경 500m에서는 목록 자체를 못 믿게
+  /// 만든다.
+  ///
+  /// 기준점을 직접 지정한 동안에는 알리지 않는다(F-13) — 그때 목록은 **내
+  /// 위치가 아니라 그 지점**을 기준으로 하므로 측위 품질과 무관하다.
+  String? get locationQualityMessage {
+    if (_anchorPosition != null) return null;
+    if (_locationAccessState != LocationAccessState.ready) return null;
+    final q = _locationService.lastFixQuality;
+    return locationQualityNotice(
+      accuracyMeters: q.accuracyMeters,
+      age: q.age,
+      radiusMeters: _settings.radiusMeters,
+    );
+  }
   // 좌표는 서버에 백업하지 않으므로(backlog 추가 75, C안) 새 기기에서 복원한
   // 직후에는 명함에 좌표가 없어 거리 계산이 안 된다. 주소로 좌표를 다시
   // 계산하는 동안 화면이 "주변에 아무도 없음"으로 보이면 오해를 사므로,
@@ -129,6 +172,7 @@ class RadarViewModel extends ChangeNotifier {
   Future<void> declineLocationConsent() async {
     _locationConsent = await _locationConsentService.decline();
     _currentPosition = null;
+    _anchorPosition = null;
     _locationAccessState = LocationAccessState.consentDeclined;
     _safeNotify();
   }
@@ -143,6 +187,7 @@ class RadarViewModel extends ChangeNotifier {
   Future<void> refreshLocation() async {
     if (!hasLocationConsent) {
       _currentPosition = null;
+      _anchorPosition = null;
       _locationAccessState =
           _locationConsent.decision == LocationConsentDecision.declined
           ? LocationAccessState.consentDeclined
@@ -194,6 +239,11 @@ class RadarViewModel extends ChangeNotifier {
         _locationAccessState = LocationAccessState.unavailable;
     }
 
+    // 위치를 잃으면 지도에서 찍어 둔 기준점도 함께 푼다. 내 위치가 없으면
+    // 지도 화면 자체가 열리지 않아 기준점을 되돌릴 방법이 없는데, 목록 거리만
+    // 지정한 지점 기준으로 남으면 사용자가 손쓸 수 없는 상태가 된다.
+    if (_currentPosition == null) _anchorPosition = null;
+
     _isRefreshingLocation = false;
     _safeNotify();
   }
@@ -203,8 +253,16 @@ class RadarViewModel extends ChangeNotifier {
     _safeNotify();
   }
 
-  List<ContactModel> get filteredContacts {
-    final currentPosition = _currentPosition;
+  /// 화면(지도·목록)이 보는 목록. 내 위치가 아니라 **기준점**을 본다(F-13) —
+  /// 지도에서 다른 지점을 찍어 두면 그 점 기준으로 반경 안에 드는 사람이 바뀐다.
+  List<ContactModel> get filteredContacts => _contactsNear(referencePosition);
+
+  /// 주어진 지점을 기준으로 반경·검색어를 적용해 거른다.
+  ///
+  /// 기준점을 인자로 받는 이유는 **부르는 쪽마다 기준이 다르기 때문이다.**
+  /// 화면은 기준점(둘러보기)을, 근접 알림은 내 실제 위치(지금 여기)를 쓴다.
+  List<ContactModel> _contactsNear(GeoPosition? origin) {
+    final currentPosition = origin;
     if (currentPosition == null) return const [];
 
     final contacts = _contactsRepository.contacts;
@@ -230,16 +288,27 @@ class RadarViewModel extends ChangeNotifier {
     return list;
   }
 
+  /// "지금 근처에 이 사람이 있습니다"로 알릴 후보.
+  ///
+  /// ⚠️ **여기만 기준점(F-13)을 쓰지 않는다. 빠뜨린 것이 아니다.**
+  /// 이 값은 *"지금 내가 있는 곳에 누가 있나"*에 답한다. 기준점을 적용하면
+  /// 서울에 있는 사용자가 지도에서 부산을 찍은 순간 400km 떨어진 사람을
+  /// "근처에 있다"고 알리게 된다 — 거짓 알림이고, 사용자는 기준점을 옮긴
+  /// 것과 그 알림을 연결 짓지 못한다.
+  ///
+  /// 그래서 후보를 거를 때도 `filteredContacts`(기준점 기준)를 쓰지 않고
+  /// **내 실제 위치로 다시 거른다.**
   ContactModel? get nearbyAlertContact {
-    if (_currentPosition == null) return null;
-    final inRange = filteredContacts;
+    final origin = _currentPosition;
+    if (origin == null) return null;
+    final inRange = _contactsNear(origin);
     if (inRange.isEmpty) return null;
 
     final priorities = inRange.where((c) => c.isPriority).toList();
     final candidatePool = priorities.isNotEmpty ? priorities : inRange;
     candidatePool.sort((a, b) {
-      final dA = GeoUtils.getDistanceMeters(_currentPosition, a.geo);
-      final dB = GeoUtils.getDistanceMeters(_currentPosition, b.geo);
+      final dA = GeoUtils.getDistanceMeters(origin, a.geo);
+      final dB = GeoUtils.getDistanceMeters(origin, b.geo);
       return dA.compareTo(dB);
     });
     return candidatePool.first;
@@ -252,6 +321,22 @@ class RadarViewModel extends ChangeNotifier {
     _safeNotify();
     // 저장 실패가 화면을 막을 이유는 없다 — 이번 세션 동안은 이미 적용됐다.
     _proximitySettingsService.saveRadius(newRadiusMeters);
+  }
+
+  /// 지도에서 찍은 지점을 거리 기준으로 삼는다(F-13).
+  ///
+  /// 좌표는 화면에 그리고 거리 계산에만 쓴다 — **로그로 남기지 않는다.**
+  /// 위치는 개인정보라 디버그 출력에도 위경도를 찍지 않는다.
+  void setAnchor(GeoPosition position) {
+    _anchorPosition = position;
+    _safeNotify();
+  }
+
+  /// 기준점을 풀고 내 현재 위치로 되돌린다.
+  void clearAnchor() {
+    if (_anchorPosition == null) return;
+    _anchorPosition = null;
+    _safeNotify();
   }
 
   void setPreviewContact(ContactModel? contact) {
@@ -271,5 +356,29 @@ class RadarViewModel extends ChangeNotifier {
 
   void updateContact(ContactModel contact) {
     _contactsRepository.updateContact(contact);
+  }
+
+  // --- F-10 A. 오늘 연락하면 좋은 사람 ---------------------------------
+  //
+  // 위치와 무관하다. 이 화면의 나머지는 "지금 내 주변"을 말하지만, 재연락은
+  // "누굴 까먹었나"라서 GPS가 없어도(=filteredContacts가 비어도) 답할 수 있다.
+  // 그래서 `_currentPosition`을 보지 않고 저장소 전체를 대상으로 한다.
+
+  /// 오늘 연락하면 좋은 사람 목록. 순위·이유는 전부 기기 안에서 정해진다
+  /// (AI 호출 없음, 서버 전송 없음).
+  List<ReconnectCandidate> get reconnectCandidates =>
+      ReconnectPriorityService.pick(
+        contacts: _contactsRepository.contacts,
+        now: DateTime.now(),
+      );
+
+  /// "이번엔 넘김" — 7일 뒤에 다시 후보가 된다. 아무것도 지우지 않는다.
+  void snoozeReconnect(ContactModel contact) {
+    _contactsRepository.updateContact(
+      ReconnectPriorityService.applySnooze(
+        contact: contact,
+        now: DateTime.now(),
+      ),
+    );
   }
 }

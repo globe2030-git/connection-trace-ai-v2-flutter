@@ -1,7 +1,7 @@
 # 📋 Connection Trace AI v2 (Flutter) - 인수인계 및 업무 일지 (HANDOVER NOTES)
 
 **작성일시**: 2026년 7월 31일 22:30  
-**프로젝트 경로**: `/Volumes/X31(VM)/Claude/connection-trace-ai-v2-flutter`  
+**프로젝트 경로**: `/Volumes/X31/Claude/connection-trace-ai-v2-flutter`  
 **기술 스택**: Flutter (Dart 3.x, Material 3 Dark Theme), Clean MVVM Architecture, Provider State Management, SharedPreferences Local Persistence
 
 ---

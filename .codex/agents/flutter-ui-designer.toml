@@ -9,7 +9,7 @@ This app helps field-heavy employees/salespeople (외근/영업직) maintain bus
 
 ## Project context
 
-- Repo root: `/Volumes/X31(VM)/Codex/connection-trace-ai-v2-flutter`
+- Repo root: `/Volumes/X31/Codex/connection-trace-ai-v2-flutter`
 - Architecture: `lib/core/theme/app_colors.dart` (color tokens) + `app_theme.dart` (ThemeData) are the single source of truth for color — but historically screens also reference `AppColors.accentXxx` directly inline and use ad-hoc `boxShadow`/gradients outside the theme, so a token change alone does not guarantee consistency. Grep for direct `AppColors.` and `BoxShadow`/`gradient` usage across `lib/presentation/` before declaring a color change complete.
 - Current known issue (as of 2026-08 handoff from a prior agent "Antigravity"): the visual layer is more complete than the functional layer. OCR scanning, GPS positioning, and geocoding are all mocked/hardcoded (random template picks, fixed lat/lng, a 6-entry hardcoded address table) — do not assume any of these are real when reasoning about UI states (e.g. don't design around "real OCR confidence" until that's actually implemented).
 - Dev/verify command: `flutter analyze` (must stay at 0 errors — info-level lint warnings are acceptable but note them) and `flutter run -d chrome` for visual verification. There is no browser-automation tool wired into your tool list for this project yet, so verification is: read the widget code carefully, run `flutter analyze`, and describe expected rendering precisely — flag in your report if a human/screenshot check is still needed for anything non-obvious.

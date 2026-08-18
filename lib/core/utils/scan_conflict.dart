@@ -16,8 +16,47 @@
 /// ⚠️ **회사명은 일부러 안 본다.** 같은 명함이라도 앞면은 한글, 뒷면은 영문
 /// 표기인 경우가 흔해서(`크림하우스(주)` / `CREAMHOUSE`) 다른 명함으로
 /// 잘못 잡는다.
+/// 같은 칸에 들어갈 두 값을 비교할 때 **무엇을 같은 값으로 볼지**는 칸마다
+/// 다르다. 전화번호는 구분자를, 이름은 음절 사이 공백을, 이메일은 대소문자를
+/// 무시해야 한다. 그 규칙을 칸 종류로 고른다.
+enum ScanValueKind {
+  name,
+  phone,
+  email,
+
+  /// 회사명·직함·주소처럼 자유 문장인 칸. 앞뒤 공백과 이어진 공백만 정리해
+  /// 비교한다 — **한글/영문 표기 차이는 다른 값으로 본다.**
+  ///
+  /// 다른 명함인지 판정할 때는 회사명을 일부러 안 보지만(위 주석), 칸 단위로
+  /// 고를 때는 이야기가 다르다. `크림하우스(주)`와 `CREAMHOUSE`는 **둘 다
+  /// 쓸모 있는 값이고 어느 쪽을 남길지는 사용자가 정할 일**이다.
+  text,
+}
+
 class ScanConflict {
   const ScanConflict._();
+
+  /// 한 칸에 대해, **이미 있는 값과 새로 읽은 값이 사실상 다른지**.
+  ///
+  /// 한쪽이 비어 있으면 충돌이 아니다 — 빈 칸을 채우는 것은 고를 일이 없다.
+  ///
+  /// `looksLikeDifferentCard`가 "이 스캔 전체가 다른 사람 것인가"를 묻는다면,
+  /// 이쪽은 "이 칸 하나를 어느 값으로 둘 것인가"를 묻는다(F-01). 뒷면을 이어
+  /// 찍었을 때 **이미 채워진 칸에 들어온 값이 조용히 버려지던 것**을 사용자
+  /// 눈앞에 꺼내기 위한 판정이다.
+  static bool valuesConflict({
+    required String existing,
+    required String scanned,
+    required ScanValueKind kind,
+  }) {
+    final normalize = switch (kind) {
+      ScanValueKind.name => _normalizeName,
+      ScanValueKind.phone => _normalizePhone,
+      ScanValueKind.email => _normalizeEmail,
+      ScanValueKind.text => _normalizeText,
+    };
+    return _conflicts(existing, scanned, normalize);
+  }
 
   /// 기존 값과 새 스캔 값이 **둘 다 있는데 서로 다르면** 다른 명함으로 본다.
   /// 한쪽이 비어 있으면 판단 근거가 없으므로 충돌로 보지 않는다.
@@ -54,4 +93,10 @@ class ScanConflict {
 
   /// 이메일은 대소문자만 다른 경우가 있어 소문자로 맞춘다.
   static String _normalizeEmail(String v) => v.trim().toLowerCase();
+
+  /// 자유 문장은 줄바꿈·연속 공백만 한 칸으로 정리한다. OCR이 같은 줄을 두
+  /// 칸 띄어 읽는 일이 흔한데, 그걸 다른 값이라고 물으면 고를 것이 없는
+  /// 물음이 된다.
+  static String _normalizeText(String v) =>
+      v.trim().replaceAll(RegExp(r'\s+'), ' ');
 }

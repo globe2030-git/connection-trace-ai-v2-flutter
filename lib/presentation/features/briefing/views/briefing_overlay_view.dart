@@ -10,6 +10,7 @@ import '../../../../core/models/pending_comm_log_intent.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/services/pilot_events_service.dart';
+import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
@@ -23,6 +24,7 @@ import '../../radar/view_models/radar_view_model.dart';
 import 'ai_data_review_sheet.dart';
 import 'communication_source_sheet.dart';
 import 'manual_comm_log_modal_view.dart';
+import 'reconnect_outcome_sheet.dart';
 
 // 이 오버레이의 페이지 배경 위에 "직접" 놓이는(=GlassCard 안이 아닌) 에러 텍스트/아이콘
 // 전용 색상. AppColors.destructive(#EF4444)는 AppColors.bgBase 위에서
@@ -161,6 +163,21 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
     await AiUsageService.fetch();
   }
 
+  /// F-08 — "AI에 보낼 정보"를 다시 열어 보고 고친다.
+  ///
+  /// 동의 캐시를 비우기만 하면 [_generate]가 알아서 전송 항목 화면을 다시
+  /// 띄운다. 그 화면에서:
+  /// - **닫으면** `null`이 돌아와 생성도 과금도 일어나지 않는다(그냥 보기).
+  /// - **고쳐서 확인하면** 새 선택으로 다시 생성한다.
+  ///
+  /// 캐시를 비우는 것 자체가 부작용이라 되돌릴 필요는 없다 — 사용자가 닫아서
+  /// 생성이 취소되면 다음에 "새로 생성"을 눌렀을 때 전송 항목을 한 번 더
+  /// 확인하게 될 뿐이고, 그건 이 기능이 바라는 방향이다.
+  Future<void> _editAiData() async {
+    setState(() => _consentedSelection = null);
+    await _generate();
+  }
+
   Future<void> _addCommunicationRecord() async {
     final contact = _resolveContact(context.read<ContactsRepository>());
     final action = await showModalBottomSheet<CommunicationSourceAction>(
@@ -256,14 +273,52 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
       ),
     );
 
-    if (!mounted || action == null || action == PendingCommLogAction.discard) {
-      return;
+    if (mounted && action != null && action != PendingCommLogAction.discard) {
+      if (action == PendingCommLogAction.save) {
+        _saveCommLog(intent);
+      } else {
+        await _openManualRecord(intent.channel, initialSummary: intent.point);
+      }
     }
-    if (action == PendingCommLogAction.save) {
-      _saveCommLog(intent);
-    } else {
-      await _openManualRecord(intent.channel, initialSummary: intent.point);
-    }
+
+    // F-10 C — 소통 기록을 남겼든 안 남겼든, **방금 실제로 연락한 것은 사실**
+    // 이므로 여기서 한 번 묻는다. 스펙의 "연락 가이드 직후"가 바로 이 순간이다.
+    await _askReconnectOutcome();
+  }
+
+  /// F-10 **C. 연락 후 후속** — "연락 어땠어요?"를 한 번 묻는다.
+  ///
+  /// ⚠️ **강요하지 않는다.** 안 누르고 닫으면 `null`이 돌아오고 아무것도
+  /// 저장하지 않는다. 여기서 재촉하거나 다시 띄우면 C는 죽고, C가 죽으면
+  /// A(오늘 연락하면 좋은 사람)의 정확도를 올릴 연료도 없어진다.
+  Future<void> _askReconnectOutcome() async {
+    if (!mounted) return;
+    final repo = context.read<ContactsRepository>();
+    final result = await ReconnectOutcomeSheet.show(
+      context,
+      _resolveContact(repo),
+    );
+    if (result == null || !mounted) return;
+
+    // 시트가 떠 있는 동안 소통 기록이 추가됐을 수 있으므로 최신본에 얹는다.
+    final updated = ReconnectPriorityService.applyOutcome(
+      contact: _resolveContact(context.read<ContactsRepository>()),
+      outcome: result.outcome,
+      now: DateTime.now(),
+      followUpAfter: result.followUpAfter,
+    );
+    context.read<RadarViewModel>().updateContact(updated);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.followUpAfter == null
+              ? '다음에 누구부터 연락할지 정하는 데 반영했어요'
+              : '그때가 되면 "오늘 연락하면 좋은 사람"에 다시 올려 드릴게요',
+        ),
+        backgroundColor: AppColors.accent,
+      ),
+    );
   }
 
   void _saveCommLog(PendingCommLogIntent intent) {
@@ -498,6 +553,26 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
                             ],
                           ),
                         ),
+                        // F-08: "AI에 보낼 정보"로 다시 들어가는 통로.
+                        //
+                        // 왜 필요한가: 한 번 동의하면 `_consentedSelection`이
+                        // 남아 **"새로 생성"을 눌러도 전송 항목 화면이 다시
+                        // 뜨지 않았다.** 그래서 사용자는 자기가 무엇을 보냈는지
+                        // 확인할 수도, 고칠 수도 없었다(테스터 피드백 F-08).
+                        //
+                        // 그냥 열어 보기만 하면 **아무 비용도 들지 않는다** —
+                        // 닫으면 생성이 일어나지 않는다. 고쳐서 확인을 누르면
+                        // 그때 생성된다(그 화면이 남은 횟수를 함께 보여준다).
+                        if (serviceDeployed)
+                          IconButton(
+                            icon: const AppIcon(
+                              AppIconId.aiDataInfo,
+                              size: 20,
+                              color: AppColors.accentText,
+                            ),
+                            onPressed: _isGenerating ? null : _editAiData,
+                            tooltip: 'AI에 보낼 정보 보기·수정',
+                          ),
                         if (serviceDeployed)
                           IconButton(
                             icon: _isGenerating

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/models/ai_data_review_memory.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/services/weather_service.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -46,13 +47,9 @@ class AiDataReviewSheet extends StatefulWidget {
 }
 
 class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
-  /// 인맥별 **직전에 고른 소통 기록**. 매번 처음부터 다시 고르지 않도록
-  /// 기억한다(사용자 요청, 2026-08-10).
-  ///
-  /// 기기에 저장하지 않고 앱이 켜져 있는 동안만 들고 있는다 — 남는 것은
-  /// 기록 식별자뿐이지만, 굳이 디스크에 늘릴 이유가 없다. 앱을 다시 켜면
-  /// 아무것도 선택되지 않은 상태(기본 제외, opt-in)로 시작한다.
-  static final Map<String, Set<String>> _lastSelectionByContact = {};
+  // 직전 선택·메모를 기억하는 곳은 위젯 밖(AiDataReviewMemory)이다. 위젯
+  // 없이도 규칙을 테스트할 수 있게 하려고 뺐다 —
+  // core/models/pending_comm_log_intent.dart와 같은 이유.
 
   late final List<CommunicationLogModel> _availableLogs;
   final Set<String> _selectedIds = {};
@@ -86,11 +83,15 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
     // 사용자가 명시적으로 선택한 값이라 opt-in 원칙에 어긋나지 않고, 매번
     // 처음부터 다시 고르는 번거로움만 던다. 직전 선택 중 이미 삭제된 기록은
     // 걸러낸다(없는 항목이 선택된 것처럼 보이면 "무엇이 전송되는가"가 어긋남).
-    final remembered = _lastSelectionByContact[widget.contact.id];
+    final remembered = AiDataReviewMemory.selectionFor(widget.contact.id);
     final availableIds = _availableLogs.map((log) => log.id).toSet();
-    if (remembered != null && remembered.any(availableIds.contains)) {
-      _selectedIds.addAll(remembered.where(availableIds.contains));
-    }
+    _selectedIds.addAll(remembered.where(availableIds.contains));
+
+    // F-08: 직전에 적어 넣은 메모를 되살린다. 이게 있어야 "수정"이 실제로
+    // 수정이 된다 — 빈 칸에서 시작하면 사용자는 직전에 무엇을 보냈는지 모른 채
+    // 처음부터 다시 써야 한다. 사용자가 직접 넣은 값이므로 미리 채워도
+    // "가짜 데이터"가 아니다(CLAUDE.md 4절) — 앱이 지어낸 문장이 아니다.
+    _extraNoteController.text = AiDataReviewMemory.noteFor(widget.contact.id);
 
     // 남은 횟수는 서버 카운터가 유일한 진실이라 매번 새로 읽는다.
     AiUsageService.fetch().then((usage) {
@@ -128,8 +129,12 @@ class _AiDataReviewSheetState extends State<AiDataReviewSheet> {
     // 이번에 고른 것을 기억해 다음에 기본값으로 쓴다(사용자 요청, 2026-08-10).
     // 동의까지 마친 선택만 기억한다 — 화면을 그냥 닫은 경우는 "고른 것"이
     // 아니므로 다음번 기본값이 되어서는 안 된다.
-    _lastSelectionByContact[widget.contact.id] = {..._selectedIds};
     final note = _extraNoteController.text.trim();
+    AiDataReviewMemory.remember(
+      contactId: widget.contact.id,
+      selectedLogIds: _selectedIds,
+      note: note,
+    );
     Navigator.pop(
       context,
       AiBriefingSelection(

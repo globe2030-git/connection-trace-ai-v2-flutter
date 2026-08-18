@@ -7,6 +7,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 
 /// 관리자 전용 — 명함 이미지 여러 장을 한 번에 스캔해 파싱 결과를 표로 본다.
 ///
@@ -117,8 +118,24 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
 
   Future<void> _pickAndScan() async {
     final files = await OcrScannerService.pickImagesFromGallery();
-    if (files.isEmpty || !mounted) return;
-    await _runScan(files);
+    if (files.isEmpty) return;
+    // 갤러리에서 고르면 image_picker가 **앱 임시 폴더에 사본을 만든다.** 평문인
+    // 데다 일괄 스캔은 한 번에 수십 장이라 가장 많이 쌓이는 경로다(추가 243).
+    // 표는 이미 `_rows`에 들어 있고 내보내기(`_shareTsv`)는 앱 문서 폴더의
+    // `card_samples`를 쓰므로, 스캔이 끝나면 이 사본은 아무도 안 쓴다.
+    //
+    // ⚠️ 지우는 것은 **사본**이지 사진첩 원본이 아니다.
+    //
+    // ⚠️ `_scanFromAppFolder`가 부르는 쪽은 지우지 않는다 — 그건 사본이 아니라
+    // 검수용 원본 묶음(`card_samples`)이고, 지우면 다시 넣어야 한다.
+    try {
+      if (!mounted) return;
+      await _runScan(files);
+    } finally {
+      for (final file in files) {
+        await deleteQuietly(file.path);
+      }
+    }
   }
 
   Future<void> _runScan(List<XFile> files) async {
@@ -139,7 +156,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         final result = await OcrScannerService.scanBusinessCard(file);
         row = _BatchRow(fileName: fileName, result: result);
       } catch (e) {
-        row = _BatchRow(fileName: fileName, errorType: e.runtimeType.toString());
+        row = _BatchRow(
+          fileName: fileName,
+          errorType: e.runtimeType.toString(),
+        );
       }
       if (!mounted) return;
       setState(() {
@@ -204,10 +224,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
         files.addAll(images.map((f) => XFile(f.path)));
       }
       await SharePlus.instance.share(
-        ShareParams(
-          files: files,
-          subject: '명함 인식 검수 자료',
-        ),
+        ShareParams(files: files, subject: '명함 인식 검수 자료'),
       );
     } catch (e) {
       _toast('내보내지 못했습니다(${e.runtimeType}).');
@@ -235,7 +252,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           '직함',
           '휴대폰',
           '사무실',
+          '팩스',
           '이메일',
+          '홈페이지',
           '우편번호',
           '주소',
           '상세주소',
@@ -254,7 +273,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.title ?? '',
           r?.phone ?? '',
           r?.officePhone ?? '',
+          r?.fax ?? '',
           r?.email ?? '',
+          r?.website ?? '',
           r?.postalCode ?? '',
           r?.address ?? '',
           r?.addressDetail ?? '',
@@ -320,7 +341,9 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
             decoration: BoxDecoration(
               color: AppColors.accent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.2),
+              ),
             ),
             child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,7 +354,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
                   child: Text(
                     '선택한 이미지는 기기 안에서만 처리하며 서버로 보내지 않습니다. '
                     '명함 주인의 개인정보가 그대로 표시되니 화면 공유에 주의하세요.',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ),
               ],
@@ -344,7 +370,10 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: _running ? null : _pickAndScan,
-                icon: const Icon(Icons.photo_library_outlined, color: Colors.white),
+                icon: const Icon(
+                  Icons.photo_library_outlined,
+                  color: Colors.white,
+                ),
                 label: Text(
                   _running ? '스캔 중… ($_done / $_total)' : '명함 이미지 여러 장 선택',
                   style: const TextStyle(
@@ -470,12 +499,17 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
             _field('직함', r.title),
             _field('휴대폰', r.phone),
             _field('사무실', r.officePhone),
+            _field('팩스', r.fax),
             _field('이메일', r.email),
-            _field('주소', [
-              r.postalCode,
-              r.address,
-              r.addressDetail,
-            ].where((s) => s.trim().isNotEmpty).join(' ')),
+            _field('홈페이지', r.website),
+            _field(
+              '주소',
+              [
+                r.postalCode,
+                r.address,
+                r.addressDetail,
+              ].where((s) => s.trim().isNotEmpty).join(' '),
+            ),
           ],
         ],
       ),

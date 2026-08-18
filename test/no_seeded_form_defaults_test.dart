@@ -64,4 +64,42 @@ void main() {
           '${offenders.join('\n')}',
     );
   });
+
+  // ⚠️ 위 검사만으로는 부족했다(2026-08-15 실기기에서 발견).
+  //
+  // 생성자 기본값은 깨끗했는데, **스캔이 끝난 뒤** 메모 칸에
+  // `_memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.'`
+  // 를 대입하고 있었다. 사용자가 쓰지 않은 문장이 사용자 메모로 저장됐고,
+  // 그대로 AI 브리핑 요청에 `메모:`로 실려 나갔다 — 아무 정보 없는 문장에
+  // 토큰을 쓰고, AI는 그걸 그 사람에 대한 맥락으로 읽는다.
+  //
+  // 같은 결함(E-08 태그 기본값 `AI, IT`)을 이미 한 번 겪고 위 테스트를
+  // 만들었는데도 **대입 경로는 걸리지 않아** 다시 통과했다. 그래서 검사 지점을
+  // 하나 더 둔다.
+  test('스캔 결과를 채울 때 입력칸에 고정 문구를 대입하지 않는다', () {
+    // `_xxxController.text = '리터럴';` — 파싱 결과가 아니라 코드에 박힌 문장.
+    // 빈 문자열 대입(`= ''`)은 지우는 동작이므로 허용한다.
+    final literalAssign = RegExp(r"_(\w+)Controller\.text\s*=\s*'([^']+)'");
+
+    final offenders = <String>[];
+    for (final file in Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))) {
+      final src = file.readAsStringSync();
+      for (final m in literalAssign.allMatches(src)) {
+        final line = '\n'.allMatches(src.substring(0, m.start)).length + 1;
+        offenders.add('${file.path}:$line — _${m.group(1)}Controller ← "${m.group(2)}"');
+      }
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '입력칸에 코드에 박힌 문장을 대입하면 사용자가 쓰지 않은 값이 저장된다.\n'
+          '채울 값은 반드시 파싱 결과·사용자 입력에서 와야 한다.\n'
+          '${offenders.join('\n')}',
+    );
+  });
 }

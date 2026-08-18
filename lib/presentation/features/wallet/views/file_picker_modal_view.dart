@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 
 class FilePickerModalView extends StatefulWidget {
   /// 지금 고르는 면("앞면"/"뒷면"). 제목 옆에 표시한다.
@@ -29,13 +31,36 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
   bool _isPicking = false;
   bool _isProcessing = false;
 
+  /// 고른 사진의 **책임을 부른 쪽에 넘겼는지**(2026-08-16).
+  ///
+  /// 갤러리에서 고르면 image_picker가 **앱 임시 폴더에 사본을 만든다** — 이
+  /// 사본은 평문이고, 명함 이미지에는 이름·전화·이메일이 인쇄돼 있어 그대로
+  /// 두면 저장본을 암호화하는 이유가 무력해진다(추가 243).
+  ///
+  /// 인식에 성공해 결과를 넘기면(`Navigator.pop`) 그 사본은 **부른 쪽이
+  /// 저장에 쓰므로 여기서 지우면 안 된다**(명함 등록 화면이
+  /// `saveEncryptedCardImage`로 암호화한 뒤 지운다). 반대로 넘기지 못한 채
+  /// 화면이 닫히면 아무도 안 쓰므로 여기서 지운다.
+  ///
+  /// ⚠️ 지우는 것은 **앱 임시 폴더의 사본**이지 사진첩 원본이 아니다.
+  bool _handedOverToCaller = false;
+
   Future<void> _pickFromGallery() async {
     setState(() => _isPicking = true);
     try {
       final image = await OcrScannerService.pickImageFromGallery();
       if (image == null) return;
       final bytes = await image.readAsBytes();
-      if (!mounted) return;
+      // ["다른 이미지 선택"으로] 갈아치우는 앞 사본은 확실히 안 쓰인다.
+      final discarded = _pickedImage;
+      if (discarded != null && discarded.path != image.path) {
+        unawaited(deleteQuietly(discarded.path));
+      }
+      if (!mounted) {
+        // 고르는 사이에 화면이 닫혔다 — 아무도 안 쓸 사본이므로 지운다.
+        unawaited(deleteQuietly(image.path));
+        return;
+      }
       setState(() {
         _pickedImage = image;
         _pickedImageBytes = bytes;
@@ -43,6 +68,16 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     } finally {
       if (mounted) setState(() => _isPicking = false);
     }
+  }
+
+  @override
+  void dispose() {
+    // 고르기만 하고 인식하지 않은 채 닫으면 사본이 남는다. 넘긴 것은
+    // 부른 쪽이 책임지므로 건드리지 않는다.
+    if (!_handedOverToCaller) {
+      unawaited(deleteQuietly(_pickedImage?.path));
+    }
+    super.dispose();
   }
 
   Future<void> _processSelectedImage() async {
@@ -53,6 +88,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
     try {
       final result = await OcrScannerService.scanBusinessCard(image);
       if (!mounted) return;
+      _handedOverToCaller = true;
       Navigator.pop(context, result);
     } catch (e) {
       if (!mounted) return;

@@ -40,6 +40,26 @@ fi
 # 무결성 검증기(Play Integrity / App Attest)를 통과할 수 없어서, 이 플래그로
 # debug 제공자를 쓰고 기기별 디버그 토큰을 Firebase에 등록해 쓴다.
 # 근거와 주의사항은 lib/core/services/app_check_service.dart 주석 참고.
+# ⚠️ **x86_64(에뮬레이터용)를 뺀다** (2026-08-17 사용자 결정).
+#
+# OpenCV가 들어오면서 ABI마다 네이티브가 붙는다. 실측으로 x86_64가 APK의
+# **103.6MB**를 차지했다(기성 OpenCV 시절 전체 230MB 중). 스토어는 기기에 맞는
+# ABI 하나만 내려보내므로 **실사용자 용량과는 무관**하지만, **테스터 배포는
+# APK를 통째로 보내서** 그대로 걸린다 — 지금이 테스터 배포 단계다.
+#
+# 잃는 것: **에뮬레이터에서 앱을 못 돌린다.**
+# ⚠️ 다만 이 저장소는 ML Kit이 arm64 시뮬레이터를 지원하지 않아 **이미
+# 에뮬레이터에서 OCR을 못 돌린다.** OCR 말고 다른 화면은 돌아가므로
+# "아예 못 쓴다"는 아니다 — 잃는 범위가 그만큼이다.
+#
+# ⚠️ **`build.gradle.kts`의 `ndk { abiFilters }`로는 안 된다.** Flutter가
+# ABI를 `--target-platform`으로 직접 정하기 때문에 그쪽 설정은 덮인다
+# (2026-08-17 실측 — 넣고 빌드했더니 x86_64가 그대로 들어 있었다).
+ABI_FLAG=""
+if [ "$TARGET" = "apk" ] || [ "$TARGET" = "appbundle" ]; then
+  ABI_FLAG="--target-platform=android-arm,android-arm64"
+fi
+
 EXTRA_DEFINES=""
 if [ "${3:-}" = "appcheck-debug" ]; then
   EXTRA_DEFINES="--dart-define=APP_CHECK_DEBUG=true"
@@ -49,8 +69,8 @@ elif [ -n "${3:-}" ]; then
 fi
 
 echo "빌드: $TARGET ($MODE)  커밋: $COMMIT"
-# shellcheck disable=SC2086  # EXTRA_DEFINES는 공백 없는 단일 옵션이라 분리 확장이 맞다
-flutter build "$TARGET" "--$MODE" --dart-define=GIT_COMMIT="$COMMIT" $EXTRA_DEFINES
+# shellcheck disable=SC2086  # ABI_FLAG·EXTRA_DEFINES는 공백 없는 단일 옵션이라 분리 확장이 맞다
+flutter build "$TARGET" "--$MODE" --dart-define=GIT_COMMIT="$COMMIT" $ABI_FLAG $EXTRA_DEFINES
 
 echo
 echo "완료. 설정 → 앱 버전에서 '$COMMIT'이 보이면 이 빌드입니다."

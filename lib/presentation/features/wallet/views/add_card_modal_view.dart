@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:cunning_document_scanner/cunning_document_scanner.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,9 +12,15 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../core/utils/ocr_origin.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/contact_image_service.dart';
+import '../../../../core/services/card_rect_detector.dart';
+// ⚠️ 측정 전용 — backlog 277이 끝나면 이 import와 쓰는 곳을 함께 지운다.
+import '../../../../core/utils/measure_sample_sink.dart';
+import '../../../../core/services/doc_scanner_capture_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/utils/scan_conflict.dart';
 import '../../../../core/services/ocr_stats_service.dart';
@@ -23,6 +31,7 @@ import '../../../common/address_search_view.dart';
 import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
+import 'scan_field_conflict_sheet.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
 
@@ -187,12 +196,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 방금 채워졌는지 알아야 한다.
   final Set<String> _lastScanFilledKeys = {};
 
+  /// 이번 스캔에서 **충돌 선택으로 값이 바뀐 칸**의 바꾸기 전 값(F-01).
+  ///
+  /// `_lastScanFilledKeys`(비어 있던 칸을 채운 것)와 성격이 다르다. 저쪽은
+  /// 재촬영 때 **비우면** 되지만, 이쪽은 원래 값이 있던 칸이라 비우면 앞면에서
+  /// 읽은 값까지 사라진다 — **이전 값으로 되돌려야** 한다.
+  final Map<String, ({String text, String? snapshot})> _lastScanReplacedValues =
+      {};
+
   /// 이 명함을 지금까지 몇 번 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
   ///
   /// **명함 한 장은 앞면과 뒷면까지가 최대 행동**이다(사용자 정의 2026-08-14).
   /// 그 전에는 횟수 개념이 없어 세 번, 네 번 찍으면 계속 누적됐고 "여기서
   /// 끝났다"는 지점도 없었다. 이 값으로 안내 문구와 초기화 시점을 정한다.
   int _scanCount = 0;
+
   /// "여기서 완료"로 스캔 흐름을 **끝냈는지**.
   ///
   /// 끝낸 뒤 사용자가 다시 촬영을 시작하면 그것은 **새 스캔 흐름**이다. 이
@@ -201,6 +219,81 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 다시찍기 → 여기서완료 → 사진찍기 → 뒷면찍기가 없어짐"(2026-08-14).
   bool _scanSessionClosed = false;
   bool _useCardAsAvatar = false;
+
+  /// 스캔 임시 파일을 **버릴 때** 지운다(추가 253).
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// `_scannedCardImages`에 쌓이는 것은 **평문 명함 사진**이다. 저장본은
+  /// AES-256-GCM으로 암호화하는데(`ContactImageService`) 그 원본이 캐시에
+  /// 그대로 남으면 **암호화하는 이유 자체가 무력해진다.** 목록에서 빼는 것과
+  /// 파일을 지우는 것은 다른 일인데, 여태 앞의 것만 하고 있었다.
+  ///
+  /// ⚠️ **저장이 끝난 뒤에만 부른다.** 저장은 화면이 닫히기 전에 이 경로를
+  /// 읽어 암호화한다 — 미리 지우면 빈 파일을 읽는다. 그래서 부르는 자리는
+  /// **버리는 것이 확정된 지점**뿐이다(재촬영 / 새 명함으로 시작 / 화면 닫힘).
+  ///
+  /// 던지지 않는다. 정리가 실패해도 등록은 계속돼야 한다.
+  /// 세 번째 면이 들어왔을 때 묻는다(추가 293).
+  ///
+  /// ⚠️ **막지 않는다.** 접이식·부록면이 있는 명함도 있어서 세 장 이상이 늘
+  /// 잘못은 아니다. 다만 **다른 사람 명함을 잘못 찍은 경우가 훨씬 흔하고**,
+  /// 그때 그냥 저장되면 **남의 명함이 이 사람 명함으로 남는다.**
+  Future<void> _askThirdFace() async {
+    final keep = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('면이 세 장이 됐어요'),
+        content: const Text(
+          '명함은 보통 앞면과 뒷면 두 장이에요.\n'
+          '혹시 다른 사람 명함을 찍으셨나요?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('방금 찍은 면 빼기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('그대로 두기'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    // 대화상자를 그냥 닫으면(null) **빼지 않는다** — 사용자가 고르지 않은 것을
+    // 지우는 쪽으로 해석하면 안 된다.
+    if (keep == false) _removeScannedFace(_scannedCardImages.length - 1);
+  }
+
+  /// 스캔한 면 하나를 목록에서 뺀다(추가 293).
+  ///
+  /// ⚠️ **파일도 지운다.** 이건 제3자의 평문 명함 사진이라, 화면에서만 빼고
+  /// 임시 파일을 남기면 그게 곧 우리가 닷새에 걸쳐 막은 그 문제다
+  /// (추가 248·269·275).
+  ///
+  /// 📌 대표로 고른 면을 빼면 **첫 장이 대표가 된다** — 대표가 없는 상태를
+  /// 만들지 않는다. 마지막 한 장까지 빼면 스캔 이미지가 없는 상태로 돌아간다.
+  void _removeScannedFace(int index) {
+    if (index < 0 || index >= _scannedCardImages.length) return;
+    final removed = _scannedCardImages.removeAt(index);
+    unawaited(deleteQuietly(removed.path));
+    setState(() {
+      if (_scannedCardImages.isEmpty) {
+        _selectedScanIndex = -1;
+      } else if (_selectedScanIndex == index) {
+        _selectedScanIndex = 0;
+      } else if (_selectedScanIndex > index) {
+        _selectedScanIndex -= 1;
+      }
+    });
+  }
+
+  void _discardScanFiles(Iterable<String> paths) {
+    for (final p in paths) {
+      unawaited(deleteQuietly(p));
+    }
+  }
 
   /// 대표로 선택된 새 스캔 이미지의 경로. 새 스캔이 없으면 null.
   String? get _scannedCardImageSourcePath =>
@@ -281,6 +374,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     for (final node in _fieldFocusOrder) {
       node.addListener(() => _ensureFocusedFieldVisible(node));
     }
+
+    // 자동 인식 표시(F-09)를 감시한다. 키는 `_ocrParsedSnapshot`에 쓰는 것과
+    // **정확히 같아야** 하며(파서가 채울 때 쓰는 키), 다르면 표시가 영영
+    // 안 붙는다. 여기 없는 칸(태그·관심사·메모)은 파서가 채우지 않는다.
+    _watchOcrBadge('name', _nameController);
+    _watchOcrBadge('company', _companyController);
+    _watchOcrBadge('title', _titleController);
+    _watchOcrBadge('address', _addressController);
+    _watchOcrBadge('addressDetail', _addressDetailController);
+    _watchOcrBadge('postal', _postalCodeController);
+    _watchOcrBadge('mobile', _phoneController);
+    _watchOcrBadge('office', _officePhoneController);
+    _watchOcrBadge('fax', _faxController);
+    _watchOcrBadge('email', _emailController);
+    _watchOcrBadge('website', _websiteController);
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
@@ -319,6 +427,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   @override
   void dispose() {
+    // 화면이 닫히는 시점에 남아 있는 스캔 임시 파일을 전부 지운다(추가 253).
+    //
+    // 여기 하나로 세 경우가 함께 닫힌다:
+    //
+    // - **폼 취소** — 등록하지 않고 닫았으니 전부 버려진다
+    // - **중복 병합**(`_applyUpdateToExisting`) — 기존 명함에 합치고 닫는다
+    // - **고르지 않은 나머지 면** — 앞뒷면을 스캔해도 저장은 대표 한 장만
+    //   가져간다. 나머지는 아무도 안 지우고 있었다
+    //
+    // 저장을 거친 경우 대표 한 장은 `ContactImageService`가 이미 지웠지만,
+    // [deleteQuietly]는 없는 파일에 조용히 넘어가므로 겹쳐 불러도 안전하다.
+    // 저장은 `Navigator.pop`보다 먼저 끝나므로 여기서 지워도 늦지 않다.
+    _discardScanFiles(_scannedCardImages.map((e) => e.path));
+
     WebTabGuard.uninstall();
     _nameController.dispose();
     _companyController.dispose();
@@ -367,6 +489,200 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _fieldFocusOrder[nextIndex].requestFocus();
   }
 
+  /// 두 촬영 경로를 뒤집는 스위치 — ⚠️ **debug 빌드에서만 보인다.**
+  ///
+  /// release·테스터 배포 빌드에는 **아예 없다**. 로그인 화면의 "로그인
+  /// 건너뛰기"와 같은 취급이라, 이용자에게 보이는 촬영 진입점은 **그대로
+  /// 하나**다(제품 원칙 2-3절 *"같은 일을 하는 진입점 세 개 이상"*에 안 걸린다).
+  ///
+  /// **왜 필요한가**: 2단계가 *"실제 명함 20~30장으로 둘을 나란히 재기"*인데,
+  /// 상수 플래그만 두면 **명함 한 장마다 빌드를 다시 깔아야 해서** 나란히
+  /// 비교가 안 된다. 이 스위치는 그 측정을 위한 도구다.
+  ///
+  /// 📌 **2단계가 끝나면 지운다.**
+  /// ⚠️ **2단계 대조가 끝나면 지울 임시 스위치들이다.**
+  ///
+  /// 세 경로를 같은 기기에서 번갈아 재기 위해 있다. **재는 일이 끝나면
+  /// 기본값 하나만 남기고 이 스위치들과 진 경로를 지운다** — 제품 원칙의
+  /// *"같은 일을 하는 진입점 셋 이상은 만들지 않는다"*(추가 261)에 걸린다.
+  ///
+  /// release 빌드에는 안 보이므로 지금 사용자에게 닿지는 않는다. 다만
+  /// **지우는 시점을 적어 두지 않으면 그대로 남는다.**
+  ///
+  /// | 스위치 | 끔 | 켬 |
+  /// |---|---|---|
+  /// | 촬영 경로 | 우리 촬영 화면 | A안 문서 스캐너 |
+  /// | 테두리 검출 | **기존 고정 가이드**(예전 그대로) | **B′**(명함을 찾아 자름) |
+  ///
+  /// ⚠️ **`kDebugMode`가 아니라 `!kReleaseMode`**다. 아이폰 debug 빌드는
+  /// 디버거 없이 뜨지 않아(2026-08-16 실측) **debug 전용이면 아이폰에서
+  /// 스위치를 아예 쓸 수 없다.**
+  Widget _buildDocScannerDebugSwitch() {
+    if (kReleaseMode) return const SizedBox.shrink();
+    return ValueListenableBuilder<bool>(
+      valueListenable: docScannerCaptureEnabled,
+      builder: (_, useDocScanner, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(
+              value: useDocScanner,
+              onChanged: (v) => docScannerCaptureEnabled.value = v,
+            ),
+            Expanded(
+              child: Text(
+                useDocScanner ? '[측정] 촬영: A안 문서 스캐너' : '[측정] 촬영: 우리 화면',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ⚠️⚠️ **측정 전용 — backlog 277이 끝나면 통째로 지운다.**
+  ///
+  /// 켜면 촬영한 크롭본을 `card_samples`에 남긴다. 일괄 스캔이 그 폴더를
+  /// 읽으므로, **같은 명함을 경로마다 찍어 나란히 채점**할 수 있게 된다.
+  ///
+  /// ⚠️ **평문 명함 사진이 기기에 쌓인다.** 우리가 닷새에 걸쳐 다섯 군데서
+  /// 막은 바로 그것이라(아이폰 262.7MB · 안드로이드 204MB), **재는 동안만
+  /// 켜고 끝나면 지운다.** release 빌드에서는 켜도 코드가 안 돈다.
+  Widget _buildMeasureSampleSwitch() {
+    if (!kDebugMode) return const SizedBox.shrink();
+    return ValueListenableBuilder<bool>(
+      valueListenable: cardCropKeepForMeasurement,
+      builder: (_, keep, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(
+              value: keep,
+              onChanged: (v) => cardCropKeepForMeasurement.value = v,
+            ),
+            Expanded(
+              child: Text(
+                keep ? '[측정] ⚠️ 크롭본 남기는 중(평문)' : '[측정] 크롭본 안 남김',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 테두리 검출(B′) 켜기/끄기 — ⚠️ **2단계 대조용 임시 스위치.**
+  ///
+  /// 끄면 **검출 코드가 아예 안 돈다.** 프레임도 안 보내고 테두리도 안 그리며,
+  /// 자르기도 기존 고정 가이드 상자로 간다 — **경로 자체가 예전이 된다.**
+  /// 그래야 나란히 재는 것이 뜻이 있다.
+  ///
+  /// 📌 되돌림 장치이기도 하다. 실기기에서 문제가 나면 코드를 되돌리기 전에
+  /// 이 스위치부터 내려 확인할 수 있다.
+  Widget _buildCardRectDebugSwitch() {
+    if (kReleaseMode) return const SizedBox.shrink();
+    // ⚠️ 스위치를 둘로 갈랐다(추가 293). 예전에는 하나가 **검출과 자르기를
+    // 같이** 켜서, *"빈 화면 촬영만 막고 자르기는 예전 것"*이 불가능했다.
+    return Column(
+      children: [
+        _debugToggle(
+          notifier: cardRectDetectionEnabled,
+          onLabel: '[측정] 검출: 켬 (빈 화면·손 자동촬영 막기)',
+          offLabel: '[측정] 검출: 끔 (막지 않음)',
+        ),
+        _debugToggle(
+          notifier: cardRectCropEnabled,
+          onLabel: '[측정] 자르기: B′ 테두리',
+          offLabel: '[측정] 자르기: 기존 고정 가이드',
+        ),
+      ],
+    );
+  }
+
+  Widget _debugToggle({
+    required ValueNotifier<bool> notifier,
+    required String onLabel,
+    required String offLabel,
+  }) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: notifier,
+      builder: (_, value, _) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Switch(value: value, onChanged: (v) => notifier.value = v),
+            Expanded(
+              child: Text(
+                value ? onLabel : offLabel,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 기성 문서 스캐너로 찍고 인식까지 한다(추가 266, 1단계).
+  ///
+  /// 기존 촬영 화면([CameraScanModalView])은 **자기 안에서 인식까지 마치고**
+  /// [OcrScanResult]를 `pop`으로 돌려준다. 이 경로에는 우리 화면이 없으므로
+  /// **여기서 같은 일을 한다** — 돌려주는 값의 모양이 같아야 부르는 쪽을
+  /// 갈라놓지 않는다.
+  ///
+  /// 사용자가 취소하면 `null`.
+  ///
+  /// ⚠️ **평문 사진을 새게 두지 않는다.** 인식까지 못 간 사진은 넘겨줄 곳이
+  /// 없으므로 여기서 지운다 — 기존 경로가 인식 실패 시 크롭본을 지우는 것과
+  /// 같은 자리다(추가 253). 인식에 성공하면 그 파일은 저장 쪽이 넘겨받으므로
+  /// **여기서 지우면 안 된다.**
+  Future<OcrScanResult?> _scanWithDocScanner() async {
+    setState(() => _isScanningOcr = true);
+    // 지울 책임이 아직 우리에게 있는 파일. 넘겨준 뒤에는 null로 비운다.
+    String? orphanPath;
+    try {
+      final capture = await DocScannerCaptureService.capture();
+      if (capture == null) return null; // 사용자가 스캐너를 닫았다.
+      orphanPath = capture.path;
+      final scanned = await OcrScannerService.scanBusinessCard(
+        XFile(capture.path),
+      );
+      orphanPath = null; // 인식 성공 — 이제 저장 쪽이 이 파일의 주인이다.
+      return scanned;
+    } catch (e) {
+      if (!mounted) return null;
+      // 권한 거부는 "실패"가 아니라 사용자가 막은 것이라 문구를 따로 준다 —
+      // "인식에 실패했습니다"만 보면 무엇을 해야 할지 알 수 없다.
+      final denied =
+          e is CunningDocumentScannerException && e.code == 'permission_denied';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            denied
+                ? '⚠️ 카메라 권한이 없어 명함을 촬영할 수 없습니다. 설정에서 권한을 켜 주세요.'
+                : '⚠️ 명함 인식에 실패했습니다: $e',
+          ),
+          backgroundColor: AppColors.destructive,
+        ),
+      );
+      return null;
+    } finally {
+      await deleteQuietly(orphanPath);
+      if (mounted) setState(() => _isScanningOcr = false);
+    }
+  }
+
   /// AI OCR Business Card Scanner (Camera / Image Gallery)
   Future<void> _performOcrScan({
     required bool isFromCamera,
@@ -377,13 +693,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     OcrScanResult? result;
 
     if (isFromCamera) {
-      // Open camera scanner view with viewfinder shutter
-      result = await Navigator.push<OcrScanResult>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
-        ),
-      );
+      if (docScannerCaptureEnabled.value) {
+        // 새 촬영 경로(추가 266, 1단계). 기성 문서 스캐너가 **가이드 상자가
+        // 아니라 명함 테두리**를 찾아 잘라 준다. 돌려주는 값의 모양이 같아서
+        // 아래 흐름(충돌 감지·필드 채움·사진 목록·저장)은 그대로 돈다.
+        result = await _scanWithDocScanner();
+      } else {
+        // Open camera scanner view with viewfinder shutter
+        result = await Navigator.push<OcrScanResult>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+          ),
+        );
+      }
     } else {
       // Open interactive gallery / file explorer picker view
       result = await showModalBottomSheet<OcrScanResult>(
@@ -438,7 +761,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       'postal': (_postalCodeController, result.postalCode),
       'mobile': (_phoneController, result.phone),
       'office': (_officePhoneController, result.officePhone),
+      'fax': (_faxController, result.fax),
       'email': (_emailController, result.email),
+      'website': (_websiteController, result.website),
     };
     fieldSources.forEach((key, src) {
       final (controller, parsedValue) = src;
@@ -451,6 +776,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     });
 
     // 이번 스캔이 어느 칸을 채웠는지 기억해 둔다(재촬영에서 되돌릴 대상).
+    // 충돌 선택으로 바뀐 칸은 아래에서 다시 채워진다.
+    _lastScanReplacedValues.clear();
     _lastScanFilledKeys
       ..clear()
       ..addAll(
@@ -482,6 +809,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
         // 명함을 저장하는데 **좌표가 이전 명함 주소로 잡히는** 일이 가능했다
         // (backlog 추가 189).
+        // 앞 명함의 사진은 여기서 확실히 버려진다 — 파일도 함께 지운다
+        // (추가 253). 목록만 비우면 평문 사진이 캐시에 남았다.
+        _discardScanFiles(_scannedCardImages.map((e) => e.path));
         _scannedCardImages.clear();
         _selectedScanIndex = -1;
         _ocrParsedSnapshot.clear();
@@ -524,11 +854,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _setTextFromStart(_postalCodeController, result.postalCode);
         _setTextFromStart(_phoneController, result.phone);
         _setTextFromStart(_officePhoneController, result.officePhone);
+        _setTextFromStart(_faxController, result.fax);
         _setTextFromStart(_emailController, result.email);
+        _setTextFromStart(_websiteController, result.website);
         _tagsController.text = result.tags.join(', ');
-        _memoController.text = result.rawText.isEmpty
-            ? ''
-            : 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
+        // ⚠️ 메모 칸은 **비운 채로 둔다.** 예전에는 여기에 "AI OCR 스캔으로 자동
+        // 추출된 명함 텍스트 정보입니다."를 넣었는데, 그건 사용자가 쓰지 않은
+        // 문장이 사용자 메모로 저장되는 것이라 E-08(태그 기본값 `AI, IT`)과
+        // 같은 유형의 가짜 데이터였다(CLAUDE.md 4절).
+        //
+        // 실제 피해도 있었다 — 이 문장이 AI 브리핑 요청에 `메모:`로 그대로
+        // 실려 나갔다(2026-08-15 실기기에서 확인). 아무 정보도 없는 문장에
+        // 토큰을 쓰고, AI는 그걸 이 사람에 대한 맥락으로 읽는다.
+        _memoController.text = '';
       } else {
         // 명함 앞/뒷면에 정보가 나뉘어 있는 경우가 흔해서(예: 앞면엔 이름·직함만,
         // 뒷면에 전화번호·주소·이메일) 새 스캔 결과로 폼을 통째로 덮어쓰지 않고
@@ -542,15 +880,38 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _fillIfEmpty(_postalCodeController, result.postalCode);
         _fillIfEmpty(_phoneController, result.phone);
         _fillIfEmpty(_officePhoneController, result.officePhone);
+        _fillIfEmpty(_faxController, result.fax);
         _fillIfEmpty(_emailController, result.email);
+        _fillIfEmpty(_websiteController, result.website);
         if (_tagsController.text.trim().isEmpty && result.tags.isNotEmpty) {
           _tagsController.text = result.tags.join(', ');
         }
-        if (_memoController.text.trim().isEmpty) {
-          _memoController.text = 'AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다.';
-        }
+        // 메모는 채우지 않는다 — 위 `overwrite` 분기와 같은 이유다.
       }
     });
+
+    // ⚠️ **명함은 앞뒤 두 면이다**(추가 293, 사용자 지적).
+    //
+    // 세 번째 면이 들어오면 **다른 명함을 잘못 찍었을 가능성이 높다.** 실제로
+    // 그런 일이 있었고, 그때는 뺄 방법도 없어 남의 명함이 그대로 저장될 뻔했다.
+    //
+    // 📌 **막지 않고 묻는다.** 앞뒤가 아니라 접이식·부록면이 있는 명함도 있어서
+    // 세 장 이상이 늘 잘못은 아니다. 고르는 것은 사용자다.
+    if (_scannedCardImages.length >= 3) {
+      await _askThirdFace();
+    }
+
+    // F-01 — 이미 값이 있는 칸에 **다른 값**이 들어온 경우를 사용자 눈앞에
+    // 꺼낸다. 위 `_fillIfEmpty`는 빈 칸만 채우므로, 앞면에서 읽은 칸에 뒷면이
+    // 다른 값을 읽어 오면 그 값이 **조용히 버려졌다.** 사용자는 그런 값이
+    // 있었다는 사실조차 몰랐다(앞면 휴대폰 / 뒷면 대표번호가 흔한 예다).
+    //
+    // 덮어쓰기(`새 명함으로 시작`)는 이미 사용자가 "전부 새 값"을 고른 것이라
+    // 다시 묻지 않는다.
+    if (!overwrite) {
+      await _resolveScanFieldConflicts(result);
+      if (!mounted) return;
+    }
 
     final missingFields = <String>[
       if (_nameController.text.trim().isEmpty) '이름',
@@ -576,6 +937,86 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
 
     await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
+  }
+
+  /// 이번 스캔이 **이미 채워져 있던 칸**에 다른 값을 들고 온 경우, 칸마다
+  /// 어느 값을 쓸지 고르게 한다(F-01).
+  ///
+  /// 부딪히는 칸이 하나도 없으면 아무것도 묻지 않는다 — 대부분의 뒷면 스캔은
+  /// 빈 칸만 채우므로 이 물음이 뜨지 않는다.
+  Future<void> _resolveScanFieldConflicts(OcrScanResult result) async {
+    // 칸마다 "무엇을 같은 값으로 볼지"가 다르다. 전화는 구분자를, 이름은
+    // 음절 사이 공백을, 이메일은 대소문자를 무시한다.
+    const fields = <(String key, String label, ScanValueKind kind)>[
+      ('name', '이름', ScanValueKind.name),
+      ('company', '회사명', ScanValueKind.text),
+      ('title', '직함 / 부서', ScanValueKind.text),
+      ('address', '회사 주소', ScanValueKind.text),
+      ('addressDetail', '상세주소', ScanValueKind.text),
+      ('postal', '우편번호', ScanValueKind.text),
+      ('mobile', '휴대폰 번호', ScanValueKind.phone),
+      ('office', '사무실 전화번호', ScanValueKind.phone),
+      ('email', '이메일', ScanValueKind.email),
+    ];
+    final scannedValues = <String, String>{
+      'name': result.name,
+      'company': result.company,
+      'title': result.title,
+      'address': result.address,
+      'addressDetail': result.addressDetail,
+      'postal': result.postalCode,
+      'mobile': result.phone,
+      'office': result.officePhone,
+      'email': result.email,
+    };
+
+    final conflicts = <ScanFieldConflict>[];
+    for (final (key, label, kind) in fields) {
+      final controller = _controllerFor(key);
+      if (controller == null) continue;
+      final current = controller.text;
+      final scanned = scannedValues[key] ?? '';
+      if (!ScanConflict.valuesConflict(
+        existing: current,
+        scanned: scanned,
+        kind: kind,
+      )) {
+        continue;
+      }
+      conflicts.add(
+        ScanFieldConflict(
+          key: key,
+          label: label,
+          currentValue: current.trim(),
+          scannedValue: scanned.trim(),
+        ),
+      );
+    }
+    if (conflicts.isEmpty) return;
+
+    final picked = await showScanFieldConflictSheet(
+      context,
+      conflicts: conflicts,
+    );
+    if (!mounted || picked == null || picked.isEmpty) return;
+
+    setState(() {
+      picked.forEach((key, value) {
+        final controller = _controllerFor(key);
+        if (controller == null) return;
+        // 재촬영은 "방금 스캔이 바꾼 것"을 되돌리는 동작이다. 여기서 바뀐 칸은
+        // **비우는 것이 아니라 이전 값으로 돌려놓아야** 앞면에서 읽은 값이
+        // 날아가지 않는다. 그래서 바꾸기 전 값을 들고 있는다.
+        _lastScanReplacedValues[key] = (
+          text: controller.text,
+          snapshot: _ocrParsedSnapshot[key],
+        );
+        _setTextFromStart(controller, value);
+        // 파서가 준 값이 실제로 이 칸에 들어갔으므로 스냅샷에도 남긴다 —
+        // 저장 시점에 "사용자가 고쳤는지"를 이 값과 비교해 판단한다.
+        _ocrParsedSnapshot[key] = value;
+      });
+    });
   }
 
   /// 스캔 한 번이 끝날 때마다 **다음에 무엇을 할지** 묻는다.
@@ -685,8 +1126,27 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           _ocrParsedSnapshot.remove(key);
         }
         _lastScanFilledKeys.clear();
-        // 방금 찍은 사진도 후보에서 뺀다.
+        // 충돌 선택으로 바뀐 칸은 **비우지 않고 이전 값으로 되돌린다**(F-01).
+        // 비우면 앞면에서 읽은 값까지 함께 사라진다.
+        _lastScanReplacedValues.forEach((key, previous) {
+          final controller = _controllerFor(key);
+          if (controller != null) {
+            _setTextFromStart(controller, previous.text);
+          }
+          final snapshot = previous.snapshot;
+          if (snapshot == null) {
+            _ocrParsedSnapshot.remove(key);
+          } else {
+            _ocrParsedSnapshot[key] = snapshot;
+          }
+        });
+        _lastScanReplacedValues.clear();
+        // 방금 찍은 사진도 후보에서 뺀다. 파일도 함께 지운다(추가 253) —
+        // 다시 찍는 것이므로 그 사진은 확실히 안 쓰인다. 한 번 등록하면서
+        // 여러 번 재촬영할 수 있어, 화면이 닫힐 때까지 미루면 그동안 평문
+        // 사진이 장마다 쌓인다.
         if (_scannedCardImages.isNotEmpty) {
+          _discardScanFiles([_scannedCardImages.last.path]);
           _scannedCardImages.removeLast();
           _selectedScanIndex = _scannedCardImages.isEmpty
               ? -1
@@ -984,6 +1444,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final savedPath =
           '${docsDir.path}/contact_avatar_${DateTime.now().microsecondsSinceEpoch}.jpg';
       await File(picked.path).copy(savedPath);
+      // 갤러리가 만든 사본은 복사가 끝나면 안 쓰인다 — 여기서 지운다
+      // (추가 253). 명함 주인의 얼굴 사진이 앱 캐시에 평문으로 남는 자리였다.
+      //
+      // ⚠️ `imageQuality: 90`이라 플러그인이 `scaled_*`를 새로 만들어 그
+      // 경로를 돌려준다. 우리가 지울 수 있는 것은 그 축소본이고, 플러그인이
+      // UUID 폴더에 남기는 원본 사본에는 손이 닿지 않는다 — 그건 앱 시작
+      // 쓸어담기(추가 248)가 걷어낸다.
+      unawaited(deleteQuietly(picked.path));
       if (!mounted) return;
       setState(() => _selectedAvatarUrl = savedPath);
     } catch (e) {
@@ -1102,23 +1570,57 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 final isSelected = i == _selectedScanIndex;
                 return GestureDetector(
                   onTap: () => setState(() => _selectedScanIndex = i),
-                  child: Container(
+                  child: SizedBox(
                     width: 92,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.accent
-                            : AppColors.borderSubtle,
-                        width: isSelected ? 2 : 1,
-                      ),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(7),
-                      child: Image.file(
-                        File(_scannedCardImages[i].path),
-                        fit: BoxFit.cover,
-                      ),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : AppColors.borderSubtle,
+                                width: isSelected ? 2 : 1,
+                              ),
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(7),
+                              child: Image.file(
+                                File(_scannedCardImages[i].path),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // ⚠️ **빼는 길**(추가 293, 실기기 지적).
+                        //
+                        // 실수로 **다른 사람 명함**을 한 장 더 찍었는데 이 화면에서
+                        // 지울 수가 없었다 — 고르는 것만 되고 빼는 것이 없었다.
+                        // 그러면 남의 명함이 그대로 저장된다.
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: IconButton(
+                            iconSize: 16,
+                            padding: const EdgeInsets.all(4),
+                            constraints: const BoxConstraints(),
+                            visualDensity: VisualDensity.compact,
+                            icon: const CircleAvatar(
+                              radius: 10,
+                              backgroundColor: Colors.black54,
+                              child: Icon(
+                                Icons.close,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                            tooltip: '이 면 빼기',
+                            onPressed: () => _removeScannedFace(i),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 );
@@ -1571,6 +2073,82 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         ],
       ),
     );
+  }
+
+  /// 폼을 성격이 다른 두 덩어리로 가르는 헤더(F-04).
+  ///
+  /// "명함에서 읽은 정보"와 "내가 덧붙이는 정보"를 구분한다. 테스터 피드백은
+  /// *자동으로 읽힌 값과 내가 쓴 메모가 섞여 보인다*였는데, 원인은 두 성격의
+  /// 칸이 **같은 모양으로 연달아** 놓여 있던 것이다. 칸 모양을 바꾸는 대신
+  /// 헤더로 나눈 이유는, 입력칸 스타일을 둘로 만들면 이후 모든 화면에서 그
+  /// 두 스타일을 계속 맞춰야 하기 때문이다.
+  Widget _buildFormSectionHeader({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Padding(
+      // 위쪽 여백을 크게 둬서 앞 섹션과 시각적으로 떨어뜨린다. 아래는 곧바로
+      // 첫 입력칸이 오므로 좁게.
+      padding: const EdgeInsets.only(top: 6, bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.accentText),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 이 칸이 **아직 자동 인식 값 그대로인가**(F-09).
+  ///
+  /// 판정 규칙 자체는 [isStillOcrValue]에 있다 — 화면에서 떼어내 테스트로
+  /// 고정했다(`lib/core/utils/ocr_origin.dart` 문서화 참고).
+  bool _isStillOcrValue(String? ocrKey, TextEditingController controller) =>
+      isStillOcrValue(
+        key: ocrKey,
+        snapshot: _ocrParsedSnapshot,
+        currentText: controller.text,
+      );
+
+  /// 자동 인식 표시가 붙은 칸을 사용자가 고치면 **그 즉시** 표시가 사라지도록
+  /// 다시 그린다(F-09).
+  ///
+  /// 매 글자마다 `setState`를 부르면 이 큰 폼 전체가 리빌드된다. 그래서 표시가
+  /// 실제로 **켜짐↔꺼짐으로 바뀌는 순간에만** 다시 그린다 — 대부분의 타이핑은
+  /// 이미 꺼진 상태라 아무 일도 하지 않는다.
+  void _watchOcrBadge(String key, TextEditingController controller) {
+    var wasBadged = _isStillOcrValue(key, controller);
+    controller.addListener(() {
+      final isBadged = _isStillOcrValue(key, controller);
+      if (isBadged == wasBadged) return;
+      wasBadged = isBadged;
+      if (mounted) setState(() {});
+    });
   }
 
   /// 자동 인식이 채운 값들을 저장 시점의 최종 값과 비교해, 사용자가 각 필드를
@@ -2079,11 +2657,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final ctx = node.context;
       if (ctx == null) return;
       // 칸을 뷰포트 중앙쯤에 두어 키보드 위로 확실히 올린다.
-      // ignore: use_build_context_synchronously
-      Scrollable.ensureVisible(ctx,
-          alignment: 0.5,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeInOut);
+      //
+      // ⚠️ ignore 주석은 **경고가 찍히는 줄 바로 위**에 있어야 한다. 예전에는
+      // 호출이 한 줄이라 위에 붙여 뒀는데, `dart format`이 인자를 줄바꿈하자
+      // 주석과 경고 지점이 어긋나 경고가 되살아났다(analyze 19 → 20).
+      Scrollable.ensureVisible(
+        // ignore: use_build_context_synchronously
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      );
     });
   }
 
@@ -2115,8 +2699,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           // 없다 — 그대로 두면 위쪽이 키보드에 가린 채 스크롤도 막힌다
           // (통합본 E-10). 끌어서 스크롤하면 키보드를 내린다.
           child: SingleChildScrollView(
-            keyboardDismissBehavior:
-                ScrollViewKeyboardDismissBehavior.onDrag,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -2247,6 +2830,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       ),
                     ],
                   ),
+
+                  _buildDocScannerDebugSwitch(),
+                  _buildCardRectDebugSwitch(),
+                  _buildMeasureSampleSwitch(),
 
                   const SizedBox(height: 12),
 
@@ -2394,51 +2981,75 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                             ),
                             const SizedBox(height: 8),
                             if (_scannedRawLines.isNotEmpty)
-                              Wrap(
-                                spacing: 6,
-                                runSpacing: 6,
-                                children: _scannedRawLines.map((line) {
-                                  return InkWell(
-                                    onTap: () =>
-                                        _showQuickFieldMapperSheet(line),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.accent.withValues(
-                                          alpha: 0.1,
+                              // ⚠️ **칩 너비를 화면에 맞춘다**(추가 293, 실기기 지적).
+                              //
+                              // 예전에는 길이 제한이 없어, OCR이 한 줄로 길게 읽으면
+                              // (`wwW.CREAMHOUSE.CO.KR T.02 508 2712 F.070 5084…`)
+                              // **화면 밖으로 넘쳤다** — debug에서는 노란 줄무늬가
+                              // 뜨고 **release에서는 경고 없이 잘린다.** 보이지
+                              // 않을 뿐 더 나쁘다.
+                              //
+                              // 📌 글자는 줄여 보여도 **누를 때는 원문 전체**를
+                              // 넘긴다. 칩은 고르는 손잡이지 읽는 곳이 아니다.
+                              LayoutBuilder(
+                                builder: (context, constraints) => Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _scannedRawLines.map((line) {
+                                    return InkWell(
+                                      onTap: () =>
+                                          _showQuickFieldMapperSheet(line),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: ConstrainedBox(
+                                        constraints: BoxConstraints(
+                                          maxWidth: constraints.maxWidth,
                                         ),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: AppColors.accent.withValues(
-                                            alpha: 0.3,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
                                           ),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            line,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.textPrimary,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accent.withValues(
+                                              alpha: 0.1,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            border: Border.all(
+                                              color: AppColors.accent
+                                                  .withValues(alpha: 0.3),
                                             ),
                                           ),
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.touch_app_outlined,
-                                            size: 13,
-                                            color: AppColors.accentText,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  line,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color:
+                                                        AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              const Icon(
+                                                Icons.touch_app_outlined,
+                                                size: 13,
+                                                color: AppColors.accentText,
+                                              ),
+                                            ],
                                           ),
-                                        ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                }).toList(),
+                                    );
+                                  }).toList(),
+                                ),
                               )
                             else
                               Text(
@@ -2456,9 +3067,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     const SizedBox(height: 12),
                   ],
 
+                  // F-04: 여기부터는 **명함에 인쇄된 정보**다. 아래 "내가
+                  // 덧붙이는 정보"와 성격이 달라 헤더로 갈라 놓는다 — 테스터가
+                  // "자동으로 읽힌 값과 내가 쓴 메모가 구분이 안 된다"고 했다.
+                  _buildFormSectionHeader(
+                    icon: Icons.badge_outlined,
+                    title: '명함에서 읽은 정보',
+                    subtitle: _ocrParsedSnapshot.isEmpty
+                        ? '명함에 인쇄된 내용을 적는 칸이에요'
+                        : '옅은 파란 칸은 자동으로 읽은 값이에요. 고치면 표시가 사라집니다',
+                  ),
+
                   // 1. 이름 (필수)
                   _buildFormField(
                     controller: _nameController,
+                    ocrKey: 'name',
                     focusNode: _nameFocusNode,
                     order: 1,
                     nextFocusNode: _companyFocusNode,
@@ -2477,6 +3100,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 2. 회사명 (필수)
                   _buildFormField(
                     controller: _companyController,
+                    ocrKey: 'company',
                     focusNode: _companyFocusNode,
                     order: 2,
                     nextFocusNode: _titleFocusNode,
@@ -2494,6 +3118,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 3. 직함 / 부서 (선택)
                   _buildFormField(
                     controller: _titleController,
+                    ocrKey: 'title',
                     focusNode: _titleFocusNode,
                     order: 3,
                     nextFocusNode: _addressFocusNode,
@@ -2505,6 +3130,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 4. 회사 주소 — 도로명까지(위치 정보/지오코딩의 기준이 되는 부분)
                   _buildFormField(
                     controller: _addressController,
+                    ocrKey: 'address',
                     focusNode: _addressFocusNode,
                     order: 4,
                     nextFocusNode: _addressDetailFocusNode,
@@ -2563,6 +3189,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 표시용으로만 별도 보관.
                   _buildFormField(
                     controller: _addressDetailController,
+                    ocrKey: 'addressDetail',
                     focusNode: _addressDetailFocusNode,
                     order: 4.5,
                     nextFocusNode: _postalCodeFocusNode,
@@ -2575,6 +3202,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 보관. OCR 스캔 또는 도로명주소 검색에서 자동으로 채워진다.
                   _buildFormField(
                     controller: _postalCodeController,
+                    ocrKey: 'postal',
                     focusNode: _postalCodeFocusNode,
                     order: 4.7,
                     nextFocusNode: _phoneFocusNode,
@@ -2587,6 +3215,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
                   _buildFormField(
                     controller: _phoneController,
+                    ocrKey: 'mobile',
                     focusNode: _phoneFocusNode,
                     order: 5,
                     nextFocusNode: _officePhoneFocusNode,
@@ -2610,6 +3239,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 6. 사무실 전화번호 (선택)
                   _buildFormField(
                     controller: _officePhoneController,
+                    ocrKey: 'office',
                     focusNode: _officePhoneFocusNode,
                     order: 6,
                     nextFocusNode: _directPhoneFocusNode,
@@ -2636,6 +3266,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 6-2. 팩스 (선택)
                   _buildFormField(
                     controller: _faxController,
+                    ocrKey: 'fax',
                     focusNode: _faxFocusNode,
                     order: 6.6,
                     nextFocusNode: _emailFocusNode,
@@ -2649,6 +3280,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 7. 이메일 (필수!)
                   _buildFormField(
                     controller: _emailController,
+                    ocrKey: 'email',
                     focusNode: _emailFocusNode,
                     order: 7,
                     nextFocusNode: _websiteFocusNode,
@@ -2670,6 +3302,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   // 7-1. 웹사이트 (선택)
                   _buildFormField(
                     controller: _websiteController,
+                    ocrKey: 'website',
                     focusNode: _websiteFocusNode,
                     order: 7.5,
                     nextFocusNode: _tagsFocusNode,
@@ -2678,6 +3311,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 10),
+
+                  // F-04: 여기부터는 **명함에 없는, 내가 덧붙이는 정보**다.
+                  // 자동 인식은 이 아래 칸을 절대 채우지 않는다.
+                  _buildFormSectionHeader(
+                    icon: Icons.edit_note,
+                    title: '내가 덧붙이는 정보',
+                    subtitle: '명함에 없는 내용이에요. AI 대화 가이드가 참고합니다',
+                  ),
 
                   // 8. 태그 키워드
                   _buildFormField(
@@ -2827,6 +3468,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 화면 맨 위에 따로 떠 있던 "* 필수 입력 항목" 범례를 첫 필드(이름) 라벨
     // 옆으로 옮겨 붙이기 위한 파라미터.
     String? trailingLegend,
+    // 자동 인식이 채울 수 있는 칸이면 `_ocrParsedSnapshot`의 키를 준다(F-09).
+    // 스냅샷에 그 키가 있고 **값이 아직 그대로면** "자동 인식" 표시가 붙는다.
+    // 사용자가 한 글자라도 고치면 값이 달라져 표시가 저절로 사라진다 — 별도
+    // 상태를 두지 않는 이유다.
+    String? ocrKey,
   }) {
     // 라벨을 입력란 위 별도 줄에 두지 않고 **입력란 안쪽 플로팅 라벨**로
     // 넣는다(사용자 요청, 2026-08-10). 필드마다 라벨 줄 하나와 그 아래 여백이
@@ -2834,6 +3480,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     //
     // 입력란 자체의 높이는 줄이지 않았다 — 터치 목표가 작아지면 오타를 고치기
     // 어려워진다. 줄인 것은 라벨이 차지하던 자리뿐이다.
+    final isAutoFilled = _isStillOcrValue(ocrKey, controller);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2905,7 +3552,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               fontSize: 13,
             ),
             filled: true,
-            fillColor: AppColors.bgBase,
+            // 자동 인식이 채운 값은 옅은 강조 배경으로 구분한다(F-09). 라벨 줄을
+            // 하나 더 만들지 않으려고 배경·아이콘으로만 표시했다 — 이 폼은
+            // 라벨 줄을 없애 항목을 더 담기로 한 이력이 있다(2026-08-10).
+            fillColor: isAutoFilled ? AppColors.accentSoft : AppColors.bgBase,
+            // 아이콘도 같은 이유로 칸 **안쪽**에 둔다. 세로 공간을 안 먹는다.
+            prefixIcon: isAutoFilled
+                ? const Tooltip(
+                    message: '명함에서 자동으로 읽은 값이에요. 고치면 이 표시가 사라집니다.',
+                    child: Icon(
+                      Icons.auto_awesome,
+                      size: 18,
+                      color: AppColors.accentText,
+                    ),
+                  )
+                : null,
+            prefixIconConstraints: const BoxConstraints(
+              minWidth: 40,
+              minHeight: 24,
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 14,
               vertical: 12,

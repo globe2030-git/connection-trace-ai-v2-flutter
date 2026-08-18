@@ -29,6 +29,7 @@ import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
+import {getStorage} from "firebase-admin/storage";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
@@ -53,6 +54,8 @@ import {
   isValidTransactionId,
   resolveTierByProductId,
 } from "./purchases";
+import {deleteUserCardPhotos} from "./cardPhotoCleanup";
+import {deleteTombstones} from "./tombstoneCleanup";
 
 initializeApp();
 
@@ -1395,6 +1398,61 @@ export const onUserDeletedCleanup = onDocumentDeleted(
         eventCount: pilotEventsSnap.docs.length,
       });
     }
+    // ────────── [명함 사진 서버 사본 정리] 시작 ──────────
+    // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 cardPhotoCleanup.ts에 있다.
+    //
+    // 왜 여기인가: 앱이 스스로 지우려는 호출은 **계정을 지운 뒤에** 일어나
+    // request.auth가 null이고, storage.rules의 isOwner(uid)가 거짓이 되어
+    // 삭제도 listAll도 거부된다. Admin SDK는 규칙을 우회하므로 계정이 사라진
+    // 뒤에도 지울 수 있고, 앱이 중간에 죽어도 이 트리거는 돈다.
+    //
+    // ⚠️ 경계 주석을 둔 이유: 이 함수에 갈래가 여럿 몰려 있고
+    // feat/ai-credit-wallet 브랜치가 같은 함수를 크게 고쳐 놨다(deviceLedger는
+    // 의도적으로 지우지 않는다는 결정 포함). 나중에 그 브랜치를 rebase 하는
+    // 사람이 어디까지가 이번 변경인지 한눈에 보게 한다.
+    const photoCleanup = await deleteUserCardPhotos(getStorage().bucket(), uid);
+    if (photoCleanup.errorType) {
+      // 실패해도 던지지 않는다 — 위 정리들은 이미 끝났고, 여기서 던지면
+      // 트리거 전체가 재시도되어 같은 삭제를 반복한다.
+      logger.warn("탈퇴 사용자 명함 사진 정리 실패", {
+        uid,
+        errorType: photoCleanup.errorType,
+      });
+    }
+    // ────────── [명함 사진 서버 사본 정리] 끝 ──────────
+
+    // ────────── [삭제 기록(묘비) 정리] 시작 ──────────
+    // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 tombstoneCleanup.ts에 있다.
+    //
+    // 왜 필요한가: **Firestore는 문서를 지워도 하위 컬렉션을 지우지 않는다.**
+    // 앱의 deleteAllUserData는 contacts 문서들과 users/{uid} 문서를 지우지만
+    // users/{uid}/deletedContacts/ 는 그대로 남는다 — 지우는 코드가 앱에도
+    // 서버에도 없었다. 방침 14번은 "명함 데이터 전체가 삭제된다"고 단언한다.
+    //
+    // 값은 deletedAt 시각뿐이지만 문서 ID가 contactId이고 경로에 uid가 있다.
+    // 개수만 로그에 남기고 문서 ID는 남기지 않는다.
+    //
+    // ⚠️ 위 사진 블록과 같은 이유로 경계 주석을 둔다 —
+    // feat/ai-credit-wallet이 이 함수를 크게 고쳐 놔서, rebase 하는 사람이
+    // 어디까지가 이번 변경인지 한눈에 보게 한다.
+    const tombstoneCleanup = await deleteTombstones(
+      db.collection(`users/${uid}/deletedContacts`),
+      () => db.batch(),
+      chunkArray,
+    );
+    if (tombstoneCleanup.errorType) {
+      logger.warn("탈퇴 사용자 삭제 기록 정리 실패", {
+        uid,
+        errorType: tombstoneCleanup.errorType,
+        deleted: tombstoneCleanup.deleted,
+      });
+    } else if (tombstoneCleanup.deleted > 0) {
+      logger.info("탈퇴 사용자 삭제 기록 정리", {
+        uid,
+        deleted: tombstoneCleanup.deleted,
+      });
+    }
+    // ────────── [삭제 기록(묘비) 정리] 끝 ──────────
   },
 );
 

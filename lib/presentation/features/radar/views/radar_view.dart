@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -10,6 +11,7 @@ import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
+import '../../../common/same_address_group_header.dart';
 // 주변에서 못 찾은 검색을 명함 지갑(전체 검색)으로 이어 주기 위해 탭 통로를 쓴다.
 import '../../../navigation/main_tab_screen.dart';
 import '../view_models/radar_view_model.dart';
@@ -20,6 +22,7 @@ import '../../wallet/views/add_card_modal_view.dart';
 import 'location_consent_sheet.dart';
 import 'location_access_flow.dart';
 import 'nearby_map_view.dart';
+import 'reconnect_today_section.dart';
 
 class RadarView extends StatefulWidget {
   const RadarView({super.key});
@@ -63,6 +66,14 @@ class _RadarViewState extends State<RadarView> {
     // 가장 가까운 한 명도 목록에 포함한다 — 대표 카드를 없앴으므로 빼면
     // 그 사람만 어디에도 안 나온다(사용자 요청, 2026-08-10).
     final nearbyList = viewModel.filteredContacts;
+
+    // F-11: 검색 중에는 화면을 **결과 전용**으로 바꾼다.
+    //
+    // 검색창이 화면 위쪽에 있는데도, 그 아래 "지금 가까운 사람 N명" 카드와
+    // 위치 조작 줄이 자리를 차지해 **정작 결과는 스크롤해야 보였다.** 둘 다
+    // "지금 내 주변이 어떤가"를 알려 주는 것들이라 검색 중에는 답이 아니다 —
+    // 그때 사용자가 보려는 것은 "찾는 사람이 여기 있나" 하나뿐이다.
+    final isSearching = viewModel.searchTerm.trim().isNotEmpty;
 
     return Stack(
       children: [
@@ -136,7 +147,15 @@ class _RadarViewState extends State<RadarView> {
                                   // 2026-08-10).
                                   const SizedBox(height: 6),
                                   Text(
-                                    _greetingForNow(),
+                                    // 검색 중에는 인사말 대신 **무엇을 찾고
+                                    // 있는지**를 보여 준다(F-11). 결과만 보면
+                                    // 어떤 말로 걸러졌는지 알 수 없고,
+                                    // 검색창은 스크롤하면 시야에서 사라진다.
+                                    isSearching
+                                        ? '"${viewModel.searchTerm.trim()}" 검색 중'
+                                        : _greetingForNow(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
                                       fontSize: 14,
                                       height: 1.4,
@@ -385,19 +404,68 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 12),
 
-                        // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를 새로고침한다.
-                        _NearbyCountCard(
-                          count: nearbyCount,
-                          isRefreshing: viewModel.isRefreshingLocation,
-                          onTap: viewModel.isRefreshingLocation
-                              ? null
-                              : () => handleLocationAccessAction(
-                                  context,
-                                  viewModel,
-                                ),
-                        ),
+                        // 지도에서 기준점을 옮겨 뒀으면 그 사실을 알린다(F-13).
+                        //
+                        // ⚠️ 이 줄은 **검색 중에도 남긴다.** 아래 F-11 분기가
+                        // 감추는 것은 "지금 내 주변이 어떤가"를 말하는 조작
+                        // 줄이지, **"지금 무엇을 기준으로 잰 거리인가"가
+                        // 아니다.** 이걸 같이 감추면 검색 결과의 거리가 내 위치
+                        // 기준이 아닌데 그 사실을 알 길이 없어져, F-11이 깨진
+                        // 것처럼 보이는 결함으로 접수된다.
+                        if (viewModel.isUsingCustomAnchor) ...[
+                          _AnchorNoticeBar(
+                            onReset: viewModel.clearAnchor,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
 
-                        const SizedBox(height: 8),
+                        // 내 위치가 얼마나 믿을 만한지 알린다(E-12).
+                        //
+                        // ⚠️ 기준점 안내와 같은 이유로 **검색 중에도 남긴다** —
+                        // 이것도 "지금 무엇을 기준으로 잰 거리인가"에 관한
+                        // 정보다. 알릴 것이 없으면 뷰모델이 null을 주므로 줄
+                        // 자체가 안 생긴다(억지로 채우지 않는다).
+                        if (viewModel.locationQualityMessage != null) ...[
+                          _LocationQualityBar(
+                            message: viewModel.locationQualityMessage!,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+
+                        // 검색 중에는 이 카드와 아래 조작 줄을 감춘다(F-11) —
+                        // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
+                        // 검색 결과를 밀어낼 이유가 없다.
+                        if (!isSearching) ...[
+                          // F-10 A — "오늘 연락하면 좋은 사람".
+                          //
+                          // 왜 여기(위치 카드보다 위)인가: 이 섹션은 앱을 매일
+                          // 여는 이유고, 나머지는 "지금 주변이 어떤가"다. 아래에
+                          // 두면 주변에 아무도 없는 날(대부분의 날)에는 스크롤
+                          // 해야 보이는데, 그러면 매일 열 이유가 안 된다.
+                          //
+                          // 위치와 무관하게 뜬다 — GPS를 못 잡아도 "누굴
+                          // 까먹었나"에는 답할 수 있다. 후보가 없으면 섹션
+                          // 자체가 사라진다(억지로 채우지 않는다).
+                          ReconnectTodaySection(
+                            candidates: viewModel.reconnectCandidates,
+                            onOpenGuide: viewModel.openBriefing,
+                            onSnooze: viewModel.snoozeReconnect,
+                          ),
+
+                          // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를
+                          // 새로고침한다.
+                          _NearbyCountCard(
+                            count: nearbyCount,
+                            isRefreshing: viewModel.isRefreshingLocation,
+                            onTap: viewModel.isRefreshingLocation
+                                ? null
+                                : () => handleLocationAccessAction(
+                                    context,
+                                    viewModel,
+                                  ),
+                          ),
+
+                          const SizedBox(height: 8),
 
                         // 위치 아이콘과 조작 안내를 "지금 가까운 사람" 카드
                         // 바로 아래 한 줄에 둔다(사용자 요청, 2026-08-10).
@@ -407,33 +475,34 @@ class _RadarViewState extends State<RadarView> {
                         // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
                         // 설명을 옆에 붙인다. 툴팁만으로는 길게 눌러야 뜨는데,
                         // 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
-                        Row(
-                          children: [
-                            _RefreshLocationButton(
-                              isRefreshing: viewModel.isRefreshingLocation,
-                              usingRealGps: viewModel.usingRealGps,
-                              isDetecting: viewModel.hasLocationConsent,
-                              onTap: () => handleLocationAccessAction(
-                                context,
-                                viewModel,
+                          Row(
+                            children: [
+                              _RefreshLocationButton(
+                                isRefreshing: viewModel.isRefreshingLocation,
+                                usingRealGps: viewModel.usingRealGps,
+                                isDetecting: viewModel.hasLocationConsent,
+                                onTap: () => handleLocationAccessAction(
+                                  context,
+                                  viewModel,
+                                ),
+                                onToggleDetect: () =>
+                                    _toggleNearbyDetect(context, viewModel),
                               ),
-                              onToggleDetect: () =>
-                                  _toggleNearbyDetect(context, viewModel),
-                            ),
-                            const SizedBox(width: 8),
-                            const Expanded(
-                              child: Text(
-                                '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textMuted,
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textMuted,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
+                            ],
+                          ),
 
-                        const SizedBox(height: 10),
+                          const SizedBox(height: 10),
+                        ],
 
                         // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
                         // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
@@ -460,9 +529,14 @@ class _RadarViewState extends State<RadarView> {
 
                         const SizedBox(height: 16),
 
-                        // 가까운 인맥 리스트 (대표 카드에 나온 사람은 제외)
+                        // 목록 제목도 화면의 성격을 따라간다(F-11) — 같은
+                        // 목록이라도 검색 중에는 "주변에 있는 사람들"이 아니라
+                        // "찾은 결과"다. 제목이 그대로면 사용자는 걸러진
+                        // 목록을 전체 목록으로 오해한다.
                         Text(
-                          '가까운 인맥 (${nearbyList.length}명)',
+                          isSearching
+                              ? '검색 결과 (${nearbyList.length}명)'
+                              : '가까운 인맥 (${nearbyList.length}명)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -479,20 +553,43 @@ class _RadarViewState extends State<RadarView> {
                         // 다른 점 하나: 여기에는 **근접 거리**가 함께 붙는다.
                         // 이 화면의 존재 이유가 "지금 얼마나 가까운가"이므로
                         // 목록에서도 그 값이 보여야 한다.
-                        ...nearbyList.map((contact) {
-                          final distance = GeoUtils.getDistanceMeters(
-                            viewModel.currentPosition,
-                            contact.geo,
-                          );
-                          return _NearbyContactTile(
-                            contact: contact,
-                            distanceMeters: distance,
-                            onOpen: () => viewModel.openBriefing(contact),
-                            onCall: () => PhoneCallService.showCallPicker(
-                              context,
-                              contact,
+                        // 같은 주소에 여러 명이 있으면 묶어서 보여 준다(F-15).
+                        // 한 건물에 3명이 있는데 같은 거리가 세 줄 나열되면,
+                        // 사용자가 그걸 스스로 세어야 한다. 묶음 머리글은
+                        // 2명 이상일 때만 붙인다 — 1명짜리 머리글은 아무
+                        // 정보도 주지 않는다.
+                        ...groupContactsByAddress(nearbyList).expand((group) {
+                          final tiles = group.contacts.map((contact) {
+                            // 내 위치가 아니라 기준점에서 잰다(F-13). 목록
+                            // 정렬도 같은 기준을 쓰므로(뷰모델), 여기만 내
+                            // 위치로 재면 "거리는 커지는데 순서는 그대로"인
+                            // 목록이 된다.
+                            final distance = GeoUtils.getDistanceMeters(
+                              viewModel.referencePosition,
+                              contact.geo,
+                            );
+                            return _NearbyContactTile(
+                              contact: contact,
+                              distanceMeters: distance,
+                              // 묶음 안에서는 주소를 줄마다 반복하지 않는다 —
+                              // 머리글에 이미 있고, 같은 값이 세 번 나오면
+                              // 오히려 읽기 어렵다.
+                              showAddress: !group.isGrouped,
+                              onOpen: () => viewModel.openBriefing(contact),
+                              onCall: () => PhoneCallService.showCallPicker(
+                                context,
+                                contact,
+                              ),
+                            );
+                          });
+                          if (!group.isGrouped) return tiles;
+                          return [
+                            SameAddressGroupHeader(
+                              address: group.address,
+                              count: group.contacts.length,
                             ),
-                          );
+                            ...tiles,
+                          ];
                         }),
                       ],
                     ),
@@ -1399,17 +1496,125 @@ class _RefreshLocationButton extends StatelessWidget {
 /// 같은 인맥을 두 화면에서 다른 모양으로 보여 줄 이유가 없어 형태를 맞췄다
 /// (사용자 요청, 2026-08-10). 다만 이 화면에는 **근접 거리**가 더 붙는다 —
 /// "지금 얼마나 가까운가"가 이 화면의 존재 이유다.
+/// "지금 거리 기준이 내 위치가 아니다"를 알리는 줄(F-13).
+///
+/// 내 위치의 품질을 알리는 줄(E-12).
+///
+/// ⚠️ **경고가 아니라 안내다.** 빨간색을 쓰지 않는다 — 사용자가 뭘 잘못한 것이
+/// 아니고, 대부분 실내라서 생기는 정상적인 일이다. 겁을 주면 위치 기능 자체를
+/// 꺼 버린다.
+///
+/// 되돌릴 버튼을 두지 않는 이유: **사용자가 할 수 있는 일이 없다.** 밖으로
+/// 나가거나 기다리면 나아지는데, 그건 버튼으로 시키는 것이 아니다.
+class _LocationQualityBar extends StatelessWidget {
+  final String message;
+
+  const _LocationQualityBar({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.textSecondary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.my_location_outlined,
+            size: 15,
+            color: AppColors.textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 지도에서 기준점을 옮기면 이 목록의 거리와 순서가 함께 바뀐다(사용자 결정,
+/// 2026-08-16). 바뀐 사실을 화면에 적지 않으면 사용자는 거리가 이상해진 것을
+/// 결함으로 읽는다 — 지도에서 한 조작과 목록의 숫자를 연결 짓기 어렵다.
+class _AnchorNoticeBar extends StatelessWidget {
+  final VoidCallback onReset;
+
+  const _AnchorNoticeBar({required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.center_focus_strong,
+            size: 16,
+            color: AppColors.accentText,
+          ),
+          const SizedBox(width: 6),
+          const Expanded(
+            child: Text(
+              '지도에서 지정한 위치 기준으로 거리를 보여 주고 있습니다',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accentText,
+              ),
+            ),
+          ),
+          // 되돌리는 방법을 같은 줄에 둔다. 지도를 다시 열어야만 풀 수 있으면
+          // 목록에서 이상을 발견한 사람이 갈 곳을 잃는다.
+          TextButton(
+            onPressed: onReset,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              minimumSize: const Size(0, 32),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              foregroundColor: AppColors.accentText,
+            ),
+            child: const Text(
+              '내 위치로',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NearbyContactTile extends StatelessWidget {
   final ContactModel contact;
   final double distanceMeters;
   final VoidCallback onOpen;
   final VoidCallback onCall;
 
+  /// 주소 줄(F-12)을 보여 줄지. 같은 주소 묶음(F-15) 안에서는 머리글에 주소가
+  /// 이미 있어 `false`로 준다 — 같은 값이 줄마다 반복되면 오히려 읽기 어렵다.
+  final bool showAddress;
+
   const _NearbyContactTile({
     required this.contact,
     required this.distanceMeters,
     required this.onOpen,
     required this.onCall,
+    this.showAddress = true,
   });
 
   bool get _hasAnyPhone =>
@@ -1476,7 +1681,8 @@ class _NearbyContactTile extends StatelessWidget {
                 // 주소 한 줄(F-12) — 이 화면의 목적이 "지금 어디쯤 가까이 있는가"라
                 // 회사명만으로는 부족했다. 주소가 없는 명함은 애초에 좌표가 없어
                 // 이 목록에 뜨지 않지만, 혹시 비어 있으면 줄 자체를 숨긴다.
-                if ((contact.address ?? '').trim().isNotEmpty) ...[
+                if (showAddress &&
+                    (contact.address ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,

@@ -7,10 +7,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/models/ai_data_review_memory.dart';
+import '../../../../core/utils/scan_temp_cleanup.dart';
+import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/ai_briefing_service.dart';
+import '../../../../core/services/card_photo_backup_state.dart';
+import '../../../../core/services/card_photo_quota_service.dart';
+import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
+import '../../../../core/services/photo_improvement_consent_service.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
@@ -284,6 +291,22 @@ class SettingsView extends StatelessWidget {
                     subtitle: '이 기기와 서버에 암호화하여 보관',
                     value: '로컬 + 서버 백업',
                   ),
+                  // 사진 개선 동의는 **선택**이다 — 꺼도 명함 등록·복원·보정이
+                  // 전부 그대로 동작한다. 이 토글이 정하는 것은 "내 사진을
+                  // 인식 개선용 표본에 넣어도 되는가" 하나뿐이다(추가 218).
+                  //
+                  // ⚠️ 사진 서버 저장이 꺼져 있으면 이 토글도 **보이지 않는다.**
+                  // 이유 둘:
+                  // 1) 저장하지 않는 사진에 대한 개선 동의는 **아무 뜻이 없다.**
+                  // 2) 동의 필드를 허용하는 `firestore.rules`가 아직 배포 전이라,
+                  //    켜면 서버 쓰기가 거부돼 "저장하지 못했어요"만 뜬다. 테스터
+                  //    빌드에 그대로 나가면 **고장난 기능으로 보인다**(2026-08-15,
+                  //    빌드 직전에 발견).
+                  // 플래그를 켤 때 rules 배포도 함께 해야 이 토글이 동작한다.
+                  if (CardPhotoBackupService.kCardPhotoBackupEnabled) ...[
+                    _CardPhotoBackupStatusRow(uid: auth.firebaseUid),
+                    _PhotoImprovementConsentRow(uid: auth.firebaseUid),
+                  ],
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.aiChip,
@@ -450,6 +473,17 @@ class SettingsView extends StatelessWidget {
                       title: '잘못 채워진 태그 정리 (관리자)',
                       subtitle: '기본값 "AI, IT"만 그대로 남은 명함의 태그를 비움',
                       onTap: () => _confirmSeededTagCleanup(context),
+                    ),
+                  if (auth.isAdmin)
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '자동 삽입된 메모 정리 (관리자)',
+                      subtitle: '스캔이 넣던 안내 문구만 그대로 남은 명함의 메모를 비움',
+                      onTap: () => _confirmSeededMemoCleanup(context),
                     ),
                   _SettingsRow(
                     icon: const Icon(
@@ -678,9 +712,224 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-/// `_SettingsRow`와 같은 시각적 스타일이지만 끝에 스위치가 붙는 행. 실제
-/// 상태(예: 위치 이용 동의 여부)와 연결해서만 쓸 것 — 아무 상태도 바꾸지
-/// 않는 장식용 토글은 절대 추가하지 않는다.
+/// "명함 사진을 인식 기능 개선에 써도 된다"는 **별도 동의** 토글.
+///
+/// ## 이 토글이 정하지 *않는* 것
+///
+/// 사진의 서버 저장·복원, 그리고 **내 명함 정보가 잘못 인식됐을 때 원본과
+/// 대조해 바로잡는 일**은 계약 이행이라 이 토글과 무관하게 동작한다. 여기서
+/// 정하는 것은 오직 **"여러 이용자의 사진을 함께 이용한 인식 알고리즘 개선에
+/// 내 사진을 포함해도 되는가"** 하나다(개인정보처리방침 v2.2 2-1/2-2,
+/// backlog 추가 218).
+///
+/// 그래서 부제에 "끄셔도 모든 기능을 그대로 쓰실 수 있어요"를 항상 보여준다 —
+/// 동의하지 않으면 손해를 본다는 인상을 주면 그건 자유로운 동의가 아니다.
+///
+/// ## 로그인 전에는 끄고 잠근다
+///
+/// 동의는 계정에 붙는 기록이라 [uid]가 없으면 서버에 남길 수 없다. 그 상태에서
+/// 켜지게 두면 **기기에만 켜진 동의**가 생겨, 회사는 동의를 못 받았는데
+/// 사용자 화면에는 동의한 것처럼 보인다. 그래서 로그인 전에는 스위치를
+/// 비활성화한다.
+
+/// 명함 사진 백업 현황 — **미리 알리기 위한 자리**(2026-08-16).
+///
+/// ## 왜 필요한가
+///
+/// 한도(무료 200장)에 걸린 것을 **기기를 바꾼 뒤에 알면 그때는 이탈**이다.
+/// 사진 백업은 충전을 부르는 지렛대가 아니라 **보험**이라, 필요한 순간에
+/// 없으면 "충전해야지"가 아니라 "이 앱 못 믿겠다"가 된다.
+///
+/// 그래서 **80%(기본 한도 기준 160장)부터 미리 알린다.**
+///
+/// ⚠️ **조용히 안 올라가면 안 된다**는 원칙이 이 화면의 이유다 — 이 저장소는
+/// *"의도한 실패도 사용자 눈에는 결함이다"*로 이미 한 번 다쳤다(HANDOFF 0-21).
+///
+/// ⚠️ 플래그가 꺼져 있는 동안에는 아예 그리지 않는다(호출 쪽에서 가른다).
+class _CardPhotoBackupStatusRow extends StatefulWidget {
+  const _CardPhotoBackupStatusRow({required this.uid});
+
+  final String? uid;
+
+  @override
+  State<_CardPhotoBackupStatusRow> createState() =>
+      _CardPhotoBackupStatusRowState();
+}
+
+class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
+  CardPhotoBackupSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = widget.uid;
+    final quota = uid == null
+        ? await CardPhotoQuotaService().cachedOrDefault()
+        : await CardPhotoQuotaService().fetch(uid);
+    final map = await CardPhotoBackupStateService().load();
+    if (!mounted) return;
+    setState(() => _summary = summarize(map, quota));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _summary;
+    if (s == null) return const SizedBox.shrink();
+
+    // ⚠️ 손실만 말하지 않는다. **무엇이 되는지**를 먼저 말한다 — 숫자만 보여
+    // 주면 "내 사진이 위험한가?"로 읽힌다.
+    final String subtitle;
+    if (s.isFull) {
+      subtitle =
+          '백업 ${s.synced}/${s.quota}장 · 한도에 닿아 새 사진은 '
+          '백업되지 않습니다. 기기를 바꾸면 복원되지 않습니다';
+    } else if (s.isNearFull) {
+      subtitle = '백업 ${s.synced}/${s.quota}장 · 곧 한도에 닿습니다';
+    } else {
+      subtitle = '백업 ${s.synced}/${s.quota}장 · 기기를 바꿔도 복원됩니다';
+    }
+
+    return _SettingsRow(
+      icon: AppIcon(
+        AppIconId.aiDataInfo,
+        size: 22,
+        color: s.needsAttention ? AppColors.destructive : AppColors.accentText,
+      ),
+      title: '명함 사진 백업',
+      subtitle: subtitle,
+    );
+  }
+}
+
+class _PhotoImprovementConsentRow extends StatefulWidget {
+  const _PhotoImprovementConsentRow({required this.uid});
+
+  final String? uid;
+
+  @override
+  State<_PhotoImprovementConsentRow> createState() =>
+      _PhotoImprovementConsentRowState();
+}
+
+class _PhotoImprovementConsentRowState
+    extends State<_PhotoImprovementConsentRow> {
+  final _service = PhotoImprovementConsentService();
+  bool _consented = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // 서버 값을 우선한다 — 기기를 바꾸면 로컬은 비어 있는데 서버에는 동의가
+    // 남아 있어, 이미 동의한 사용자에게 토글이 꺼진 것처럼 보인다.
+    final uid = widget.uid;
+    final value = uid == null
+        ? await _service.load()
+        : await _service.sync(uid);
+    if (!mounted) return;
+    setState(() => _consented = value);
+  }
+
+  Future<void> _toggle(bool next) async {
+    final uid = widget.uid;
+    if (uid == null || _busy) return;
+
+    // 낙관적으로 먼저 바꾼다 — 스위치가 손가락을 따라오지 않으면 고장으로
+    // 보인다. 실패하면 되돌리고 이유를 알린다.
+    setState(() {
+      _consented = next;
+      _busy = true;
+    });
+    final ok = await _service.setConsent(uid: uid, consented: next);
+    if (!mounted) return;
+    setState(() {
+      if (!ok) _consented = !next;
+      _busy = false;
+    });
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signedIn = widget.uid != null;
+    final subtitle = signedIn
+        ? '끄셔도 모든 기능을 그대로 쓰실 수 있어요'
+        : '로그인하면 설정할 수 있어요';
+
+    return Semantics(
+      toggled: _consented,
+      label: '명함 인식 개선에 사진 제공. $subtitle',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 76),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const AppIcon(
+                  AppIconId.scanCard,
+                  size: 22,
+                  color: AppColors.accentText,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '명함 인식 개선에 사진 제공',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch.adaptive(
+                value: _consented,
+                onChanged: signedIn && !_busy ? _toggle : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Future<void> _confirmConsentWithdrawal(
   BuildContext context,
   RadarViewModel viewModel,
@@ -750,6 +999,10 @@ Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
   _accountActionInProgress = true;
   try {
     await auth.signOut();
+    // "AI에 보낼 정보"가 들고 있던 직전 선택·메모를 함께 비운다(F-08).
+    // 로그아웃 뒤 다른 계정으로 로그인하면 앞 사람이 제3자에 대해 쓴 문장이
+    // 그대로 뜬다 — 기기에 저장되지 않아도 같은 실행 안에서는 남는다.
+    AiDataReviewMemory.clear();
   } finally {
     _accountActionInProgress = false;
   }
@@ -890,8 +1143,77 @@ Future<bool> _cleanUpLocalArtifacts(
 
   // 1) 명함 이미지 — 명함 목록을 비우기 전에 지워야 한다. 목록이 먼저 비면
   //    경로를 잃어 고아 파일이 된다.
-  final failedImages = await ContactImageService().deleteAllCardImages();
+  //    uid를 넘겨 **서버 사본까지** 지운다 — 방침이 약속한 "회원 탈퇴 시 전부
+  //    파기"는 기기만 비워서는 지켜지지 않는다(2026-08-15, 추가 218).
+  //
+  //    ⚠️ **탈퇴 경로에서는 이 서버 삭제가 실패하는 것이 정상이다. 버그가
+  //    아니다.** 계정 삭제(`deleteFirebaseAccountAndLocalSession`)가 먼저
+  //    일어나므로 여기 도달할 때는 `request.auth`가 null이고,
+  //    `storage.rules`의 `isOwner(uid)`가 거짓이 되어 삭제도 listAll도
+  //    거부된다. 순서를 바꿔 고치려 들지 말 것 — 그러면 서버 삭제나 재인증이
+  //    실패했을 때 계정은 살아 있는데 기기 데이터만 날아간다(위 주석 참고).
+  //
+  //    서버 사본은 Cloud Functions의 `onUserDeletedCleanup`이 Admin SDK로
+  //    지운다(`functions/src/cardPhotoCleanup.ts`). Admin SDK는 보안 규칙을
+  //    우회하므로 계정이 사라진 뒤에도 지울 수 있고, 앱이 중간에 죽어도 돈다.
+  //
+  //    이 호출을 그대로 남겨 두는 이유: `deleteAllCardImages`의 본래 일은
+  //    **기기에 있는 암호화 명함 이미지 파일을 지우는 것**이고, 서버 사본
+  //    삭제는 거기 얹힌 부수 동작이다. 호출을 빼면 기기 파일이 남는다.
+  //    실패 개수(`failedImages`)에 서버 쪽 실패가 섞여 들어와 탈퇴 후
+  //    "일부 정리 실패" 안내가 뜰 수 있는데, 그건 실제로 남은 것이 없으므로
+  //    무해하다 — 반대로 기기 파일을 안 지우는 쪽이 훨씬 나쁘다.
+  final failedImages = await ContactImageService().deleteAllCardImages(
+    uid: uid,
+  );
   if (failedImages > 0) hadFailure = true;
+
+  // 1-1) 사진 개선 동의(기기 캐시). 남으면 같은 기기에서 다음 계정이 앞
+  //      사람의 동의를 물려받는다.
+  await PhotoImprovementConsentService().clearLocal();
+
+  // 1-1) 명함 사진 백업 상태(2026-08-16). contactId와 상태뿐이라 개인정보는
+  //      아니지만, 남겨 두면 **다른 계정으로 로그인했을 때 앞 사람의
+  //      "백업됨" 표시가 뒷사람 명함에 붙는다.** 명함 id는 계정마다 다르므로
+  //      대개 그냥 맞지 않는 기록으로 남지만, 지갑 목록의 표시를 어긋나게
+  //      만들 수 있어 함께 비운다.
+  await CardPhotoBackupStateService().clear();
+
+  // 1-2) 갈무리해 둔 사진 백업 한도. 앞 사람의 한도가 뒷사람에게 적용되면
+  //      안 된다 — 충전 이용자가 쓰던 기기에 무료 이용자가 로그인하면
+  //      2,000장이 적용될 수 있다.
+  await CardPhotoQuotaService().clearCache();
+
+  // 1-2) "AI에 보낼 정보" 화면이 들고 있던 직전 선택·메모(F-08). 기기에
+  //      저장하지 않고 메모리에만 있지만, **같은 실행 안에서 계정을 갈아타면**
+  //      앞 사람이 제3자에 대해 쓴 문장이 뒷사람 화면에 뜬다.
+  AiDataReviewMemory.clear();
+
+  // 1-3) 촬영·선택 과정의 **평문 임시 파일**(2026-08-16, 추가 243).
+  //
+  //      `deleteAllCardImages`가 지우는 것은 암호문(`contact_card_*.enc`)이고,
+  //      그 원본이 된 평문 사진은 별개로 임시 폴더에 남는다. 명함 주인(제3자)의
+  //      이름·전화가 인쇄된 사진이라 **탈퇴하고도 남으면 방침이 약속한
+  //      "탈퇴 시 전부 파기"가 실물에서 지켜지지 않는다.**
+  //
+  //      평소 쓸어담기는 "1시간이 지난 것만" 지우지만(지금 쓰는 파일을 건드리지
+  //      않기 위한 안전선), 탈퇴는 다시 쓸 일이 없으므로 **나이를 따지지 않고
+  //      전부** 지운다.
+  //
+  //      실패해도 던지지 않는다 — 여기서 멈추면 아래 정리가 통째로 밀린다.
+  await sweepScanTemp(Directory.systemTemp, maxAge: Duration.zero);
+  //      촬영 원본(`CAP*.jpg`)과 갤러리 사본(`<UUID>/사진`)은 **다른 폴더**
+  //      (`cache`)에 있어 따로 걷어낸다(추가 248). 탈퇴하면 다시 쓸 일이 없으니
+  //      여기서도 나이를 따지지 않는다.
+  try {
+    await sweepPickerAndCameraLeftovers(
+      await getTemporaryDirectory(),
+      maxAge: Duration.zero,
+    );
+  } catch (e) {
+    hadFailure = true;
+    debugPrint('캐시 사진 정리 실패: ${e.runtimeType}');
+  }
 
   // 2) 내 프로필 사진. 이건 암호화도 안 돼 있어(평문 JPG) 남으면 재가입 시
   //    이전 사진이 그대로 보인다.
@@ -1147,6 +1469,71 @@ Future<void> _confirmSeededTagCleanup(BuildContext context) async {
   }
   messenger.showSnackBar(
     SnackBar(content: Text('${targets.length}건의 태그를 비웠습니다.')),
+  );
+}
+
+/// 스캔이 자동으로 넣던 문구가 그대로 남은 메모를 비운다 — **관리자 전용,
+/// 일회성 정리**(backlog 추가 223).
+///
+/// 태그 정리([_confirmSeededTagCleanup])와 같은 구조다. 자동 마이그레이션으로
+/// 하지 않은 이유도 같다 — **사용자가 그 문장을 보고 그대로 두기로 했을
+/// 가능성**을 앱이 구별할 수 없다. 지우려다 사용자 메모를 지우는 쪽이 더 나쁘다.
+///
+/// 대상은 메모가 **그 문장 하나뿐**인 명함이다. 뒤에 무언가 덧붙였다면 사용자가
+/// 그 칸을 의식했다는 뜻이라 건드리지 않는다.
+Future<void> _confirmSeededMemoCleanup(BuildContext context) async {
+  final repo = context.read<ContactsRepository>();
+  // 판정 규칙은 따로 빼서 테스트한다(`seeded_memo_cleanup.dart`).
+  final targets = repo.contacts
+      .where((c) => memoHasSeededScanLine(c.memo))
+      .toList();
+
+  final messenger = ScaffoldMessenger.of(context);
+  if (targets.isEmpty) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('자동 삽입된 문구가 남은 명함이 없습니다.')),
+    );
+    return;
+  }
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('${targets.length}건에서 문구를 지울까요?'),
+      content: Text(
+        '"AI OCR 스캔으로 자동 추출된 명함 텍스트 정보입니다."가 '
+        '한 줄로 들어 있는 명함 ${targets.length}건입니다.\n'
+        '예전에 스캔이 자동으로 넣던 문구가 그대로 저장된 것으로 봅니다.\n\n'
+        '이 문구는 AI 대화 가이드를 만들 때도 함께 전송되어, 아무 의미 없는 '
+        '내용이 상대방에 대한 정보처럼 쓰입니다.\n\n'
+        '메모를 통째로 비우지 않고 그 줄만 지웁니다 — 같은 메모에 적어 두신 '
+        '내용은 그대로 남습니다.\n\n'
+        '되돌릴 수 없습니다.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '문구 지우기',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+
+  for (final contact in targets) {
+    repo.updateContact(
+      contact.copyWith(memo: withoutSeededScanLine(contact.memo ?? '')),
+    );
+  }
+  messenger.showSnackBar(
+    SnackBar(content: Text('${targets.length}건에서 문구를 지웠습니다.')),
   );
 }
 

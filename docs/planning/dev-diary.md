@@ -16,7 +16,7 @@
 > 가리키지 않는" 순간들.**
 >
 > 시간순 사실관계의 원본은 [`backlog.md`](./backlog.md)(추가 1~110+),
-> 국면 요약은 [`HANDOFF.md`](./HANDOFF.md)("0" ~ "0-8" 섹션),
+> 국면 요약은 [`sessions/2026-08.md`](./sessions/2026-08.md)("0" ~ "0-8" 섹션),
 > 스토어 절차는 [`store-registration-playbook.md`](./store-registration-playbook.md).
 > "📸"는 실제 캡처가 남아 있는 장면(주로 스토어 등록 편).
 
