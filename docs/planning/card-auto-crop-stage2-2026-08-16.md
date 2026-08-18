@@ -44,8 +44,8 @@
 | 채점 | `test/ocr_accuracy_score_test.dart` |
 
 ```bash
-TSV=~/Downloads/scan_result.tsv \
-TRUTH=~/Downloads/ocr_truth.tsv \
+TSV=~/card-ocr-data/scan_result.tsv \
+TRUTH=~/card-ocr-data/ocr_truth.tsv \
 flutter test test/ocr_accuracy_score_test.dart
 ```
 
