@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import '../../../../core/app_version.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -261,6 +263,20 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           // 인식 원문. "왜 이 값이 들어갔나"를 표만 보고 알 수 없어서 덧붙인다 —
           // 이름을 왜 버렸는지 같은 판단은 원문 없이는 진단이 안 된다(추가 198).
           '원문',
+          // 각 줄이 명함 위 어디에 있었는지(R-05, 추가 317). `원문`과 **같은
+          // 순서**로 `left,top,width,height`를 ⏐ 로 잇는다.
+          //
+          // ⚠️ 이 칸이 없으면 좌표 규칙을 **만들 수도 잴 수도 없다.** 파서를
+          // 고쳐도 다시 재려면 스캔을 다시 돌려야 하는데, 좌표가 결과에 안
+          // 남으면 재스캔을 해도 소용이 없다. 그래서 구현보다 이 칸이 먼저다.
+          '좌표',
+          // ⚠️ **어느 코드로 뽑은 결과인지.** 2026-08-18에 이것 때문에 반나절을
+          // 썼다 — 8/17에 저장된 결과와 지금 결과가 14장 달라서 "내 변경이
+          // 회귀를 냈나"를 의심했는데, 같은 이미지로 두 번 재보니 스캔은
+          // 결정적이었고(99장 전부 동일) 원인은 **그 파일이 어느 코드로
+          // 만들어졌는지 아무도 몰랐던 것**이었다. 파일 시각은 저장 시각일
+          // 뿐이다(추가 317).
+          '빌드',
         ].join('\t'),
       );
     for (final row in _rows) {
@@ -280,6 +296,14 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.address ?? '',
           r?.addressDetail ?? '',
           (r?.rawLines ?? const <String>[]).join(' ⏐ '),
+          (r?.rawLineBoxes ?? const <OcrLineBox>[])
+              .map(
+                (b) =>
+                    '${b.left.round()},${b.top.round()},'
+                    '${b.width.round()},${b.height.round()}',
+              )
+              .join(' ⏐ '),
+          AppVersion.commit.isEmpty ? '(해시 없음)' : AppVersion.commit,
         ].map((s) => s.replaceAll('\t', ' ').replaceAll('\n', ' ')).join('\t'),
       );
     }

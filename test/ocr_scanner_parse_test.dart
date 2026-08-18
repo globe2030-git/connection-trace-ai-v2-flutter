@@ -1536,4 +1536,66 @@ void main() {
       expect(r.website, isEmpty);
     });
   });
+
+  // -------------------------------------------------------------------
+  // 좌표 전달 — R-05의 선행 조건 (추가 317)
+  //
+  // 아직 파서가 좌표로 칸을 정하지는 않는다. 여기서 보는 것은 **좌표가
+  // 파서까지 실려 오고, 결과에 그대로 남는가**뿐이다. 그것이 안 되면 좌표
+  // 규칙을 만들 수도, 재스캔으로 잴 수도 없다.
+  // -------------------------------------------------------------------
+  group('좌표 전달 (추가 317)', () {
+    test('⭐ 좌표를 넣어 파싱하면 결과에 같은 순서로 남는다', () {
+      final boxes = <OcrLineBox>[
+        (text: '주식회사 테스트', height: 18, top: 10, left: 20, width: 200),
+        (text: '홍길동', height: 30, top: 60, left: 20, width: 120),
+        (text: '영업팀 | 과장', height: 14, top: 100, left: 20, width: 160),
+      ];
+
+      final r = OcrScannerService.parseLinesForTestingWithBoxes(boxes);
+
+      expect(r.rawLineBoxes, hasLength(boxes.length));
+      expect(
+        r.rawLineBoxes.map((b) => b.text).toList(),
+        r.rawLines,
+        reason: '좌표 목록과 원문 목록의 순서가 어긋나면 짝을 못 맞춘다',
+      );
+      expect(r.rawLineBoxes[1].top, 60);
+      expect(r.rawLineBoxes[1].left, 20);
+      expect(r.rawLineBoxes[1].width, 120);
+    });
+
+    test('⚠️ 좌표를 모르는 통로로 만들면 전부 0이다 — "왼쪽 맨 위"가 아니라 "모름"이다', () {
+      final r = OcrScannerService.parseLinesForTesting(['주식회사 테스트', '홍길동']);
+
+      expect(r.rawLineBoxes, hasLength(2));
+      expect(r.rawLineBoxes.every((b) => b.top == 0 && b.left == 0), isTrue);
+      expect(
+        r.rawLineBoxes.every((b) => b.width == 0),
+        isTrue,
+        reason: '좌표를 쓰는 쪽은 이 모양을 보고 좌표 판단을 건너뛰어야 한다',
+      );
+    });
+
+    test('⭐ 좌표를 넣어도 기존 분류 결과는 그대로다', () {
+      // 좌표를 실어 나르기만 하는 단계이므로, 같은 글자면 같은 답이 나와야
+      // 한다. 여기가 깨지면 "나르기"가 아니라 이미 규칙을 바꾼 것이다.
+      const lines = ['주식회사 테스트', '홍길동', '영업팀 | 과장'];
+      final withoutBoxes = OcrScannerService.parseLinesForTesting(lines);
+      final withBoxes = OcrScannerService.parseLinesForTestingWithBoxes([
+        for (var i = 0; i < lines.length; i++)
+          (
+            text: lines[i],
+            height: 20,
+            top: i * 40,
+            left: 10,
+            width: 150,
+          ),
+      ]);
+
+      expect(withBoxes.name, withoutBoxes.name);
+      expect(withBoxes.company, withoutBoxes.company);
+      expect(withBoxes.title, withoutBoxes.title);
+    });
+  });
 }
