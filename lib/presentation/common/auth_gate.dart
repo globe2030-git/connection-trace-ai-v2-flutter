@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/account_bootstrap_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../data/repositories/contacts_repository.dart';
@@ -67,6 +70,15 @@ class _AuthGateState extends State<AuthGate> {
     ContactsRepository contactsRepo,
     MyProfileRepository profileRepo,
   ) async {
+    // 로그인마다(uid 변경마다, 이 메서드는 `_syncUidAndRestore`의
+    // `_lastHandledUid` 가드로 uid당 한 번만 호출됨) 서버 부트스트랩을
+    // 부른다 — 무료체험 크레딧 지급 + 리퍼럴 코드 발급(둘 다 서버가 멱등
+    // 가드를 걸어 두므로 재로그인해도 중복 지급 안 됨). 명함/프로필
+    // 복원과는 독립적인 부가 기능이라, 그 흐름을 기다리게 하지 않고
+    // 실패해도 로그인 자체를 막지 않는다(AccountBootstrapService 내부에서
+    // 이미 모든 예외를 삼킴 — rebackupAllContacts류 부가호출과 동일 패턴).
+    unawaited(AccountBootstrapService.call());
+
     SharedPreferences prefs;
     try {
       prefs = await SharedPreferences.getInstance();

@@ -44,7 +44,7 @@ const db = getFirestore(app);
 // httpsCallable이 기본(us-central1)으로 호출해 not-found가 난다.
 const functions = getFunctions(app, "asia-northeast3");
 const getUserUsageFn = httpsCallable(functions, "getUserUsage");
-const grantBonusCreditsFn = httpsCallable(functions, "grantBonusCredits");
+const grantSupportCreditsFn = httpsCallable(functions, "grantSupportCredits");
 
 const $ = (sel) => document.querySelector(sel);
 const loginScreen = $("#loginScreen");
@@ -265,10 +265,25 @@ async function getBillingConfig() {
   const snap = await getDoc(doc(db, "config", "billing"));
   const data = snap.exists() ? snap.data() : {};
   return {
+    // 과금 모델 스위치(reset/wallet, 2026-08-14 U1). 문서에 필드가 없으면
+    // 반드시 "reset"으로 표시한다 — docs/planning/ai-credit-wallet-spec.md
+    // §2-4, §3-2. 서버(functions/src/walletCredits.ts)도 같은 폴백 규칙을 쓴다.
+    model: data.model === "wallet" ? "wallet" : "reset",
     freeCredits: data.freeCredits ?? 10,
     tiers: TIER_PRICES.map((price) => {
       const found = (data.tiers ?? []).find((t) => t.priceKrw === price);
-      return { priceKrw: price, credits: found?.credits ?? null, active: found?.active ?? false };
+      return {
+        priceKrw: price,
+        credits: found?.credits ?? null,
+        active: found?.active ?? false,
+        // 스토어(App Store Connect/Play Console) 소모성 상품 ID. 아직 실제
+        // 상품이 등록되지 않았다(2026-08-15 기준, 스토어 등록은 사용자만
+        // 할 수 있는 작업) — 등록 전까지는 비워 두거나 placeholder 문자열을
+        // 넣어 둔다. 서버(functions/src/purchases.ts)가 나중에 이 값으로
+        // 결제 상품↔크레딧을 매칭한다(U7 "뼈대만", 실제 영수증 검증은
+        // 아직 미구현).
+        productId: found?.productId ?? "",
+      };
     }),
   };
 }
@@ -283,6 +298,13 @@ async function loadBilling() {
         (미정이면 비워 두세요). 여기 저장한 값은 영수증 검증 서버가 크레딧 지급량으로,
         앱이 충전 화면 표시용으로 읽습니다 — 회수 조정에 앱 배포가 필요 없습니다.
       </p>
+      <p class="hint">
+        <strong>상품ID</strong>는 App Store Connect/Play Console에 실제 소모성 상품을
+        등록한 뒤 그 상품ID를 그대로 붙여넣는 칸입니다. <strong>아직 스토어에 상품이
+        등록되지 않았으므로 지금은 비워 두세요</strong> — 비워 두면 결제 검증 서버가
+        이 티어를 결제와 매칭하지 못해 크레딧을 지급하지 않습니다(의도된 동작, 결제
+        기능 자체가 아직 준비 중입니다).
+      </p>
       <div id="tierRows"></div>
       <label style="margin-top:12px;">무료 제공 횟수 (신규 가입 시)</label>
       <div class="row">
@@ -290,6 +312,27 @@ async function loadBilling() {
         <button class="btn-primary" id="billingSaveBtn">저장</button>
       </div>
       <div id="billingMsg"></div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0;">과금 모델</h3>
+      <p class="hint">
+        <strong>reset(리셋형)</strong>이 기본값입니다 — 지금 라이브가 쓰는 모델로,
+        하루/월 한도가 매일·매월 초기화됩니다.
+        <strong>wallet(지갑형)</strong>로 바꾸면 리셋이 사라지고, 무료(가입 시 1회성)
+        + 충전 잔액을 다 쓸 때까지 소진하는 방식으로 전환됩니다.
+        결제(IAP)가 아직 준비되지 않았다면 반드시 reset을 유지하세요 — wallet
+        전환은 결제 버튼이 열린 뒤에만 해야 합니다
+        (docs/planning/ai-credit-wallet-spec.md 9절 전환 체크리스트 참고).
+      </p>
+      <div class="row">
+        <select id="billingModel" style="width:220px;">
+          <option value="reset">reset — 리셋형 (기본값)</option>
+          <option value="wallet">wallet — 지갑형 (리셋 없음)</option>
+        </select>
+        <button class="btn-primary" id="billingModelSaveBtn">저장</button>
+      </div>
+      <div id="billingModelMsg"></div>
     </div>
 
     <div class="card">
@@ -331,6 +374,7 @@ async function loadBilling() {
   // 실제 값은 loadAppUpdate()와 같은 패턴으로 DOM 프로퍼티로 안전하게 채운다.
   const cfg = await getBillingConfig();
   $("#freeCredits").value = cfg.freeCredits;
+  $("#billingModel").value = cfg.model;
   $("#tierRows").innerHTML = cfg.tiers.map((t, i) => `
     <div class="row" style="align-items:center; margin-bottom:6px;">
       <div style="width:110px; font-weight:700;">${t.priceKrw.toLocaleString()}원</div>
@@ -339,6 +383,8 @@ async function loadBilling() {
       <label style="margin:0; display:flex; align-items:center; gap:4px;">
         <input type="checkbox" id="tierActive${i}"> 판매
       </label>
+      <input type="text" id="tierProductId${i}" placeholder="상품ID (스토어 등록 전엔 비워둠)"
+        value="${escapeHtml(t.productId ?? "")}" style="flex:1; min-width:160px;">
     </div>
   `).join("");
   cfg.tiers.forEach((t, i) => {
@@ -353,6 +399,10 @@ async function loadBilling() {
         priceKrw: price,
         credits: raw === "" ? null : Math.max(1, parseInt(raw, 10) || 0),
         active: $(`#tierActive${i}`).checked,
+        // 스토어 상품ID — 등록 전이면 빈 문자열 그대로 저장(placeholder,
+        // 서버는 이 값이 실제 판매 중인 productId와 매칭될 때만 크레딧을
+        // 지급한다, functions/src/purchases.ts 참고).
+        productId: $(`#tierProductId${i}`).value.trim(),
       };
     });
     const bad = tiers.find((t) => t.active && !t.credits);
@@ -367,6 +417,16 @@ async function loadBilling() {
     await logAdminAudit("billing.save", "config/billing",
       `무료 ${freeCredits}회, 활성 티어 ${tiers.filter((t) => t.active).length}개`);
     $("#billingMsg").innerHTML = `<div class="hint">저장했습니다.</div>`;
+  });
+
+  // 과금 모델 스위치 — 상품 설정(회수·가격)과 별개 버튼으로 저장한다.
+  // wallet 전환은 되돌리기가 매끄럽지 않은 결정(스펙 §9 롤백 항목)이라
+  // 회수 값을 고치다가 실수로 같이 넘어가는 걸 막기 위해서다.
+  $("#billingModelSaveBtn").addEventListener("click", async () => {
+    const model = $("#billingModel").value === "wallet" ? "wallet" : "reset";
+    await setDoc(doc(db, "config", "billing"),
+      { model, updatedAt: serverTimestamp() }, { merge: true });
+    $("#billingModelMsg").innerHTML = `<div class="hint">저장했습니다. (현재: ${model})</div>`;
   });
 
   // ② 충전 내역 조회 (이메일)
@@ -630,7 +690,7 @@ async function loadUsageLogs() {
         grantBtn.disabled = true;
         out.innerHTML = `<p class="hint">지급 중…</p>`;
         try {
-          const gr = await grantBonusCreditsFn({ email, amount, reason, operationId });
+          const gr = await grantSupportCreditsFn({ email, amount, reason, operationId });
           $("#bonusBalance").textContent = `${gr.data.bonusCredits}회`;
           $("#grantAmount").value = "";
           $("#grantReason").value = "";

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:connection_trace_ai_flutter/data/models/billing_config_model.dart';
 import 'package:connection_trace_ai_flutter/data/repositories/billing_config_repository.dart';
 
 void main() {
@@ -74,5 +75,61 @@ void main() {
   test('문서가 없으면(fetchRaw가 null 반환) fetchConfig도 null', () async {
     final config = await repo(null).fetchConfig();
     expect(config, isNull);
+  });
+
+  // model 필드(2026-08-14, wallet 전환 U4): fetchConfig가 티어를 걸러
+  // 새 BillingConfig를 재구성하는 과정에서 model 필드를 놓치기 쉬운
+  // 회귀 지점이었다 — 실제로 처음 구현에서 이 필드를 빠뜨렸다가 이
+  // 테스트로 잡았다.
+  test('model이 "wallet"이면 BillingModel.wallet으로 파싱된다', () async {
+    final config = await repo({'freeCredits': 3, 'model': 'wallet'}).fetchConfig();
+    expect(config!.model, BillingModel.wallet);
+  });
+
+  test('model 필드가 없거나 알 수 없는 값이면 BillingModel.reset으로 폴백', () async {
+    final noField = await repo({'freeCredits': 3}).fetchConfig();
+    expect(noField!.model, BillingModel.reset);
+
+    final explicitReset = await repo({
+      'freeCredits': 3,
+      'model': 'reset',
+    }).fetchConfig();
+    expect(explicitReset!.model, BillingModel.reset);
+
+    final typo = await repo({'freeCredits': 3, 'model': 'wallett'}).fetchConfig();
+    expect(typo!.model, BillingModel.reset);
+  });
+
+  // productId(2026-08-15, U7 "뼈대만" — 스토어 상품ID를 나중에 채울 자리).
+  // 스토어에 아직 등록되지 않았으므로 대부분 null이거나 placeholder
+  // 문자열이다 — 어느 쪽이든 필터링(active+credits)을 거치는 동안 값이
+  // 사라지지 않아야 한다(billing_config_repository는 파싱된 BillingTier를
+  // 재구성 없이 필터만 하므로 회귀 위험은 낮지만, 명시적으로 고정한다).
+  test('productId가 있으면 필터를 거쳐도 그대로 보존된다', () async {
+    final config = await repo({
+      'freeCredits': 3,
+      'tiers': [
+        {
+          'priceKrw': 1000,
+          'credits': 10,
+          'active': true,
+          'productId': 'credit_1000_placeholder',
+        },
+      ],
+    }).fetchConfig();
+
+    expect(config!.tiers.single.productId, 'credit_1000_placeholder');
+  });
+
+  test('productId가 없거나 빈 문자열이면 null로 파싱된다', () async {
+    final config = await repo({
+      'freeCredits': 3,
+      'tiers': [
+        {'priceKrw': 1000, 'credits': 10, 'active': true},
+        {'priceKrw': 3000, 'credits': 30, 'active': true, 'productId': '  '},
+      ],
+    }).fetchConfig();
+
+    expect(config!.tiers.every((t) => t.productId == null), isTrue);
   });
 }

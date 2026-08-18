@@ -23,8 +23,13 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
  * `getUTC*()`로 읽으면 KST 기준 연/월/일/시가 나온다 — Node에 KST용
  * `Intl`/타임존 DB를 쓰지 않고 오프셋 산술만으로 날짜 필드를 얻기 위한 트릭이다.
  * 반드시 [fromKstFields]와 짝으로 쓴다.
+ *
+ * 파일 밖으로 export하는 이유: `pilotEvents.ts`(파일럿 계측, 주차 코호트
+ * 계산)가 "KST 기준 연/월/일 필드"만 필요하고 실제 UTC 타임스탬프로 되돌릴
+ * 필요는 없어 이 함수만 재사용한다. KST 오프셋 산술을 두 곳에서 각자
+ * 다시 구현하지 않기 위함 — 새로 만들지 말 것(작업 지시서 명시).
  */
-function toKstFields(utcInstant: Date): Date {
+export function toKstFields(utcInstant: Date): Date {
   return new Date(utcInstant.getTime() + KST_OFFSET_MS);
 }
 

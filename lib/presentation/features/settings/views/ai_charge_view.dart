@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/services/iap_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/billing_config_model.dart';
 import '../../../../data/repositories/billing_config_repository.dart';
@@ -13,10 +14,17 @@ import '../../../common/glass_card.dart';
 /// 판매 상품을 보여준다.
 ///
 /// **이번 화면 범위에 실제 결제는 없다.** 스토어에 상품ID가 아직 등록되지
-/// 않았고 `in_app_purchase` 연동도 다음 단계다 — 그래서 상품 카드의 구매
-/// 자리는 항상 눌러도 아무 일도 일어나지 않는 비활성 "충전 준비 중" 버튼
-/// 이다. 결제되는 척하는 가짜 동작은 이 프로젝트에서 가장 엄격히 금지하는
+/// 않았고, `IapService`(U7 "뼈대만")도 배선만 있을 뿐 `IapService.
+/// kIapEnabled`가 `false`로 고정돼 있다 — 그래서 상품 카드의 구매 자리는
+/// 항상 눌러도 아무 일도 일어나지 않는 비활성 "충전 준비 중" 버튼이다.
+/// 결제되는 척하는 가짜 동작은 이 프로젝트에서 가장 엄격히 금지하는
 /// 규칙이다(CLAUDE.md 4장 "가짜 데이터를 만들지 않는다").
+///
+/// `IapService`를 여기서 import만 해 두는 이유: 나중에 `kIapEnabled`가
+/// true가 되고 스토어 등록·서버 검증이 모두 끝나면, [_TierTile]의
+/// `GlassCard.onTap`을 `IapService.buyConsumable(...)`로 연결할 자리라는
+/// 표시다 — **실제 조건부 활성화 코드는 이번 라운드에 짜지 않는다**(짜는
+/// 순간 kIapEnabled=false로 잠갔어도 "거의 다 됐다"는 인상을 주므로).
 class AiChargeView extends StatefulWidget {
   const AiChargeView({super.key});
 
@@ -28,6 +36,13 @@ enum _LoadState { loading, error, loaded }
 
 class _AiChargeViewState extends State<AiChargeView> {
   final _repo = BillingConfigRepository();
+
+  // U7 "뼈대만": 인스턴스만 들고 있는다. `IapService.kIapEnabled`가
+  // true가 되고 스토어 등록·서버 검증이 끝나면 [_TierTile]의 탭 핸들러가
+  // 이 인스턴스의 `buyConsumable`을 부르는 자리다 — 지금은 어디서도 호출
+  // 하지 않는다(구매 버튼 자체가 비활성).
+  // ignore: unused_field
+  final _iap = IapService();
 
   _LoadState _state = _LoadState.loading;
   BillingConfig? _config;

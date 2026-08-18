@@ -19,18 +19,48 @@ class BillingTier {
   /// 관리자 콘솔에서 판매 중으로 켠 티어인지.
   final bool active;
 
+  /// 스토어(App Store Connect/Play Console) 소모성 상품 ID. **아직 실제
+  /// 상품이 등록되지 않았다**(2026-08-15 기준, 사용자 게이트 — 스토어
+  /// 콘솔에서 사용자만 할 수 있는 작업). 그 전까지는 관리자 콘솔이 비워
+  /// 두거나 placeholder 문자열을 저장한다. 앱은 이 필드를 읽기만 하고
+  /// 구매 트리거에 쓰지 않는다(`IapService.kIapEnabled`가 false인 동안은
+  /// 애초에 구매 흐름 자체가 시작되지 않는다) — U7 "뼈대만" 라운드 산출물.
+  final String? productId;
+
   const BillingTier({
     required this.priceKrw,
     required this.credits,
     required this.active,
+    this.productId,
   });
 
   factory BillingTier.fromMap(Map<String, dynamic> map) {
+    final rawProductId = map['productId'];
     return BillingTier(
       priceKrw: (map['priceKrw'] as num?)?.toInt() ?? 0,
       credits: (map['credits'] as num?)?.toInt() ?? 0,
       active: (map['active'] as bool?) ?? false,
+      productId: (rawProductId is String && rawProductId.trim().isNotEmpty)
+          ? rawProductId
+          : null,
     );
+  }
+}
+
+/// `config/billing.model`이 가질 수 있는 값. 서버(`functions/src/
+/// walletCredits.ts`의 `resolveBillingModel`)와 이름·기본값을 맞춘다 —
+/// 문서가 없거나 값이 알 수 없으면 항상 [reset]으로 폴백한다(안전한 쪽,
+/// wallet로 잘못 폴백하면 조용히 무제한 과금 모델이 될 위험이 있다).
+enum BillingModel {
+  /// 지금까지의 일/월 한도 + 리셋 방식(기본값).
+  reset,
+
+  /// 2026-08-14 도입, 무료체험 잔액 + 충전 잔액을 합산해 소진하는 방식.
+  /// 리셋 개념이 없다.
+  wallet;
+
+  static BillingModel fromRaw(dynamic raw) {
+    return raw == 'wallet' ? BillingModel.wallet : BillingModel.reset;
   }
 }
 
@@ -43,7 +73,16 @@ class BillingConfig {
   /// active·credits 유효성으로 걸러 가격 오름차순으로 정렬해 돌려준다.
   final List<BillingTier> tiers;
 
-  const BillingConfig({required this.freeCredits, required this.tiers});
+  /// 서버가 사용량을 판정하는 방식. 앱은 이 값으로 사용량 표시 화면을
+  /// 분기한다([AiUsage] 참고) — 아직 어떤 계정도 실제로 wallet이 아니므로
+  /// (2026-08-14 기준) 대부분의 환경에서는 [BillingModel.reset]이다.
+  final BillingModel model;
+
+  const BillingConfig({
+    required this.freeCredits,
+    required this.tiers,
+    this.model = BillingModel.reset,
+  });
 
   factory BillingConfig.fromMap(Map<String, dynamic> map) {
     final rawTiers = map['tiers'];
@@ -58,6 +97,7 @@ class BillingConfig {
     return BillingConfig(
       freeCredits: (map['freeCredits'] as num?)?.toInt() ?? 0,
       tiers: tiers,
+      model: BillingModel.fromRaw(map['model']),
     );
   }
 }

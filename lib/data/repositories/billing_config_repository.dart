@@ -32,7 +32,11 @@ class BillingConfigRepository {
         config.tiers.where((t) => t.active && t.credits >= 1).toList()
           ..sort((a, b) => a.priceKrw.compareTo(b.priceKrw));
 
-    return BillingConfig(freeCredits: config.freeCredits, tiers: validTiers);
+    return BillingConfig(
+      freeCredits: config.freeCredits,
+      tiers: validTiers,
+      model: config.model,
+    );
   }
 
   static Future<Map<String, dynamic>?> _readDoc() async {

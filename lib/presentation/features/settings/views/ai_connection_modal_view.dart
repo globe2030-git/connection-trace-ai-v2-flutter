@@ -3,6 +3,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import 'ai_charge_view.dart';
 
 /// AI 대화 브리핑 기능 안내 화면.
 ///
@@ -145,7 +146,10 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                 ],
               ),
               if (usage != null) ...[
-                if (usage.bonusCredits > 0) ...[
+                // 무료/보너스 분리 문구는 reset 모드 전용이다 — wallet
+                // 모드는 두 버킷(무료체험/충전)을 화면 어디에도 분리
+                // 노출하지 않는다(스펙 §5, 합산 숫자 하나만).
+                if (!usage.isWalletMode && usage.bonusCredits > 0) ...[
                   const SizedBox(height: 6),
                   Text(
                     '무료 ${usage.remaining}회 + 충전/보너스 ${usage.bonusCredits}회',
@@ -203,7 +207,9 @@ class _StatusBanner extends StatelessWidget {
 }
 
 /// 잔여 회차가 얼마 없거나 소진됐을 때 보여주는 인라인 안내(스낵바 대신).
-// TODO: 충전 화면(config/billing 기반) 완성되면 여기 CTA 버튼 연결 예정
+/// reset/wallet 두 모드 공통으로 쓴다 — reset 모드에서도 잔여가 적으면
+/// 충전 화면으로 보내는 게 자연스럽고, [AiChargeView] 자체가 아직 결제는
+/// 비활성인 "상품 안내" 화면이라 두 모드 모두에서 지금 열어도 문제가 없다.
 class _LowBalanceBanner extends StatelessWidget {
   final bool exhausted;
   const _LowBalanceBanner({required this.exhausted});
@@ -211,24 +217,53 @@ class _LowBalanceBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = exhausted
-        ? '잔여 회차를 모두 사용했어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.'
-        : '잔여 회차가 얼마 남지 않았어요. 충전 기능은 준비 중이에요 — 출시되면 여기서 바로 충전할 수 있도록 준비하고 있어요.';
+        ? '잔여 회차를 모두 사용했어요. 충전 화면에서 상품을 확인해 보세요.'
+        : '잔여 회차가 얼마 남지 않았어요. 충전 화면에서 상품을 확인해 보세요.';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
       decoration: BoxDecoration(
         color: AppColors.warningSoft,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 11.5,
-          color: AppColors.warningText,
-          height: 1.4,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Column(
+        children: [
+          Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppColors.warningText,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AiChargeView(),
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                foregroundColor: AppColors.warningText,
+                side: const BorderSide(color: AppColors.warningText),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text(
+                '충전하러 가기',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

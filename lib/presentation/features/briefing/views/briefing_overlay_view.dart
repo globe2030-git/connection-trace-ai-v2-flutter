@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/models/pending_comm_log_intent.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
+import '../../../../core/services/pilot_events_service.dart';
 import '../../../../core/services/reconnect_priority_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../common/ai_usage_chip.dart';
@@ -65,6 +67,11 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
   // 매핑·중복 방지 로직은 위젯 트리 밖(core/models/pending_comm_log_intent.dart)
   // 으로 뽑아 두어 위젯 없이도 단위 테스트할 수 있게 했다.
   final _pendingSaveTracker = PendingCommLogTracker();
+
+  // 파일럿(베타) 계측 — 대화 포인트 복사/전송 이벤트와 브리핑 반응(피드백)을
+  // 남긴다. 개인정보(대화 포인트 원문·상대방 식별 정보)는 전혀 넘기지
+  // 않는다(PilotEventsService 자체가 채널/반응 값만 받는다).
+  final _pilotEvents = PilotEventsService();
 
   @override
   void initState() {
@@ -214,6 +221,10 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
         point: point,
       ),
     );
+    // 계측(파일럿 관측 항목 3) — 채널만 남기고 대화 포인트 원문·상대방
+    // 식별 정보는 넘기지 않는다. 실패해도 조용히 무시(계측이 전송 기능을
+    // 막지 않는다).
+    unawaited(_pilotEvents.recordCopySend(channel));
   }
 
   /// 앱이 다시 활성화됐을 때(라이프사이클 resumed) 대기 의도가 있으면 한 번
@@ -796,6 +807,16 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
                         onSent: (channel, point) =>
                             _rememberPendingSave(contact.id, channel, point),
                       ),
+
+                      // 파일럿(베타) 계측 — 대화 포인트가 뜬 직후 가벼운
+                      // 반응 수집(관측 항목 4). 응답하지 않아도 무방한
+                      // 선택형이라 강요하지 않는다. 새로 생성할 때마다
+                      // (`_points`가 바뀔 때) 이전 선택이 남아 보이지 않도록
+                      // key로 새 State를 만든다.
+                      _FeedbackRow(
+                        key: ValueKey(_points),
+                        pilotEvents: _pilotEvents,
+                      ),
                     ],
 
                     // Recent Communication History Integration Trace
@@ -1254,6 +1275,118 @@ class _SendChannelRow extends StatelessWidget {
     } else {
       onSent?.call('email', point);
     }
+  }
+}
+
+/// 브리핑 직후(대화 포인트가 뜬 바로 아래) 가벼운 반응 수집 — 👍/👎와
+/// 선택적 1~5 척도. **응답하지 않아도 무방한 선택형**이라 아무 것도 안
+/// 눌러도 화면 사용에 지장이 없다(작업 지시서 명시 — 강제 응답 금지).
+///
+/// 👍/👎와 척도는 서로 배타적이지 않다 — 둘 다 누르면 둘 다 기록된다(서버
+/// 규칙도 이를 허용). 이미 누른 항목은 다시 눌러도 값을 덮어쓸 뿐 중복
+/// 이벤트가 쌓이는 것을 막지는 않는다 — "마음이 바뀐 재평가"도 유효한
+/// 신호로 보고, 굳이 1회로 제한할 필요가 없다고 판단했다(파일럿 규모에서
+/// 중복 몇 건이 집계를 왜곡할 정도로 크지 않다).
+class _FeedbackRow extends StatefulWidget {
+  final PilotEventsService pilotEvents;
+
+  const _FeedbackRow({super.key, required this.pilotEvents});
+
+  @override
+  State<_FeedbackRow> createState() => _FeedbackRowState();
+}
+
+class _FeedbackRowState extends State<_FeedbackRow> {
+  bool? _thumbsUp;
+  int? _rating;
+
+  void _tapThumbs(bool up) {
+    setState(() => _thumbsUp = up);
+    unawaited(widget.pilotEvents.recordFeedback(thumbsUp: up));
+  }
+
+  void _tapRating(int value) {
+    setState(() => _rating = value);
+    unawaited(widget.pilotEvents.recordFeedback(rating: value));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              '이 대화 포인트, 도움이 됐나요?',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+            ),
+          ),
+          ..._ratingStars(),
+          const SizedBox(width: 6),
+          _thumbButton(
+            icon: Icons.thumb_up_alt_rounded,
+            selected: _thumbsUp == true,
+            semanticLabel: '도움이 됐어요',
+            onTap: () => _tapThumbs(true),
+          ),
+          const SizedBox(width: 2),
+          _thumbButton(
+            icon: Icons.thumb_down_alt_rounded,
+            selected: _thumbsUp == false,
+            semanticLabel: '도움이 안 됐어요',
+            onTap: () => _tapThumbs(false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _ratingStars() {
+    return List.generate(5, (i) {
+      final value = i + 1;
+      final filled = _rating != null && value <= _rating!;
+      return Semantics(
+        button: true,
+        label: '$value점으로 평가',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _tapRating(value),
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Icon(
+              filled ? Icons.star_rounded : Icons.star_outline_rounded,
+              size: 16,
+              color: filled ? AppColors.accent : AppColors.textMuted,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _thumbButton({
+    required IconData icon,
+    required bool selected,
+    required String semanticLabel,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Icon(
+            icon,
+            size: 17,
+            color: selected ? AppColors.accent : AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
   }
 }
 

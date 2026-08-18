@@ -34,6 +34,26 @@ import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
+import {
+  BillingModel,
+  WalletExhaustedError,
+  consumeWalletCredit,
+  resolveBillingModel,
+} from "./walletCredits";
+import {DEFAULT_FREE_CREDITS, planFreeGrant} from "./freeGrant";
+import {
+  kstIsoWeekCohort,
+  planActivation,
+} from "./pilotEvents";
+import {generateReferralCode} from "./referralCode";
+import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
+import {
+  BillingTierRaw,
+  isNonEmptyString,
+  isValidIapPlatform,
+  isValidTransactionId,
+  resolveTierByProductId,
+} from "./purchases";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
 
@@ -46,6 +66,32 @@ const geminiApiKey = defineSecret("GEMINI_API_KEY");
 // (-----BEGIN PRIVATE KEY----- 부터 END 까지 통째로). 이 비밀이 없으면 아래
 // 두 함수는 배포되지 않는다.
 const appleSignInKey = defineSecret("APPLE_SIGNIN_KEY");
+
+// 기기 지문(raw device id) 해시용 salt(U5, 재가입×무료체험 무한 루프 방어).
+// `firebase functions:secrets:set DEVICE_HASH_SALT`로 실제 값을 넣는다 —
+// 이 값이 없어도(로컬 빌드·아직 시크릿 미설정) `npm run build`(tsc)는
+// 통과한다. `deviceHashSalt.value()`를 실제로 호출하는 시점(배포된 함수가
+// deviceId를 받은 요청을 처리할 때)에만 시크릿이 필요하다. 설계 근거:
+// docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4-2.
+const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
+
+// IAP(인앱결제) 영수증 검증용 시크릿 2개(U7, 뼈대만). **값은 아직 설정하지
+// 않는다** — 스토어 상품ID가 아직 등록되지 않았고(사용자 게이트, P1-1)
+// 실제 검증 로직도 이번 라운드엔 없다(`verifyAndGrantPurchase` 참고). 값이
+// 없어도 `npm run build`(tsc)는 통과한다 — `defineSecret`는 선언 시점엔
+// 값을 요구하지 않고, `.value()`를 실제로 호출하는 시점(배포된 함수가
+// 검증 요청을 처리할 때)에만 필요하다. 설계 근거:
+// docs/planning/monetization-referral-engineering-spec-2026-08-14.md §2-1.
+//
+// - APPLE_IAP_SHARED_SECRET: App Store Connect의 "앱 전용 공유 비밀"
+//   (legacy verifyReceipt) 또는 향후 App Store Server API 키로 대체될 수
+//   있다 — 실제 검증 로직을 채울 때 어느 쪽을 쓸지 그때 결정한다.
+// - GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: Google Play Developer API 호출용
+//   서비스 계정 JSON 원문.
+const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
+const googlePlayServiceAccountJson = defineSecret(
+  "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+);
 const APPLE_TEAM_ID = "77L7BH2M2W";
 const APPLE_KEY_ID = "UUYAKPD4S7";
 // 네이티브 iOS Sign in with Apple의 client_id는 앱 번들 ID다(웹 Services ID 아님).
@@ -360,11 +406,34 @@ async function callGemini(
  * uid별 일/월 호출량을 Firestore 트랜잭션으로 원자적으로 확인·증가시킨다.
  * 상한 초과 시 HttpsError를 던진다(트랜잭션 안에서 던지면 카운터 증가도
  * 함께 롤백되어 정확하다).
+ *
+ * wallet 모드(2026-08-14, U1, ai-credit-wallet-spec.md §3-2): `config/billing
+ * .model`이 `'wallet'`이면 아래 트랜잭션 맨 앞에서 무료(free)→충전(paid)
+ * 잔액 차감 분기를 타고 `return`한다 — 그 아래 있는 기존 `dailyCount`/
+ * `monthlyCount`/`bonusCredits` 기반 판정(=reset 모드)은 **한 글자도 안
+ * 바뀐 채** 그대로 남아 있고, `model`이 `'reset'`이거나 미설정이면 지금과
+ * 완전히 동일하게 그 경로만 실행된다.
  */
 async function incrementAndCheckUsage(uid: string): Promise<void> {
   const db = getFirestore();
   const userRef = db.collection("users").doc(uid);
   const now = new Date();
+
+  // config/billing.model은 트랜잭션 밖에서 먼저 읽는다(외부 읽기를 트랜잭션
+  // 안에 넣지 않는 게 원칙). 조회 자체가 실패해도(문서 없음 포함)
+  // resolveBillingModel이 반드시 'reset'으로 폴백한다 — wallet로 폴백하면
+  // 장애 시 조용히 무제한 과금 모델이 되는 위험이 있다(스펙 §3-2).
+  let billingModel: BillingModel = "reset";
+  try {
+    const billingSnap = await db.collection("config").doc("billing").get();
+    billingModel = resolveBillingModel(
+      billingSnap.exists ? billingSnap.data() : undefined
+    );
+  } catch (err) {
+    logger.warn("config/billing 조회 실패 — reset 모드로 폴백", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(userRef);
@@ -375,6 +444,8 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
           monthlyCount?: number;
           monthlyResetAt?: FirebaseFirestore.Timestamp;
           bonusCredits?: number;
+          freeBalance?: number;
+          paidBalance?: number;
         }
       | undefined;
 
@@ -387,6 +458,48 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 
     const dailyCount = dailyExpired ? 0 : (usage?.dailyCount ?? 0);
     const monthlyCount = monthlyExpired ? 0 : (usage?.monthlyCount ?? 0);
+
+    if (billingModel === "wallet") {
+      // wallet 분기 — 무료(free) 먼저, 그다음 충전(paid) 소진(스펙 §3-2).
+      // 실제 차감 판정은 순수 함수(walletCredits.ts)에 맡기고 여기서는
+      // Firestore 읽기/쓰기만 한다.
+      let nextBalances;
+      try {
+        nextBalances = consumeWalletCredit({
+          free: usage?.freeBalance ?? 0,
+          paid: usage?.paidBalance ?? 0,
+        });
+      } catch (err) {
+        if (err instanceof WalletExhaustedError) {
+          throw new HttpsError("resource-exhausted", err.message);
+        }
+        throw err;
+      }
+
+      // 표시용 카운터(설정 → AI 사용량의 "오늘 사용 N회")는 게이팅에는 안
+      // 쓰지만 wallet 모드에서도 계속 갱신한다(스펙 §3-3 — 새 필드 없이
+      // 기존 표시 로직을 그대로 재사용하기 위함).
+      const nextMidnight = nextKstMidnight(now);
+      const nextMonth = nextKstMonthStart(now);
+      tx.set(
+        userRef,
+        {
+          aiUsage: {
+            freeBalance: nextBalances.free,
+            paidBalance: nextBalances.paid,
+            dailyCount: dailyCount + 1,
+            dailyResetAt: dailyExpired ? nextMidnight : (usage?.dailyResetAt ?? nextMidnight),
+            monthlyCount: monthlyCount + 1,
+            monthlyResetAt: monthlyExpired ? nextMonth : (usage?.monthlyResetAt ?? nextMonth),
+          },
+        },
+        {merge: true}
+      );
+      return;
+    }
+
+    // 'reset' 모드 — 여기부터 tx.set까지는 원래 코드 그대로다(문자 그대로
+    // 동일한지 diff로 확인할 것, wallet-credit-spec.md §3-2 인수 기준).
     // 관리자가 지급한 무료 회차(또는 향후 충전 회차). 일/월 한도를 다 쓴
     // 뒤에도 남아 있으면 이걸 먼저 소진해 계속 쓸 수 있게 한다 — "추가로
     // 준 회차"이므로 일/월 카운트에는 올리지 않고 잔액만 1 줄인다.
@@ -521,6 +634,53 @@ async function writeAiAuditLog(record: {
   }
 }
 
+/**
+ * 파일럿 활성화 이벤트(명함 3장 이상 + AI 브리핑 1회 이상 사용) 판정·기록.
+ *
+ * `generateBriefing`이 이미 성공한 직후에만 부른다 — "지금 AI 사용이 1회
+ * 이상 일어났다"는 사실을 서버가 아는 유일한 지점이 여기이기 때문이다. 남은
+ * 조건(명함 3장 이상)은 이 함수가 `users/{uid}/contacts`를 Admin SDK
+ * count() 집계로 직접 확인한다. 두 조건이 모두 충족된 시점(둘 중 나중에
+ * 벌어진 사건 시점)에 한해 `users/{uid}.pilotActivatedAt`(멱등 가드)과
+ * `pilotEvents/{uid}/events/{eventId}` 로그를 함께 남긴다.
+ *
+ * ⚠️ U2의 리퍼럴 활성화 조건("명함 1장 + AI 1회", 아직 미구현)과는 완전히
+ * 별개인 독립 지표다 — 코드도 저장 위치도 공유하지 않는다.
+ *
+ * writeAiAuditLog와 같은 원칙: 절대 throw하지 않는다. 계측 실패가 AI
+ * 응답을 막으면 안 된다.
+ */
+async function maybeRecordActivationEvent(uid: string): Promise<void> {
+  try {
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      const alreadyActivated = userSnap.data()?.pilotActivatedAt != null;
+      if (alreadyActivated) return; // 멱등 — count() 집계도 아낀다.
+
+      const countSnap = await tx.get(userRef.collection("contacts").count());
+      const contactCount = countSnap.data().count;
+
+      const plan = planActivation({alreadyActivated, contactCount});
+      if (!plan.shouldRecord) return;
+
+      const at = FieldValue.serverTimestamp();
+      tx.set(userRef, {pilotActivatedAt: at}, {merge: true});
+      const eventRef = db
+        .collection("pilotEvents")
+        .doc(uid)
+        .collection("events")
+        .doc();
+      tx.create(eventRef, {type: "activation", uid, at});
+    });
+  } catch (err) {
+    logger.warn("파일럿 활성화 이벤트 기록 실패 — 무시하고 계속", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export const generateBriefing = onCall<GenerateBriefingRequest>(
   {
     secrets: [geminiApiKey],
@@ -623,6 +783,10 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         usage,
         latencyMs: Date.now() - startedAt,
       });
+      // 파일럿 활성화 판정은 AI 사용이 실제로 성공한 뒤에만 의미가 있다
+      // (실패 호출은 "AI 1회 사용"으로 치지 않는다). 실패해도 응답에는
+      // 영향 없음(위 함수 자체가 절대 throw하지 않음).
+      await maybeRecordActivationEvent(uid);
       return {talkingPoints};
     } catch (e) {
       const errorCode = e instanceof HttpsError ? e.code : "internal";
@@ -637,6 +801,365 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
       });
       throw e;
     }
+  }
+);
+
+interface BootstrapAccountRequest {
+  // ⚠️ 이번 라운드(U2)는 시그니처만 열어 두고 처리하지 않는다 — 다른
+  // 사람의 코드를 넣어 보너스를 받는 "redemption"은 다음 라운드(별도 승인
+  // 필요) 몫이다. 받아도 무시한다(작업 지시서 명시).
+  referralCodeInput?: string;
+  // 재가입×무료체험 무한 루프 방어(U5, 스펙 §4)에 쓰는 raw device id.
+  // 구버전 클라이언트나 기기 식별자를 못 얻은 경우(플랫폼 미지원 등)엔
+  // 아예 안 보낼 수 있다 — 그 경우 기기 가드를 건너뛰고 지금처럼
+  // 동작한다(아래 핸들러, 경고 로그만 남기고 절대 요청 자체를 막지 않음).
+  deviceId?: string;
+}
+
+interface BootstrapAccountResponse {
+  referralCode: string;
+  /** 이번 호출에서 실제로 무료체험을 새로 지급했는지(디버그·관찰용). */
+  freeGranted: boolean;
+}
+
+/**
+ * 리퍼럴 코드 발급이 최대 재시도 후에도 실패했을 때 던지는 에러.
+ * `referralCodes/{code}` 문서 생성 충돌이 5회 연속 나는 것은 현실적으로
+ * 거의 발생하지 않는다(코드 공간이 32^6 ≈ 10억).
+ */
+const REFERRAL_CODE_MAX_ATTEMPTS = 5;
+
+/**
+ * 본인 리퍼럴 코드 발급 — 멱등(ai-credit-wallet-spec.md와 별개로,
+ * monetization-referral-implementation-spec-2026-08-14.md §3-1 근거).
+ *
+ * `users/{uid}.referralCode`가 이미 있으면 그대로 반환. 없으면
+ * `referralCode.ts`의 순수 생성기로 후보를 만들고, `referralCodes/{code}`
+ * 문서를 `tx.create()`로 선점 시도한다 — 이미 다른 사용자가 같은 코드를
+ * 선점했다면 Firestore가 그 트랜잭션을 충돌시켜 재시도하게 만든다(check
+ * -then-act보다 안전, walletCredits.ts 스타일과 동일한 이유로 create를
+ * 씀). 코드가 최대 시도 안에 안 정해지면(사실상 거의 안 일어남) 에러.
+ */
+async function ensureReferralCode(
+  db: FirebaseFirestore.Firestore,
+  uid: string
+): Promise<string> {
+  const userRef = db.collection("users").doc(uid);
+  const existing = await userRef.get();
+  const already = existing.data()?.referralCode as string | undefined;
+  if (already) return already;
+
+  for (let attempt = 0; attempt < REFERRAL_CODE_MAX_ATTEMPTS; attempt++) {
+    const candidate = generateReferralCode();
+    const codeRef = db.collection("referralCodes").doc(candidate);
+    try {
+      return await db.runTransaction(async (tx) => {
+        // 재확인: 동시 호출(예: 로그인 이벤트가 겹침) 중 다른 트랜잭션이
+        // 이 사이 이미 코드를 발급했을 수 있다 — 그러면 그 값을 그대로 쓴다.
+        const userSnap = await tx.get(userRef);
+        const alreadyRace = userSnap.data()?.referralCode as
+          | string
+          | undefined;
+        if (alreadyRace) return alreadyRace;
+
+        tx.create(codeRef, {uid});
+        tx.set(userRef, {referralCode: candidate}, {merge: true});
+        return candidate;
+      });
+    } catch (err) {
+      // tx.create가 이미 존재하는 referralCodes 문서와 충돌하면 여기로
+      // 온다(다른 uid가 먼저 그 코드를 선점) — 새 후보로 재시도한다.
+      logger.warn("리퍼럴 코드 후보 충돌 — 재시도", {
+        attempt,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  throw new HttpsError(
+    "internal",
+    "리퍼럴 코드를 발급하지 못했어요. 잠시 후 다시 시도해 주세요."
+  );
+}
+
+/**
+ * 로그인 시 앱이 1회 호출하는 신규 콜러블 — (a) 무료체험 크레딧을 uid당
+ * 1회만 지급하고(멱등) (b) 본인 리퍼럴 코드를 발급한다(멱등).
+ *
+ * **매 로그인마다 불려도 무해해야 한다** — 실제 지급/발급은 서버가 각각
+ * `aiUsage.freeGrantedAt`/`users/{uid}.referralCode` 존재 여부로 멱등
+ * 가드를 걸므로, 두 번째 호출부터는 아무 것도 쓰지 않고 기존 값만 반환한다.
+ *
+ * ⚠️ `grantSupportCredits`(관리자의 고객응대 무료 지급)와는 완전히 독립된
+ * 트랜잭션이다 — 코드도 공유하지 않는다(다른 세션이 그 함수를 하드닝
+ * 중이라 이번 작업 지시서가 명시적으로 분리를 요구함).
+ *
+ * **기기 가드(U5, 재가입×무료체험 무한 루프 방어)**: 클라이언트가
+ * `deviceId`(raw device id)를 보내면 서버가 `deviceHash()`로 해시해
+ * `deviceLedger/{hash}.trialGrantsIssued`를 확인한다. 이미 이 기기에
+ * 무료체험을 지급한 적이 있으면(`canGrantTrialToDevice`가 false) 이번
+ * uid의 무료체험은 0으로 지급한다 — 단, uid 스코프 멱등 가드
+ * (`freeGrantedAt`)는 그대로 찍어서 재시도가 또 이 분기를 타지 않게 한다.
+ * `deviceId`가 없는 요청(구버전 클라이언트, 식별자 못 얻음)은 기기 가드를
+ * 완전히 건너뛰고 지금까지의 동작 그대로다 — 경고 로그만 남기고 절대
+ * 요청을 실패시키지 않는다(설계 근거:
+ * docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4).
+ *
+ * **⚠️ `config/billing.model` 게이트(2026-08-15 추가)**: 이 함수는
+ * `model`이 `'wallet'`일 때만 실제로 잔액을 지급한다(freeBalance·
+ * freeGrantedAt·creditGrants·deviceLedger 기록 전부). `'reset'`(기본값,
+ * 지금 라이브 상태)이면 이 그랜트 블록을 통째로 건너뛰고 cohortWeek
+ * 백필·리퍼럴 코드 발급만 한다 — reset 모드에서 지급해 버리면
+ * freeGrantedAt이 먼저 찍혀서 실제로 wallet을 켠 뒤 표준 무료체험을
+ * 영영 못 받는 사고가 나고, deviceLedger의 '기기당 1회' 예산도 출시
+ * 전에 미리 소모돼 버린다. 즉 이 함수는 배포해도 `model`이 `'reset'`인
+ * 동안은 완전히 무해하다("가" 안, wallet-spec §9 Phase 0 취지).
+ */
+export const bootstrapAccount = onCall<BootstrapAccountRequest>(
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: [deviceHashSalt],
+  },
+  async (request): Promise<BootstrapAccountResponse> => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? null;
+    const db = getFirestore();
+    const userRef = db.collection("users").doc(uid);
+
+    // config/billing.freeCredits는 트랜잭션 밖에서 먼저 읽는다(외부 읽기를
+    // 트랜잭션 안에 넣지 않는 원칙, incrementAndCheckUsage와 동일 패턴).
+    // 문서가 없거나 필드가 없거나 숫자가 아니면 확정값(DEFAULT_FREE_CREDITS
+    // =10, monetization-referral-implementation-spec-2026-08-14.md §1)으로
+    // 폴백한다.
+    // ⚠️ 2026-08-15 정정: 이 함수는 원래 config/billing.model을 확인하지
+    // 않고 무조건 무료체험을 지급했다 — reset 모드에서도 aiUsage.freeBalance/
+    // freeGrantedAt/creditGrants/deviceLedger를 실제로 썼다는 뜻이다.
+    // incrementAndCheckUsage(reset 분기)는 그 필드들을 읽지 않으므로
+    // 사용자에게 보이는 한도·화면은 안 바뀌지만("잠든 채 배포"의 절반만
+    // 지켜짐), deviceLedger의 "기기당 1회" 예산을 wallet 출시 전에 미리
+    // 소모하고 creditGrants에 아직 의미 없는 감사 기록을 쌓이게 된다. 아래
+    // billingModel 분기로 reset 모드에서는 이 블록 전체(잔액 지급·감사
+    // 기록·기기 캡 소비)를 건너뛰어 완전히 무해하게 만든다 — cohortWeek
+    // 백필·리퍼럴 코드 발급은 금전 등가가 아니므로(코드 자체는 아직 redemption
+    // 로직이 없어 못 씀) 계속 매 로그인 실행해도 안전하다.
+    let configFreeCredits = DEFAULT_FREE_CREDITS;
+    let billingModel: BillingModel = "reset";
+    try {
+      const billingSnap = await db.collection("config").doc("billing").get();
+      const raw = billingSnap.exists
+        ? billingSnap.data()?.freeCredits
+        : undefined;
+      if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+        configFreeCredits = raw;
+      }
+      billingModel = resolveBillingModel(
+        billingSnap.exists ? billingSnap.data() : undefined
+      );
+    } catch (err) {
+      logger.warn("config/billing 조회 실패 — 기본 무료 회차/reset 모드로 폴백", {
+        error: err instanceof Error ? err.message : String(err),
+        fallback: DEFAULT_FREE_CREDITS,
+      });
+    }
+
+    // 기기 해시는 트랜잭션 밖(순수 계산, I/O 없음)에서 미리 구한다. raw
+    // device id 자체는 로그에 남기지 않는다 — "값이 있는지 없는지"만
+    // 남긴다(CLAUDE.md 4절).
+    let deviceHashValue: string | null = null;
+    const rawDeviceId = request.data?.deviceId;
+    if (typeof rawDeviceId === "string" && rawDeviceId.trim().length > 0) {
+      try {
+        deviceHashValue = deviceHash(rawDeviceId, deviceHashSalt.value());
+      } catch (err) {
+        logger.warn("기기 해시 계산 실패 — 기기 가드 건너뜀", {
+          hasDeviceId: true,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        deviceHashValue = null;
+      }
+    } else {
+      logger.warn("deviceId 없는 bootstrapAccount 호출 — 기기 가드 건너뜀", {
+        hasDeviceId: false,
+      });
+    }
+
+    let freeGranted = false;
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      const usage = snap.data()?.aiUsage as
+        | {
+            freeGrantedAt?: FirebaseFirestore.Timestamp;
+            freeBalance?: number;
+            paidBalance?: number;
+            bonusCredits?: number;
+          }
+        | undefined;
+
+      // U6(파일럿 계측 — 주차 코호트 귀속): users/{uid}.cohortWeek가 이미
+      // 있으면 손대지 않는다(멱등). 없으면 이번 로그인 시각(KST)의 ISO
+      // 주차로 채운다 — 이 계측을 배포하기 전에 가입한 기존 사용자도 다음
+      // 로그인 때 자연히 백필된다. 무료체험 지급 멱등 가드(freeGrantedAt)와는
+      // 완전히 독립된 별개 가드라 아래 `plan.shouldGrant`가 false여도(이미
+      // 지급됨) 코호트만 따로 채워 넣을 수 있어야 한다.
+      const existingCohortWeek = snap.data()?.cohortWeek as string | undefined;
+      const cohortWeekToSet = existingCohortWeek
+        ? null
+        : kstIsoWeekCohort(new Date());
+
+      const plan = planFreeGrant({
+        alreadyGranted: usage?.freeGrantedAt != null,
+        currentFreeBalance: usage?.freeBalance ?? 0,
+        legacyBonusCredits: usage?.bonusCredits ?? 0,
+        configFreeCredits,
+      });
+
+      // billingModel이 'reset'이면 지갑 자체가 아직 라이브가 아니다 — 이
+      // 시점에 freeGrantedAt을 찍어버리면 나중에 실제로 'wallet'을 켰을 때
+      // "이미 지급됨"으로 오판해 표준 무료체험을 영영 못 받는다. 그래서
+      // reset 모드에서는 그랜트 블록 전체를 건너뛰고 코호트만 백필한 뒤
+      // 그대로 반환한다 — 이 uid는 wallet 모드가 켜진 뒤 첫 로그인 때
+      // 정상적으로 무료체험을 받는다(ai-credit-wallet-spec.md §9 Phase 1
+      // 취지와 일치).
+      if (billingModel !== "wallet") {
+        if (cohortWeekToSet) {
+          tx.set(userRef, {cohortWeek: cohortWeekToSet}, {merge: true});
+        }
+        return;
+      }
+
+      if (!plan.shouldGrant) {
+        // 이미 지급됨 — 무료체험은 멱등이라 손대지 않는다. 코호트만 아직
+        // 없는 기존 사용자(백필 대상)라면 그 필드 하나만 쓴다.
+        if (cohortWeekToSet) {
+          tx.set(userRef, {cohortWeek: cohortWeekToSet}, {merge: true});
+        }
+        return;
+      }
+
+      // deviceLedger 조회는 이 트랜잭션의 첫 쓰기(tx.set/tx.create)보다
+      // 반드시 먼저 와야 한다(Firestore 트랜잭션 규칙: 모든 get은
+      // set/create보다 선행). deviceHashValue가 없으면(가드 건너뜀) 아예
+      // deviceLedger를 건드리지 않는다.
+      let deviceLedgerRef: FirebaseFirestore.DocumentReference | null = null;
+      let trialGrantsIssued = 0;
+      if (deviceHashValue) {
+        deviceLedgerRef = db.collection("deviceLedger").doc(deviceHashValue);
+        const ledgerSnap = await tx.get(deviceLedgerRef);
+        trialGrantsIssued =
+          (ledgerSnap.data()?.trialGrantsIssued as number | undefined) ?? 0;
+      }
+
+      const now = FieldValue.serverTimestamp();
+      const deviceCapped =
+        deviceLedgerRef != null && !canGrantTrialToDevice(trialGrantsIssued);
+
+      if (deviceCapped) {
+        // 이 기기엔 이미 무료체험을 지급한 적이 있다 — 이번 uid는 0회로
+        // 처리한다(스펙 §4-3, §4-5 "완벽 차단이 아니라 사용자를 막지
+        // 않는 것"). uid 스코프 멱등 가드(freeGrantedAt)는 그래도 찍어서
+        // 재시도가 다시 여기로 오지 않게 한다. 잔액은 건드리지 않는다.
+        freeGranted = false;
+        tx.set(
+          userRef,
+          {
+            aiUsage: {freeBalance: usage?.freeBalance ?? 0, freeGrantedAt: now},
+            ...(cohortWeekToSet ? {cohortWeek: cohortWeekToSet} : {}),
+          },
+          {merge: true}
+        );
+
+        const cappedGrantRef = db.collection("creditGrants").doc();
+        tx.create(cappedGrantRef, {
+          type: "signup_free",
+          amount: 0,
+          bucket: "free",
+          uid,
+          email,
+          grantedAt: now,
+          by: null,
+          reason: null,
+          note: "device_capped",
+          balanceAfter: {
+            free: usage?.freeBalance ?? 0,
+            paid: usage?.paidBalance ?? 0,
+          },
+        });
+        return;
+      }
+
+      freeGranted = true;
+      tx.set(
+        userRef,
+        {
+          aiUsage: {freeBalance: plan.newFreeBalance, freeGrantedAt: now},
+          ...(cohortWeekToSet ? {cohortWeek: cohortWeekToSet} : {}),
+        },
+        {merge: true}
+      );
+
+      const grantRef = db.collection("creditGrants").doc();
+      tx.create(grantRef, {
+        type: "signup_free",
+        amount: plan.grantedAmount,
+        bucket: "free",
+        uid,
+        email,
+        grantedAt: now,
+        by: null,
+        reason: null,
+        note: null,
+        balanceAfter: {
+          free: plan.newFreeBalance,
+          paid: usage?.paidBalance ?? 0,
+        },
+      });
+
+      if (deviceLedgerRef) {
+        // 이 기기에서 무료체험을 지급했다는 사실만 남긴다 — 계정 삭제 시
+        // users/{uid}는 파기되지만 이 문서는 계정과 무관하게 살아남는다
+        // (onUserDeletedCleanup은 deviceLedger를 건드리지 않음, 스펙 §4-2).
+        // firstSeenAt은 문서가 처음 생길 때(trialGrantsIssued===0)만
+        // 필드를 포함시킨다 — merge:true라 필드를 아예 안 보내면 기존값이
+        // 보존된다(재작성해서 최초 시각을 덮어쓰지 않기 위함).
+        tx.set(
+          deviceLedgerRef,
+          {
+            deviceHash: deviceHashValue,
+            trialGrantsIssued: trialGrantsIssued + 1,
+            lastGrantAt: now,
+            ...(trialGrantsIssued === 0 ? {firstSeenAt: now} : {}),
+          },
+          {merge: true}
+        );
+      }
+
+      if (plan.carryOver > 0) {
+        const adjustRef = db.collection("creditGrants").doc();
+        tx.create(adjustRef, {
+          type: "adjust",
+          amount: plan.carryOver,
+          bucket: "free",
+          uid,
+          email,
+          grantedAt: now,
+          by: null,
+          reason: null,
+          note: "bonusCredits 레거시 이월",
+          balanceAfter: {
+            free: plan.newFreeBalance,
+            paid: usage?.paidBalance ?? 0,
+          },
+        });
+      }
+    });
+
+    const referralCode = await ensureReferralCode(db, uid);
+
+    return {referralCode, freeGranted};
   }
 );
 
@@ -852,6 +1375,29 @@ export const onUserDeletedCleanup = onDocumentDeleted(
       });
     }
 
+    // 파일럿 계측 이벤트 삭제(pilotEvents/{uid}/events/*, 2026-08-15).
+    // "탈퇴 시 파기" 원칙은 aiAuditLogs·inquiries와 동일하게 이 로그에도
+    // 적용된다 — uid가 그대로 남는 계측 데이터라 계정 삭제 시 함께 지운다.
+    // ⚠️ deviceLedger/{deviceHash}는 의도적으로 여기서 지우지 않는다 —
+    // 재가입×무료체험 무한 루프 방어(U5, 설계 §4-2)의 핵심이 "계정 삭제와
+    // 무관하게 남는 기기 단위 기록"이므로, uid 스코프 정리 로직에 절대
+    // 섞으면 안 된다.
+    const pilotEventsSnap = await db
+      .collection("pilotEvents")
+      .doc(uid)
+      .collection("events")
+      .get();
+    if (!pilotEventsSnap.empty) {
+      for (const batchDocs of chunkArray(pilotEventsSnap.docs, 400)) {
+        const batch = db.batch();
+        batchDocs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
+      logger.info("탈퇴 사용자 파일럿 계측 이벤트 삭제", {
+        uid,
+        eventCount: pilotEventsSnap.docs.length,
+      });
+    }
     // ────────── [명함 사진 서버 사본 정리] 시작 ──────────
     // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 cardPhotoCleanup.ts에 있다.
     //
@@ -981,7 +1527,7 @@ export const getUserUsage = onCall<GetUserUsageRequest>(
   }
 );
 
-interface GrantBonusCreditsRequest {
+interface GrantSupportCreditsRequest {
   email: string;
   amount: number;
   // 지급 사유 — 나중에 "왜 줬는지" 감사할 수 있어야 한다(ADMIN-VULN-002·010).
@@ -1012,7 +1558,7 @@ interface GrantBonusCreditsRequest {
  *   `creditGrantAudits`에 트랜잭션으로 함께 기록한다(클라이언트는 그 컬렉션에
  *   쓸 수 없다 — firestore.rules 참고).
  */
-export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
+export const grantSupportCredits = onCall<GrantSupportCreditsRequest>(
   {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
   async (request): Promise<{uid: string; bonusCredits: number}> => {
     if (!isAdminRequest(request.auth)) {
@@ -1101,5 +1647,163 @@ export const grantBonusCredits = onCall<GrantBonusCreditsRequest>(
       operationId,
     });
     return {uid: userRecord.uid, bonusCredits: newBalance};
+  }
+);
+
+interface VerifyAndGrantPurchaseRequest {
+  platform?: "ios" | "android";
+  productId?: string;
+  transactionId?: string;
+  /** iOS는 영수증 base64, Android는 purchaseToken 등 — 플랫폼마다 형태가
+   * 달라 문자열로만 받는다. 실제 검증 로직이 채워질 때 플랫폼별로
+   * 파싱한다. */
+  receiptData?: string;
+}
+
+interface VerifyAndGrantPurchaseResponse {
+  credits: number;
+  newPaidBalance: number;
+}
+
+/**
+ * IAP(인앱결제) 영수증 검증 → 크레딧 지급 콜러블 — **U7 "뼈대만" 라운드
+ * 산출물이다.**
+ *
+ * ⚠️ 이 함수는 아직 실제로 크레딧을 지급하지 않는다. 인증 확인·요청 형태
+ * 검증·`purchases/{transactionId}` 멱등 조회까지만 실제로 동작하고, 그
+ * 다음(실제 영수증 검증)은 명시적으로 `unimplemented`를 던져 막는다 —
+ * 아래 TODO 블록 참고. 스토어 상품ID 등록(P1-1)과 Apple/Google 검증
+ * 자격증명 발급이 모두 사용자 게이트라 이번 라운드에 구현할 수 없다
+ * (docs/planning/monetization-referral-engineering-spec-2026-08-14.md §7).
+ *
+ * 완성될 때(다음 라운드)의 계약은 ai-credit-wallet-spec.md §3-4 그대로다:
+ * `purchases` 문서 ID로 `transactionId`를 그대로 쓰고 `tx.create()`로
+ * 동시 재시도 경합을 막으며, `paidBalance`(무료 아님)에 가산한다.
+ */
+export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: [appleIapSharedSecret, googlePlayServiceAccountJson],
+  },
+  async (request): Promise<VerifyAndGrantPurchaseResponse> => {
+    // 인증 확인 — 이번 라운드에 실제로 구현하는 유일한 보안 검사(작업
+    // 지시서 명시). 나머지(영수증 진위 확인)는 아래에서 unimplemented로
+    // 막는다.
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인 후 이용할 수 있어요.");
+    }
+    const uid = request.auth.uid;
+    const email = request.auth.token.email ?? null;
+
+    const platform = request.data?.platform;
+    const productId = request.data?.productId;
+    const transactionId = request.data?.transactionId;
+    const receiptData = request.data?.receiptData;
+
+    if (!isValidIapPlatform(platform)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "platform은 'ios' 또는 'android'여야 해요."
+      );
+    }
+    if (!isValidTransactionId(transactionId)) {
+      throw new HttpsError("invalid-argument", "transactionId가 올바르지 않아요.");
+    }
+    if (!isNonEmptyString(productId)) {
+      throw new HttpsError("invalid-argument", "productId가 필요해요.");
+    }
+    if (!isNonEmptyString(receiptData)) {
+      throw new HttpsError("invalid-argument", "receiptData가 필요해요.");
+    }
+
+    const db = getFirestore();
+    const purchaseRef = db.collection("purchases").doc(transactionId);
+
+    // 멱등 조회 — 같은 transactionId로 이미 처리된 적이 있으면(다음 라운드가
+    // 실제 지급 로직을 채운 뒤에만 이 문서가 생긴다) 그 결과를 그대로
+    // 반환한다. 지금은 어떤 경로로도 이 문서를 생성하지 않으므로(아래에서
+    // 항상 unimplemented) 실질적으로 이 분기는 아직 타지 않지만, 재시도
+    // 요청이 왔을 때 안전하게 동작하도록 미리 넣어 둔다.
+    const existingSnap = await purchaseRef.get();
+    if (existingSnap.exists) {
+      const data = existingSnap.data() as
+        | {credits?: number; paidBalanceAfter?: number}
+        | undefined;
+      return {
+        credits: data?.credits ?? 0,
+        newPaidBalance: data?.paidBalanceAfter ?? 0,
+      };
+    }
+
+    // productId가 판매 중인 티어와 실제로 매칭되는지는 미리 확인해 둔다
+    // (이건 "우리 카탈로그 조회"일 뿐 영수증 진위 검증이 아니라 이번
+    // 라운드에도 안전하게 넣을 수 있다). 스토어 상품ID가 아직 등록되지
+    // 않았으므로(P1-1) 지금은 모든 productId가 매칭 실패할 것이다 — 이건
+    // 버그가 아니라 정상 상태다.
+    const billingSnap = await db.collection("config").doc("billing").get();
+    const tiers = billingSnap.data()?.tiers as BillingTierRaw[] | undefined;
+    const tierLookup = resolveTierByProductId(tiers, productId);
+    if (!tierLookup.ok) {
+      throw new HttpsError("failed-precondition", tierLookup.error);
+    }
+
+    logger.warn(
+      "verifyAndGrantPurchase 호출됨 — 실제 영수증 검증 미구현(U7 뼈대만)",
+      {uid, platform, hasEmail: Boolean(email), hasReceiptData: true}
+    );
+
+    // ⚠️⚠️⚠️ TODO(다음 라운드가 채울 자리): 여기서부터 실제 영수증 검증.
+    //
+    //   - platform === "ios": App Store Server API(JWS 트랜잭션 검증) 또는
+    //     레거시 verifyReceipt 호출. `appleIapSharedSecret.value()`로 공유
+    //     비밀을 얻어 요청에 싣는다. 응답의 transactionId·productId가 이
+    //     요청값과 일치하는지, 환경(sandbox/production)이 기대와 맞는지
+    //     확인해야 한다.
+    //   - platform === "android": Google Play Developer API
+    //     `purchases.products.get` 호출. `googlePlayServiceAccountJson
+    //     .value()`를 파싱해 서비스 계정으로 인증하고, `purchaseState`가
+    //     결제완료(0)인지, `consumptionState`가 아직 소비 전인지 확인한다.
+    //
+    //   검증에 성공한 뒤에만 아래 트랜잭션(ai-credit-wallet-spec.md §3-4
+    //   그대로)을 실행해 `paidBalance`에 가산해야 한다 — email 등의 개인
+    //   식별정보를 purchases 문서에 남기는 것은 관리자 콘솔의 "충전 내역
+    //   조회(고객응대)" 기능이 이미 그렇게 하고 있으므로(§2-2 참고) 유지:
+    //
+    //   await db.runTransaction(async (tx) => {
+    //     const again = await tx.get(purchaseRef);
+    //     if (again.exists) return again.data();
+    //     const userSnap = await tx.get(db.collection("users").doc(uid));
+    //     const currentPaid =
+    //       (userSnap.data()?.aiUsage?.paidBalance as number | undefined) ?? 0;
+    //     const nextPaid = currentPaid + tierLookup.credits;
+    //     tx.create(purchaseRef, {
+    //       priceKrw: tierLookup.priceKrw, credits: tierLookup.credits,
+    //       status: "paid", purchasedAt: FieldValue.serverTimestamp(),
+    //       platform, transactionId, uid, email, paidBalanceAfter: nextPaid,
+    //     });
+    //     tx.set(db.collection("users").doc(uid),
+    //       {aiUsage: {paidBalance: nextPaid}}, {merge: true});
+    //     const grantRef = db.collection("creditGrants").doc();
+    //     tx.create(grantRef, {
+    //       type: "purchase", amount: tierLookup.credits, bucket: "paid",
+    //       uid, email, grantedAt: FieldValue.serverTimestamp(), by: null,
+    //       reason: null, note: transactionId,
+    //       balanceAfter: {
+    //         free: userSnap.data()?.aiUsage?.freeBalance ?? 0,
+    //         paid: nextPaid,
+    //       },
+    //     });
+    //   });
+    //
+    //   최초 충전 보너스(AC-4, freeBalance += 5, 1회성)도 이 트랜잭션 성공
+    //   직후 `aiUsage.firstChargeBonusGrantedAt` 멱등 가드로 판정해 채운다
+    //   (그 uid의 purchases 문서가 이번이 처음인지 확인 필요).
+    //
+    // 검증이 없는 지금은 절대 이 지점을 지나 크레딧을 지급하지 않는다.
+    throw new HttpsError(
+      "unimplemented",
+      "결제 기능은 아직 준비 중이에요."
+    );
   }
 );
