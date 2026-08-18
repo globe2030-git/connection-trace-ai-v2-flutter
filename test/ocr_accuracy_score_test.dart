@@ -10,8 +10,8 @@
 // ## 쓰는 법
 //
 // ```bash
-// TSV=~/Downloads/scan_result.tsv \
-// TRUTH=~/Downloads/ocr_truth.tsv \
+// TSV=~/card-ocr-data/scan_result.tsv \
+// TRUTH=~/card-ocr-data/ocr_truth.tsv \
 // flutter test test/ocr_accuracy_score_test.dart
 // ```
 //
@@ -128,7 +128,8 @@ void main() {
       // ignore: avoid_print
       print(
         '건너뜀 — 환경변수 TSV(일괄 스캔 결과)와 TRUTH(정답지)가 필요합니다.\n'
-        '예: TSV=~/Downloads/scan_result.tsv TRUTH=~/Downloads/ocr_truth.tsv',
+        '예: TSV=~/card-ocr-data/scan_result.tsv '
+        'TRUTH=~/card-ocr-data/ocr_truth.tsv',
       );
       return;
     }

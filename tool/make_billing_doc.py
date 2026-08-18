@@ -2,12 +2,16 @@
 # 과금·정산 논의용 워드 문서를 만든다.
 # ⚠️ 이 문서는 "결정된 것"과 "정해야 할 것"을 갈라 적는 것이 목적이다.
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from assets_dir import assets_path  # noqa: E402
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 
-OUT = os.path.expanduser('~/Downloads/커넥션센스_과금정산_논의자료_2026-08-17.docx')
+OUT = assets_path('문서', '커넥션센스_과금정산_논의자료_2026-08-17.docx')
 
 d = Document()
 for s in d.sections:

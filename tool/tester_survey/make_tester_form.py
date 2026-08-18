@@ -12,9 +12,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import tester_survey_spec as S
+from assets_dir import assets_path
 
-OUT = os.path.expanduser('~/Downloads/커넥션센스_설문_구글폼_만들기.gs')
+OUT = assets_path('문서', '커넥션센스_설문_구글폼_만들기.gs')
 
 
 def js(x):
