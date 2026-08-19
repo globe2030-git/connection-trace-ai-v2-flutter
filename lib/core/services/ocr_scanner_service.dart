@@ -147,6 +147,13 @@ class OcrScanResult {
   final String name;
   final String company;
   final String title;
+  // 부서 — 직함과 별개 칸이다(2026-08-19 사용자 확정, 추가 321).
+  //
+  // ⚠️ **새로 찾아 나서지 않는다.** 부서를 명함 전체에서 따로 찾으려 하면
+  // 회사명 자리를 뺏는다 — 이 파일이 이미 겪은 자리다(`Global Sales Division`,
+  // :483 주석). 대신 **직함 칸에 섞여 들어온 부서 토큰만 떼어낸다.** 이름을
+  // 직함에서 떼어내는 기존 처리와 같은 모양이고, 같은 자리에서 돈다.
+  final String department;
   final String phone;
   final String officePhone;
   // 팩스 번호. 파서는 예전에도 팩스 줄을 **알아보기는** 했지만, 사무실 전화로
@@ -197,6 +204,9 @@ class OcrScanResult {
     required this.name,
     required this.company,
     required this.title,
+    // ⚠️ 기본값을 둔다 — 나중에 추가된 칸이라 이미 있는 호출부·검사 코드가
+    // 통째로 깨지지 않게 한다(위 fax·directPhone과 같은 이유).
+    this.department = '',
     required this.phone,
     required this.officePhone,
     // ⚠️ 기본값을 둔다 — 이 두 칸은 나중에 추가된 것이라, 이미 있는 호출부와
@@ -2584,6 +2594,64 @@ class OcrScannerService {
           .trim();
     }
 
+    // ── 부서 분리 (2026-08-19 사용자 확정, 추가 321) ──────────────────────
+    //
+    // 부서는 직함과 **다른 칸**이다. 예전에는 갈 곳이 없어 직함 칸에 함께
+    // 들어갔고, 정답지도 장마다 `대리` / `경영지원팀 대리`로 갈렸다. 그래서
+    // 파서를 어느 쪽에 맞춰도 반대쪽이 틀렸다(추가 286, 시도 ②가 −5장).
+    //
+    // ⚠️ **명함 전체에서 부서를 새로 찾지 않는다.** 그렇게 하면 회사명 자리를
+    // 뺏는다 — 이 파일이 이미 겪었다(:483 주석). **이미 직함 칸에 들어온 것만**
+    // 가른다. 바로 위 "직함에서 이름 떼어내기"와 같은 모양이고 같은 자리다.
+    //
+    // 📌 **양쪽이 다 남을 때만 가른다.** 직함 칸이 통째로 부서인 경우
+    // (`경영지원팀`만 있는 장)는 건드리지 않는다 — 가르면 직함 칸이 비고,
+    // 그것이 이득인지 손해인지는 아직 안 쟀다. 재고 나서 넓힌다.
+    var department = '';
+    if (title.isNotEmpty) {
+      final tokens = title
+          .split(_whitespaceSplitRegExp)
+          .where((t) => t.isNotEmpty)
+          .toList();
+      if (tokens.length >= 2) {
+        // 접미사가 붙은 토큰만 떼면 **부서 이름의 앞머리가 직함에 남는다** —
+        // `ICT 사업본부 상무`가 직함 `ICT 상무` / 부서 `사업본부`로 갈렸다.
+        // 그래서 접미사 토큰에서 **앞으로 이어 붙인다**: 바로 앞이 직함 낱말이
+        // 아니면 그것도 부서에 속한다(`ICT`). 직함 낱말이면 멈춘다
+        // (`상무 ICT사업본부`에서 `상무`를 뺏지 않는다).
+        final isDept = List<bool>.filled(tokens.length, false);
+        String bareOf(String t) =>
+            t.replaceAll(RegExp(r'^[|:/,.·]+|[|:/,.·]+$'), '');
+        for (var i = 0; i < tokens.length; i++) {
+          final bare = bareOf(tokens[i]);
+          if (bare.isEmpty || !_departmentSuffixes.any(bare.endsWith)) continue;
+          isDept[i] = true;
+          for (var j = i - 1; j >= 0 && !isDept[j]; j--) {
+            final prev = bareOf(tokens[j]);
+            if (prev.isEmpty) break;
+            if (_titleKeywords.any((k) => _containsCi(prev, k))) break;
+            isDept[j] = true;
+          }
+        }
+        final deptTokens = <String>[];
+        final restTokens = <String>[];
+        for (var i = 0; i < tokens.length; i++) {
+          if (isDept[i]) {
+            deptTokens.add(bareOf(tokens[i]));
+          } else {
+            restTokens.add(tokens[i]);
+          }
+        }
+        if (deptTokens.isNotEmpty && restTokens.isNotEmpty) {
+          department = deptTokens.join(' ');
+          title = restTokens
+              .join(' ')
+              .replaceAll(RegExp(r'^[\s|:/,.·]+|[\s|:/,.·]+$'), '')
+              .trim();
+        }
+      }
+    }
+
     final rawText = lines.join('\n');
 
     final shape = OcrParseShape(
@@ -2613,6 +2681,7 @@ class OcrScannerService {
       name: name,
       company: company,
       title: title,
+      department: department,
       phone: mobile ?? '',
       officePhone: office ?? '',
       fax: fax ?? '',

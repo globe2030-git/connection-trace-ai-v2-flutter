@@ -97,6 +97,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _nameController;
   late TextEditingController _companyController;
   late TextEditingController _titleController;
+  // 부서 — 직함과 별개 칸(2026-08-19 확정, 추가 321). 예전에는 이 화면의
+  // 라벨이 '직함 / 부서'로 **한 칸에 둘을 받고 있었다.**
+  late TextEditingController _departmentController;
   late TextEditingController _addressController;
   late TextEditingController _addressDetailController;
   late TextEditingController _postalCodeController;
@@ -114,6 +117,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   final _nameFocusNode = FocusNode();
   final _companyFocusNode = FocusNode();
   final _titleFocusNode = FocusNode();
+  final _departmentFocusNode = FocusNode();
   final _addressFocusNode = FocusNode();
   final _addressDetailFocusNode = FocusNode();
   final _postalCodeFocusNode = FocusNode();
@@ -326,6 +330,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _nameController = TextEditingController(text: c?.name ?? '');
     _companyController = TextEditingController(text: c?.company ?? '');
     _titleController = TextEditingController(text: c?.title ?? '');
+    _departmentController = TextEditingController(text: c?.department ?? '');
     _addressController = TextEditingController(text: c?.address ?? '');
     _addressDetailController = TextEditingController(
       text: c?.addressDetail ?? '',
@@ -354,6 +359,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _nameFocusNode,
       _companyFocusNode,
       _titleFocusNode,
+      _departmentFocusNode,
       _addressFocusNode,
       _addressDetailFocusNode,
       _postalCodeFocusNode,
@@ -381,6 +387,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _watchOcrBadge('name', _nameController);
     _watchOcrBadge('company', _companyController);
     _watchOcrBadge('title', _titleController);
+    _watchOcrBadge('department', _departmentController);
     _watchOcrBadge('address', _addressController);
     _watchOcrBadge('addressDetail', _addressDetailController);
     _watchOcrBadge('postal', _postalCodeController);
@@ -410,6 +417,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       'name': _nameController.text,
       'company': _companyController.text,
       'title': _titleController.text,
+      'department': _departmentController.text,
       'address': _addressController.text,
       'addressDetail': _addressDetailController.text,
       'postalCode': _postalCodeController.text,
@@ -445,6 +453,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _nameController.dispose();
     _companyController.dispose();
     _titleController.dispose();
+    _departmentController.dispose();
     _addressController.dispose();
     _addressDetailController.dispose();
     _postalCodeController.dispose();
@@ -461,6 +470,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _nameFocusNode.dispose();
     _companyFocusNode.dispose();
     _titleFocusNode.dispose();
+    _departmentFocusNode.dispose();
     _addressFocusNode.dispose();
     _addressDetailFocusNode.dispose();
     _phoneFocusNode.dispose();
@@ -756,6 +766,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       'name': (_nameController, result.name),
       'company': (_companyController, result.company),
       'title': (_titleController, result.title),
+      'department': (_departmentController, result.department),
       'address': (_addressController, result.address),
       'addressDetail': (_addressDetailController, result.addressDetail),
       'postal': (_postalCodeController, result.postalCode),
@@ -849,6 +860,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _setTextFromStart(_nameController, result.name);
         _setTextFromStart(_companyController, result.company);
         _setTextFromStart(_titleController, result.title);
+        _setTextFromStart(_departmentController, result.department);
         _setTextFromStart(_addressController, result.address);
         _setTextFromStart(_addressDetailController, result.addressDetail);
         _setTextFromStart(_postalCodeController, result.postalCode);
@@ -875,6 +887,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _fillIfEmpty(_nameController, result.name);
         _fillIfEmpty(_companyController, result.company);
         _fillIfEmpty(_titleController, result.title);
+        _fillIfEmpty(_departmentController, result.department);
         _fillIfEmpty(_addressController, result.address);
         _fillIfEmpty(_addressDetailController, result.addressDetail);
         _fillIfEmpty(_postalCodeController, result.postalCode);
@@ -950,7 +963,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     const fields = <(String key, String label, ScanValueKind kind)>[
       ('name', '이름', ScanValueKind.name),
       ('company', '회사명', ScanValueKind.text),
-      ('title', '직함 / 부서', ScanValueKind.text),
+      ('title', '직함', ScanValueKind.text),
+      ('department', '부서', ScanValueKind.text),
       ('address', '회사 주소', ScanValueKind.text),
       ('addressDetail', '상세주소', ScanValueKind.text),
       ('postal', '우편번호', ScanValueKind.text),
@@ -2264,6 +2278,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       title: _titleController.text.trim().isEmpty
           ? '담당자'
           : _titleController.text.trim(),
+      department: _departmentController.text.trim().isEmpty
+          ? null
+          : _departmentController.text.trim(),
       address: finalAddress,
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
@@ -2527,6 +2544,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       title: _titleController.text.trim().isEmpty
           ? '담당자'
           : _titleController.text.trim(),
+      department: _departmentController.text.trim().isEmpty
+          ? null
+          : _departmentController.text.trim(),
       address: finalAddress,
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
@@ -3115,15 +3135,27 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 10),
 
-                  // 3. 직함 / 부서 (선택)
+                  // 3. 직함 (선택)
                   _buildFormField(
                     controller: _titleController,
                     ocrKey: 'title',
                     focusNode: _titleFocusNode,
                     order: 3,
+                    nextFocusNode: _departmentFocusNode,
+                    label: '직함',
+                    hint: '예: 팀장',
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 3-2. 부서 (선택) — 2026-08-19에 직함에서 갈랐다(추가 321).
+                  _buildFormField(
+                    controller: _departmentController,
+                    ocrKey: 'department',
+                    focusNode: _departmentFocusNode,
+                    order: 4,
                     nextFocusNode: _addressFocusNode,
-                    label: '직함 / 부서',
-                    hint: '예: 팀장 / R&D 센터',
+                    label: '부서',
+                    hint: '예: R&D 센터',
                   ),
                   const SizedBox(height: 10),
 

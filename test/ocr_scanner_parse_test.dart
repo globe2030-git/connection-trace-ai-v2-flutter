@@ -419,8 +419,59 @@ void main() {
         'E sh0819@ssis.or.kr',
       ]);
       expect(r.name, '이상헌');
-      expect(r.title, '건강보건사업부 | 과장');
+      // 2026-08-19(추가 321): 부서를 직함에서 갈랐다. 예전에는 이 줄이 통째로
+      // 직함이었다(`건강보건사업부 | 과장`) — 사용자 확정으로 규칙이 바뀌었다.
+      expect(r.title, '과장');
+      expect(r.department, '건강보건사업부');
       expect(r.company, 'SSiS 한국사회보장정보원');
+    });
+
+    // ── 부서 분리 (2026-08-19 사용자 확정, 추가 321) ────────────────────
+    //
+    // 부서는 직함과 별개 칸이다. 예전에는 갈 곳이 없어 직함에 함께 들어갔고,
+    // 정답지도 장마다 갈려서 파서가 이길 수 없었다(추가 286).
+    group('부서 분리 (추가 321)', () {
+      test('⭐ 직함 줄에 부서가 섞여 있으면 갈라 담는다', () {
+        final r = OcrScannerService.parseLinesForTesting([
+          '홍길동',
+          'ICT 사업본부 상무',
+          '(주)테스트',
+        ]);
+        expect(r.title, '상무');
+        expect(r.department, 'ICT 사업본부');
+      });
+
+      test('⭐ 부서가 여럿이면 모두 담는다', () {
+        final r = OcrScannerService.parseLinesForTesting([
+          '홍길동',
+          'MNO사업부 로밍마케팅팀 매니저',
+          '(주)테스트',
+        ]);
+        expect(r.title, '매니저');
+        expect(r.department, 'MNO사업부 로밍마케팅팀');
+      });
+
+      test('⚠️ 부서가 없으면 직함은 그대로다', () {
+        final r = OcrScannerService.parseLinesForTesting([
+          '홍길동',
+          '대표이사',
+          '(주)테스트',
+        ]);
+        expect(r.title, '대표이사');
+        expect(r.department, '');
+      });
+
+      // ⚠️ 일부러 안 가르는 자리다. 직함 칸이 통째로 부서면 가르지 않는다 —
+      // 가르면 직함 칸이 비는데, 그것이 이득인지 손해인지 아직 안 쟀다.
+      // 재고 나서 넓힌다(추가 321).
+      test('⚠️ 직함 줄이 통째로 부서면 가르지 않는다 — 아직 안 쟀다', () {
+        final r = OcrScannerService.parseLinesForTesting([
+          '홍길동',
+          '경영지원팀',
+          '(주)테스트',
+        ]);
+        expect(r.department, '');
+      });
     });
 
     test('이름이 로고 오인식 텍스트와 한 줄로 뭉친 경우 — "이정현 DA Sovargen"', () {
