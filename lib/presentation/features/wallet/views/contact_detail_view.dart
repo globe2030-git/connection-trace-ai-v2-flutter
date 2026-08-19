@@ -8,7 +8,7 @@ import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/contact_avatar.dart';
 import 'add_card_modal_view.dart';
 
-/// 명함 **상세 보기** — 읽는 화면이다(2026-08-19 사용자 확정, 추가 329).
+/// 명함 **상세 보기** — 읽는 화면이다(2026-08-19 사용자 확정, 추가 330).
 ///
 /// ## 왜 만들었나
 ///
@@ -64,39 +64,21 @@ class ContactDetailView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ⚠️ **닫기 줄은 스크롤 밖에 둔다**(2026-08-19 실기기 제보, 추가 330).
+            // 손잡이만 둔다. **닫기·편집은 아래 고정 줄**에 있다.
             //
-            // 처음에는 손잡이를 스크롤 영역 **안에** 뒀다. 그랬더니 **자료가 많은
-            // 명함에서 위로 밀려 사라져**, 닫을 방법이 없었다. 시트가 화면을
-            // 거의 다 덮어서 **바깥을 눌러 닫을 자리도 없다.**
-            //
-            // 📌 사용자는 [편집]으로 들어가 거기 있는 X로 빠져나오고 있었다 —
-            // **읽으려고 연 화면을 닫으려고 입력 화면을 거치는** 꼴이었다.
+            // ⚠️ 여기 X를 뒀다가 뺐다(2026-08-19 실기기 제보, 추가 331).
+            // 보이기는 하는데 **눌리지 않았다** — 바텀시트 맨 위는 끌어 내리는
+            // 제스처가 먹는 자리라 버튼과 다툰다. 사용자 제안대로 **아래로
+            // 옮겼다**: 손이 닿는 자리이기도 하고, [편집] 옆이라 짝이 맞는다.
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 8, 4),
-              child: Row(
-                children: [
-                  const Spacer(),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.borderSubtle,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
-                      child: IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                        color: AppColors.textMuted,
-                        tooltip: '닫기',
-                      ),
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.only(top: 10, bottom: 6),
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.borderSubtle,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
             Flexible(
@@ -113,25 +95,49 @@ class ContactDetailView extends StatelessWidget {
                     ..._contactRows(context),
                     ..._placeRows(context),
                     ..._memoRows(context),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).pop();
-                          AddCardModalView.show(context, contact: contact);
-                        },
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('편집'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.accentText,
-                          side: const BorderSide(color: AppColors.borderSubtle),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                      ),
-                    ),
                   ],
                 ),
+              ),
+            ),
+            // ⚠️ **아래 고정 줄** — 내용이 아무리 길어도 늘 손이 닿는다.
+            //
+            // 예전에는 [편집]도 스크롤 안에 있어서 **끝까지 내려야** 나왔다.
+            // 닫기가 없던 때 사용자가 [편집]으로 빠져나온 것도 그래서다.
+            Container(
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textMuted,
+                        side: const BorderSide(color: AppColors.borderSubtle),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('닫기'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        AddCardModalView.show(context, contact: contact);
+                      },
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('편집'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

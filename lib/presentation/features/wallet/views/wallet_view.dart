@@ -347,7 +347,7 @@ class _WalletViewState extends State<WalletView> {
               selectionMode: _selectionMode,
               selected: _selectedIds.contains(contact.id),
               onToggleSelected: () => _toggleSelected(contact.id),
-              // 2026-08-19(추가 329): 목록을 누르면 **상세 보기**가 뜬다.
+              // 2026-08-19(추가 330): 목록을 누르면 **상세 보기**가 뜬다.
               // 예전에는 곧장 편집 폼이었다 — 읽으려는 사람에게 입력 화면을
               // 준 셈이었고, 값을 실수로 건드릴 위험도 있었다.
               // 편집은 상세 화면의 [편집] 버튼으로 간다.
