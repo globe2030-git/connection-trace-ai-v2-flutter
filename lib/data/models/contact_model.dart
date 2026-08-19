@@ -48,6 +48,12 @@ class ContactModel {
   final String name;
   final String company;
   final String title;
+  // 부서 — 직함과 별개 칸이다(2026-08-19 사용자 확정, 추가 320·321).
+  //
+  // ⚠️ 예전에는 부서가 갈 곳이 없어 **직함이나 회사 칸을 오염**시켰다. 정답지도
+  // 장마다 `대리` / `경영지원팀 | 대리`로 갈렸고, 그래서 파서를 어느 쪽에
+  // 맞춰도 반대쪽이 틀렸다(추가 286). 칸을 만들어 그 다툼을 없앤다.
+  final String? department;
   final String phone;
   final String? officePhone;
   // 직통 전화 — "직통/DID/Direct" 라벨의 개인 유선. 대표번호(officePhone)와 구분.
@@ -123,6 +129,7 @@ class ContactModel {
     required this.name,
     required this.company,
     required this.title,
+    this.department,
     required this.phone,
     this.officePhone,
     this.directPhone,
@@ -171,6 +178,7 @@ class ContactModel {
       'name': name,
       'company': company,
       'title': title,
+      'department': department,
       'phone': phone,
       'officePhone': officePhone,
       'directPhone': directPhone,
@@ -215,6 +223,9 @@ class ContactModel {
       name: json['name'] as String,
       company: json['company'] as String,
       title: json['title'] as String,
+      // ⚠️ 2026-08-19 이전에 저장된 명함에는 이 키가 없다 — null로 들어온다.
+      // nullable이라 마이그레이션이 필요 없다.
+      department: json['department'] as String?,
       phone: json['phone'] as String,
       officePhone: json['officePhone'] as String?,
       directPhone: json['directPhone'] as String?,
@@ -269,6 +280,7 @@ class ContactModel {
     String? name,
     String? company,
     String? title,
+    String? department,
     String? phone,
     String? officePhone,
     String? directPhone,
@@ -305,6 +317,7 @@ class ContactModel {
       name: name ?? this.name,
       company: company ?? this.company,
       title: title ?? this.title,
+      department: department ?? this.department,
       phone: phone ?? this.phone,
       officePhone: officePhone ?? this.officePhone,
       directPhone: directPhone ?? this.directPhone,
