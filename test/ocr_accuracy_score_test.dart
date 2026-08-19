@@ -79,6 +79,20 @@ String _norm(String v) => v
     .trim()
     .replaceAll(RegExp(r'\s+'), ' ');
 
+/// 칸에 따라 **더 눕혀서** 견준다.
+///
+/// 이메일·홈페이지는 **대소문자를 구분하지 않는다**(RFC 1035 — 도메인은 대소문자
+/// 무시, 로컬파트도 현실의 메일 서버는 구분하지 않는다). 그런데 자가 구분하는
+/// 바람에 `SO…@kmong.com`이 `so…@kmong.com`과 다르다고 세어졌다 — **파서는
+/// 맞았는데 틀렸다고 셈된 것**이다(추가 335와 같은 유형).
+///
+/// ⚠️ 이름·회사처럼 **표기가 뜻인 칸에는 쓰지 않는다.** `SK`와 `sk`는 회사
+/// 이름으로서 다르게 적힌 것이고, 눕히면 그 차이가 안 보인다.
+String _normField(String field, String v) {
+  final n = _norm(v);
+  return (field == '이메일' || field == '홈페이지') ? n.toLowerCase() : n;
+}
+
 Map<String, Map<String, String>> _readTsv(File file, String keyColumn) {
   final lines = file.readAsLinesSync().where((l) => l.trim().isNotEmpty);
   if (lines.isEmpty) return {};
@@ -199,7 +213,7 @@ void main() {
         final raw = scanRowLines(scans[name]!);
         if (raw.isEmpty) continue;
         final parsed = OcrScannerService.parseLinesForTestingWithBoxes(raw);
-        final got = _norm(switch (field) {
+        final got = _normField(field, switch (field) {
           '이름' => parsed.name,
           '회사' => parsed.company,
           '직함' => parsed.title,
@@ -213,7 +227,7 @@ void main() {
           '주소' => parsed.address,
           _ => parsed.addressDetail,
         });
-        final want = _norm(truths[name]!['정답_$field'] ?? '');
+        final want = _normField(field, truths[name]!['정답_$field'] ?? '');
 
         if (got.isEmpty && want.isEmpty) {
           both++;
