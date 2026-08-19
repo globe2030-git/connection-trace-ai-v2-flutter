@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/phone_call_service.dart';
+import '../../../../core/utils/card_history_note.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -106,6 +107,7 @@ class ContactDetailView extends StatelessWidget {
                     _actions(context),
                     const SizedBox(height: 8),
                     ..._contactRows(context),
+                    ..._historyRows(context),
                   ],
                 ),
               ),
@@ -240,6 +242,73 @@ class ContactDetailView extends StatelessWidget {
     _row('사무실', contact.officePhone),
     _row('이메일', contact.email),
   ]);
+
+  /// **이전 명함** — 명함이 바뀐 사람의 예전 값들.
+  ///
+  /// 접혀 있다가 누르면 펼쳐진다. 이력이 없으면 이 묶음 자체가 없다.
+  ///
+  /// ⚠️ **칸으로 나누어 보여주지 않는다.** 기록이 메모에 한 줄 문자열로 쌓여
+  /// 있고, 빈 칸은 통째로 빠져서 **조각 개수가 명함마다 다르다** — 어느 조각이
+  /// 어느 칸인지 되살릴 방법이 없다. 추측해 붙이면 **틀린 이력이 그럴듯하게**
+  /// 남는다. 그래서 적힌 그대로 보여 준다([CardHistoryNote] 참고).
+  List<Widget> _historyRows(BuildContext context) {
+    final notes = CardHistoryNote.parse(contact.memo);
+    if (notes.isEmpty) return const [];
+    return [
+      const SizedBox(height: 18),
+      Text(
+        '이전 명함 ${notes.length}건',
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: AppColors.accentText,
+        ),
+      ),
+      const SizedBox(height: 8),
+      ...notes.map((n) => _historyTile(context, n)),
+    ];
+  }
+
+  /// 이력 한 건. 접힌 채로 나오고 누르면 펼쳐진다.
+  ///
+  /// `dividerColor`를 지우는 것은 [ExpansionTile]이 펼칠 때 위아래로 긋는
+  /// 기본 선을 없애기 위함이다 — 테두리를 이미 그리고 있어서 겹친다.
+  Widget _historyTile(BuildContext context, CardHistoryNote note) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.borderSubtle),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 14),
+            childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            title: Text(
+              note.date,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            children: [
+              SelectableText(
+                note.content,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// 값이 하나도 없으면 **제목까지 통째로 뺀다.**
   List<Widget> _section(String title, List<Widget?> rows) {
