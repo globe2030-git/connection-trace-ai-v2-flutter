@@ -36,6 +36,8 @@ import 'dart:io';
 import 'package:connection_trace_ai_flutter/core/services/ocr_scanner_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/scan_row_lines.dart';
+
 const _fields = [
   '이름',
   '회사',
@@ -192,12 +194,11 @@ void main() {
     for (final field in _fields) {
       var ok = 0, bad = 0, missed = 0, over = 0, both = 0;
       for (final name in checked) {
-        final raw = (scans[name]!['원문'] ?? '')
-            .split(' ⏐ ')
-            .where((l) => l.trim().isNotEmpty)
-            .toList();
+        // 좌표가 실려 있으면 함께 먹인다(추가 334). 없는 옛 자료는 0으로
+        // 채워져 예전과 똑같이 돈다.
+        final raw = scanRowLines(scans[name]!);
         if (raw.isEmpty) continue;
-        final parsed = OcrScannerService.parseLinesForTesting(raw);
+        final parsed = OcrScannerService.parseLinesForTestingWithBoxes(raw);
         final got = _norm(switch (field) {
           '이름' => parsed.name,
           '회사' => parsed.company,

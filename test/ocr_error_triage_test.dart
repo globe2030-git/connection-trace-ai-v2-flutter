@@ -41,6 +41,8 @@ import 'dart:io';
 import 'package:connection_trace_ai_flutter/core/services/ocr_scanner_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/scan_row_lines.dart';
+
 const _fields = [
   '이름',
   '회사',
@@ -113,12 +115,9 @@ void main() {
     for (final field in _fields) {
       var n = 0, miss = 0, frag = 0, undet = 0, over = 0, bad = 0;
       for (final name in checked) {
-        final rawLines = (scans[name]!['원문'] ?? '')
-            .split(' ⏐ ')
-            .where((l) => l.trim().isNotEmpty)
-            .toList();
+        final rawLines = scanRowLines(scans[name]!);
         if (rawLines.isEmpty) continue;
-        final p = OcrScannerService.parseLinesForTesting(rawLines);
+        final p = OcrScannerService.parseLinesForTestingWithBoxes(rawLines);
         final got = _norm(switch (field) {
           '이름' => p.name,
           '회사' => p.company,
@@ -137,7 +136,7 @@ void main() {
         if ((got.isEmpty && want.isEmpty) || got == want) continue;
 
         n++;
-        final raw = _squash(rawLines.join(' '));
+        final raw = _squash(rawLines.map((b) => b.text).join(' '));
         if (want.isEmpty) {
           over++;
         } else if (got.isEmpty) {
