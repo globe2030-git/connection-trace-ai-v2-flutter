@@ -61,49 +61,80 @@ class ContactDetailView extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.borderSubtle,
-                    borderRadius: BorderRadius.circular(2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ⚠️ **닫기 줄은 스크롤 밖에 둔다**(2026-08-19 실기기 제보, 추가 330).
+            //
+            // 처음에는 손잡이를 스크롤 영역 **안에** 뒀다. 그랬더니 **자료가 많은
+            // 명함에서 위로 밀려 사라져**, 닫을 방법이 없었다. 시트가 화면을
+            // 거의 다 덮어서 **바깥을 눌러 닫을 자리도 없다.**
+            //
+            // 📌 사용자는 [편집]으로 들어가 거기 있는 X로 빠져나오고 있었다 —
+            // **읽으려고 연 화면을 닫으려고 입력 화면을 거치는** 꼴이었다.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 8, 4),
+              child: Row(
+                children: [
+                  const Spacer(),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.borderSubtle,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close),
+                        color: AppColors.textMuted,
+                        tooltip: '닫기',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _header(context, uid),
+                    const SizedBox(height: 18),
+                    _actions(context),
+                    const SizedBox(height: 8),
+                    ..._contactRows(context),
+                    ..._placeRows(context),
+                    ..._memoRows(context),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          AddCardModalView.show(context, contact: contact);
+                        },
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('편집'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.accentText,
+                          side: const BorderSide(color: AppColors.borderSubtle),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              _header(context, uid),
-              const SizedBox(height: 18),
-              _actions(context),
-              const SizedBox(height: 8),
-              ..._contactRows(context),
-              ..._placeRows(context),
-              ..._memoRows(context),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    AddCardModalView.show(context, contact: contact);
-                  },
-                  icon: const Icon(Icons.edit_outlined, size: 18),
-                  label: const Text('편집'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.accentText,
-                    side: const BorderSide(color: AppColors.borderSubtle),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -162,7 +193,8 @@ class ContactDetailView extends StatelessWidget {
   /// ⚠️ 새로 만들지 않는다. 전화는 목록 타일이 쓰는 것과 **같은 통로**라,
   /// 번호가 여럿일 때 고르게 하는 처리와 소통 이력 기록이 함께 따라온다.
   Widget _actions(BuildContext context) {
-    final hasPhone = contact.phone.trim().isNotEmpty ||
+    final hasPhone =
+        contact.phone.trim().isNotEmpty ||
         (contact.officePhone?.trim().isNotEmpty ?? false);
     if (!hasPhone) return const SizedBox.shrink();
     return SizedBox(
@@ -181,19 +213,19 @@ class ContactDetailView extends StatelessWidget {
   }
 
   List<Widget> _contactRows(BuildContext context) => _section('연락처', [
-        _row('휴대폰', contact.phone),
-        _row('사무실', contact.officePhone),
-        _row('직통', contact.directPhone),
-        _row('팩스', contact.fax),
-        _row('이메일', contact.email),
-        _row('홈페이지', contact.website),
-      ]);
+    _row('휴대폰', contact.phone),
+    _row('사무실', contact.officePhone),
+    _row('직통', contact.directPhone),
+    _row('팩스', contact.fax),
+    _row('이메일', contact.email),
+    _row('홈페이지', contact.website),
+  ]);
 
   List<Widget> _placeRows(BuildContext context) => _section('주소', [
-        _row('주소', contact.address),
-        _row('상세', contact.addressDetail),
-        _row('우편번호', contact.postalCode),
-      ]);
+    _row('주소', contact.address),
+    _row('상세', contact.addressDetail),
+    _row('우편번호', contact.postalCode),
+  ]);
 
   List<Widget> _memoRows(BuildContext context) =>
       _section('메모', [_row('', contact.memo)]);
