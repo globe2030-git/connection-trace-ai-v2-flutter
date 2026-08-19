@@ -1258,17 +1258,45 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     _quickMapTile('🏢 회사명', () {
                       _setTextFromStart(_companyController, text);
                     }),
+                    // 2026-08-19(추가 324): 부서 칸을 만들면서 이 통로를 빠뜨렸다.
+                    // ⚠️ **이 통로가 없으면 부서 칸은 파서가 맞힐 때만 채워진다.**
+                    // 실측에서 남은 오류의 성격이 "자리 바꿔 앉기"라, 사용자가
+                    // 손으로 옮기는 길이 파서 규칙보다 값이 크다(추가 323).
+                    _quickMapTile('🗂 부서', () {
+                      _setTextFromStart(_departmentController, text);
+                    }),
                     _quickMapTile('💼 직함', () {
                       _setTextFromStart(_titleController, text);
                     }),
                     _quickMapTile('📞 휴대폰 번호', () {
                       _setTextFromStart(_phoneController, text);
                     }),
+                    // 2026-08-19(추가 324): 아래 다섯은 **통로가 없었다.**
+                    //
+                    // 실측 82장에서 상세주소 12 · 팩스 10 · 사무실 7 · 우편번호 3
+                    // = **32건이 손으로 고칠 길조차 없었다**(전체 127건의 25%).
+                    // 파서가 못 고치는 값을 사람이 옮기는 것이 이 시트의 일인데,
+                    // 정작 갈 자리가 없으면 시트를 열어도 소용이 없다.
+                    _quickMapTile('☎️ 사무실 전화', () {
+                      _setTextFromStart(_officePhoneController, text);
+                    }),
+                    _quickMapTile('📠 팩스', () {
+                      _setTextFromStart(_faxController, text);
+                    }),
                     _quickMapTile('✉️ 이메일', () {
                       _setTextFromStart(_emailController, text);
                     }),
+                    _quickMapTile('🌐 홈페이지', () {
+                      _setTextFromStart(_websiteController, text);
+                    }),
                     _quickMapTile('📍 주소', () {
                       _setTextFromStart(_addressController, text);
+                    }),
+                    _quickMapTile('🏠 상세주소', () {
+                      _setTextFromStart(_addressDetailController, text);
+                    }),
+                    _quickMapTile('📮 우편번호', () {
+                      _setTextFromStart(_postalCodeController, text);
                     }),
                   ],
                 ),
