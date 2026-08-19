@@ -113,19 +113,32 @@ enum AdminUsageError {
   /// 문의에 이메일이 없다. 조회 키가 없으니 시도조차 못 한다.
   noEmail,
 
+  /// 지급 회차·사유가 서버 검사에 걸렸다. **관리자가 고쳐서 다시 할 수 있는**
+  /// 종류라 다른 실패와 갈라 둔다(한도 초과, 사유 누락 등).
+  invalidGrant,
+
   /// 네트워크·서버 오류 등 그 밖의 실패.
   unknown,
 }
 
 class AdminUsageException implements Exception {
   final AdminUsageError reason;
-  const AdminUsageException(this.reason);
+
+  /// 서버가 준 문구. **회차 지급이 검사에 걸렸을 때만** 채운다 — 한도·사유
+  /// 같은 것은 서버가 이유를 정확히 아는데, 앱이 다시 쓰면 **두 벌이 되어
+  /// 어긋난다**(서버 한도를 바꿔도 앱 문구는 그대로 남는다).
+  final String? serverMessage;
+
+  const AdminUsageException(this.reason, {String? message})
+    : serverMessage = message;
 
   /// 관리자에게 그대로 보여줄 안내. 개인정보는 담지 않는다.
   String get message => switch (reason) {
     AdminUsageError.notAdmin => '관리자 계정에서만 조회할 수 있습니다.',
     AdminUsageError.accountNotFound => '가입된 계정을 찾을 수 없습니다(탈퇴했거나 로그인 이메일이 다릅니다).',
     AdminUsageError.noEmail => '문의에 이메일이 없어 조회할 수 없습니다.',
+    AdminUsageError.invalidGrant =>
+      serverMessage ?? '지급할 회차나 사유를 다시 확인해 주세요.',
     AdminUsageError.unknown => '사용량을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
   };
 }
@@ -230,6 +243,71 @@ class AiUsageService {
     } catch (e) {
       // 개인정보가 섞이지 않도록 예외 타입만 남긴다.
       debugPrint('관리자 사용량 조회 실패: ${e.runtimeType}');
+      throw const AdminUsageException(AdminUsageError.unknown);
+    }
+  }
+
+  /// 관리자가 **보너스 회차를 지급(또는 회수)한다**(추가 338).
+  ///
+  /// ## 왜 앱에서 부르나
+  ///
+  /// 서버 함수(`grantSupportCredits`)는 예전부터 있었는데 **부르는 쪽이
+  /// 없었다.** 그래서 문의에 답하다 보상을 주려면 Firebase 콘솔을 직접 열어야
+  /// 했다. 이 저장소가 이미 겪은 모양이다 — *"재시도 로직이 죽어 있음 / 서비스는
+  /// 정상, 부르는 쪽이 없음"*(CLAUDE.md 4절 표).
+  ///
+  /// ## ⚠️ [operationId]는 **호출부가 만들어 붙든다**
+  ///
+  /// 서버가 이 값으로 **멱등성**을 지킨다 — 같은 값으로 두 번 오면 다시
+  /// 적용하지 않고 그때 잔액을 돌려준다. 그러므로 **재시도할 때는 같은 값**을,
+  /// 새 지급이면 **새 값**을 보내야 한다. 여기서 만들면 재시도마다 새 값이
+  /// 생겨 **중복 지급**이 된다.
+  ///
+  /// ## 서버가 막는 것
+  ///
+  /// ```
+  /// 1회 지급/회수   ±100회 이내
+  /// 지급 후 잔액    100,000회 이내
+  /// 사유(reason)    비울 수 없다 — 감사 기록에 남는다
+  /// ```
+  ///
+  /// 음수를 보내면 **회수**다. 잔액은 서버가 0 미만으로 안 내려가게 막는다.
+  ///
+  /// 성공하면 **지급 후 잔액**을 돌려준다.
+  static Future<int> grantBonusCredits({
+    required String email,
+    required int amount,
+    required String reason,
+    required String operationId,
+  }) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) {
+      throw const AdminUsageException(AdminUsageError.noEmail);
+    }
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: AiBriefingService.region,
+      ).httpsCallable('grantSupportCredits');
+      final result = await callable.call<Map<String, dynamic>>({
+        'email': trimmed,
+        'amount': amount,
+        'reason': reason.trim(),
+        'operationId': operationId,
+      });
+      return (result.data['bonusCredits'] as num?)?.toInt() ?? 0;
+    } on FirebaseFunctionsException catch (e) {
+      // 조회와 **같은 갈래**를 쓴다 — 화면이 두 벌의 문구를 갖지 않도록.
+      throw AdminUsageException(switch (e.code) {
+        'permission-denied' => AdminUsageError.notAdmin,
+        'not-found' => AdminUsageError.accountNotFound,
+        // 서버가 사유·회차 한도를 여기로 돌려준다. 관리자가 고쳐서 다시 할 수
+        // 있는 종류라, 서버 문구를 그대로 보여 주는 것이 낫다.
+        'invalid-argument' => AdminUsageError.invalidGrant,
+        _ => AdminUsageError.unknown,
+      }, message: e.message);
+    } catch (e) {
+      // 개인정보가 섞이지 않도록 예외 타입만 남긴다.
+      debugPrint('관리자 회차 지급 실패: ${e.runtimeType}');
       throw const AdminUsageException(AdminUsageError.unknown);
     }
   }
