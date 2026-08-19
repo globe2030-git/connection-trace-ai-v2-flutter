@@ -1219,6 +1219,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       _inlineNoticeText = '[진단] 칩 눌림: $text';
       _inlineNoticeIsError = false;
     });
+
+    // ⚠️ **키보드를 먼저 내린다** (사용자 관찰, 2026-08-19).
+    //
+    // 칸에 커서가 있는 상태에서 칩을 누르면 키보드가 올라와 있는데, 그러면
+    // 시트가 **키보드 뒤로 들어가거나 화면 밖으로 밀린다.** 실제로 실기기에서
+    // "칩을 눌러도 아무 일이 없다"로 보였다.
+    //
+    // 📌 값을 칸에 넣는 것이 이 시트의 일이라, 여는 시점에 커서가 있는 것이
+    // 오히려 정상이다 — 그래서 **드물게 나는 상황이 아니라 흔한 상황**이다.
+    FocusScope.of(context).unfocus();
+
     showModalBottomSheet(
       context: context,
       // 이 화면에서 **잘 뜨는** 카메라 스캔 시트와 같은 설정으로 맞춘다(:722).
@@ -1232,7 +1243,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            // ⚠️ 키보드가 아직 남아 있어도 내용이 가려지지 않게 그만큼 띄운다.
+            // `unfocus()`가 즉시 반영되지 않는 순간이 있다.
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.of(context).viewInsets.bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
