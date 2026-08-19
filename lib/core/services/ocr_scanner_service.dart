@@ -222,6 +222,33 @@ class OcrScanResult {
     this.imagePath,
     this.parseShape,
   });
+
+  /// **이메일만** 갈아 끼운 사본. 라틴 2차 패스가 쓴다(추가 336).
+  ///
+  /// ⚠️ 일반 `copyWith`를 만들지 않은 것은 일부러다. 칸이 열일곱인데 통째로
+  /// 여는 문을 내면 *"여기서 한 칸만 바꾸자"*가 늘고, 그러면 파싱 결과가
+  /// 어디서 바뀌었는지 좇기 어려워진다. **바꿔도 되는 자리를 하나로 좁힌다.**
+  OcrScanResult withEmail(String value) => OcrScanResult(
+    rawText: rawText,
+    rawLines: rawLines,
+    rawLineBoxes: rawLineBoxes,
+    name: name,
+    company: company,
+    title: title,
+    department: department,
+    phone: phone,
+    officePhone: officePhone,
+    fax: fax,
+    email: value,
+    website: website,
+    address: address,
+    addressDetail: addressDetail,
+    postalCode: postalCode,
+    tags: tags,
+    avatarUrl: avatarUrl,
+    imagePath: imagePath,
+    parseShape: parseShape,
+  );
 }
 
 class OcrScannerService {
@@ -297,9 +324,66 @@ class OcrScannerService {
         }
       }
 
-      return _parse(orderedLines, imageFile.path);
+      var result = _parse(orderedLines, imageFile.path);
+
+      // 이메일이 안 잡혔으면 **라틴 인식기로 한 번 더** 읽는다(추가 336).
+      if (result.email.trim().isEmpty) {
+        final retried = await _retryEmailWithLatin(imageFile);
+        if (retried != null) result = result.withEmail(retried);
+      }
+      return result;
     } finally {
       await recognizer.close();
+    }
+  }
+
+  /// 이메일만 **라틴 인식기로 다시 읽는다.**
+  ///
+  /// ## 왜 이것만 따로 (추가 336)
+  ///
+  /// 이메일 오류를 하나씩 열어 보니 **파서는 찾는 데 사실상 완벽했다** — 틀린
+  /// 6건 중 못 고른 것과 조각만 맞은 것이 **0건**이었다. 남은 건 OCR이 글자를
+  /// 잘못 읽은 것뿐이고, 이메일은 **전부 라틴 문자**라 한국어 모델이 불리하다.
+  ///
+  /// ```
+  /// card_10  원문에 `@o…,kr`   ← 점을 쉼표로 읽었다
+  /// ```
+  ///
+  /// 라틴 모델은 **두 플랫폼에 이미 들어 있다**(iOS는 Podfile의 전이 의존성,
+  /// Android는 플러그인이 기본 포함). 새 팟도 새 gradle 의존성도 필요 없다.
+  ///
+  /// ## ⚠️ 비었을 때만 돈다
+  ///
+  /// 값이 이미 있으면 **손대지 않는다.** 라틴 결과가 달라도 **어느 쪽이 맞는지
+  /// 가릴 근거가 없어서**, 채택하면 맞던 것을 망칠 수 있다. 실제로 `12…@` ↔
+  /// `Yg…@`처럼 **정규식은 통과하는데 틀린** 장이 둘 있는데, 그 유형은 일부러
+  /// 겨냥하지 않는다.
+  ///
+  /// 그래서 이 함수는 **잃을 것이 없다** — 원래 빈 칸에만 값을 넣는다.
+  ///
+  /// ## 실패는 조용히 넘어간다
+  ///
+  /// 2차 인식이 실패해도 1차 결과는 멀쩡하다. 여기서 예외를 올리면 **되던
+  /// 스캔이 통째로 깨진다.**
+  static Future<String?> _retryEmailWithLatin(XFile imageFile) async {
+    final latin = TextRecognizer(script: TextRecognitionScript.latin);
+    try {
+      final recognized = await latin
+          .processImage(InputImage.fromFilePath(imageFile.path))
+          .timeout(const Duration(seconds: 15));
+      // 1차와 **같은 규칙**으로 본다 — 자가 다르면 비교가 안 된다.
+      final re = RegExp(
+        r'[a-zA-Z0-9._%+-]+\s*@\s*[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
+      );
+      for (final line in _extractOrderedLines(recognized)) {
+        final m = re.firstMatch(line.text);
+        if (m != null) return m.group(0)!.replaceAll(RegExp(r'\s+'), '');
+      }
+      return null;
+    } catch (_) {
+      return null;
+    } finally {
+      await latin.close();
     }
   }
 
