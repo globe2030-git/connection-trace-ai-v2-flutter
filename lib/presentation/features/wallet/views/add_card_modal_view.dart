@@ -814,7 +814,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
-      _scannedRawLines = result.rawLines;
+      // ⚠️ **명함에 인쇄된 구분자에서 쪼갠다** (2026-08-19, 추가 325).
+      //
+      // 예전에는 원문 줄을 그대로 칩으로 깔았다. 그런데 한 줄에 둘이 들어 있는
+      // 명함이 흔하다(`A아키텍처팀 | 선임 Architect`). 그러면 **어느 칸으로
+      // 보내도 나머지가 딸려 가서**, 퀵 매핑으로 고칠 수가 없었다.
+      //
+      // 📌 **파서 판단으로 나누지 않는다.** 파서가 놓친 값(실측 미검출 23건)은
+      // 조각으로도 안 나오게 되므로, **원문이 안전망 노릇을 못 하게 된다.**
+      // 명함에 **실제로 인쇄된 구분자**에서만 자른다.
+      //
+      // ⚠️ **공백·한글↔영문 경계로는 안 자른다.** 실측 103장으로 재 봤다
+      // (추가 325). 구분자만 쓰면 칩이 평균 8.2 → 9.6개로 거의 그대로인데,
+      // 한글↔영문 경계까지 자르면 **평균 24개 · 최대 147개**가 되어 화면을
+      // 뒤덮는다. 주소 줄(`07795 서울특별시 강서구 …`)이 조각조각 나는데,
+      // 정작 주소는 통째로 옮겨야 하는 값이다.
+      _scannedRawLines = _splitScannedLines(result.rawLines);
       if (overwrite) {
         // 다른 명함으로 새로 시작하는 것이므로 **이전 명함의 흔적을 전부**
         // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
@@ -1206,20 +1221,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   };
 
   void _showQuickFieldMapperSheet(String text) {
-    // ⚠️ **[진단] 2026-08-19** — 실기기에서 칩을 눌러도 시트가 안 뜬다는 제보가
-    // 왔다(추가 325). 원인이 둘 중 하나인데 코드만 봐서는 못 가른다.
-    //
-    //   ① 탭이 이 함수까지 안 온다        → 배너도 안 뜬다
-    //   ② 함수는 불리는데 시트가 안 보인다 → 배너만 뜬다
-    //
-    // 배너(`_inlineNoticeText`)는 폼 안에 직접 그리므로 **어떤 상황에서도 모달
-    // 위에 보인다**(이 파일 머리말 주석). 그래서 가르는 자로 쓴다.
-    // 📌 원인이 밝혀지면 이 줄은 지운다.
-    setState(() {
-      _inlineNoticeText = '[진단] 칩 눌림: $text';
-      _inlineNoticeIsError = false;
-    });
-
     // ⚠️ **키보드를 먼저 내린다** (사용자 관찰, 2026-08-19).
     //
     // 칸에 커서가 있는 상태에서 칩을 누르면 키보드가 올라와 있는데, 그러면
@@ -1265,7 +1266,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '\'$text\' 텍스트 세팅',
+                        '\'$text\' — 어느 칸으로?',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -1279,7 +1280,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  '터치하면 해당 입력 칸으로 즉시 채워집니다.',
+                  '이 줄을 어느 칸으로 보낼까요? 고른 칸에 그대로 들어갑니다.',
                   style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
                 const SizedBox(height: 14),
@@ -1513,6 +1514,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: value))
         .text;
     _setTextFromStart(controller, formatted.isEmpty ? value : formatted);
+  }
+
+  /// 원문 줄을 **명함에 인쇄된 구분자**에서 쪼갠다(추가 325).
+  ///
+  /// 쪼갠 조각이 하나뿐이면 원래 줄을 그대로 쓴다. 빈 조각은 버린다.
+  static List<String> _splitScannedLines(List<String> lines) {
+    final out = <String>[];
+    for (final line in lines) {
+      final parts = line
+          .split(RegExp(r'\s*[|·｜/]\s*'))
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+      out.addAll(parts.isEmpty ? [line] : parts);
+    }
+    return out;
   }
 
   void _setTextFromStart(TextEditingController controller, String value) {
@@ -3039,7 +3056,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
+                              // 2026-08-19(추가 325): 사용자가 **칩을 "인식
+                              // 결과"로 읽고, 잘못된 칩은 피해서** 안 눌렀다.
+                              // 실제로는 정반대다 — 칩은 명함 원문이고, 칸이
+                              // 잘못 채워졌을 때 **고치려고 누르는 것**이다.
+                              // 그래서 머리글에 목적을 적는다.
+                              '📄 명함 원문 — 칸이 잘못 채워졌을 때 고치기',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -3071,7 +3093,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              '💡 텍스트 칩을 터치하면 해당 항목으로 1초 세팅돼요:',
+                              '💡 아래는 명함에서 읽은 줄 그대로예요. '
+                              '값이 엉뚱한 칸에 들어갔다면, 그 줄을 눌러 '
+                              '알맞은 칸으로 보내세요.',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
