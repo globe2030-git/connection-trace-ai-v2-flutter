@@ -10,6 +10,7 @@ ContactModel _base({
   String? directPhone,
   String? fax,
   String? website,
+  String? department,
 }) => ContactModel(
   id: 'c1',
   name: '홍길동',
@@ -22,6 +23,7 @@ ContactModel _base({
   directPhone: directPhone,
   fax: fax,
   website: website,
+  department: department,
 );
 
 void main() {
@@ -91,6 +93,40 @@ void main() {
       final changed = c.copyWith(website: 'new.com');
       expect(changed.website, 'new.com');
       expect(changed.directPhone, '02-1');
+    });
+  });
+
+  // ── 부서 (2026-08-19, 추가 321) ──────────────────────────────────────
+  //
+  // 부서는 직함과 별개 칸이다. **서버 백업까지 흘러간다** — 안 그러면 다른
+  // 기기에서 부서만 사라진다. 위 세 필드와 같은 계약이라 같은 파일에 둔다.
+  group('명함 필드 추가 — 부서', () {
+    test('toJson(기기)에 들어간다', () {
+      expect(_base(department: 'ICT 사업본부').toJson()['department'],
+          'ICT 사업본부');
+    });
+
+    test('⭐ toBackupJson(서버)에도 들어간다 — 동기화 대상이다', () {
+      expect(_base(department: 'ICT 사업본부').toBackupJson()['department'],
+          'ICT 사업본부');
+    });
+
+    test('⭐ 저장 → 복원 왕복에서 값이 살아남는다', () {
+      final restored =
+          ContactModel.fromJson(_base(department: 'R&D 센터').toJson());
+      expect(restored.department, 'R&D 센터');
+    });
+
+    // ⚠️ 2026-08-19 이전에 저장된 명함에는 이 키가 아예 없다. nullable이라
+    // 마이그레이션 없이 읽혀야 한다 — 여기가 깨지면 기존 명함이 못 열린다.
+    test('⭐ 옛 저장분(키 자체가 없음)도 그대로 읽힌다 — 마이그레이션 불필요', () {
+      final old = _base().toJson()..remove('department');
+      expect(old.containsKey('department'), isFalse);
+      expect(ContactModel.fromJson(old).department, isNull);
+    });
+
+    test('copyWith로 바꿀 수 있다', () {
+      expect(_base().copyWith(department: '경영지원팀').department, '경영지원팀');
     });
   });
 }
