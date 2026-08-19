@@ -29,7 +29,14 @@ List<String> splitScannedLines(List<String> lines) {
         .toList();
     for (final piece in (pieces.isEmpty ? [line] : pieces)) {
       final values = _valueShape.allMatches(piece).toList();
-      if (values.length < 2) {
+      // 값 하나라도, **값 아닌 자리에 한글이 있으면** 떼어낸다.
+      // `이현석 M 010-9354-5742`처럼 이름과 전화가 한 덩어리로 읽히는
+      // 명함이 흔하다 — 그대로 두면 이름 칸으로 보낼 때 전화가 딸려 간다.
+      // 영문 라벨(`T` `F` `Mobile.`)은 한글이 아니라 안 걸린다 — 그건
+      // 떼어내면 쓸모없는 칩만 늘어난다(추가 327).
+      final restHasHangul =
+          RegExp(r'[가-힣]').hasMatch(piece.replaceAll(_valueShape, ' '));
+      if (values.length < 2 && !(values.length == 1 && restHasHangul)) {
         out.add(piece);
         continue;
       }
@@ -108,6 +115,32 @@ void main() {
         splitScannedLines(['팀장 | T 02-111-2222 F 02-111-3333']),
         ['팀장', 'T', '02-111-2222', 'F', '02-111-3333'],
       );
+    });
+  });
+
+  // ── 값 옆에 한글이 있으면 떼어낸다 (2026-08-19 실기기 제보, 추가 327) ──
+  group('이름과 전화가 한 덩어리로 읽힌 줄 (추가 327)', () {
+    test('⭐ 이름 + 라벨 + 전화가 갈라진다', () {
+      expect(splitScannedLines(['이현석 M 010-9354-5742']),
+          ['이현석 M', '010-9354-5742']);
+    });
+
+    test('⭐ 회사명 + 전화도 갈라진다', () {
+      expect(splitScannedLines(['크림하우스 02-508-2712']),
+          ['크림하우스', '02-508-2712']);
+    });
+
+    // ⚠️ 영문 라벨만 있으면 안 떼어낸다 — 떼면 'T' 같은 쓸모없는 칩이 는다.
+    // 전화 칸에 넣을 때 어차피 숫자만 뽑히므로 붙어 있어도 상관없다.
+    test('⚠️ 영문 라벨만 붙은 줄은 그대로다', () {
+      expect(splitScannedLines(['T 02-6360-6910']), ['T 02-6360-6910']);
+      expect(splitScannedLines(['Mobile. 010-1234-5678']),
+          ['Mobile. 010-1234-5678']);
+    });
+
+    test('⚠️ 한글이 있어도 값이 없으면 그대로다', () {
+      expect(splitScannedLines(['서울특별시 강서구 마곡중앙8로']),
+          ['서울특별시 강서구 마곡중앙8로']);
     });
   });
 }

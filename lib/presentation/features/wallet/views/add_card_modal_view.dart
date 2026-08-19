@@ -1510,6 +1510,30 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 넓어졌다(전에는 휴대폰 하나였다). 규칙을 새로 쓰지 않고 **같은 포맷터를
   /// 그대로 불러** 쓴다 — 두 벌이 되면 서로 다르게 틀리기 시작한다.
   void _setPhoneFromStart(TextEditingController controller, String value) {
+    // ⚠️ **전화번호 모양일 때만 정리한다** (2026-08-19 실기기 제보, 추가 327).
+    //
+    // 포맷터는 **뭐가 들어오든 전화번호로 만든다** — 숫자만 뽑아 무조건 3-4-4나
+    // 2-4-4로 끊는다. 그래서 전화가 아니거나 자릿수가 모자라면 **없는 구조를
+    // 지어낸다.**
+    //
+    // ```
+    // 31-709-7071        → 317-09-7071   앞 0을 OCR이 놓친 번호가 더 나빠진다
+    // 07795 서울 중구 …   → 077-9500      주소인데 전화처럼 만든다
+    // E. a@b.com         → 100           이메일에서 숫자만 뽑는다
+    // ```
+    //
+    // 📌 **없는 구조를 지어내느니 원문을 그대로 두는 편이 낫다.** 사용자가 보고
+    // 고칠 수 있다. 자리를 밀어 놓으면 **틀린 줄도 모르고 저장된다.**
+    //
+    // ⚠️ 타이핑용 포맷터에는 이 조건을 걸지 않는다 — 손으로 칠 때는 `010`까지만
+    // 쳐도 정리돼야 하는데, 조건을 걸면 타이핑이 망가진다.
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    final looksLikePhone =
+        digits.startsWith('0') && digits.length >= 9 && digits.length <= 11;
+    if (!looksLikePhone) {
+      _setTextFromStart(controller, value);
+      return;
+    }
     final formatted = KoreanPhoneNumberFormatter()
         .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: value))
         .text;
@@ -1559,7 +1583,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           .toList();
       for (final piece in (pieces.isEmpty ? [line] : pieces)) {
         final values = _valueShapeRegExp.allMatches(piece).toList();
-        if (values.length < 2) {
+        // 값 하나라도, **값 아닌 자리에 한글이 있으면** 떼어낸다.
+        // `이현석 M 010-9354-5742`처럼 이름과 전화가 한 덩어리로 읽히는
+        // 명함이 흔하다 — 그대로 두면 이름 칸으로 보낼 때 전화가 딸려 간다.
+        // 영문 라벨(`T` `F` `Mobile.`)은 한글이 아니라 안 걸린다 — 그건
+        // 떼어내면 쓸모없는 칩만 늘어난다(추가 327).
+        final restHasHangul =
+            RegExp(r'[가-힣]').hasMatch(piece.replaceAll(_valueShapeRegExp, ' '));
+        if (values.length < 2 && !(values.length == 1 && restHasHangul)) {
           out.add(piece);
           continue;
         }
