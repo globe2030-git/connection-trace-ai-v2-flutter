@@ -2614,14 +2614,32 @@ class OcrScannerService {
           .where((t) => t.isNotEmpty)
           .toList();
       if (tokens.length >= 2) {
+        // 접미사가 붙은 토큰만 떼면 **부서 이름의 앞머리가 직함에 남는다** —
+        // `ICT 사업본부 상무`가 직함 `ICT 상무` / 부서 `사업본부`로 갈렸다.
+        // 그래서 접미사 토큰에서 **앞으로 이어 붙인다**: 바로 앞이 직함 낱말이
+        // 아니면 그것도 부서에 속한다(`ICT`). 직함 낱말이면 멈춘다
+        // (`상무 ICT사업본부`에서 `상무`를 뺏지 않는다).
+        final isDept = List<bool>.filled(tokens.length, false);
+        String bareOf(String t) =>
+            t.replaceAll(RegExp(r'^[|:/,.·]+|[|:/,.·]+$'), '');
+        for (var i = 0; i < tokens.length; i++) {
+          final bare = bareOf(tokens[i]);
+          if (bare.isEmpty || !_departmentSuffixes.any(bare.endsWith)) continue;
+          isDept[i] = true;
+          for (var j = i - 1; j >= 0 && !isDept[j]; j--) {
+            final prev = bareOf(tokens[j]);
+            if (prev.isEmpty) break;
+            if (_titleKeywords.any((k) => _containsCi(prev, k))) break;
+            isDept[j] = true;
+          }
+        }
         final deptTokens = <String>[];
         final restTokens = <String>[];
-        for (final token in tokens) {
-          final bare = token.replaceAll(RegExp(r'^[|:/,.·]+|[|:/,.·]+$'), '');
-          if (bare.isNotEmpty && _departmentSuffixes.any(bare.endsWith)) {
-            deptTokens.add(bare);
+        for (var i = 0; i < tokens.length; i++) {
+          if (isDept[i]) {
+            deptTokens.add(bareOf(tokens[i]));
           } else {
-            restTokens.add(token);
+            restTokens.add(tokens[i]);
           }
         }
         if (deptTokens.isNotEmpty && restTokens.isNotEmpty) {

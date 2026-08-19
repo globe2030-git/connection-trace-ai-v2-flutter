@@ -40,6 +40,9 @@ const _fields = [
   '이름',
   '회사',
   '직함',
+  // 2026-08-19(추가 321): 부서를 직함에서 뗐다. 정답지에도 '정답_부서' 칸이
+  // 생겼고, 46장이 이 칸으로 갈렸다.
+  '부서',
   '휴대폰',
   '사무실',
   '팩스',
@@ -199,6 +202,7 @@ void main() {
           '이름' => parsed.name,
           '회사' => parsed.company,
           '직함' => parsed.title,
+          '부서' => parsed.department,
           '휴대폰' => parsed.phone,
           '사무실' => parsed.officePhone,
           '팩스' => parsed.fax,
