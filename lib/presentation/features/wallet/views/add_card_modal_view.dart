@@ -2696,6 +2696,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final oldFields = [
         existing.company,
         existing.title,
+        // 2026-08-19(추가 328): 부서 칸을 만들면서 **여기 넣는 걸 빠뜨렸다**.
+        // 이직하면 부서도 바뀌는데 이전 부서가 안 남았다.
+        // ⚠️ 비어 있으면 넣지 않는다 — 옛 명함에는 이 값이 아예 없다(null).
+        if (existing.department != null && existing.department!.isNotEmpty)
+          existing.department,
         existing.phone,
         if (existing.officePhone != null && existing.officePhone!.isNotEmpty)
           existing.officePhone,
