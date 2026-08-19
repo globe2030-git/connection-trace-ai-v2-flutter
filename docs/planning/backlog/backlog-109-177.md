@@ -970,10 +970,10 @@ main에 머지(①은 번호 정정) → 빌드 → 실기기 검증(탈퇴 정�
 ### 2026-08-10 (추가 149) — iOS 빌드 6 TestFlight 외부 베타 심사 제출 + Android/iOS 직원 테스터 등록
 
 **Android**: `config/testers`(관리자 콘솔 "테스터 관리" 탭)에 직원 6명 등록
-(`neoin9@gmail.com`, `globe2030@gmail.com`, `ykiki95@gmail.com`,
-`hkchoi1049@creamhouse.net`, `dakis1@naver.com`, `kimyk5527@creamhouse.net`) —
+(`card04@gmail.com`, `globe2030@gmail.com`, `card05@gmail.com`,
+`hkchoi1049@creamhouse.net`, `card06@naver.com`, `kimyk5527@creamhouse.net`) —
 전부 로그인 계정 이메일임을 확인. 기존에 있던 3건(`yennii3001@creamhouse.net`,
-`yeaseal9026@gmail.com`, `leeyena9026@naver.com`)은 신규 아이폰 테스터라 그대로
+`card07@gmail.com`, `card08@naver.com`)은 신규 아이폰 테스터라 그대로
 유지.
 
 **iOS**: TestFlight 빌드 `1.0.0 (5)`(2026-08-09 업로드)가 그 이후 main에 쌓인
