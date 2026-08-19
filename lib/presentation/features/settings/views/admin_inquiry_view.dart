@@ -318,7 +318,10 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
   /// 사용량 조회는 서버 함수 호출이라 **한 번만** 쏜다. `build` 안에서
   /// `FutureBuilder(future: ...)`를 만들면 답변을 입력할 때마다(리빌드마다)
   /// 서버를 다시 부른다.
-  late final Future<AdminUserUsage> _usageFuture;
+  // ⚠️ `final`이 아니다 — 회차를 지급하면 **다시 조회해서** 새 잔액을 보여야
+  // 한다. 안 그러면 지급했는데 화면은 옛 숫자를 들고 있어, 관리자가 안 됐다고
+  // 여기고 **또 누른다**.
+  late Future<AdminUserUsage> _usageFuture;
 
   @override
   void initState() {
@@ -345,6 +348,184 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  /// 보너스 회차 지급 시트(추가 338).
+  ///
+  /// ## ⚠️ 멱등성 키를 **여기서 한 번만** 만든다
+  ///
+  /// 서버는 `operationId`로 중복 지급을 막는다 — 같은 값으로 두 번 오면 다시
+  /// 적용하지 않고 그때 잔액을 돌려준다. 그래서 **시트를 열 때 한 번** 만들고,
+  /// 실패해서 다시 눌러도 **같은 값**을 보낸다.
+  ///
+  /// 누를 때마다 만들면 "네트워크가 끊긴 줄 알고 한 번 더" 누른 것이 **두 번
+  /// 지급**이 된다. 돈이 오가는 자리라 이쪽 실수가 비싸다.
+  Future<void> _openGrantSheet(int currentBalance) async {
+    final amountController = TextEditingController(text: '5');
+    final reasonController = TextEditingController();
+    // 시트 한 번 = 지급 한 번.
+    final operationId =
+        'grant-${DateTime.now().microsecondsSinceEpoch}-'
+        '${widget.inquiry.id}';
+    var busy = false;
+    String? error;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppColors.bgBase,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '보너스 회차 지급',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '현재 잔액 $currentBalance회 · 음수를 넣으면 회수됩니다',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: '지급 회차',
+                    hintText: '예: 5',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonController,
+                  decoration: const InputDecoration(
+                    labelText: '사유 (필수)',
+                    hintText: '예: 오류로 회차가 소진되어 보상',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '사유는 감사 기록에 남습니다. 나중에 누가 왜 줬는지 추적하는 근거입니다.',
+                  style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.warningText,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: busy
+                            ? null
+                            : () => Navigator.of(sheetContext).pop(),
+                        child: const Text('취소'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: busy
+                            ? null
+                            : () async {
+                                final amount = int.tryParse(
+                                  amountController.text.trim(),
+                                );
+                                if (amount == null || amount == 0) {
+                                  setSheetState(
+                                    () => error = '지급할 회차를 숫자로 넣어 주세요(0은 안 됩니다).',
+                                  );
+                                  return;
+                                }
+                                if (reasonController.text.trim().isEmpty) {
+                                  setSheetState(() => error = '사유를 입력해 주세요.');
+                                  return;
+                                }
+                                setSheetState(() {
+                                  busy = true;
+                                  error = null;
+                                });
+                                try {
+                                  final balance =
+                                      await AiUsageService.grantBonusCredits(
+                                        email: widget.inquiry.userEmail,
+                                        amount: amount,
+                                        reason: reasonController.text,
+                                        operationId: operationId,
+                                      );
+                                  if (!sheetContext.mounted) return;
+                                  Navigator.of(sheetContext).pop();
+                                  if (!mounted) return;
+                                  // 새 잔액으로 갈아 끼운다 — 다시 부르지 않고
+                                  // 서버가 준 값을 그대로 쓴다.
+                                  setState(() {
+                                    _usageFuture = AiUsageService.fetchForAdmin(
+                                      widget.inquiry.userEmail,
+                                    );
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('지급 완료 · 잔액 $balance회'),
+                                    ),
+                                  );
+                                } on AdminUsageException catch (e) {
+                                  setSheetState(() {
+                                    busy = false;
+                                    error = e.message;
+                                  });
+                                }
+                              },
+                        child: busy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('지급'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    amountController.dispose();
+    reasonController.dispose();
   }
 
   @override
@@ -566,6 +747,28 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                                         ),
                                       ),
                                     ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () =>
+                                          _openGrantSheet(usage.bonusCredits),
+                                      icon: const Icon(
+                                        Icons.card_giftcard_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text('보너스 회차 지급'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.accentText,
+                                        side: const BorderSide(
+                                          color: AppColors.borderSubtle,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
