@@ -1269,7 +1269,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       _setTextFromStart(_titleController, text);
                     }),
                     _quickMapTile('📞 휴대폰 번호', () {
-                      _setTextFromStart(_phoneController, text);
+                      _setPhoneFromStart(_phoneController, text);
                     }),
                     // 2026-08-19(추가 324): 아래 다섯은 **통로가 없었다.**
                     //
@@ -1278,10 +1278,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     // 파서가 못 고치는 값을 사람이 옮기는 것이 이 시트의 일인데,
                     // 정작 갈 자리가 없으면 시트를 열어도 소용이 없다.
                     _quickMapTile('☎️ 사무실 전화', () {
-                      _setTextFromStart(_officePhoneController, text);
+                      _setPhoneFromStart(_officePhoneController, text);
                     }),
                     _quickMapTile('📠 팩스', () {
-                      _setTextFromStart(_faxController, text);
+                      _setPhoneFromStart(_faxController, text);
                     }),
                     _quickMapTile('✉️ 이메일', () {
                       _setTextFromStart(_emailController, text);
@@ -1464,6 +1464,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 입력칸(주소처럼 긴 텍스트)에서 값이 시작 부분부터가 아니라 끝부분만
   /// 보이는 채로 스크롤돼 있어 "글자가 잘려서 들어간 것"처럼 보이는 문제가
   /// 있었다. 커서를 맨 앞(0)으로 둬서 항상 텍스트 시작부터 보이게 한다.
+  /// 전화 칸에 **코드로** 값을 넣을 때 쓴다.
+  ///
+  /// ⚠️ `KoreanPhoneNumberFormatter`는 `TextInputFormatter`라 **사람이 타이핑할
+  /// 때만** 걸린다. 퀵 매핑은 값을 코드로 넣으므로 포맷터를 안 거치고,
+  /// `02 6360 6910`처럼 **공백으로 읽힌 원문이 그대로 저장된다.**
+  ///
+  /// 2026-08-19(추가 324)에 퀵 매핑에 사무실·팩스를 더하면서 이 구멍이
+  /// 넓어졌다(전에는 휴대폰 하나였다). 규칙을 새로 쓰지 않고 **같은 포맷터를
+  /// 그대로 불러** 쓴다 — 두 벌이 되면 서로 다르게 틀리기 시작한다.
+  void _setPhoneFromStart(TextEditingController controller, String value) {
+    final formatted = KoreanPhoneNumberFormatter()
+        .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: value))
+        .text;
+    _setTextFromStart(controller, formatted.isEmpty ? value : formatted);
+  }
+
   void _setTextFromStart(TextEditingController controller, String value) {
     controller.value = TextEditingValue(
       text: value,
