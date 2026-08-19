@@ -24,10 +24,21 @@ import 'add_card_modal_view.dart';
 /// 후   목록 탭 → 이 화면(읽기 전용) → [편집] → 편집 폼
 /// ```
 ///
-/// ## 무엇을 담나 — **연락처 중심**
+/// ## 무엇을 담나 — **여섯 개만** (2026-08-19 개정, 추가 332)
 ///
-/// 목록 타일에 이미 있는 것(사진·이름·직함·회사)을 그대로 반복하지 않는다.
-/// 이 화면의 값은 **목록에서 볼 수 없던 것**이다 — 전화·이메일·주소.
+/// ```
+/// 이름 · 직함 · 부서 · 회사      머리글 한 덩어리
+/// 휴대폰 · 사무실 전화            연락처
+/// ```
+///
+/// ⚠️ **처음엔 전 칸(이메일·주소·팩스·메모)을 다 그렸다가 뺐다.** 실기기에서
+/// *"자료가 많으면 이름이 위로 너무 붙어 있다"*는 제보가 왔다 — 줄이 길어지자
+/// 머리글이 화면 꼭대기로 밀려 답답했다. 여백만 넓히는 길도 있었으나, 사용자가
+/// **담는 것 자체를 줄이는 쪽**을 골랐다: *"…만 통일해서 보여주고 편집을
+/// 클릭하면 전체를 보여주는 것으로."*
+///
+/// 그래서 이 화면은 **스크롤이 거의 나지 않는다** — 길이가 명함마다 들쭉날쭉
+/// 하지 않고, 여는 목적(연락)에 필요한 것만 있다. 나머지는 [편집]에 있다.
 ///
 /// ⚠️ **빈 칸은 그리지 않는다.** 이 저장소는 화면을 채우려고 없는 값을 만들지
 /// 않는다(CLAUDE.md 4절). 값이 없으면 그 줄 자체가 없다.
@@ -70,8 +81,10 @@ class ContactDetailView extends StatelessWidget {
             // 보이기는 하는데 **눌리지 않았다** — 바텀시트 맨 위는 끌어 내리는
             // 제스처가 먹는 자리라 버튼과 다툰다. 사용자 제안대로 **아래로
             // 옮겼다**: 손이 닿는 자리이기도 하고, [편집] 옆이라 짝이 맞는다.
+            // ⚠️ 손잡이 아래 여백을 넉넉히 둔다(2026-08-19 실기기 제보, 추가 332).
+            // 자료가 많은 명함에서 **이름이 위에 너무 붙어** 답답해 보였다.
             Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 6),
+              padding: const EdgeInsets.only(top: 12, bottom: 16),
               child: Container(
                 width: 40,
                 height: 4,
@@ -83,7 +96,7 @@ class ContactDetailView extends StatelessWidget {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -93,8 +106,6 @@ class ContactDetailView extends StatelessWidget {
                     _actions(context),
                     const SizedBox(height: 8),
                     ..._contactRows(context),
-                    ..._placeRows(context),
-                    ..._memoRows(context),
                   ],
                 ),
               ),
@@ -218,23 +229,12 @@ class ContactDetailView extends StatelessWidget {
     );
   }
 
+  /// ⚠️ **여기 두 줄이 전부다.** 나머지 칸(직통·팩스·이메일·홈페이지·주소·
+  /// 메모)은 [편집]에서 본다 — 2026-08-19 사용자 확정(추가 332).
   List<Widget> _contactRows(BuildContext context) => _section('연락처', [
     _row('휴대폰', contact.phone),
     _row('사무실', contact.officePhone),
-    _row('직통', contact.directPhone),
-    _row('팩스', contact.fax),
-    _row('이메일', contact.email),
-    _row('홈페이지', contact.website),
   ]);
-
-  List<Widget> _placeRows(BuildContext context) => _section('주소', [
-    _row('주소', contact.address),
-    _row('상세', contact.addressDetail),
-    _row('우편번호', contact.postalCode),
-  ]);
-
-  List<Widget> _memoRows(BuildContext context) =>
-      _section('메모', [_row('', contact.memo)]);
 
   /// 값이 하나도 없으면 **제목까지 통째로 뺀다.**
   List<Widget> _section(String title, List<Widget?> rows) {
