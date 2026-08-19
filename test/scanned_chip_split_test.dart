@@ -11,16 +11,38 @@
 // 하는 값이다.
 import 'package:flutter_test/flutter_test.dart';
 
+final _valueShape = RegExp(
+  r'[\w.+-]+@[\w.-]+\.\w+'
+  r'|(?:https?://|www\.)[\w./\-]+'
+  r'|\d{2,4}[-. ]\d{3,4}[-. ]\d{4}'
+  r'|01\d{9}|0\d{9,10}',
+);
+
 /// 화면 코드와 **같은 규칙**이다. 여기서 깨지면 화면 쪽도 깨진 것이다.
 List<String> splitScannedLines(List<String> lines) {
   final out = <String>[];
   for (final line in lines) {
-    final parts = line
+    final pieces = line
         .split(RegExp(r'\s*[|·｜/]\s*'))
         .map((p) => p.trim())
         .where((p) => p.isNotEmpty)
         .toList();
-    out.addAll(parts.isEmpty ? [line] : parts);
+    for (final piece in (pieces.isEmpty ? [line] : pieces)) {
+      final values = _valueShape.allMatches(piece).toList();
+      if (values.length < 2) {
+        out.add(piece);
+        continue;
+      }
+      var last = 0;
+      for (final m in values) {
+        final head = piece.substring(last, m.start).trim();
+        if (head.isNotEmpty) out.add(head);
+        out.add(m.group(0)!);
+        last = m.end;
+      }
+      final tail = piece.substring(last).trim();
+      if (tail.isNotEmpty) out.add(tail);
+    }
   }
   return out;
 }
@@ -50,6 +72,42 @@ void main() {
     test('빈 조각은 버린다', () {
       expect(splitScannedLines(['팀장 |']), ['팀장']);
       expect(splitScannedLines(['| | |']), ['| | |']);
+    });
+  });
+
+  // ── 값이 둘 이상 든 줄 (추가 326) ──────────────────────────────────
+  group('값이 둘 이상 든 줄은 값 경계에서도 쪼갠다 (추가 326)', () {
+    test('⭐ 전화 셋이 한 줄에 있으면 셋으로 갈라진다', () {
+      expect(
+        splitScannedLines(['T 02-6360-6910 F 02-6360-6930 M 010-9354-5742']),
+        ['T', '02-6360-6910', 'F', '02-6360-6930', 'M', '010-9354-5742'],
+      );
+    });
+
+    test('⭐ 이메일 둘도 갈라진다', () {
+      expect(splitScannedLines(['a@sto.or.kr b@sto.or.kr']),
+          ['a@sto.or.kr', 'b@sto.or.kr']);
+    });
+
+    // ⚠️ 여기가 ④(전부 쪼개기)와 갈리는 자리다. 값이 하나뿐인 줄까지 자르면
+    // 'T' 같은 라벨이 쓸모없는 칩으로 떨어져 나온다. 전화 칸에 넣을 때는
+    // 포맷터가 숫자만 뽑으므로 라벨이 붙어 있어도 상관없다.
+    test('⚠️ 값이 하나면 안 쪼갠다 — 라벨이 붙은 채로 둔다', () {
+      expect(splitScannedLines(['T 02-6360-6910']), ['T 02-6360-6910']);
+      expect(splitScannedLines(['Mobile. 010-1234-5678']),
+          ['Mobile. 010-1234-5678']);
+    });
+
+    test('⚠️ 값이 없는 줄은 그대로다', () {
+      expect(splitScannedLines(['서울특별시 강서구 마곡중앙8로 71']),
+          ['서울특별시 강서구 마곡중앙8로 71']);
+    });
+
+    test('구분자로 먼저 자르고, 그 조각 안에서 값을 본다', () {
+      expect(
+        splitScannedLines(['팀장 | T 02-111-2222 F 02-111-3333']),
+        ['팀장', 'T', '02-111-2222', 'F', '02-111-3333'],
+      );
     });
   });
 }

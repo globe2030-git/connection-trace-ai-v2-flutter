@@ -1516,18 +1516,63 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _setTextFromStart(controller, formatted.isEmpty ? value : formatted);
   }
 
-  /// 원문 줄을 **명함에 인쇄된 구분자**에서 쪼갠다(추가 325).
+  /// 생김새만으로 알 수 있는 값 — 전화·이메일·홈페이지(추가 326).
   ///
-  /// 쪼갠 조각이 하나뿐이면 원래 줄을 그대로 쓴다. 빈 조각은 버린다.
+  /// ⚠️ **어느 칸인지는 정하지 않는다.** *"이건 전화번호 모양이다"*까지만 본다.
+  /// 파서 판단으로 나누면 파서가 놓친 값이 조각으로도 안 나와서 **원문이
+  /// 안전망 노릇을 못 한다.**
+  static final _valueShapeRegExp = RegExp(
+    r'[\w.+-]+@[\w.-]+\.\w+'
+    r'|(?:https?://|www\.)[\w./\-]+'
+    r'|\d{2,4}[-. ]\d{3,4}[-. ]\d{4}'
+    r'|01\d{9}|0\d{9,10}',
+  );
+
+  /// 원문 줄을 **옮길 수 있는 단위**로 쪼갠다(추가 325·326).
+  ///
+  /// 두 단계다.
+  ///
+  /// 1. **명함에 인쇄된 구분자**(`|` `·` `/`)에서 자른다.
+  /// 2. 그러고도 **값이 둘 이상 든 조각**만 값 경계에서 한 번 더 자른다.
+  ///
+  /// ⚠️ **2단계는 값이 둘 이상일 때만 한다.** 값이 하나뿐인 줄
+  /// (`T 02-6360-6910`)까지 자르면 `T` 같은 라벨이 **쓸모없는 칩**으로 떨어져
+  /// 나온다. 전화 칸에 넣을 때는 포맷터가 숫자만 뽑으므로 라벨이 붙어 있어도
+  /// 상관없다.
+  ///
+  /// 📌 **착수 전에 103장으로 쟀다**(추가 326).
+  /// ```
+  /// 구분자만            평균  9.6  최대  51  30개↑ 3장
+  /// + 값 둘 이상만 쪼갬  평균 13.6  최대 119  30개↑ 3장  ← 이것
+  /// + 값을 전부 쪼갬     평균 15.3  최대 125  30개↑ 4장
+  /// ```
+  /// 최대 119는 과대 검출이 아니다 — **한 장에 연락처가 여럿 인쇄된 명함**이고,
+  /// 그런 장이야말로 쪼개야 옮길 수 있다. 다만 그런 장은 3/103이라 *"칩이
+  /// 많으면 접기"*는 **아직 안 넣었다.**
   static List<String> _splitScannedLines(List<String> lines) {
     final out = <String>[];
     for (final line in lines) {
-      final parts = line
+      final pieces = line
           .split(RegExp(r'\s*[|·｜/]\s*'))
           .map((p) => p.trim())
           .where((p) => p.isNotEmpty)
           .toList();
-      out.addAll(parts.isEmpty ? [line] : parts);
+      for (final piece in (pieces.isEmpty ? [line] : pieces)) {
+        final values = _valueShapeRegExp.allMatches(piece).toList();
+        if (values.length < 2) {
+          out.add(piece);
+          continue;
+        }
+        var last = 0;
+        for (final m in values) {
+          final head = piece.substring(last, m.start).trim();
+          if (head.isNotEmpty) out.add(head);
+          out.add(m.group(0)!);
+          last = m.end;
+        }
+        final tail = piece.substring(last).trim();
+        if (tail.isNotEmpty) out.add(tail);
+      }
     }
     return out;
   }
