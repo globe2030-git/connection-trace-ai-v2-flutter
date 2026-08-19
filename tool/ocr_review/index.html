@@ -663,8 +663,20 @@ function render() {
     whole.onclick = () => put(seg);
     row.appendChild(whole);
 
-    // 구분자만 있는 토큰(`|`, `/`)은 넣을 일이 없어 버린다.
-    for (const tok of seg.split(/\s+/).filter((t) => /[\w가-힣@]/.test(t))) {
+    // 공백과 **인쇄된 구분자**(| · /)에서 함께 나눈다.
+    //
+    // 📌 앱은 여기서 한 단계 덜 나눈다(추가 326) — 앱은 조각을 **덮어쓰고**
+    // 검수 도구는 **이어 붙이므로**, 검수 쪽이 더 잘게 나눠도 잃는 것이 없다.
+    // 낱말 단위인 이 도구는 전화가 여럿 든 줄도 이미 낱낱이 갈라진다.
+    //
+    // ⚠️ 예전에는 공백으로만 나눠서, 구분자가 공백 없이 붙은 줄
+    // (`영업대표/부장`)이 **통째로 한 낱말**이 됐다. 그러면 `부장`만 누를 수가
+    // 없다. 앱의 원문 칩과 **같은 규칙**으로 맞춘다(추가 325).
+    //
+    // 구분자만 남은 토큰(`|`, `/`)은 넣을 일이 없어 버린다.
+    for (const tok of seg
+      .split(/[\s|·｜/]+/)
+      .filter((t) => /[\w가-힣@]/.test(t))) {
       const b = document.createElement('button');
       b.className = 'tok';
       b.textContent = tok;

@@ -814,7 +814,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
       _scannedRawText = result!.rawText;
-      _scannedRawLines = result.rawLines;
+      // ⚠️ **명함에 인쇄된 구분자에서 쪼갠다** (2026-08-19, 추가 325).
+      //
+      // 예전에는 원문 줄을 그대로 칩으로 깔았다. 그런데 한 줄에 둘이 들어 있는
+      // 명함이 흔하다(`A아키텍처팀 | 선임 Architect`). 그러면 **어느 칸으로
+      // 보내도 나머지가 딸려 가서**, 퀵 매핑으로 고칠 수가 없었다.
+      //
+      // 📌 **파서 판단으로 나누지 않는다.** 파서가 놓친 값(실측 미검출 23건)은
+      // 조각으로도 안 나오게 되므로, **원문이 안전망 노릇을 못 하게 된다.**
+      // 명함에 **실제로 인쇄된 구분자**에서만 자른다.
+      //
+      // ⚠️ **공백·한글↔영문 경계로는 안 자른다.** 실측 103장으로 재 봤다
+      // (추가 325). 구분자만 쓰면 칩이 평균 8.2 → 9.6개로 거의 그대로인데,
+      // 한글↔영문 경계까지 자르면 **평균 24개 · 최대 147개**가 되어 화면을
+      // 뒤덮는다. 주소 줄(`07795 서울특별시 강서구 …`)이 조각조각 나는데,
+      // 정작 주소는 통째로 옮겨야 하는 값이다.
+      _scannedRawLines = _splitScannedLines(result.rawLines);
       if (overwrite) {
         // 다른 명함으로 새로 시작하는 것이므로 **이전 명함의 흔적을 전부**
         // 지운다. 예전에는 입력칸 9개만 새로 쓰고 아래 값들이 남아서, 새
@@ -1206,8 +1221,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   };
 
   void _showQuickFieldMapperSheet(String text) {
+    // ⚠️ **키보드를 먼저 내린다** (사용자 관찰, 2026-08-19).
+    //
+    // 칸에 커서가 있는 상태에서 칩을 누르면 키보드가 올라와 있는데, 그러면
+    // 시트가 **키보드 뒤로 들어가거나 화면 밖으로 밀린다.** 실제로 실기기에서
+    // "칩을 눌러도 아무 일이 없다"로 보였다.
+    //
+    // 📌 값을 칸에 넣는 것이 이 시트의 일이라, 여는 시점에 커서가 있는 것이
+    // 오히려 정상이다 — 그래서 **드물게 나는 상황이 아니라 흔한 상황**이다.
+    FocusScope.of(context).unfocus();
+
     showModalBottomSheet(
       context: context,
+      // 이 화면에서 **잘 뜨는** 카메라 스캔 시트와 같은 설정으로 맞춘다(:722).
+      // 없으면 높이가 화면의 9/16로 묶여, 칸이 12개로 늘어난 지금은 내용이
+      // 잘릴 수 있다 — release에서는 경고 없이 잘린다.
+      isScrollControlled: true,
       backgroundColor: AppColors.bgBase,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1215,7 +1244,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       builder: (context) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            // ⚠️ 키보드가 아직 남아 있어도 내용이 가려지지 않게 그만큼 띄운다.
+            // `unfocus()`가 즉시 반영되지 않는 순간이 있다.
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.of(context).viewInsets.bottom,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1230,7 +1266,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '\'$text\' 텍스트 세팅',
+                        '\'$text\' — 어느 칸으로?',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -1244,7 +1280,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  '터치하면 해당 입력 칸으로 즉시 채워집니다.',
+                  '이 줄을 어느 칸으로 보낼까요? 고른 칸에 그대로 들어갑니다.',
                   style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                 ),
                 const SizedBox(height: 14),
@@ -1258,17 +1294,45 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     _quickMapTile('🏢 회사명', () {
                       _setTextFromStart(_companyController, text);
                     }),
+                    // 2026-08-19(추가 324): 부서 칸을 만들면서 이 통로를 빠뜨렸다.
+                    // ⚠️ **이 통로가 없으면 부서 칸은 파서가 맞힐 때만 채워진다.**
+                    // 실측에서 남은 오류의 성격이 "자리 바꿔 앉기"라, 사용자가
+                    // 손으로 옮기는 길이 파서 규칙보다 값이 크다(추가 323).
+                    _quickMapTile('🗂 부서', () {
+                      _setTextFromStart(_departmentController, text);
+                    }),
                     _quickMapTile('💼 직함', () {
                       _setTextFromStart(_titleController, text);
                     }),
                     _quickMapTile('📞 휴대폰 번호', () {
-                      _setTextFromStart(_phoneController, text);
+                      _setPhoneFromStart(_phoneController, text);
+                    }),
+                    // 2026-08-19(추가 324): 아래 다섯은 **통로가 없었다.**
+                    //
+                    // 실측 82장에서 상세주소 12 · 팩스 10 · 사무실 7 · 우편번호 3
+                    // = **32건이 손으로 고칠 길조차 없었다**(전체 127건의 25%).
+                    // 파서가 못 고치는 값을 사람이 옮기는 것이 이 시트의 일인데,
+                    // 정작 갈 자리가 없으면 시트를 열어도 소용이 없다.
+                    _quickMapTile('☎️ 사무실 전화', () {
+                      _setPhoneFromStart(_officePhoneController, text);
+                    }),
+                    _quickMapTile('📠 팩스', () {
+                      _setPhoneFromStart(_faxController, text);
                     }),
                     _quickMapTile('✉️ 이메일', () {
                       _setTextFromStart(_emailController, text);
                     }),
+                    _quickMapTile('🌐 홈페이지', () {
+                      _setTextFromStart(_websiteController, text);
+                    }),
                     _quickMapTile('📍 주소', () {
                       _setTextFromStart(_addressController, text);
+                    }),
+                    _quickMapTile('🏠 상세주소', () {
+                      _setTextFromStart(_addressDetailController, text);
+                    }),
+                    _quickMapTile('📮 우편번호', () {
+                      _setTextFromStart(_postalCodeController, text);
                     }),
                   ],
                 ),
@@ -1436,6 +1500,114 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 입력칸(주소처럼 긴 텍스트)에서 값이 시작 부분부터가 아니라 끝부분만
   /// 보이는 채로 스크롤돼 있어 "글자가 잘려서 들어간 것"처럼 보이는 문제가
   /// 있었다. 커서를 맨 앞(0)으로 둬서 항상 텍스트 시작부터 보이게 한다.
+  /// 전화 칸에 **코드로** 값을 넣을 때 쓴다.
+  ///
+  /// ⚠️ `KoreanPhoneNumberFormatter`는 `TextInputFormatter`라 **사람이 타이핑할
+  /// 때만** 걸린다. 퀵 매핑은 값을 코드로 넣으므로 포맷터를 안 거치고,
+  /// `02 6360 6910`처럼 **공백으로 읽힌 원문이 그대로 저장된다.**
+  ///
+  /// 2026-08-19(추가 324)에 퀵 매핑에 사무실·팩스를 더하면서 이 구멍이
+  /// 넓어졌다(전에는 휴대폰 하나였다). 규칙을 새로 쓰지 않고 **같은 포맷터를
+  /// 그대로 불러** 쓴다 — 두 벌이 되면 서로 다르게 틀리기 시작한다.
+  void _setPhoneFromStart(TextEditingController controller, String value) {
+    // ⚠️ **전화번호 모양일 때만 정리한다** (2026-08-19 실기기 제보, 추가 327).
+    //
+    // 포맷터는 **뭐가 들어오든 전화번호로 만든다** — 숫자만 뽑아 무조건 3-4-4나
+    // 2-4-4로 끊는다. 그래서 전화가 아니거나 자릿수가 모자라면 **없는 구조를
+    // 지어낸다.**
+    //
+    // ```
+    // 31-709-7071        → 317-09-7071   앞 0을 OCR이 놓친 번호가 더 나빠진다
+    // 07795 서울 중구 …   → 077-9500      주소인데 전화처럼 만든다
+    // E. a@b.com         → 100           이메일에서 숫자만 뽑는다
+    // ```
+    //
+    // 📌 **없는 구조를 지어내느니 원문을 그대로 두는 편이 낫다.** 사용자가 보고
+    // 고칠 수 있다. 자리를 밀어 놓으면 **틀린 줄도 모르고 저장된다.**
+    //
+    // ⚠️ 타이핑용 포맷터에는 이 조건을 걸지 않는다 — 손으로 칠 때는 `010`까지만
+    // 쳐도 정리돼야 하는데, 조건을 걸면 타이핑이 망가진다.
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+    final looksLikePhone =
+        digits.startsWith('0') && digits.length >= 9 && digits.length <= 11;
+    if (!looksLikePhone) {
+      _setTextFromStart(controller, value);
+      return;
+    }
+    final formatted = KoreanPhoneNumberFormatter()
+        .formatEditUpdate(TextEditingValue.empty, TextEditingValue(text: value))
+        .text;
+    _setTextFromStart(controller, formatted.isEmpty ? value : formatted);
+  }
+
+  /// 생김새만으로 알 수 있는 값 — 전화·이메일·홈페이지(추가 326).
+  ///
+  /// ⚠️ **어느 칸인지는 정하지 않는다.** *"이건 전화번호 모양이다"*까지만 본다.
+  /// 파서 판단으로 나누면 파서가 놓친 값이 조각으로도 안 나와서 **원문이
+  /// 안전망 노릇을 못 한다.**
+  static final _valueShapeRegExp = RegExp(
+    r'[\w.+-]+@[\w.-]+\.\w+'
+    r'|(?:https?://|www\.)[\w./\-]+'
+    r'|\d{2,4}[-. ]\d{3,4}[-. ]\d{4}'
+    r'|01\d{9}|0\d{9,10}',
+  );
+
+  /// 원문 줄을 **옮길 수 있는 단위**로 쪼갠다(추가 325·326).
+  ///
+  /// 두 단계다.
+  ///
+  /// 1. **명함에 인쇄된 구분자**(`|` `·` `/`)에서 자른다.
+  /// 2. 그러고도 **값이 둘 이상 든 조각**만 값 경계에서 한 번 더 자른다.
+  ///
+  /// ⚠️ **2단계는 값이 둘 이상일 때만 한다.** 값이 하나뿐인 줄
+  /// (`T 02-6360-6910`)까지 자르면 `T` 같은 라벨이 **쓸모없는 칩**으로 떨어져
+  /// 나온다. 전화 칸에 넣을 때는 포맷터가 숫자만 뽑으므로 라벨이 붙어 있어도
+  /// 상관없다.
+  ///
+  /// 📌 **착수 전에 103장으로 쟀다**(추가 326).
+  /// ```
+  /// 구분자만            평균  9.6  최대  51  30개↑ 3장
+  /// + 값 둘 이상만 쪼갬  평균 13.6  최대 119  30개↑ 3장  ← 이것
+  /// + 값을 전부 쪼갬     평균 15.3  최대 125  30개↑ 4장
+  /// ```
+  /// 최대 119는 과대 검출이 아니다 — **한 장에 연락처가 여럿 인쇄된 명함**이고,
+  /// 그런 장이야말로 쪼개야 옮길 수 있다. 다만 그런 장은 3/103이라 *"칩이
+  /// 많으면 접기"*는 **아직 안 넣었다.**
+  static List<String> _splitScannedLines(List<String> lines) {
+    final out = <String>[];
+    for (final line in lines) {
+      final pieces = line
+          .split(RegExp(r'\s*[|·｜/]\s*'))
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty)
+          .toList();
+      for (final piece in (pieces.isEmpty ? [line] : pieces)) {
+        final values = _valueShapeRegExp.allMatches(piece).toList();
+        // 값 하나라도, **값 아닌 자리에 한글이 있으면** 떼어낸다.
+        // `이현석 M 010-9354-5742`처럼 이름과 전화가 한 덩어리로 읽히는
+        // 명함이 흔하다 — 그대로 두면 이름 칸으로 보낼 때 전화가 딸려 간다.
+        // 영문 라벨(`T` `F` `Mobile.`)은 한글이 아니라 안 걸린다 — 그건
+        // 떼어내면 쓸모없는 칩만 늘어난다(추가 327).
+        final restHasHangul =
+            RegExp(r'[가-힣]').hasMatch(piece.replaceAll(_valueShapeRegExp, ' '));
+        if (values.length < 2 && !(values.length == 1 && restHasHangul)) {
+          out.add(piece);
+          continue;
+        }
+        var last = 0;
+        for (final m in values) {
+          final head = piece.substring(last, m.start).trim();
+          if (head.isNotEmpty) out.add(head);
+          out.add(m.group(0)!);
+          last = m.end;
+        }
+        final tail = piece.substring(last).trim();
+        if (tail.isNotEmpty) out.add(tail);
+      }
+    }
+    return out;
+  }
+
   void _setTextFromStart(TextEditingController controller, String value) {
     controller.value = TextEditingValue(
       text: value,
@@ -2524,6 +2696,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final oldFields = [
         existing.company,
         existing.title,
+        // 2026-08-19(추가 328): 부서 칸을 만들면서 **여기 넣는 걸 빠뜨렸다**.
+        // 이직하면 부서도 바뀌는데 이전 부서가 안 남았다.
+        // ⚠️ 비어 있으면 넣지 않는다 — 옛 명함에는 이 값이 아예 없다(null).
+        if (existing.department != null && existing.department!.isNotEmpty)
+          existing.department,
         existing.phone,
         if (existing.officePhone != null && existing.officePhone!.isNotEmpty)
           existing.officePhone,
@@ -2960,7 +3137,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
-                              '📄 OCR 스캔 RAW 텍스트 확인 / 복원',
+                              // 2026-08-19(추가 325): 사용자가 **칩을 "인식
+                              // 결과"로 읽고, 잘못된 칩은 피해서** 안 눌렀다.
+                              // 실제로는 정반대다 — 칩은 명함 원문이고, 칸이
+                              // 잘못 채워졌을 때 **고치려고 누르는 것**이다.
+                              // 그래서 머리글에 목적을 적는다.
+                              '📄 명함 원문 — 칸이 잘못 채워졌을 때 고치기',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -2992,7 +3174,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              '💡 텍스트 칩을 터치하면 해당 항목으로 1초 세팅돼요:',
+                              '💡 아래는 명함에서 읽은 줄 그대로예요. '
+                              '값이 엉뚱한 칸에 들어갔다면, 그 줄을 눌러 '
+                              '알맞은 칸으로 보내세요.',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
