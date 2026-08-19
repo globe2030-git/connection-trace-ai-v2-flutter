@@ -1206,8 +1206,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   };
 
   void _showQuickFieldMapperSheet(String text) {
+    // ⚠️ **[진단] 2026-08-19** — 실기기에서 칩을 눌러도 시트가 안 뜬다는 제보가
+    // 왔다(추가 325). 원인이 둘 중 하나인데 코드만 봐서는 못 가른다.
+    //
+    //   ① 탭이 이 함수까지 안 온다        → 배너도 안 뜬다
+    //   ② 함수는 불리는데 시트가 안 보인다 → 배너만 뜬다
+    //
+    // 배너(`_inlineNoticeText`)는 폼 안에 직접 그리므로 **어떤 상황에서도 모달
+    // 위에 보인다**(이 파일 머리말 주석). 그래서 가르는 자로 쓴다.
+    // 📌 원인이 밝혀지면 이 줄은 지운다.
+    setState(() {
+      _inlineNoticeText = '[진단] 칩 눌림: $text';
+      _inlineNoticeIsError = false;
+    });
     showModalBottomSheet(
       context: context,
+      // 이 화면에서 **잘 뜨는** 카메라 스캔 시트와 같은 설정으로 맞춘다(:722).
+      // 없으면 높이가 화면의 9/16로 묶여, 칸이 12개로 늘어난 지금은 내용이
+      // 잘릴 수 있다 — release에서는 경고 없이 잘린다.
+      isScrollControlled: true,
       backgroundColor: AppColors.bgBase,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
