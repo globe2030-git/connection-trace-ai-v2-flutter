@@ -1825,4 +1825,63 @@ void main() {
       expect(r.name, isNot('감동훈')); // 알려진 한계 — 회귀 아님, 원래도 못 찾던 모양
     });
   });
+
+  group('P0② — 이름란이 회사 영문명으로 자동 변경 (테스터 B, 2026-08-20)', () {
+    // 재현: "뒷장 촬영 후 이름란이 회사 영문명으로 자동 변경". 뒷면이 영문
+    // 전용이고 이름·직함·회사 셋 다 순수 영문일 때, leftover 순서(카드 위
+    // 인쇄 순서)가 이르다는 이유만으로 회사 영문명("LG CNS")이 이름 자리를
+    // 차지했다. 오늘 이미 검증한 신호(Title Case = 사람 이름)를 재사용해,
+    // **사람 이름 모양(또는 한글)인 후보가 있으면 그것부터** 이름으로 본다.
+    test('회사 영문명이 이름보다 먼저 인쇄돼도 이름 자리를 뺏지 않는다', () {
+      final r = parse(['LG CNS', 'DT Optimization', 'Kim Do Young']);
+      expect(r.name, 'Kim Do Young');
+      expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
+    });
+
+    test('이름이 먼저 인쇄되면 원래도 맞았다 — 회귀 확인', () {
+      final r = parse(['Kim Do Young', 'DT Optimization', 'LG CNS']);
+      expect(r.name, 'Kim Do Young');
+    });
+
+    test('사람 이름 모양 후보가 하나도 없으면 기존대로 맨 앞 줄을 쓴다', () {
+      // 접미사 없는 진짜 회사명은 사람 이름과 형태가 같아 구별이 안 된다
+      // (SK telecom·Sovargen). 이 경우 우선순위를 매길 근거가 없으므로
+      // 손대지 않는다 — 알려진 한계.
+      final r = parse(['SOVARGEN', 'DT OPTIMIZATION']);
+      expect(r.name, 'SOVARGEN');
+    });
+  });
+
+  group('P0③ — 회사명란에 영문 이름이 잘못 입력됨 (테스터 B, 2026-08-20)', () {
+    // 재현: "회사명 입력란에 영문 이름이 잘못 입력됨". 한글 이름은 이미
+    // 확정됐는데(koreanStripped), 회사명에 접미사가 없어 leftover에서
+    // 골라야 할 때 사람 영문 이름("Kim Do Young")이 진짜 회사명("LG CNS")
+    // 보다 먼저 나와 회사 자리를 차지했다.
+    test('영문 이름이 회사 영문명보다 먼저 인쇄돼도 회사 자리를 뺏지 않는다', () {
+      final r = parse([
+        '김도영',
+        'Kim Do Young',
+        'DT Optimization 수석',
+        'LG CNS',
+        'M 010-1234-5678',
+      ]);
+      expect(r.name, '김도영');
+      expect(r.company, 'LG CNS');
+    });
+
+    test('짧은 라벨 잔재(한 단어, Title Case)는 사람 이름으로 보지 않는다 — card_107 회귀 방지', () {
+      // "Fax."처럼 Title Case인 한 단어짜리 라벨 잔재까지 "사람 이름
+      // 모양"으로 보면, 진짜(비록 잡음이지만) leftover 회사 후보가 밀려나고
+      // 더 나쁜 후보가 대신 뽑힌다 — 103장 채점에서 실제로 -1을 냈다. 사람
+      // 이름은 최소 두 단어(성+이름)라는 신호로 좁혀 막는다.
+      final r = parse([
+        '개발협력부장 Tel.',
+        '양공현 Fax.',
+        'Mobile.',
+        'E-mail. gong@rainbowyouth.or.kr',
+        'Migrant-Youth',
+      ]);
+      expect(r.company, isNot('E-mail. . kr'));
+    });
+  });
 }
