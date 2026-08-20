@@ -4,6 +4,42 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+<!--
+  카카오 지도 SDK — **좌표를 얻으려고** 얹는다(추가 348).
+
+  ## 왜 필요한가
+
+  위 우편번호 위젯(postcode.v2.js)은 **좌표를 주지 않는다.** 규격에 없다 —
+  이름 그대로 *우편번호 찾기*이지 지도 API가 아니다. 그래서 지금까지는 앱이
+  OS 지오코더(iOS CLGeocoder / Android Geocoder)로 주소를 다시 좌표로 바꿨고,
+  **그게 실패하면 그 명함은 레이더에서 통째로 빠졌다**
+  (`radar_view_model.dart` — `if (c.geo == null) return false;`).
+
+  2026-08-20 실사용 측정: **좌표 변환 실패 11건 중 8건(73%)이 지번 주소**였다.
+  OS 지오코더가 특히 약한 자리고, 카카오는 지번을 기본으로 다룬다.
+
+  ## ⚠️ JavaScript 키를 쓴다 — REST 키가 아니다
+
+  REST 키를 앱에 넣으면 앱을 뜯어 꺼낼 수 있어 **백엔드 프록시가 필요**하다.
+  JavaScript 키는 **등록된 도메인에서만 동작**하므로 페이지에 그대로 써도 된다
+  (카카오 공식 예제도 그렇게 쓴다). 안전장치는 *숨기는 것*이 아니라
+  **도메인 제한**이다.
+
+  이 웹뷰는 `https://connection-sense.web.app/` origin으로 돈다
+  (`address_search_view.dart`의 `_baseUrl`) — 그 도메인을 카카오 개발자
+  콘솔의 **[플랫폼] → Web**에 등록해야 키가 동작한다.
+
+  📌 백엔드가 필요 없다는 것이 결정적이다. Cloud Functions 배포는 현재
+  `APPLE_IAP_SHARED_SECRET`(App Store Connect 등록 후 발급)이 없어 막혀 있는데,
+  이 방식은 **그것과 무관하게** 나갈 수 있다.
+
+  ## `autoload=false`인 이유
+
+  스크립트 태그가 즉시 로드를 시작하면, 키가 없거나 도메인이 안 맞을 때
+  **페이지 로드 자체가 지연되거나 콘솔 오류로 시끄러워진다.** 필요한 순간
+  (`kakao.maps.load`)에만 켠다.
+-->
+<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_JS_KEY__&libraries=services&autoload=false"></script>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; }
   #layer { width: 100%; height: 100%; }
@@ -39,6 +75,78 @@
   // 사실상 쓸 수 없었다(사용자 제보, 2026-08-12: 안드로이드·아이폰 모두).
   var INITIAL_QUERY = '__INITIAL_QUERY__';
 
+  // 카카오 지도 SDK 준비 상태. 로드가 끝나야 Geocoder를 만들 수 있다.
+  var kakaoGeocoder = null;
+
+  (function initKakao() {
+    // 키를 안 넣고 배포한 경우(자리표시자가 그대로) 아예 시도하지 않는다.
+    if (!window.kakao || !kakao.maps || !kakao.maps.load) return;
+    try {
+      kakao.maps.load(function () {
+        if (kakao.maps.services && kakao.maps.services.Geocoder) {
+          kakaoGeocoder = new kakao.maps.services.Geocoder();
+        }
+      });
+    } catch (e) {
+      // 키가 틀렸거나 도메인이 안 맞으면 여기로 온다. 그냥 좌표 없이 간다.
+      kakaoGeocoder = null;
+    }
+  })();
+
+  // ⚠️ **좌표를 못 받아도 주소는 반드시 넘어가야 한다.**
+  //
+  // 좌표는 "있으면 좋은 것"이지 주소 선택의 조건이 아니다. 키가 없거나·도메인이
+  // 안 맞거나·SDK 로딩이 실패하거나·카카오가 그 주소를 못 찾거나·응답이 늦어도
+  // **지금 잘 되는 주소 검색이 망가지면 안 된다.**
+  //
+  // 그래서 세 겹으로 막는다.
+  //   1. Geocoder가 없으면 바로 주소만 보낸다
+  //   2. 콜백이 안 오면 타임아웃으로 주소만 보낸다
+  //   3. 어느 쪽이 먼저 오든 **한 번만** 보낸다(sent 플래그)
+  var GEOCODE_TIMEOUT_MS = 2500;
+
+  function sendWithGeo(payload) {
+    var sent = false;
+    function post(geo) {
+      if (sent) return;
+      sent = true;
+      if (geo) {
+        payload.lat = geo.lat;
+        payload.lng = geo.lng;
+      }
+      if (window.FlutterAddressChannel) {
+        window.FlutterAddressChannel.postMessage(JSON.stringify(payload));
+      }
+    }
+
+    if (!kakaoGeocoder) { post(null); return; }
+
+    // 좌표를 찾을 때는 **참고항목을 뺀 순수 주소**를 넘긴다. 건물명이 붙으면
+    // 못 찾는 경우가 있다.
+    var query = payload.roadAddress || payload.jibunAddress || '';
+    if (!query) { post(null); return; }
+
+    setTimeout(function () { post(null); }, GEOCODE_TIMEOUT_MS);
+
+    try {
+      kakaoGeocoder.addressSearch(query, function (result, status) {
+        if (status === kakao.maps.services.Status.OK && result && result[0]) {
+          // 카카오는 x=경도, y=위도로 준다. 앱은 lat/lng를 쓰므로 여기서 맞춘다.
+          // ⚠️ 뒤집으면 지구 반대편이 된다 — 실제로 흔한 실수다.
+          var lat = parseFloat(result[0].y);
+          var lng = parseFloat(result[0].x);
+          if (isFinite(lat) && isFinite(lng)) {
+            post({ lat: lat, lng: lng });
+            return;
+          }
+        }
+        post(null);
+      });
+    } catch (e) {
+      post(null);
+    }
+  }
+
   new daum.Postcode({
     oncomplete: function (data) {
       // 사용자가 목록에서 도로명/지번 중 무엇을 골랐는지 그대로 따른다.
@@ -53,9 +161,7 @@
         // 목록에 보인 그대로의 문장 — 앱은 이 값을 주소칸에 넣는다.
         fullAddress: base + buildReferenceText(data)
       };
-      if (window.FlutterAddressChannel) {
-        window.FlutterAddressChannel.postMessage(JSON.stringify(payload));
-      }
+      sendWithGeo(payload);
     },
     onclose: function (state) {
       if (state === 'FORCE_CLOSE' && window.FlutterAddressChannel) {

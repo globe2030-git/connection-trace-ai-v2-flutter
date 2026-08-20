@@ -68,6 +68,22 @@ elif [ -n "${3:-}" ]; then
   echo "세 번째 인자는 appcheck-debug만 쓸 수 있습니다: ${3}" >&2; exit 2
 fi
 
+# 지도·좌표 키는 저장소에 안 넣는다(nearby_map_view.dart·address_search_view.dart
+# 주석 참고). 환경변수에 있으면 자동으로 넘기고, 없으면 조용히 건너뛴다 —
+# 없어도 앱은 돈다(브이월드 없으면 OSM 타일, 카카오 없으면 좌표만 안 옴).
+#
+# ⚠️ 예전에는 이 스크립트가 키를 안 넘겨서 **손으로 --dart-define을 붙여야**
+# 했고, 그러면 잊기 쉽다. 이 스크립트를 쓰는 이유가 원래 그것이다(위 9행).
+for KEY_NAME in VWORLD_KEY KAKAO_JS_KEY; do
+  KEY_VALUE="$(eval "printf '%s' \"\${$KEY_NAME:-}\"")"
+  if [ -n "$KEY_VALUE" ]; then
+    EXTRA_DEFINES="$EXTRA_DEFINES --dart-define=$KEY_NAME=$KEY_VALUE"
+    echo "  $KEY_NAME: 환경변수에서 넘김"
+  else
+    echo "  $KEY_NAME: 없음 (건너뜀)"
+  fi
+done
+
 echo "빌드: $TARGET ($MODE)  커밋: $COMMIT"
 # shellcheck disable=SC2086  # ABI_FLAG·EXTRA_DEFINES는 공백 없는 단일 옵션이라 분리 확장이 맞다
 flutter build "$TARGET" "--$MODE" --dart-define=GIT_COMMIT="$COMMIT" $ABI_FLAG $EXTRA_DEFINES
