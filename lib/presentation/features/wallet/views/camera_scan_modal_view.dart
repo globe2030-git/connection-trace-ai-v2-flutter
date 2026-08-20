@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/camera_capture_mode.dart';
 import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/card_photo_downscale.dart';
 import '../../../../core/utils/card_quad_warp.dart';
@@ -203,6 +204,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isCapturing = false;
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
+
+  /// 자동↔수동 촬영 전환(추가 — 테스터 B 요청).
+  ///
+  /// ⚠️ **기본값은 기존 그대로 자동이다.** "촬영 버튼을 직접 눌러야 찍히게
+  /// 해 달라"는 요청에 맞춰 수동을 **공존 옵션으로 추가**하는 것이지, 자동
+  /// 촬영 설계를 갈아엎는 것이 아니다(사용자 확정). 안정성 감지·테두리
+  /// 검출은 두 모드 모두에서 그대로 계산한다 — 화면 피드백("고정됨")이 그
+  /// 계산에 기댄다. 갈리는 지점은 [shouldTriggerAutoCapture] 딱 하나뿐이다.
+  CameraCaptureMode _captureMode = CameraCaptureMode.auto;
 
   /// 디버그 빌드에서만 화면에 띄우는 "대비 / 지배톤" 실측값.
   ///
@@ -605,7 +615,15 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     if (stableSince != null &&
         now.difference(stableSince) >= _requiredStableDuration) {
       _stableSince = null;
-      _capturePhoto();
+      // ⚠️ **수동 모드에서는 여기서 멈춘다.** 안정성 판정 자체는 계속 돌아
+      // 화면에 "고정됨/준비됐어요" 피드백을 주지만, 실제로 셔터를 누르는
+      // 것은 이 한 줄이 갈라 낸다 — 그 외 판정 로직은 자동/수동이 같다.
+      if (shouldTriggerAutoCapture(
+        mode: _captureMode,
+        stabilityConditionMet: true,
+      )) {
+        _capturePhoto();
+      }
     }
   }
 
@@ -1551,6 +1569,58 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       ),
                     ],
                   ),
+                  // 자동↔수동 촬영 전환(추가 — 테스터 B 요청). 확인 화면에서는
+                  // 이미 찍은 사진을 보고 있으므로 숨긴다 — 그때는 모드를 바꿔도
+                  // 아무 뜻이 없다.
+                  if (_pendingShot == null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _captureMode = _captureMode.toggled;
+                            // 모드를 바꾼 순간의 안정 판정은 버린다 — 안 그러면
+                            // 방금 자동으로 바꾸자마자 "이미 멈춰 있던" 판정이
+                            // 그대로 남아 곧바로 찍힐 수 있다.
+                            _stableSince = null;
+                            _isFrameStable = false;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _captureMode.isManual
+                                    ? Icons.touch_app
+                                    : Icons.auto_awesome,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _captureMode.isManual
+                                    ? '수동 촬영 · 눌러서 자동으로 전환'
+                                    : '자동 촬영 중 · 눌러서 수동으로 전환',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   if (!OcrScannerService.isSupportedOnThisPlatform)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
@@ -1777,9 +1847,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  _isFrameStable
-                                      ? '고정됨 · 자동으로 촬영합니다'
-                                      : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                                  // 수동 모드에서는 "자동으로 촬영합니다"가
+                                  // 거짓 안내가 된다 — 실제로는 버튼을 눌러야
+                                  // 찍힌다([shouldTriggerAutoCapture]).
+                                  _captureMode.isManual
+                                      ? (_isFrameStable
+                                            ? '준비됐어요 · 촬영 버튼을 눌러주세요'
+                                            : '가이드 틀 안에 명함을 맞춰주세요')
+                                      : (_isFrameStable
+                                            ? '고정됨 · 자동으로 촬영합니다'
+                                            : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요'),
                                   style: TextStyle(
                                     color: _isFrameStable
                                         ? AppColors.accent
