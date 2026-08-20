@@ -255,6 +255,33 @@ class GeoBackfillService {
     }
   }
 
+  /// 형태 코드를 **사람이 읽을 말로 푼다**(추가 342).
+  ///
+  /// ⚠️ **만드는 쪽([_addressShape])과 같은 파일에 둔다.** 코드 모양이 바뀌면
+  /// 푸는 쪽도 같이 바뀌어야 하는데, 떨어져 있으면 한쪽만 고치고 만다.
+  ///
+  /// 화면에 `road=1;jibun=0;digit=1;bldg=1;len=M`을 그대로 띄우면 **아무도 못
+  /// 읽는다** — 푸는 것까지가 진단의 일이다.
+  static String describeFailureShape(String shape) {
+    final m = <String, String>{};
+    for (final part in shape.split(';')) {
+      final kv = part.split('=');
+      if (kv.length == 2) m[kv[0]] = kv[1];
+    }
+    if (m.isEmpty) return shape;
+    return <String>[
+      if (m['road'] == '1')
+        '도로명'
+      else if (m['jibun'] == '1')
+        '지번'
+      else
+        '둘 다 아님',
+      if (m['digit'] == '0') '번호 없음',
+      if (m['bldg'] == '1') '건물명 있음',
+      switch (m['len']) { 'S' => '짧음', 'L' => '긺', _ => '보통' },
+    ].join(' · ');
+  }
+
   /// 주소 원문을 저장하지 않기 위한 축약 해시. 충돌해도 "재시도를 한 번 더
   /// 하거나 덜 하는" 정도의 영향뿐이라 12자면 충분하다.
   static String _hashAddress(String address) =>
