@@ -546,6 +546,14 @@ class OcrScannerService {
   static const _companyKeywords = [
     '주식회사',
     '(주)',
+    // ⚠️ **OCR이 여는 괄호를 자주 놓친다**(2026-08-20 실측, 추가 340).
+    // `주)드림시큐리티`가 회사 후보로 인식조차 안 돼, 회사 칸은 다음 줄
+    // (`보안기술연구소`)을 집고 그 줄은 직함으로 갔다 — **한 장에서 오류가
+    // 둘** 났다. 닫는 괄호만 남은 표기를 함께 본다.
+    //
+    // 여는 괄호가 없는 `주)`는 회사 표기 말고 쓰일 일이 사실상 없다.
+    '주)',
+    '재)',
     '㈜',
     'Corp',
     'Corporation',
@@ -1395,7 +1403,21 @@ class OcrScannerService {
   /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
   /// 갑자기 다른 값으로 바뀌지 않는다.**
   static String _tidyCompany(String company) =>
-      _stripCompanyTitleTail(_stripCompanyLogoPrefix(company));
+      _restoreCorpParen(_stripCompanyTitleTail(_stripCompanyLogoPrefix(company)));
+
+  /// OCR이 놓친 **여는 괄호를 되살린다** (`주)어디` → `(주)어디`, 추가 340).
+  ///
+  /// ⚠️ 자리를 바로잡는 것만으로는 부족했다. 실측에서 회사 줄을 제대로 고르고도
+  /// **`(` 하나 때문에 계속 틀렸다고 세어졌다.** 고르기와 표기는 따로 손봐야 한다.
+  ///
+  /// **줄 맨 앞에서만** 고친다 — 문장 가운데 `주)`는 다른 뜻일 수 있다.
+  static String _restoreCorpParen(String company) {
+    final t = company.trim();
+    for (final m in const ['주)', '재)', '유)', '사)']) {
+      if (t.startsWith(m)) return '($t';
+    }
+    return company;
+  }
 
   /// 회사명 앞에 남은 **짝 없는 닫는 괄호**를 뗀다
   /// (`)유에이엠코리아텍(주)` → `유에이엠코리아텍(주)`).
