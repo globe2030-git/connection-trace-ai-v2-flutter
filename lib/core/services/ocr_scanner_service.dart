@@ -1396,29 +1396,6 @@ class OcrScannerService {
     return leftover.removeAt(idx);
   }
 
-  /// 직함 키워드도, 이름에서 갈라낸 나머지도 없을 때 쓰는 **가장 약한**
-  /// 직함 폴백. leftover 맨 앞 줄을 검증 없이 그대로 썼던 것을 좁힌다
-  /// (테스터 제보 2026-08-20, 뒷면에 회사 영문명만 있는 명함).
-  ///
-  /// ## 왜 순수 영문 줄을 거르나
-  ///
-  /// 이 자리는 직함 키워드(`_titleKeywords`)로도, 이름-직함 분리로도 못
-  /// 찾았을 때 오는 **마지막 자리**다. 한국 명함에서 직함은 거의 항상
-  /// 한글이거나(이미 위 두 경로가 잡는다) 영문이어도 `_titleKeywords`에 있는
-  /// 단어(Manager·Director 등)를 포함한다 — 그것도 이미 titleLine으로
-  /// 잡힌다. 그래서 **이 폴백까지 내려온 순수 영문 줄**은 대부분 회사
-  /// 영문명·부서 잔여 텍스트다. 실측: 뒷면에 회사 영문명만 있는 명함에서
-  /// `LG CNS`, `PRIME LOGISTICS` 같은 회사명 조각이 직함 칸에 그대로
-  /// 들어갔다.
-  ///
-  /// ⚠️ **한글이 하나라도 있으면 그대로 쓴다** — 기존 동작을 바꾸지 않는다.
-  /// 이 필터는 "순수 영문" 한 갈래만 좁힌다.
-  static String _pickWeakTitleFallback(List<String> leftover) {
-    if (leftover.isEmpty) return '';
-    if (!_hasHangul(leftover.first)) return '';
-    return leftover.removeAt(0);
-  }
-
   /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
   ///
   /// 103장 전수 측정(추가 280)에서 회사 오류의 한 덩어리가 *"회사명은 맞게
@@ -2649,7 +2626,7 @@ class OcrScannerService {
     // 값 자체는 위에서 홈페이지 칸으로 이미 담았고, 여기서는 직함 줄에 남은
     // 찌꺼기를 지우는 일만 한다.
     var title = _stripContacts(
-      titleLine ?? _pickWeakTitleFallback(leftover),
+      titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : ''),
     ).replaceAll(RegExp(r'\s+'), ' ').trim();
 
     // ── 빈자리 재검증 (2) — 직함 칸에 섞여 들어간 이름 ─────────────────────
@@ -2819,7 +2796,7 @@ class OcrScannerService {
       fax: fax ?? '',
       email: email ?? '',
       website: website ?? '',
-      addressDetail: _stripBrandNoiseFromAddressDetail(addressDetail ?? ''),
+      addressDetail: addressDetail ?? '',
       postalCode: postalCode ?? '',
       address: address ?? '',
       tags: const [],
@@ -2827,51 +2804,6 @@ class OcrScannerService {
       imagePath: imagePath,
       parseShape: shape,
     );
-  }
-
-  /// 상세주소 줄에 명함과 무관한 **영문 로고·브랜드 잔재**가 섞여 들어오는
-  /// 것을 막는다(테스터 제보, 2026-08-20).
-  ///
-  /// 원인: 상세주소를 채우는 두 경로(층/호 패턴이 걸린 줄을 통째로 쓰는
-  /// 직접 매칭, 그리고 "주소 다음 줄에 숫자가 있으면 줄 전체" 폴백)가 모두
-  /// **줄 전체**를 그대로 담는다. 명함이 2단 레이아웃이면 `_extractOrderedLines`가
-  /// 같은 높이의 서로 다른 열을 한 줄로 합치는 일이 흔해서, 층수 옆에 로고체
-  /// 브랜드명이 붙어 함께 읽히는 경우가 있다(`5층 ARCTERYX`).
-  ///
-  /// ⚠️ **한글 꼬리는 건드리지 않는다.** "3층 인사팀"처럼 부서명이 실제로
-  /// 상세주소 줄에 함께 인쇄되는 경우가 흔해서 회귀 테스트로 이미 고정돼
-  /// 있다. 그래서 **순수 로마자 대문자로만 된 토큰**(숫자·한글이 하나도
-  /// 안 섞인, 로고체 표기의 전형적인 모양)만 앞뒤 끝에서 뗀다. 중간 토큰이나
-  /// 숫자·기호가 섞인 토큰(`B1F`처럼 실제 상세주소 표기일 수 있는 것)은
-  /// 손대지 않는다 — 확신 없이 떼면 진짜 상세주소를 깎을 수 있다.
-  static String _stripBrandNoiseFromAddressDetail(String detail) {
-    final trimmed = detail.trim();
-    if (trimmed.isEmpty) return trimmed;
-    final tokens = trimmed.split(RegExp(r'\s+'));
-    if (tokens.length < 2) return trimmed;
-
-    bool isBrandNoiseToken(String t) {
-      // 숫자·한글·기호가 하나라도 섞이면 주소 표기(동/호수/층수 등)일 수
-      // 있으므로 순수 로마자 토큰만 본다.
-      if (!RegExp(r'^[A-Za-z]+$').hasMatch(t)) return false;
-      if (t.length < 3) return false;
-      return t == t.toUpperCase();
-    }
-
-    var start = 0;
-    var end = tokens.length;
-    while (start < end && isBrandNoiseToken(tokens[start])) {
-      start++;
-    }
-    while (end > start && isBrandNoiseToken(tokens[end - 1])) {
-      end--;
-    }
-    // 토큰이 전부 로고 잡음으로 판정되면(=상세주소 전체가 영문 대문자뿐이면)
-    // 뗄 근거가 약하다 — 그대로 둔다. 판정은 "명백한 잔재를 거른다"는 것이지
-    // "영문 상세주소는 없다"는 것이 아니다.
-    if (start >= end) return trimmed;
-    if (start == 0 && end == tokens.length) return trimmed;
-    return tokens.sublist(start, end).join(' ');
   }
 
   /// 숫자와 헷갈리기 쉬운 알파벳(0↔O)을 전화번호 패턴 매칭 전에 바로잡는다.
