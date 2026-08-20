@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/geo_utils.dart';
 
 /// 도로명(또는 지번) 주소와, 다음 우편번호 서비스가 함께 주는 건물명(있는
 /// 경우)을 같이 담는다 — 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소
@@ -31,6 +32,19 @@ class AddressSearchResult {
   final String? roadAddress;
   final String? jibunAddress;
 
+  /// 카카오 지도 SDK가 **주소를 고르는 그 자리에서** 준 좌표(추가 348).
+  ///
+  /// ⚠️ **못 받으면 null이고, 그것이 정상 경로다.** 키가 없거나·도메인이 안
+  /// 맞거나·SDK 로딩이 실패하거나·카카오가 그 주소를 못 찾거나·응답이 늦으면
+  /// null이 온다. 이때는 **예전처럼 OS 지오코더로 떨어진다** — 좌표를 못 받은
+  /// 것이 주소 선택 자체를 막아서는 안 된다.
+  ///
+  /// 📌 [geocodeFallback]과 **층이 다르다.** 이 값은 주소를 고르는 순간
+  /// 카카오에서 오는 것이고, `geocodeFallback`은 **OS 지오코더가 실패했을 때
+  /// 다시 시도할 주소 문자열**이다. 이 값이 있으면 OS 지오코더를 아예 안
+  /// 부르므로 재시도 흐름도 안 탄다.
+  final GeoPosition? geo;
+
   /// 좌표 조회에 재시도로 쓸 **표시하지 않은 쪽** 주소. 사용자가 도로명을
   /// 골랐으면 지번을, 지번을 골랐으면 도로명을 돌려준다. 어느 쪽을 골랐는지에
   /// 상관없이 한 번 더 시도할 수 있어야 해서 방향을 고정하지 않았다.
@@ -49,7 +63,28 @@ class AddressSearchResult {
     this.roadAddress,
     this.jibunAddress,
     this.postalCode,
+    this.geo,
   });
+}
+
+/// 웹뷰가 보낸 위도·경도를 [GeoPosition]으로 바꾼다(추가 348).
+///
+/// ⚠️ **조금이라도 이상하면 null을 돌려준다.** 좌표는 "있으면 좋은 것"이라
+/// 억지로 만들 이유가 없고, **엉뚱한 좌표는 없는 것보다 나쁘다** — 그 명함이
+/// 레이더의 엉뚱한 자리에 뜬다.
+///
+/// 대한민국 범위를 벗어난 값도 버린다. 위도·경도가 뒤바뀌어 오면 대개 여기
+/// 걸린다(우리 위도 33~39는 경도 자리에 오면 범위 밖이다).
+@visibleForTesting
+GeoPosition? parseGeoFromWebView(Object? rawLat, Object? rawLng) {
+  final lat = rawLat is num ? rawLat.toDouble() : null;
+  final lng = rawLng is num ? rawLng.toDouble() : null;
+  if (lat == null || lng == null) return null;
+  if (!lat.isFinite || !lng.isFinite) return null;
+  // 대한민국 대략 범위 — 제주 남단부터 최북단까지, 서해부터 독도까지.
+  if (lat < 32 || lat > 39.5) return null;
+  if (lng < 124 || lng > 132) return null;
+  return GeoPosition(lat: lat, lng: lng);
 }
 
 /// 웹뷰가 스스로 열 수 있는 주소인지 판별한다.
@@ -121,6 +156,12 @@ class _AddressSearchViewState extends State<AddressSearchView> {
             final jibunAddress = data['jibunAddress'] as String?;
             final buildingName = data['buildingName'] as String?;
             final zonecode = data['zonecode'] as String?;
+            // 카카오가 준 좌표(추가 348). **못 받으면 null이고 그게 정상이다.**
+            //
+            // ⚠️ 카카오는 `x=경도 · y=위도`로 주는데, 웹뷰 쪽에서 이미 lat/lng로
+            // 맞춰 보낸다. **여기서 또 뒤집으면 지구 반대편이 된다** — 뒤집혀도
+            // 화면에는 "좌표 있음"으로 보여서 지도를 열기 전에는 티가 안 난다.
+            final geo = parseGeoFromWebView(data['lat'], data['lng']);
             // 목록에 보인 문장을 그대로 쓴다. 예전 저장분과의 호환을 위해
             // fullAddress가 없으면 기존 방식으로 물러선다.
             final address =
@@ -153,6 +194,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
                 postalCode: (zonecode != null && zonecode.trim().isNotEmpty)
                     ? zonecode.trim()
                     : null,
+                geo: geo,
               ),
             );
           } catch (e) {
@@ -206,7 +248,10 @@ class _AddressSearchViewState extends State<AddressSearchView> {
     try {
       final html = await rootBundle.loadString('assets/web/address_search.html');
       await _controller.loadHtmlString(
-        injectInitialQuery(html, widget.initialQuery),
+        injectKakaoJsKey(
+          injectInitialQuery(html, widget.initialQuery),
+          kKakaoJsKey,
+        ),
         baseUrl: _baseUrl,
       );
     } catch (e) {
@@ -317,3 +362,39 @@ String injectInitialQuery(String html, String? query) {
 
 /// HTML 안에서 초기 검색어가 들어갈 자리.
 const String kInitialQueryToken = '__INITIAL_QUERY__';
+
+/// HTML 안에서 카카오 JavaScript 키가 들어갈 자리(추가 348).
+const String kKakaoJsKeyToken = '__KAKAO_JS_KEY__';
+
+/// 카카오 지도 SDK용 **JavaScript 키**. `--dart-define=KAKAO_JS_KEY=...`로 넣는다.
+///
+/// ## ⚠️ REST 키가 아니다
+///
+/// REST 키를 앱에 넣으면 앱을 뜯어 꺼낼 수 있어 **백엔드 프록시가 필요**하다.
+/// JavaScript 키는 **등록된 도메인에서만 동작**하므로 페이지에 그대로 써도 된다
+/// (카카오 공식 예제도 그렇게 쓴다). 안전장치는 *숨기는 것*이 아니라
+/// **도메인 제한**이다 — 카카오 개발자 콘솔의 [플랫폼] → Web에
+/// `https://connection-sense.web.app`을 등록해야 켜진다.
+///
+/// 📌 그래도 **저장소에는 안 넣는다.** 브이월드 키와 같은 방식이다
+/// (`nearby_map_view.dart`의 `VWORLD_KEY`) — 키를 바꿔야 할 때 커밋 이력을
+/// 뒤지지 않아도 되고, 실수로 다른 종류의 키를 같은 자리에 넣는 것도 막는다.
+///
+/// **키가 없으면 좌표만 안 온다.** 주소 검색은 예전 그대로 동작한다.
+const String kKakaoJsKey = String.fromEnvironment('KAKAO_JS_KEY');
+
+/// HTML의 카카오 키 자리를 실제 키로 바꾼다.
+///
+/// ⚠️ 키가 비어 있으면 **SDK 스크립트 태그를 통째로 들어낸다.** 자리표시자를
+/// 그대로 두면 카카오 서버가 잘못된 키로 401을 돌려주고, 웹뷰 콘솔이 오류로
+/// 시끄러워진다. 어차피 못 쓸 스크립트면 아예 안 부르는 것이 낫다.
+@visibleForTesting
+String injectKakaoJsKey(String html, String key) {
+  if (key.trim().isEmpty) {
+    return html.replaceFirst(
+      RegExp(r'<script src="https://dapi\.kakao\.com[^>]*></script>\s*'),
+      '',
+    );
+  }
+  return html.replaceFirst(kKakaoJsKeyToken, Uri.encodeComponent(key.trim()));
+}
