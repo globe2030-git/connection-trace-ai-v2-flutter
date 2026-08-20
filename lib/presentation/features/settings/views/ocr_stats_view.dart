@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/services/ocr_stats_service.dart';
+import '../../../../core/services/geo_backfill_service.dart';
 import '../../../../core/theme/app_colors.dart';
 
 /// 명함 인식(OCR 파싱) 품질 진단 화면.
@@ -21,6 +22,8 @@ class OcrStatsView extends StatefulWidget {
 class _OcrStatsViewState extends State<OcrStatsView> {
   final OcrStatsService _service = OcrStatsService();
   OcrStatsSummary? _summary;
+  /// 주소 → 좌표 변환 실패 형태 집계(추가 342). `{형태코드: 건수}`.
+  Map<String, int> _geoFail = const {};
   bool _loading = true;
 
   static const _fieldLabels = {
@@ -59,9 +62,11 @@ class _OcrStatsViewState extends State<OcrStatsView> {
 
   Future<void> _load() async {
     final summary = await _service.readSummary();
+    final geoFail = await GeoBackfillService.readFailureShapeStats();
     if (!mounted) return;
     setState(() {
       _summary = summary;
+      _geoFail = geoFail;
       _loading = false;
     });
   }
@@ -117,7 +122,9 @@ class _OcrStatsViewState extends State<OcrStatsView> {
 
   Widget _buildBody() {
     final s = _summary!;
-    if (s.isEmpty) {
+    // ⚠️ 스캔 기록이 없어도 **좌표 실패는 따로 쌓인다**(주소는 손으로도 넣는다).
+    // 둘 다 비었을 때만 빈 화면을 보여준다.
+    if (s.isEmpty && _geoFail.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
@@ -135,6 +142,7 @@ class _OcrStatsViewState extends State<OcrStatsView> {
       children: [
         _privacyNote(),
         const SizedBox(height: 16),
+        ..._geoFailureSection(),
         _card('전체', [
           _statRow('스캔 파싱 횟수', '${s.scans}회'),
           _statRow(
@@ -224,6 +232,46 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   String _pct(int n, int total) {
     if (total <= 0) return '0%';
     return '${(n * 100 / total).round()}%';
+  }
+
+  /// 주소 → 좌표 변환 실패를 **형태별로** 보여준다(추가 342).
+  ///
+  /// ## 왜 화면이 필요했나
+  ///
+  /// 집계는 `GeoBackfillService`가 예전부터 쌓고 있었는데 **보여 주는 곳이
+  /// 없었다.** 읽는 함수 주석에 *"진단 화면용"*이라고 적혀 있었지만 그 화면이
+  /// 없었다.
+  ///
+  /// ⚠️ **`adb`로는 못 꺼낸다** — 2026-08-20 실측:
+  ///
+  /// ```
+  /// adb run-as    release 빌드는 debuggable이 아니라 거부된다
+  /// adb backup    안드로이드 12 이후 앱 데이터를 안 내준다(헤더 47바이트만 왔다)
+  /// ```
+  ///
+  /// debug 빌드를 얹으면 재설치가 되어 **재려던 데이터가 날아간다.** 그래서
+  /// 화면이 유일한 길이다.
+  ///
+  /// ## 무엇에 쓰나
+  ///
+  /// 이 숫자가 판단 셋을 붙잡고 있다 — 주소 검색 API를 바꿀지, 좌표를 서버에
+  /// 둘지, backfill이 배터리를 얼마나 먹는지.
+  ///
+  /// ⚠️ **개인정보는 안 담긴다.** 동 이름·번지·건물명은 애초에 저장하지 않고
+  /// *"도로명인가/지번인가/숫자가 있나/건물명이 있나/길이"*만 남는다.
+  List<Widget> _geoFailureSection() {
+    if (_geoFail.isEmpty) return const [];
+    final total = _geoFail.values.fold<int>(0, (a, b) => a + b);
+    final sorted = _geoFail.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return [
+      _card('주소 → 좌표 변환 실패', [
+        _statRow('합계', '$total건'),
+        for (final e in sorted)
+          _statRow(GeoBackfillService.describeFailureShape(e.key), '${e.value}건'),
+      ]),
+      const SizedBox(height: 16),
+    ];
   }
 
   Widget _privacyNote() {
