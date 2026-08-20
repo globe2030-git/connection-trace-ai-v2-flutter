@@ -32,7 +32,16 @@ library;
 import 'dart:io';
 
 /// 이 앱이 만드는 임시 파일 이름의 앞부분.
-const List<String> kScanTempPrefixes = ['card_scan_', 'card_rot_'];
+///
+/// `card_silent_`는 무음 촬영(추가 — 테스터 B 요청, 프레임 캡처 경로)이 만드는
+/// **원본** 파일이다 — 정상 흐름에서는 크롭이 끝나면 바로 지워지지만, 화면을
+/// 중간에 닫는 등으로 남을 수 있어 다른 원본·크롭·회전 파일과 같은 규칙으로
+/// 쓸어 담는다.
+const List<String> kScanTempPrefixes = [
+  'card_scan_',
+  'card_rot_',
+  'card_silent_',
+];
 
 /// 쓸어 담을 때의 나이 기준. 이보다 오래된 것만 지운다.
 ///

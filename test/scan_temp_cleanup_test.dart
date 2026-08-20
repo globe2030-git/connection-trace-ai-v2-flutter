@@ -14,6 +14,9 @@ void main() {
     test('우리 파일은 맞다', () {
       expect(isScanTempName('card_scan_1786805378064.jpg'), isTrue);
       expect(isScanTempName('card_rot_1786805541190.jpg'), isTrue);
+      // 무음 촬영(프레임 캡처) 원본 — 정상 흐름에서는 크롭 뒤 바로 지워지지만,
+      // 화면을 중간에 닫으면 남을 수 있어 같은 규칙으로 걸려야 한다.
+      expect(isScanTempName('card_silent_1786805600000.jpg'), isTrue);
     });
 
     test('남의 파일은 건드리지 않는다', () {
