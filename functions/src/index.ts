@@ -1868,11 +1868,13 @@ export const socialSignIn = onCall(
     let provider: "kakao" | "naver";
     let code: string;
     let redirectUri: string;
+    let state: string;
     try {
       const v = validateRequest(request.data);
       provider = v.provider;
       code = v.code;
       redirectUri = v.redirectUri;
+      state = v.state;
     } catch (e) {
       throw new HttpsError("invalid-argument", (e as Error).message);
     }
@@ -1896,6 +1898,7 @@ export const socialSignIn = onCall(
             ? kakaoClientSecret.value()
             : naverClientSecret.value(),
         redirectUri,
+        state,
       });
       const res = await fetch(tokenEndpoint(provider), {
         method: "POST",

@@ -187,17 +187,24 @@ export function validateRequest(raw: unknown): {
   provider: SocialProvider;
   code: string;
   redirectUri: string;
+  state: string;
 } {
   const o = (raw ?? {}) as Record<string, unknown>;
   const provider = str(o.provider);
   const code = str(o.code);
   const redirectUri = str(o.redirectUri);
+  const state = str(o.state);
   if (provider !== "kakao" && provider !== "naver") {
     throw new Error("provider는 kakao 또는 naver여야 한다");
   }
   if (!code) throw new Error("code가 없다");
   if (!redirectUri) throw new Error("redirectUri가 없다");
-  return {provider, code, redirectUri};
+  // ⚠️ 네이버는 **토큰 요청에도** state를 요구한다(공식 규격의 요청 변수표).
+  // 카카오는 인증 단계에서만 쓴다.
+  if (provider === "naver" && !state) {
+    throw new Error("네이버는 state가 필요하다");
+  }
+  return {provider, code, redirectUri, state: state ?? ""};
 }
 
 /** 인가 코드를 액세스 토큰으로 바꾸는 요청의 주소. */
@@ -232,8 +239,9 @@ export function tokenExchangeBody(params: {
   clientId: string;
   clientSecret: string | null;
   redirectUri: string;
+  state?: string | null;
 }): string {
-  const {provider, code, clientId, clientSecret, redirectUri} = params;
+  const {provider, code, clientId, clientSecret, redirectUri, state} = params;
   if (!clientId?.trim()) throw new Error("clientId가 없다");
   if (!clientSecret?.trim()) {
     // 카카오·네이버 모두 필수다. 없이 보내면 "로그인이 안 됨" 하나로 뭉쳐
@@ -247,6 +255,12 @@ export function tokenExchangeBody(params: {
     redirect_uri: redirectUri,
   });
   if (clientSecret?.trim()) body.set("client_secret", clientSecret.trim());
+  // ⚠️ 네이버만 토큰 요청에 state를 요구한다. 카카오에 넣어도 무시되지만,
+  // 규격에 없는 값을 보내지 않는 편이 나중에 규격이 조여질 때 안전하다.
+  if (provider === "naver") {
+    if (!state?.trim()) throw new Error("네이버 토큰 요청에는 state가 필요하다");
+    body.set("state", state.trim());
+  }
   return body.toString();
 }
 

@@ -196,6 +196,7 @@ test("요청 검증: provider·code·redirectUri가 있어야 한다", () => {
     provider: "kakao",
     code: "c",
     redirectUri: "https://x/y",
+    state: "",
   });
   assert.throws(() => validateRequest({...ok, provider: "google"}));
   assert.throws(() => validateRequest({...ok, code: "  "}));
@@ -268,6 +269,7 @@ test("교환 본문: redirect_uri가 URL 인코딩돼 들어간다", () => {
     clientId: "id",
     clientSecret: "s",
     redirectUri: "https://connection-sense.web.app/oauth/naver",
+    state: "st",
   });
   assert.ok(body.includes("redirect_uri=https%3A%2F%2Fconnection-sense"));
   assert.ok(body.includes("client_secret=s"));
@@ -289,4 +291,59 @@ test("⚠️ 네이버는 실패해도 HTTP 200이다 — 본문의 error를 봐
   assert.throws(() => parseTokenResponse({error_code: "024"}));
   assert.throws(() => parseTokenResponse({}));
   assert.throws(() => parseTokenResponse(null));
+});
+
+test("⭐ 네이버는 토큰 요청에도 state가 필요하다 — 공식 규격의 요청 변수표", () => {
+  // 카카오는 인증 단계에서만 state를 쓰지만, 네이버는 토큰 요청 변수표에도
+  // state가 필수로 적혀 있다. 빠지면 교환이 실패하는데 증상은 "로그인 안 됨"
+  // 하나로 뭉쳐 나온다.
+  const body = tokenExchangeBody({
+    provider: "naver",
+    code: "c",
+    clientId: "id",
+    clientSecret: "s",
+    redirectUri: "https://x/y",
+    state: "st1",
+  });
+  assert.ok(body.includes("state=st1"));
+});
+
+test("네이버 토큰 요청에 state가 없으면 거부한다", () => {
+  assert.throws(() =>
+    tokenExchangeBody({
+      provider: "naver",
+      code: "c",
+      clientId: "id",
+      clientSecret: "s",
+      redirectUri: "https://x/y",
+      state: null,
+    })
+  );
+});
+
+test("⚠️ 카카오에는 state를 넣지 않는다 — 규격에 없는 값", () => {
+  const body = tokenExchangeBody({
+    provider: "kakao",
+    code: "c",
+    clientId: "id",
+    clientSecret: "s",
+    redirectUri: "https://x/y",
+    state: "st1",
+  });
+  assert.equal(body.includes("state="), false);
+});
+
+test("요청 검증: 네이버는 state 없이 들어오면 거부한다", () => {
+  assert.throws(() =>
+    validateRequest({provider: "naver", code: "c", redirectUri: "https://x/y"})
+  );
+  assert.deepEqual(
+    validateRequest({
+      provider: "naver",
+      code: "c",
+      redirectUri: "https://x/y",
+      state: "s1",
+    }),
+    {provider: "naver", code: "c", redirectUri: "https://x/y", state: "s1"}
+  );
 });
