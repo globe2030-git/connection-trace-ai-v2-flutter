@@ -56,6 +56,17 @@ import {
 } from "./purchases";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
+import {
+  firebaseUserFields,
+  parseKakaoUser,
+  parseNaverUser,
+  tokenClaims,
+  tokenEndpoint,
+  tokenExchangeBody,
+  parseTokenResponse,
+  validateRequest,
+  type SocialProfile,
+} from "./socialAuth";
 
 initializeApp();
 
@@ -89,6 +100,18 @@ const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
 // - GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: Google Play Developer API 호출용
 //   서비스 계정 JSON 원문.
 const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
+
+// 카카오·네이버 로그인용. 인가 코드를 액세스 토큰으로 바꿀 때 쓴다.
+//
+// ⚠️ **앱에 넣을 수 없는 값이라 서버가 들고 있다.** 특히 네이버
+// client_secret은 필수이고, 앱을 뜯으면 나오는 자리에 두면 남의 계정으로
+// 토큰을 받아갈 수 있다.
+//
+// 📌 카카오는 콘솔에서 client_secret을 **끈 상태(기본값)** 를 전제로 한다.
+// 켜면 교환 요청에 함께 보내야 하므로 여기에 하나 더 만들어야 한다.
+const kakaoRestKey = defineSecret("KAKAO_REST_KEY");
+const naverClientId = defineSecret("NAVER_CLIENT_ID");
+const naverClientSecret = defineSecret("NAVER_CLIENT_SECRET");
 const googlePlayServiceAccountJson = defineSecret(
   "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
 );
@@ -1806,4 +1829,153 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
       "결제 기능은 아직 준비 중이에요."
     );
   }
+);
+
+/**
+ * 카카오·네이버 로그인 — 액세스 토큰을 Firebase 커스텀 토큰으로 바꿔 준다.
+ *
+ * ## 왜 이 함수가 있어야 하나
+ *
+ * Firebase Auth는 Google·Apple만 기본 제공자로 안다. 카카오·네이버를 붙이는
+ * 길은 **커스텀 토큰**과 **OIDC(Identity Platform)** 둘인데, 후자는 SAML/OIDC가
+ * 무료 50 MAU 이후 $0.015/MAU라 이용자 1만 명이면 월 20만원이 나간다. 그래서
+ * 커스텀 토큰을 골랐다(사용자 결정 2026-08-20, backlog 추가 362).
+ *
+ * ## ⚠️ 앱의 주장을 믿지 않는다
+ *
+ * 앱이 넘기는 것은 **액세스 토큰뿐**이다. "나 카카오 12345번이야"라는 회원번호를
+ * 앱에서 받아 그대로 쓰면 아무나 남의 계정이 된다. 그래서 **서버가 카카오·
+ * 네이버에 직접 물어서** 회원번호를 받아 온다.
+ *
+ * ## 인증이 필요 없는 함수다
+ *
+ * 로그인하기 위한 함수라 `request.auth`가 없는 것이 정상이다. 대신 위처럼
+ * 외부 제공자에게 물어 신원을 확인한다.
+ */
+export const socialSignIn = onCall(
+  {
+    secrets: [kakaoRestKey, naverClientId, naverClientSecret],
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+  },
+  async (request): Promise<{token: string; provider: string}> => {
+    let provider: "kakao" | "naver";
+    let code: string;
+    let redirectUri: string;
+    try {
+      const v = validateRequest(request.data);
+      provider = v.provider;
+      code = v.code;
+      redirectUri = v.redirectUri;
+    } catch (e) {
+      throw new HttpsError("invalid-argument", (e as Error).message);
+    }
+
+    // ── 1단계: 인가 코드를 액세스 토큰으로 바꾼다 ──
+    //
+    // ⚠️ 여기서 client_secret이 쓰인다. 앱에 넣을 수 없는 값이라 이 교환을
+    // 서버가 맡는 것이다. 카카오는 콘솔에서 client_secret을 끈 상태를 전제로
+    // 하고(기본값), 네이버는 필수라 반드시 넣는다.
+    let accessToken: string;
+    try {
+      const body = tokenExchangeBody({
+        provider,
+        code,
+        clientId:
+          provider === "kakao"
+            ? kakaoRestKey.value()
+            : naverClientId.value(),
+        clientSecret:
+          provider === "kakao" ? null : naverClientSecret.value(),
+        redirectUri,
+      });
+      const res = await fetch(tokenEndpoint(provider), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+        body,
+      });
+      // ⚠️ 네이버는 실패해도 200으로 답하므로 본문을 봐야 한다.
+      accessToken = parseTokenResponse(await res.json());
+    } catch (e) {
+      // ⚠️ 본문·토큰을 로그에 남기지 않는다.
+      logger.warn("소셜 토큰 교환 실패", {
+        provider,
+        reason: (e as Error).message,
+      });
+      throw new HttpsError(
+        "unauthenticated",
+        "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+      );
+    }
+
+    // ── 2단계: 제공자에게 직접 물어 신원을 확인한다 ──
+    const url =
+      provider === "kakao"
+        ? "https://kapi.kakao.com/v2/user/me"
+        : "https://openapi.naver.com/v1/nid/me";
+
+    let raw: unknown;
+    try {
+      const res = await fetch(url, {
+        headers: {Authorization: `Bearer ${accessToken}`},
+      });
+      if (!res.ok) {
+        // ⚠️ 본문을 로그에 남기지 않는다 — 개인정보가 들어 있다.
+        logger.warn("소셜 사용자 조회 실패", {provider, status: res.status});
+        throw new HttpsError(
+          "unauthenticated",
+          "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+        );
+      }
+      raw = await res.json();
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      logger.warn("소셜 사용자 조회 중 오류", {provider});
+      throw new HttpsError(
+        "unavailable",
+        "로그인 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      );
+    }
+
+    let profile: SocialProfile;
+    try {
+      profile =
+        provider === "kakao" ? parseKakaoUser(raw) : parseNaverUser(raw);
+    } catch (e) {
+      // 파싱 실패 사유에는 개인정보가 없다(회원번호 유무·resultcode뿐).
+      logger.warn("소셜 응답 파싱 실패", {
+        provider,
+        reason: (e as Error).message,
+      });
+      throw new HttpsError(
+        "unauthenticated",
+        "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+      );
+    }
+
+    // Firebase 사용자 레코드를 맞춰 둔다. 없으면 만들고, 있으면 표시 정보만
+    // 갱신한다. ⚠️ 실패해도 로그인은 막지 않는다 — 레코드는 표시용이고,
+    // 커스텀 토큰만 있으면 인증은 성립한다.
+    const fields = firebaseUserFields(profile);
+    try {
+      await getAuth().updateUser(profile.uid, fields);
+    } catch {
+      try {
+        await getAuth().createUser({uid: profile.uid, ...fields});
+      } catch (e) {
+        logger.warn("소셜 사용자 레코드 준비 실패(로그인은 계속)", {
+          provider,
+          reason: (e as Error).message,
+        });
+      }
+    }
+
+    const token = await getAuth().createCustomToken(
+      profile.uid,
+      tokenClaims(profile),
+    );
+    return {token, provider: profile.provider};
+  },
 );
