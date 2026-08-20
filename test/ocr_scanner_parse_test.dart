@@ -1686,4 +1686,73 @@ void main() {
           '유에이엠코리아텍(주)');
     });
   });
+
+  // 테스터 B(아이폰13, 1.0.0(8)) 제보 — 명함에서 읽은 값이 엉뚱한 칸에
+  // 들어간다는 계열의 결함. 실제 명함 원문이 없어 같은 구조(회사 영문명만
+  // 있는 뒷면, 키워드에 없는 정상 영문 직함)를 재현한다(2026-08-20).
+  //
+  // ⚠️ 처음 버전("순수 영문이면 무조건 버린다")은 회사 영문명은 잘 걸렀지만
+  // 키워드 목록에 없는 정상 영문 직함까지 같이 막아 정답지 기준 직함
+  // 미검출이 6→12건으로 늘었다(배포 전 발견, 병합 안 됨). 그래서 판정
+  // 기준을 "전부 대문자인가"로 좁혔다 — 아래 그룹이 그 경계를 고정한다.
+  group('직함 칸의 근거 없는 영문 폴백 (테스터 제보, 2026-08-20)', () {
+    test('회사 영문명만 있는 뒷면 — 전부 대문자 로고체는 직함을 비운다', () {
+      // 뒷면에 회사 영문명("PRIME LOGISTICS")과 부서 잔여 텍스트만 있고
+      // 직함 키워드가 하나도 없는 경우 — 예전엔 leftover 맨 앞을 검증 없이
+      // 직함으로 썼다.
+      final r = parse([
+        'PRIME LOGISTICS',
+        'DISTRIBUTION CENTER',
+        '02-555-1234',
+      ]);
+      expect(r.title, isNot(contains('DISTRIBUTION')));
+      expect(r.title, isEmpty);
+    });
+
+    test('LG CNS 사례 재현 — 전부 대문자 회사 영문명이 직함 칸에 들어가지 않는다', () {
+      // 실제 접미사가 없는 회사명("LG CNS")은 회사 키워드 목록에 안 걸려
+      // 부서 잔여 텍스트가 대신 회사 칸을 차지하는 것과 별개로, 예전엔
+      // "LG CNS" 자체가 직함 칸의 leftover 맨 앞으로 밀려 들어갔다.
+      final r = parse([
+        '김도영',
+        'DT OPTIMIZATION',
+        'LG CNS',
+        'M 010-1234-5678',
+      ]);
+      expect(r.name, '김도영');
+      expect(r.title, isNot('LG CNS'));
+    });
+
+    test('키워드가 있는 순수 영문 줄은 그대로 직함이 된다 — 회귀 확인', () {
+      // 이 필터는 "직함 키워드도, 이름-직함 분리도 실패한 마지막 폴백"에서만
+      // 순수 영문·전부 대문자를 거른다. 키워드가 걸린 titleLine은 영향받지
+      // 않는다.
+      final r = parse(['NELSON SPORTS, INC.', 'John Smith', 'Sales Manager']);
+      expect(r.title, 'Sales Manager');
+    });
+
+    test('한글이 섞인 약한 폴백은 그대로 쓴다 — 회귀 확인', () {
+      final r = parse(['디지털 커뮤니케이션 파트 / 책임', '(주)한빛정보기술']);
+      // '책임'이 직함 키워드라 titleLine으로 바로 잡힌다 — 폴백 경로가 아니다.
+      expect(r.title, contains('디지털'));
+    });
+
+    test('키워드 목록에 없는 정상 영문 직함(Title Case)은 막지 않는다', () {
+      // "전부 대문자면 버린다"로 좁힌 핵심 이유 — 이 세 직함은 키워드
+      // 목록(Manager·Director 등)에 없어서 titleLine으로 못 잡히고 이
+      // 폴백까지 내려오는데, 회사 로고와 달리 Title Case로 인쇄된다.
+      expect(
+        parse(['(주)한빛정보기술', 'John Smith', 'Business Development']).title,
+        'Business Development',
+      );
+      expect(
+        parse(['(주)한빛정보기술', 'John Smith', 'Account Executive']).title,
+        'Account Executive',
+      );
+      expect(
+        parse(['(주)한빛정보기술', 'John Smith', 'Product Owner']).title,
+        'Product Owner',
+      );
+    });
+  });
 }
