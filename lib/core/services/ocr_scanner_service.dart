@@ -1376,14 +1376,40 @@ class OcrScannerService {
   /// (안 뽑는 것보단 나으므로) 그래도 맨 앞 줄을 쓴다.
   static String? _pickCompanyFromLeftover(List<String> leftover) {
     if (leftover.isEmpty) return null;
-    // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄.
+    // P0③(테스터 B 제보, 2026-08-20) 재현: "회사명 입력란에 영문 이름이
+    // 잘못 입력됨". leftover에 사람 영문 이름(Title Case)이 회사 영문명보다
+    // 먼저 오면, 순서 때문에 이름이 회사명 자리를 차지했다. 아래 두
+    // 우선순위 각각에 "사람 이름 모양이 아니면"을 먼저 시도하고, 그래도
+    // 못 찾으면 원래 조건으로 되돌아간다 — 접미사 없는 진짜 회사명은 사람
+    // 이름과 형태가 같아 구별이 안 되므로, 다른 후보가 없으면 그대로 쓴다.
+    bool notPersonName(String l) => !_looksLikeEnglishPersonName(l);
+
+    // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄
+    // (+사람 이름 모양이 아닌 것을 먼저 본다).
     var idx = leftover.indexWhere(
       (l) =>
           !_looksLikeDeptOrTagline(l) &&
           !_looksLikeLogoNoise(l) &&
-          _looksLikeCompanyName(l),
+          _looksLikeCompanyName(l) &&
+          notPersonName(l),
     );
+    if (idx == -1) {
+      idx = leftover.indexWhere(
+        (l) =>
+            !_looksLikeDeptOrTagline(l) &&
+            !_looksLikeLogoNoise(l) &&
+            _looksLikeCompanyName(l),
+      );
+    }
     // 2순위: 로고 잡음 조건만 완화한다(짧은 영문 브랜드명이 여기 걸린다).
+    if (idx == -1) {
+      idx = leftover.indexWhere(
+        (l) =>
+            !_looksLikeDeptOrTagline(l) &&
+            _looksLikeCompanyName(l) &&
+            notPersonName(l),
+      );
+    }
     if (idx == -1) {
       idx = leftover.indexWhere(
         (l) => !_looksLikeDeptOrTagline(l) && _looksLikeCompanyName(l),
@@ -1440,6 +1466,32 @@ class OcrScannerService {
     if (letters.isEmpty) return '';
     if (letters == letters.toUpperCase()) return '';
     return leftover.removeAt(0);
+  }
+
+  /// 영문 줄이 **사람 이름 Title Case**로 보이는가(`Kim Do Young`) — 회사
+  /// 영문명(`LG CNS`, 전부 대문자)과 구별하는 유일한 형태 신호. 한글이
+  /// 섞이거나 단어 수가 2~4개 범위를 벗어나면 아니다.
+  ///
+  /// ⚠️ **한 단어는 보지 않는다.** `Fax.`·`Manager`처럼 Title Case인 라벨
+  /// 잔재가 흔한데, 이런 한 단어짜리까지 "사람 이름"으로 보면 진짜 회사명
+  /// 후보(`Fax.`가 card_107에서 우연히 회사 칸 정답으로 남아 있는 경우)가
+  /// 밀려난다 — 103장 채점에서 실제로 -1을 냈다. 사람의 성명은 성+이름이
+  /// 최소 두 조각이라는 원리적인 신호로 좁혔다.
+  ///
+  /// ⚠️ 접미사 없는 진짜 회사명이 Title Case로 인쇄되면(드묾) 이 검사에도
+  /// 걸린다 — 텍스트 형태만으로는 회사 영문명과 사람 영문 이름을 완전히
+  /// 못 가른다(2026-08-20 실측 결론). 그래서 이 값은 **후보가 여럿일 때
+  /// 우선순위를 정하는 데만** 쓴다. 후보가 하나뿐이면 이 값과 무관하게
+  /// 그대로 쓴다.
+  static bool _looksLikeEnglishPersonName(String line) {
+    if (_hasHangul(line)) return false;
+    final words = line
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.length < 2 || words.length > 4) return false;
+    return words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w));
   }
 
   /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
@@ -2391,7 +2443,8 @@ class OcrScannerService {
           if (frontRunEnd > 0 &&
               frontRunEnd < tokens.length &&
               _koreanNameRegExp.hasMatch(frontBuffer.toString()) &&
-              !_isRejectedName(frontBuffer.toString())) {
+              !_isRejectedName(frontBuffer.toString()) &&
+              _hangulNameLooksReal(frontBuffer.toString())) {
             nameLineWeak = frontBuffer.toString();
             weakSource = OcrNameSource.mixedTokenFront;
             // 이름 바로 다음 토큰이 로고 오인식 잡음인 경우가 실제
@@ -2408,7 +2461,8 @@ class OcrScannerService {
             continue;
           }
           if (_koreanNameRegExp.hasMatch(tokens.last) &&
-              !_isRejectedName(tokens.last)) {
+              !_isRejectedName(tokens.last) &&
+              _hangulNameLooksReal(tokens.last)) {
             nameLineWeak = tokens.last;
             weakSource = OcrNameSource.mixedTokenLast;
             final restTokens = tokens.sublist(0, tokens.length - 1);
@@ -2571,14 +2625,27 @@ class OcrScannerService {
       name = '';
       nameSource = OcrNameSource.none;
     } else {
+      // P0②(테스터 B 제보, 2026-08-20) 재현: "뒷장 촬영 후 이름란이 회사
+      // 영문명으로 자동 변경". leftover에 회사 영문명("LG CNS")·부서명
+      // ("DT Optimization")·사람 영문 이름("Kim Do Young")이 함께 남으면,
+      // 순서가 이르다는 이유만으로 회사명이 이름 자리를 차지했다.
+      //
+      // 오늘 같은 날 직함 폴백(`_pickWeakTitleFallback`, 추가 354)에서 이미
+      // 검증한 신호(Title Case = 사람 이름)를 재사용한다 — 새 규칙을 만들지
+      // 않고, **사람 이름 모양(또는 한글)인 후보가 있으면 그것부터** 본다.
+      // 그런 후보가 하나도 없으면(접미사 없는 진짜 회사명은 사람 이름과
+      // 형태가 같아 구별 불가) 기존대로 leftover 순서를 쓴다.
+      final preferred = nameCandidates
+          .where((l) => _hasHangul(l) || _looksLikeEnglishPersonName(l))
+          .toList();
+      final pool = preferred.isNotEmpty ? preferred : nameCandidates;
+
       // 규칙으로 이름을 확신하지 못한 약한 폴백 구간이다. 예전엔 남은 줄 "맨
       // 앞"(읽기 순서)을 그냥 이름으로 썼는데, 명함에서 이름은 대개 가장 크게
       // 인쇄되므로 글자 높이를 아는 경우엔 "가장 큰 줄"을 이름으로 고른다.
       // 높이 정보가 전혀 없으면(테스트 입력 등) 기존과 똑같이 맨 앞 줄을 쓴다 —
       // 그래서 이 개선은 확신 경로를 건드리지 않고 약한 폴백만 바꾼다.
-      final withHeight = nameCandidates
-          .where((l) => (heightByText[l] ?? 0) > 0)
-          .toList();
+      final withHeight = pool.where((l) => (heightByText[l] ?? 0) > 0).toList();
       if (withHeight.length >= 2) {
         withHeight.sort(
           (a, b) => (heightByText[b] ?? 0).compareTo(heightByText[a] ?? 0),
@@ -2588,18 +2655,18 @@ class OcrScannerService {
         // 큰 정도는 잡음일 수 있어 10% 여유를 둔다). 그렇지 않으면 기존
         // 동작(맨 앞 줄)을 유지한다.
         final biggestH = heightByText[biggest] ?? 0;
-        final firstH = heightByText[nameCandidates.first] ?? 0;
-        if (biggest != nameCandidates.first && biggestH >= firstH * 1.1) {
+        final firstH = heightByText[pool.first] ?? 0;
+        if (biggest != pool.first && biggestH >= firstH * 1.1) {
           name = biggest;
           leftover.remove(biggest);
           nameSource = OcrNameSource.fontSizePreferred;
         } else {
-          name = nameCandidates.first;
+          name = pool.first;
           leftover.remove(name);
           nameSource = OcrNameSource.leftoverFallback;
         }
       } else {
-        name = nameCandidates.first;
+        name = pool.first;
         leftover.remove(name);
         nameSource = OcrNameSource.leftoverFallback;
       }

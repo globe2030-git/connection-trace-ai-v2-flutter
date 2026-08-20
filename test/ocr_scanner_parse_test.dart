@@ -1755,4 +1755,133 @@ void main() {
       );
     });
   });
+
+  group('약한 이름 후보(mixedToken) 보수화 — 성씨 모양까지 확인 (P1, 2026-08-20)', () {
+    // 배경: 아이폰 실사용 175회 진단에서 이름의 23%가 "약한 근거"로
+    // 채워졌다(추가 343). "약"은 `nameLineWeak`(mixedTokenFront/Last) —
+    // 한글+영문이 섞인 줄에서 토큰 하나만 떼어 이름으로 쓰는 경로다.
+    //
+    // 예전엔 "한글 2~4자면" 통과였다. 정답지(103장) 채점에서 이 경로로
+    // 뽑힌 이름 중 다섯 장이 실제로 회사·업종 낱말이었다 — "카카오"(도배
+    // 업체 명함의 SNS 채널명, card_49), "대한민국"(슬로건 조각, card_59),
+    // "장장동일"(OCR 중복 오독, card_64), "하나"(회사 상호 조각, card_108),
+    // "혀청"(자격증 나열 줄의 잡음, card_105). 다섯 다 성씨로 시작하지
+    // 않거나 정확히 3자(두 글자 성씨는 4자)가 아니었다.
+    //
+    // 그래서 확정 경로(`_extractPersonNameToken`)가 이미 쓰는 성씨 모양
+    // 검사(`_hangulNameLooksReal`)를 이 약한 경로에도 추가했다. 성씨
+    // 목록에 없는 진짜 이름(`감동훈`의 `감` 등, 추가 199 근거)은 이
+    // 경로에서 빠지지만, 그 경우도 아래 확정 경로들이 대개 대신 찾아준다
+    // — 채점기 전/후로 확인했다(이름 85%→88%, 회사·직함 회귀 없음).
+    test('업종·SNS 채널명이 성씨 모양이 아니면 이름으로 쓰지 않는다 — card_49', () {
+      final r = parse([
+        '도배사 박수민',
+        '카카오 3333-21-6287869',
+      ]);
+      // 예전엔 "카카오"(SNS 채널 라벨)가 mixedTokenFront로 이름이 됐다.
+      // 지금은 성씨 모양이 아니라 걸러지고, 확정 경로("도배사 박수민"의
+      // 직함 분리)가 대신 진짜 이름을 찾는다.
+      expect(r.name, '박수민');
+      expect(r.parseShape?.nameSource, isNot(OcrNameSource.mixedTokenFront));
+    });
+
+    test('4자 슬로건 조각이 성씨 모양이 아니면 이름으로 쓰지 않는다 — card_59', () {
+      final r = parse([
+        '대한민국 No.1 윤설미 ASIA',
+      ]);
+      // "대한민국"(4자, 성씨 아님)이 mixedTokenFront로 뽑히는 대신, 같은
+      // 줄의 진짜 이름 "윤설미"를 확정 경로(hangulTokenPreferred)가 찾는다.
+      expect(r.name, '윤설미');
+      expect(r.parseShape?.nameSource, isNot(OcrNameSource.mixedTokenFront));
+    });
+
+    test('OCR 중복 오독은 성씨 모양이 아니면 걸러지고, 확정 경로가 재시도한다 — card_64', () {
+      final r = parse([
+        'BUSAN, KOREA',
+        '장 장동일 (Daniel)',
+      ]);
+      // "장장동일"(중복 오독, 4자, 성씨 아님)이 그대로 이름이 되는 대신
+      // 걸러지고, hangulTokenPreferred가 "장동일"을 다시 찾아낸다.
+      expect(r.name, '장동일');
+    });
+
+    test('짧은 회사 상호 조각은 이름이 되지 않고 빈 값으로 남는다 — card_108', () {
+      // 진짜 이름("이의중")이 직함과 공백으로 뭉개져("차장이 의 중") 다른
+      // 어느 경로로도 못 찾는 사례 — 그래도 "하나"(2자, 성씨 아님)가
+      // 대신 이름이 되는 것보다는 비워 두는 쪽이 낫다(CLAUDE.md 원칙).
+      final r = parse([
+        '하나 Control',
+        '차장이 의 중',
+      ]);
+      expect(r.name, isNot('하나'));
+    });
+
+    test('⚠️ 성씨 목록에 없는 진짜 이름은 이 경로에서 빠질 수 있다 — 알려진 한계', () {
+      // "감"(감사와 겹쳐 일부러 뺀 성씨, 추가 199)으로 시작하는 이름은
+      // mixedToken 경로로는 못 찾는다. 이 카드는 확정 경로(koreanStripped
+      // — 이름이 온전히 제 줄에 있음)로 이미 잡히므로 실제 정답지에서는
+      // 영향이 없었지만, 로고와 완전히 한 줄로 뭉치면 비워질 수 있다.
+      final r = parse(['이랜서 감동훈', 'M 010-4381-0042']);
+      expect(r.name, isNot('감동훈')); // 알려진 한계 — 회귀 아님, 원래도 못 찾던 모양
+    });
+  });
+
+  group('P0② — 이름란이 회사 영문명으로 자동 변경 (테스터 B, 2026-08-20)', () {
+    // 재현: "뒷장 촬영 후 이름란이 회사 영문명으로 자동 변경". 뒷면이 영문
+    // 전용이고 이름·직함·회사 셋 다 순수 영문일 때, leftover 순서(카드 위
+    // 인쇄 순서)가 이르다는 이유만으로 회사 영문명("LG CNS")이 이름 자리를
+    // 차지했다. 오늘 이미 검증한 신호(Title Case = 사람 이름)를 재사용해,
+    // **사람 이름 모양(또는 한글)인 후보가 있으면 그것부터** 이름으로 본다.
+    test('회사 영문명이 이름보다 먼저 인쇄돼도 이름 자리를 뺏지 않는다', () {
+      final r = parse(['LG CNS', 'DT Optimization', 'Kim Do Young']);
+      expect(r.name, 'Kim Do Young');
+      expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
+    });
+
+    test('이름이 먼저 인쇄되면 원래도 맞았다 — 회귀 확인', () {
+      final r = parse(['Kim Do Young', 'DT Optimization', 'LG CNS']);
+      expect(r.name, 'Kim Do Young');
+    });
+
+    test('사람 이름 모양 후보가 하나도 없으면 기존대로 맨 앞 줄을 쓴다', () {
+      // 접미사 없는 진짜 회사명은 사람 이름과 형태가 같아 구별이 안 된다
+      // (SK telecom·Sovargen). 이 경우 우선순위를 매길 근거가 없으므로
+      // 손대지 않는다 — 알려진 한계.
+      final r = parse(['SOVARGEN', 'DT OPTIMIZATION']);
+      expect(r.name, 'SOVARGEN');
+    });
+  });
+
+  group('P0③ — 회사명란에 영문 이름이 잘못 입력됨 (테스터 B, 2026-08-20)', () {
+    // 재현: "회사명 입력란에 영문 이름이 잘못 입력됨". 한글 이름은 이미
+    // 확정됐는데(koreanStripped), 회사명에 접미사가 없어 leftover에서
+    // 골라야 할 때 사람 영문 이름("Kim Do Young")이 진짜 회사명("LG CNS")
+    // 보다 먼저 나와 회사 자리를 차지했다.
+    test('영문 이름이 회사 영문명보다 먼저 인쇄돼도 회사 자리를 뺏지 않는다', () {
+      final r = parse([
+        '김도영',
+        'Kim Do Young',
+        'DT Optimization 수석',
+        'LG CNS',
+        'M 010-1234-5678',
+      ]);
+      expect(r.name, '김도영');
+      expect(r.company, 'LG CNS');
+    });
+
+    test('짧은 라벨 잔재(한 단어, Title Case)는 사람 이름으로 보지 않는다 — card_107 회귀 방지', () {
+      // "Fax."처럼 Title Case인 한 단어짜리 라벨 잔재까지 "사람 이름
+      // 모양"으로 보면, 진짜(비록 잡음이지만) leftover 회사 후보가 밀려나고
+      // 더 나쁜 후보가 대신 뽑힌다 — 103장 채점에서 실제로 -1을 냈다. 사람
+      // 이름은 최소 두 단어(성+이름)라는 신호로 좁혀 막는다.
+      final r = parse([
+        '개발협력부장 Tel.',
+        '양공현 Fax.',
+        'Mobile.',
+        'E-mail. gong@rainbowyouth.or.kr',
+        'Migrant-Youth',
+      ]);
+      expect(r.company, isNot('E-mail. . kr'));
+    });
+  });
 }
