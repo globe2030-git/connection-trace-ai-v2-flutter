@@ -35,6 +35,27 @@ import 'scan_field_conflict_sheet.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
 
+/// 저장 시 "도로명 주소로 변환하시겠습니까?" 팝업을 다시 띄울지 결정한다.
+///
+/// [confirmedRoadNameAddress]는 사용자가 지난 팝업에서 이 주소에 대해 이미
+/// 결론을 낸 값이다 — "네, 도로명으로 변경"을 눌렀을 때는 바뀐 도로명
+/// 주소를, "기존 입력 유지"를 눌렀을 때는 원본 주소를 그대로 기록해 두
+/// 버튼의 결과가 대칭이 되게 한다. [rawAddress]가 그 값과 같으면(=바로 그
+/// 주소에 대해 이미 결정이 끝났으면) 다시 묻지 않는다.
+///
+/// "기존 입력 유지" 쪽에서 이 기록을 빼먹으면, 사용자가 원본 주소를 그대로
+/// 두고 다시 저장을 눌러도 [rawAddress]가 [confirmedRoadNameAddress]와 계속
+/// 달라서 같은 팝업이 무한히 다시 떴다(테스터 A, 갤럭시 폴드7, 1.0.0(8) 제보).
+bool shouldShowRoadNameConversionDialog({
+  required String? roadNameAddress,
+  required String rawAddress,
+  required String? confirmedRoadNameAddress,
+}) {
+  return roadNameAddress != null &&
+      roadNameAddress != rawAddress &&
+      rawAddress != confirmedRoadNameAddress;
+}
+
 class AddCardModalView extends StatefulWidget {
   final ContactModel? contactToEdit;
   // QR 스캔 등으로 미리 채워 넣을 값 — contactToEdit과 달리 "새 명함"으로
@@ -1987,9 +2008,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
 
     // Check if Road Name Address conversion prompt is needed
-    if (addressResult.roadNameAddress != null &&
-        addressResult.roadNameAddress != rawAddress &&
-        rawAddress != _confirmedRoadNameAddress) {
+    if (shouldShowRoadNameConversionDialog(
+      roadNameAddress: addressResult.roadNameAddress,
+      rawAddress: rawAddress,
+      confirmedRoadNameAddress: _confirmedRoadNameAddress,
+    )) {
       _showRoadNameConversionDialog(addressResult);
       return;
     }
@@ -2214,7 +2237,20 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
+            onPressed: () {
+              Navigator.pop(ctx);
+              // "네, 도로명으로 변경"과 대칭이 되게, 이 주소에 대해 변환을
+              // 하지 않기로 확정됐다는 것도 _confirmedRoadNameAddress에
+              // 기록한다. 여기서는 주소 텍스트를 바꾸지 않으므로 원본
+              // 주소(result.originalAddress, rawAddress와 동일한 trim된 값)를
+              // 그대로 저장한다. 이걸 빼먹으면 사용자가 원본 주소로 다시
+              // 저장을 눌러도 rawAddress != _confirmedRoadNameAddress가 계속
+              // 참이라 같은 변환 팝업이 무한히 다시 떴다(테스터 A, 갤럭시
+              // 폴드7, 1.0.0(8)).
+              setState(() {
+                _confirmedRoadNameAddress = result.originalAddress;
+              });
+            },
             child: const Text(
               '기존 입력 유지',
               style: TextStyle(color: AppColors.textMuted),
