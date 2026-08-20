@@ -56,6 +56,28 @@ bool shouldShowRoadNameConversionDialog({
       rawAddress != confirmedRoadNameAddress;
 }
 
+/// 주소 검색(카카오 지도 SDK)에서 받은 좌표를 저장 시점에 **그대로 재사용해도
+/// 되는지** 판단한다(추가 350).
+///
+/// [pickedGeo]가 있고, 그 좌표가 **지금 주소 입력칸에 있는 문자열**
+/// ([rawAddress])에 대해 받은 것([pickedGeoAddress]과 동일)일 때만 true다.
+/// - 애초에 검색으로 주소를 안 골랐으면 [pickedGeo]가 null이라 자동으로
+///   false.
+/// - 카카오가 좌표를 못 줬으면(null) 마찬가지로 false — OS 지오코더로
+///   떨어진다.
+/// - 검색으로 고른 뒤 주소를 손으로 편집했으면 [rawAddress]가
+///   [pickedGeoAddress]와 달라져 false — 옛 좌표를 엉뚱한 주소에 쓰지 않는다.
+///
+/// `shouldShowRoadNameConversionDialog`와 같은 패턴이다: 별도 "무효화됨"
+/// 플래그를 두지 않고, 저장 시점의 문자열 비교로 유효성을 판단한다.
+bool canTrustPickedGeo({
+  required GeoPosition? pickedGeo,
+  required String? pickedGeoAddress,
+  required String rawAddress,
+}) {
+  return pickedGeo != null && pickedGeoAddress == rawAddress;
+}
+
 class AddCardModalView extends StatefulWidget {
   final ContactModel? contactToEdit;
   // QR 스캔 등으로 미리 채워 넣을 값 — contactToEdit과 달리 "새 명함"으로
@@ -180,6 +202,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 입력칸이 그대로면(직접 다시 고치지 않았다면) 도로명 변환창을 또
   // 띄우지 않는다 — 저장할 때마다 변환창이 계속 다시 뜨던 문제.
   String? _confirmedRoadNameAddress;
+
+  /// 주소 검색(카카오 지도 SDK)이 **주소를 고르는 그 자리에서** 준 좌표(추가
+  /// 350). 있으면 저장할 때 OS 지오코더를 또 부르지 않고 이 값을 그대로
+  /// 쓴다 — 검색 한 번으로 이미 좌표까지 받았는데, 저장할 때마다 같은 주소를
+  /// 다시 지오코딩하던 중복 호출을 없앤다.
+  ///
+  /// ⚠️ **이 좌표는 [_pickedGeoAddress]에 적힌 주소 문자열에 대해서만
+  /// 유효하다.** `_confirmedRoadNameAddress`와 같은 패턴 — 별도 리스너로
+  /// "지금 무효화됐다"를 표시해 두지 않고, 저장 시점에 주소 입력칸의 현재
+  /// 값과 [_pickedGeoAddress]가 같은지만 비교한다(아래
+  /// [canTrustPickedGeo]). 검색으로 고른 뒤 손으로 고치면 두 값이 달라져
+  /// 자동으로 신뢰를 잃는다.
+  GeoPosition? _pickedGeo;
+
+  /// [_pickedGeo]가 어느 주소 문자열에 대한 좌표인지. 저장 시점에 주소
+  /// 입력칸 값과 비교하는 용도로만 쓴다.
+  String? _pickedGeoAddress;
 
   /// 좌표 조회가 실패했을 때 다시 시도할 **같은 위치의 다른 표기**(도로명↔지번).
   /// 우편번호 검색에서 받아 둔다 — OS 지오코더가 한쪽 표기로는 좌표를 못 찾는
@@ -418,6 +457,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _watchOcrBadge('email', _emailController);
     _watchOcrBadge('website', _websiteController);
     WebTabGuard.install(onTab: (shiftKey) => _moveFocus(shiftKey ? -1 : 1));
+
+    // 주소를 손으로 고치면(검색으로 고른 뒤 직접 편집하는 경우 포함) 검색이
+    // 준 좌표를 더는 신뢰할 수 없다 — 판단 자체는 저장 시점 비교
+    // ([canTrustPickedGeo])가 하지만, 여기서도 즉시 지워 둔다. 예전 좌표가
+    // 남아 있다가 사용자가 편집한 주소를 다시 원래 문자열로 되돌리는(드문)
+    // 경우에만 재신뢰되는 것이 정확한 동작이라, 이 리스너는 "다르면 지운다"
+    // 이상은 하지 않는다 — 이미 null이면 아무 일도 하지 않아 매 키 입력마다
+    // 불필요한 작업을 만들지 않는다.
+    _addressController.addListener(() {
+      if (_pickedGeo == null) return;
+      if (_addressController.text != _pickedGeoAddress) {
+        _pickedGeo = null;
+        _pickedGeoAddress = null;
+      }
+    });
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
     // 주소 필드 아래 안내를 띄운다(P1-25). 신규 등록/OCR 프리필은 아직 저장·
@@ -863,6 +917,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _selectedScanIndex = -1;
         _ocrParsedSnapshot.clear();
         _confirmedRoadNameAddress = null;
+        // 이전 명함에서 검색으로 받아 둔 좌표도 함께 버린다 — 안 지우면
+        // 새 명함 주소가 우연히 이전 명함과 같은 문자열일 때(드물지만
+        // 가능) 엉뚱한 좌표를 신뢰할 위험이 있다.
+        _pickedGeo = null;
+        _pickedGeoAddress = null;
         _addressGeocodeFallback = null;
         _addressGeoFailed = false;
         _interestsController.clear();
@@ -1488,6 +1547,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // (backlog 추가 83, 사용자 제보).
       _confirmedRoadNameAddress = picked;
       _addressGeocodeFallback = result.geocodeFallback;
+      // 카카오가 이 자리에서 좌표를 줬으면 저장할 때 재사용한다(추가 350).
+      // 못 받았으면(null) 예전처럼 저장 시 OS 지오코더가 불린다 — 아래
+      // 대입은 실패 케이스도 그대로 반영해 신뢰 여부를 자동으로 정한다.
+      _pickedGeo = result.geo;
+      _pickedGeoAddress = picked;
 
       // 아파트/오피스텔처럼 건물명이 있는 주소는 상세주소 칸이 비어 있을 때만
       // 자동으로 채운다 — 이미 동/호수 등을 직접 입력해 뒀다면 덮어쓰지 않음.
@@ -1981,7 +2045,28 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
+    // 1-c. 주소 검색에서 이미 좌표를 받아 뒀고 그 이후 손으로 고치지
+    // 않았으면, OS 지오코더를 또 부르지 않고 그 좌표를 그대로 쓴다(추가
+    // 350) — 저장할 때마다, 심지어 앱을 열 때마다 좌표 없는 명함에 재시도가
+    // 돌아 배터리를 먹던 문제의 원인 중 하나가 이 중복 호출이었다. 검색으로
+    // 고른 주소는 이미 표준 표기이므로 도로명 변환 팝업도 필요 없다
+    // (`_pickedGeoAddress`를 세팅하는 `_openAddressSearch`의 주석 참고).
+    if (canTrustPickedGeo(
+      pickedGeo: _pickedGeo,
+      pickedGeoAddress: _pickedGeoAddress,
+      rawAddress: rawAddress,
+    )) {
+      if (kDebugMode) {
+        debugPrint('[AddCard] 검색 좌표 재사용 — OS 지오코더 생략');
+      }
+      _executeFinalSave(rawAddress, _pickedGeo);
+      return;
+    }
+
     // 2. Address Geocoding & Road Name Address Conversion Dialog
+    if (kDebugMode) {
+      debugPrint('[AddCard] OS 지오코더 호출 (좌표 재사용 조건 미충족)');
+    }
     setState(() => _isSavingCard = true);
     final addressResult = await AddressGeocodingService.validateAndConvert(
       rawAddress,
