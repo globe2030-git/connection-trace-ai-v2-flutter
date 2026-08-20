@@ -210,9 +210,21 @@ export function tokenEndpoint(provider: SocialProvider): string {
 /**
  * 인가 코드 교환 요청 본문.
  *
- * ⚠️ **`client_secret`은 값이 있을 때만 넣는다.** 카카오는 콘솔에서 끄면
- * 보내면 **안 되고**(있으면 오류), 네이버는 **반드시** 있어야 한다. 빈
- * 문자열을 넣어 보내면 카카오 쪽에서 실패한다.
+ * ## ⚠️ 카카오도 `client_secret`이 필수다 (2026-08 확인)
+ *
+ * 처음에는 *"카카오는 콘솔에서 끄는 것이 기본값이라 보내면 안 된다"*는
+ * 전제로 짰다가 고쳤다. 카카오 공식 문서가 이렇게 못박고 있다.
+ *
+ * > 서비스의 보안을 위해 REST API 키(앱과 함께 자동 생성된 키 포함)는
+ * > **클라이언트 시크릿 기능이 활성화된 상태로 추가됩니다.** 따라서 토큰
+ * > 발급 요청 시 `client_secret`를 포함해야 합니다.
+ *
+ * 즉 **지금 새로 만드는 앱은 켜진 채로 생성된다.** 옛 가이드(끄는 것이
+ * 기본)를 따르면 토큰 교환이 통째로 실패하는데, 증상이 "로그인이 안 됨"
+ * 하나로 뭉쳐서 나와 원인을 찾기 어렵다.
+ *
+ * ⚠️ 그래도 **빈 값이면 넣지 않는다.** 시크릿을 꺼 둔 옛 앱에 보내면 그쪽이
+ * 거부하므로, 값이 있을 때만 싣는 쪽이 양쪽 모두에서 안전하다.
  */
 export function tokenExchangeBody(params: {
   provider: SocialProvider;
@@ -223,8 +235,10 @@ export function tokenExchangeBody(params: {
 }): string {
   const {provider, code, clientId, clientSecret, redirectUri} = params;
   if (!clientId?.trim()) throw new Error("clientId가 없다");
-  if (provider === "naver" && !clientSecret?.trim()) {
-    throw new Error("네이버는 clientSecret이 반드시 필요하다");
+  if (!clientSecret?.trim()) {
+    // 카카오·네이버 모두 필수다. 없이 보내면 "로그인이 안 됨" 하나로 뭉쳐
+    // 나오므로, 설정 누락을 여기서 이름을 붙여 드러낸다.
+    throw new Error(`${provider}는 clientSecret이 필요하다`);
   }
   const body = new URLSearchParams({
     grant_type: "authorization_code",

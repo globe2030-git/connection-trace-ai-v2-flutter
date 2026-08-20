@@ -110,6 +110,7 @@ const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
 // 📌 카카오는 콘솔에서 client_secret을 **끈 상태(기본값)** 를 전제로 한다.
 // 켜면 교환 요청에 함께 보내야 하므로 여기에 하나 더 만들어야 한다.
 const kakaoRestKey = defineSecret("KAKAO_REST_KEY");
+const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
 const naverClientId = defineSecret("NAVER_CLIENT_ID");
 const naverClientSecret = defineSecret("NAVER_CLIENT_SECRET");
 const googlePlayServiceAccountJson = defineSecret(
@@ -1854,7 +1855,12 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
  */
 export const socialSignIn = onCall(
   {
-    secrets: [kakaoRestKey, naverClientId, naverClientSecret],
+    secrets: [
+      kakaoRestKey,
+      kakaoClientSecret,
+      naverClientId,
+      naverClientSecret,
+    ],
     region: "asia-northeast3",
     maxInstances: MAX_INSTANCES,
   },
@@ -1886,7 +1892,9 @@ export const socialSignIn = onCall(
             ? kakaoRestKey.value()
             : naverClientId.value(),
         clientSecret:
-          provider === "kakao" ? null : naverClientSecret.value(),
+          provider === "kakao"
+            ? kakaoClientSecret.value()
+            : naverClientSecret.value(),
         redirectUri,
       });
       const res = await fetch(tokenEndpoint(provider), {

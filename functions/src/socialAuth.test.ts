@@ -203,37 +203,59 @@ test("요청 검증: provider·code·redirectUri가 있어야 한다", () => {
   assert.throws(() => validateRequest(null));
 });
 
-test("⚠️ 카카오는 client_secret을 끄면 보내면 안 된다 — 있으면 오류난다", () => {
+test("교환 본문의 기본 모양", () => {
   const body = tokenExchangeBody({
     provider: "kakao",
     code: "c",
     clientId: "id",
-    clientSecret: null,
+    clientSecret: "s",
     redirectUri: "https://x/y",
   });
-  assert.equal(body.includes("client_secret"), false);
   assert.ok(body.includes("grant_type=authorization_code"));
   assert.ok(body.includes("client_id=id"));
+  assert.ok(body.includes("client_secret=s"));
 });
 
-test("빈 문자열 client_secret도 안 보낸다", () => {
-  const body = tokenExchangeBody({
-    provider: "kakao",
-    code: "c",
-    clientId: "id",
-    clientSecret: "   ",
-    redirectUri: "https://x/y",
-  });
-  assert.equal(body.includes("client_secret"), false);
+test("⭐ 카카오도 client_secret이 없으면 거부한다", () => {
+  // 옛 가이드는 "카카오는 끄는 것이 기본"이었지만 지금은 아니다. 카카오 문서:
+  // "REST API 키(앱과 함께 자동 생성된 키 포함)는 클라이언트 시크릿 기능이
+  //  활성화된 상태로 추가됩니다. 따라서 토큰 발급 요청 시 client_secret를
+  //  포함해야 합니다."
+  // 없이 보내면 "로그인이 안 됨" 하나로 뭉쳐 나와 원인을 찾기 어렵다.
+  assert.throws(
+    () =>
+      tokenExchangeBody({
+        provider: "kakao",
+        code: "c",
+        clientId: "id",
+        clientSecret: null,
+        redirectUri: "https://x/y",
+      }),
+    /kakao/
+  );
 });
 
-test("⭐ 네이버는 client_secret이 없으면 거부한다 — 필수다", () => {
+test("⭐ 네이버도 client_secret이 없으면 거부한다", () => {
+  assert.throws(
+    () =>
+      tokenExchangeBody({
+        provider: "naver",
+        code: "c",
+        clientId: "id",
+        clientSecret: null,
+        redirectUri: "https://x/y",
+      }),
+    /naver/
+  );
+});
+
+test("공백만 있는 client_secret도 없는 것으로 본다", () => {
   assert.throws(() =>
     tokenExchangeBody({
-      provider: "naver",
+      provider: "kakao",
       code: "c",
       clientId: "id",
-      clientSecret: null,
+      clientSecret: "   ",
       redirectUri: "https://x/y",
     })
   );
