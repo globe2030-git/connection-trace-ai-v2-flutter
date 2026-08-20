@@ -202,12 +202,23 @@ class AuthRepository extends ChangeNotifier {
     } on fb_functions.FirebaseFunctionsException catch (e) {
       // ⚠️ 서버가 주는 영문 메시지를 그대로 띄우지 않는다. 이용자가 할 수
       // 있는 일이 코드마다 다르다.
+      // ⚠️ 뭉뚱그린 문구 하나로 두면 어디서 막혔는지 알 수 없다. 실기기에서
+      // "카카오 로그인에 실패했어요"만 뜨는 바람에, 서버 함수가 아직 배포되지
+      // 않은 것인지 인증이 거부된 것인지 화면만 보고는 가릴 수 없었다
+      // (2026-08-20). 이용자가 할 수 있는 일이 코드마다 다르므로 갈라 놓는다.
+      debugPrint('socialSignIn 실패: code=${e.code}');
       throw AuthException(switch (e.code) {
         'unauthenticated' => '로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.',
         'unavailable' => '로그인 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
-        _ => '${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.',
+        // 함수가 아직 배포되지 않았을 때 온다. 이용자가 할 수 있는 일이 없으므로
+        // "다시 시도"라고 하지 않는다 — 눌러도 같은 결과다.
+        'not-found' || 'internal' =>
+          '${provider.displayName} 로그인이 아직 준비되지 않았어요.',
+        'deadline-exceeded' => '응답이 늦어요. 잠시 후 다시 시도해 주세요.',
+        _ => '${provider.displayName} 로그인에 실패했어요. (${e.code})',
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('socialSignIn 예외: $e');
       throw AuthException('${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.');
     }
 

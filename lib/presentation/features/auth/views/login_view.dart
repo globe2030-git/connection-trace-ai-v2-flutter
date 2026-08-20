@@ -272,7 +272,10 @@ class _SnsButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _ProviderIcon(provider: provider),
-                  const SizedBox(width: 10),
+                  // 로고가 없는 제공자는 간격도 없애야 라벨이 가운데 온다.
+                  if (provider != SnsAuthProvider.kakao &&
+                      provider != SnsAuthProvider.naver)
+                    const SizedBox(width: 10),
                   Text(
                     isAvailable
                         ? '${provider.displayName}로 계속하기'
@@ -298,17 +301,30 @@ class _ProviderIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (provider == SnsAuthProvider.apple) {
-      return const Icon(Icons.apple, size: 22, color: AppColors.textPrimary);
-    }
-    return const Text(
-      'G',
-      style: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: AppColors.accent,
+    // ⚠️ 이 함수는 예전에 "Apple이 아니면 구글 G"였다. 카카오·네이버를 넣으면서
+    // 여기를 안 고쳐 **카카오 버튼에 구글 G가 붙었다**(2026-08-20 실기기에서
+    // 발견). 제공자를 추가할 때 같이 고쳐야 하는 자리라 분기를 명시적으로 둔다.
+    //
+    // 📌 카카오·네이버는 공식 로고 애셋을 받아야 한다 — 가이드가 "로고 형태를
+    // 변경하거나 다른 형태와 조합하는 것은 금지"라고 못박고 있어 임의로 그릴 수
+    // 없다. 애셋이 들어오기 전까지는 **아무 표시도 하지 않는다.** 남의 로고를
+    // 흉내 내는 것보다 없는 편이 낫다.
+    return switch (provider) {
+      SnsAuthProvider.apple => const Icon(
+        Icons.apple,
+        size: 22,
+        color: AppColors.textPrimary,
       ),
-    );
+      SnsAuthProvider.google => const Text(
+        'G',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: AppColors.accent,
+        ),
+      ),
+      SnsAuthProvider.kakao || SnsAuthProvider.naver => const SizedBox.shrink(),
+    };
   }
 }
 
