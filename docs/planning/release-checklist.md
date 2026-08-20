@@ -130,6 +130,24 @@ tool/build_app.sh ios release     # iOS
       생겼으면 반드시 반영. 방침과 구현이 어긋나는 것 자체가 법적 리스크다
 - [ ] 법적 고지 배포: `firebase deploy --only hosting`
 
+### ⚠️ Cloud Functions 2세대 — 서비스 계정 권한 (2026-08-20 실측)
+
+2세대 함수는 **`{프로젝트번호}-compute@developer.gserviceaccount.com`** 을
+빌드·실행 계정으로 쓴다. `firebase-adminsdk@` 가 아니다.
+
+⚠️ **문서 대부분이 1세대 기준이라 이 구분이 잘 안 드러난다.** `firebase-adminsdk@`
+쪽에는 권한이 있어서 *"권한이 있는데 왜 안 되지"* 하고 헤매기 쉽다.
+
+| 무엇을 하려면 | 필요한 역할 | 없으면 나는 증상 |
+|---|---|---|
+| `createCustomToken` | **서비스 계정 토큰 생성자** | `Permission 'iam.serviceAccounts.signBlob' denied` — 앱에는 그냥 "로그인 실패" |
+| `createUser`·`updateUser` | **Firebase 인증 관리자** | `insufficient permission` — 계정에 이름·사진이 안 붙는다 |
+| 함수 빌드 | **Cloud Build 관리자** (+편집자) | `missing permission on the build service account` |
+
+📌 셋 다 **증상이 원인을 안 알려 준다.** 특히 첫째는 화면에 "로그인 실패"로만
+떠서, 리다이렉트 URI나 동의항목부터 뒤지게 된다.
+
+
 ⚠️ **`firebase` 명령이 PATH에 없을 수 있다** — 셸에 따라 `command not found`가
 난다. 전체 경로는 `~/.npm-global/bin/firebase`(firebase-tools 15.25.1).
 
