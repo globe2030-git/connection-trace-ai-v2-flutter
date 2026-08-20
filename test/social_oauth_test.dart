@@ -128,6 +128,7 @@ void main() {
       );
       expect(r, isA<OauthCode>());
       expect((r as OauthCode).code, 'c1');
+      expect(r.state, 's1', reason: '서버가 네이버 토큰 요청에 다시 쓴다');
     });
 
     test('코드가 비어 있으면 실패로 본다', () {

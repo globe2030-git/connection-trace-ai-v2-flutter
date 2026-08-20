@@ -10,6 +10,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/services/google_auth_gateway.dart';
+import '../../core/services/social_oauth.dart' as social;
 import '../models/sns_auth_provider.dart';
 
 class AuthException implements Exception {
@@ -144,6 +145,90 @@ class AuthRepository extends ChangeNotifier {
     _displayName = account.displayName;
     _email = account.email;
     _photoUrl = account.photoUrl;
+    _isSignedIn = true;
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 카카오·네이버 로그인.
+  ///
+  /// ## Google·Apple 과 흐름이 다르다
+  ///
+  /// Firebase Auth는 카카오·네이버를 기본 제공자로 모른다. 그래서
+  ///
+  /// ```
+  /// 1. 앱: 웹뷰로 인증 → 인가 코드
+  /// 2. 서버(socialSignIn): 코드 → 액세스 토큰 → 사용자 정보 → 커스텀 토큰
+  /// 3. 앱: 커스텀 토큰으로 Firebase 로그인
+  /// ```
+  ///
+  /// ⚠️ **여기서는 Firebase 로그인 실패를 넘기지 않는다.** Google 로그인은
+  /// 실패해도 로컬 세션으로 계속 가지만(서버 백업은 부가 기능), 카카오·네이버는
+  /// **Firebase uid 자체가 서버에서 나온다.** 실패하면 명함을 저장할 자리가
+  /// 없으므로 로그인을 성립시키면 안 된다.
+  ///
+  /// [openAuth]는 인증 화면을 띄우는 함수다. 화면 코드를 이 파일에 들이지
+  /// 않으려고 밖에서 넘긴다(테스트에서도 갈아 끼울 수 있다).
+  Future<void> signInWithSocial(
+    SnsAuthProvider provider,
+    Future<social.OauthOutcome> Function(social.SocialProvider) openAuth,
+  ) async {
+    final target = provider.socialProvider;
+    if (target == null) {
+      throw AuthException('${provider.displayName} 로그인은 지원하지 않습니다.');
+    }
+    if (!provider.isAvailable) {
+      throw AuthException(provider.unavailableReason!);
+    }
+
+    final outcome = await openAuth(target);
+    if (outcome is social.OauthFailed) {
+      throw AuthException(outcome.message);
+    }
+    final code = (outcome as social.OauthCode).code;
+
+    final Map<String, dynamic> data;
+    try {
+      final callable = fb_functions.FirebaseFunctions.instanceFor(
+        region: 'asia-northeast3',
+      ).httpsCallable('socialSignIn');
+      final result = await callable.call<Map<String, dynamic>>({
+        'provider': target.wireName,
+        'code': code,
+        'redirectUri': social.redirectUriFor(target),
+        'state': outcome.state,
+      });
+      data = result.data;
+    } on fb_functions.FirebaseFunctionsException catch (e) {
+      // ⚠️ 서버가 주는 영문 메시지를 그대로 띄우지 않는다. 이용자가 할 수
+      // 있는 일이 코드마다 다르다.
+      throw AuthException(switch (e.code) {
+        'unauthenticated' => '로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.',
+        'unavailable' => '로그인 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
+        _ => '${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.',
+      });
+    } catch (_) {
+      throw AuthException('${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.');
+    }
+
+    final token = (data['token'] as String?)?.trim();
+    if (token == null || token.isEmpty) {
+      throw AuthException('${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.');
+    }
+
+    final fb_auth.UserCredential cred;
+    try {
+      cred = await fb_auth.FirebaseAuth.instance.signInWithCustomToken(token);
+    } catch (e) {
+      debugPrint('커스텀 토큰 로그인 실패: $e');
+      throw AuthException('로그인을 마치지 못했어요. 다시 시도해 주세요.');
+    }
+
+    final user = cred.user;
+    _provider = provider;
+    _displayName = user?.displayName;
+    _email = user?.email;
+    _photoUrl = user?.photoURL;
     _isSignedIn = true;
     notifyListeners();
     await _persist();
@@ -375,12 +460,29 @@ class AuthRepository extends ChangeNotifier {
   ///
   /// provider를 알 수 없는 경우(예: 게스트 QA 로그인)에는 재인증할 SNS
   /// 계정 자체가 없으므로 명확한 예외를 던진다.
-  Future<void> reauthenticateCurrentProvider() async {
+  ///
+  /// ## ⚠️ 카카오·네이버는 [openAuth] 가 있어야 한다
+  ///
+  /// 이 둘은 커스텀 토큰으로 로그인하므로, 재인증도 **인증 화면을 다시 띄워
+  /// 새 토큰을 받는 것**이다. 화면을 띄우는 함수가 없으면 재인증을 할 수
+  /// 없고, **재인증이 막히면 계정 삭제가 막힌다** — 개인정보 파기 의무와
+  /// 직결되는 자리라 조용히 실패하게 두지 않고 이유를 밝혀 던진다.
+  Future<void> reauthenticateCurrentProvider({
+    Future<social.OauthOutcome> Function(social.SocialProvider)? openAuth,
+  }) async {
     switch (_provider) {
       case SnsAuthProvider.google:
         await reauthenticateWithGoogle();
       case SnsAuthProvider.apple:
         await reauthenticateWithApple();
+      case SnsAuthProvider.kakao:
+      case SnsAuthProvider.naver:
+        if (openAuth == null) {
+          throw AuthException('${_provider!.displayName} 재인증을 시작할 수 없습니다. 다시 로그인해 주세요.');
+        }
+        // 다시 로그인하는 것이 곧 재인증이다 — signInWithCustomToken 이
+        // "최근 로그인" 시각을 갱신한다.
+        await signInWithSocial(_provider!, openAuth);
       case null:
         throw AuthException('재인증할 수 있는 로그인 수단이 없습니다. 다시 로그인해 주세요.');
     }

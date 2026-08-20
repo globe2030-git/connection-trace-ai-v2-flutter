@@ -101,7 +101,14 @@ sealed class OauthOutcome {
 /// 코드를 받았다. 서버로 넘기면 된다.
 class OauthCode extends OauthOutcome {
   final String code;
-  const OauthCode(this.code);
+
+  /// 인증을 시작할 때 만든 난수. 대조까지 끝난 값이다.
+  ///
+  /// ⚠️ **서버가 다시 쓴다.** 네이버는 토큰 요청 변수표에도 `state`를 필수로
+  /// 두고 있어서, 코드만 넘기면 교환이 실패한다(카카오는 인증 단계에서만 쓴다).
+  final String state;
+
+  const OauthCode(this.code, this.state);
 }
 
 /// 제공자가 거절했거나 이용자가 취소했다.
@@ -148,5 +155,5 @@ OauthOutcome readRedirect(Uri uri, {required String expectedState}) {
   if (code == null || code.trim().isEmpty) {
     return const OauthFailed('로그인 정보를 받지 못했어요. 다시 시도해 주세요.');
   }
-  return OauthCode(code);
+  return OauthCode(code, state);
 }
