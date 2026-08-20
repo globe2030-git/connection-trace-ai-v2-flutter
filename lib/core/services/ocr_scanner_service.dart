@@ -1400,22 +1400,45 @@ class OcrScannerService {
   /// 직함 폴백. leftover 맨 앞 줄을 검증 없이 그대로 썼던 것을 좁힌다
   /// (테스터 제보 2026-08-20, 뒷면에 회사 영문명만 있는 명함).
   ///
-  /// ## 왜 순수 영문 줄을 거르나
+  /// ## 왜 "순수 영문이면 무조건 버린다"가 아니라 "전부 대문자만" 버리나
   ///
   /// 이 자리는 직함 키워드(`_titleKeywords`)로도, 이름-직함 분리로도 못
-  /// 찾았을 때 오는 **마지막 자리**다. 한국 명함에서 직함은 거의 항상
-  /// 한글이거나(이미 위 두 경로가 잡는다) 영문이어도 `_titleKeywords`에 있는
-  /// 단어(Manager·Director 등)를 포함한다 — 그것도 이미 titleLine으로
-  /// 잡힌다. 그래서 **이 폴백까지 내려온 순수 영문 줄**은 대부분 회사
-  /// 영문명·부서 잔여 텍스트다. 실측: 뒷면에 회사 영문명만 있는 명함에서
-  /// `LG CNS`, `PRIME LOGISTICS` 같은 회사명 조각이 직함 칸에 그대로
-  /// 들어갔다.
+  /// 찾았을 때 오는 **마지막 자리**다. `_titleKeywords`에는 `CEO`·`Director`·
+  /// `Manager`처럼 흔한 영문 직함이 이미 들어 있고, 그 매칭은 줄 전체를 보는
+  /// `_containsCi`(부분 문자열, 대소문자 무시)라서 **그 단어를 포함하는 영문
+  /// 직함은 이미 titleLine으로 잡히고 이 폴백까지 내려오지 않는다**(`Sales
+  /// Manager`가 실제로 그렇다). 그래서 이 폴백에 도달하는 순수 영문 줄은
+  /// 두 갈래로 갈린다 — ① 키워드 목록에 없는 **정상 영문 직함**(`Business
+  /// Development`, `Product Owner`, `Account Executive` 같은 것 — 목록을
+  /// 아무리 넓혀도 다 못 담는다), ② 회사 영문명·브랜드 로고 잔재(`LG CNS`,
+  /// `PRIME LOGISTICS`, `SOVARGEN`). **"순수 영문이면 무조건 버린다"는 ①까지
+  /// 같이 버렸다** — 처음 버전이 그랬고, 정답지로 재보니 직함 미검출이
+  /// 6→12건으로 두 배가 됐다(배포 전 발견, 병합 안 됨).
+  ///
+  /// 실측으로 갈리는 지점은 **표기 형태**다. 회사 영문명·로고는 명함에서
+  /// 거의 항상 **전부 대문자**(로고체 표기)로 인쇄되고, 사람이 쓰는 영문
+  /// 직함은 Title Case(`Business Development`)로 인쇄된다. 상세주소 잡음
+  /// 제거(`_stripBrandNoiseFromAddressDetail`)가 이미 같은 신호(순수 로마자
+  /// + 전부 대문자)로 회귀 없이(78% 그대로) 걸러낸 전례가 있다 — 그 판정을
+  /// 여기로 옮겼다.
+  ///
+  /// ⚠️ **완벽하지 않다.** 실제로 전부 대문자로 인쇄된 영문 직함(`SALES
+  /// MANAGER`처럼)이 있다면 이 필터에 걸린다. 다만 그런 직함은 대부분 키워드
+  /// (`Manager`)를 포함해 이미 위 titleLine 경로가 먼저 잡으므로, 이 폴백까지
+  /// 내려오는 "전부 대문자 + 키워드 없음" 조합은 실측상 거의 전부 회사·브랜드
+  /// 잔재였다.
   ///
   /// ⚠️ **한글이 하나라도 있으면 그대로 쓴다** — 기존 동작을 바꾸지 않는다.
-  /// 이 필터는 "순수 영문" 한 갈래만 좁힌다.
+  /// 이 필터는 "순수 영문" 한 갈래만, 그중에서도 "전부 대문자"만 좁힌다.
   static String _pickWeakTitleFallback(List<String> leftover) {
     if (leftover.isEmpty) return '';
-    if (!_hasHangul(leftover.first)) return '';
+    final first = leftover.first;
+    if (_hasHangul(first)) return leftover.removeAt(0);
+    final letters = first.replaceAll(RegExp(r'[^A-Za-z]'), '');
+    // 영문 글자가 하나도 없으면(숫자·기호뿐) 판단할 형태 신호가 없다 — 기존
+    // 동작대로 버린다(전화번호 잔재 등이 직함이 되는 것을 막는다).
+    if (letters.isEmpty) return '';
+    if (letters == letters.toUpperCase()) return '';
     return leftover.removeAt(0);
   }
 
