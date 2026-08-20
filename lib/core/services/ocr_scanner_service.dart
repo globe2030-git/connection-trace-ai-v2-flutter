@@ -2391,7 +2391,8 @@ class OcrScannerService {
           if (frontRunEnd > 0 &&
               frontRunEnd < tokens.length &&
               _koreanNameRegExp.hasMatch(frontBuffer.toString()) &&
-              !_isRejectedName(frontBuffer.toString())) {
+              !_isRejectedName(frontBuffer.toString()) &&
+              _hangulNameLooksReal(frontBuffer.toString())) {
             nameLineWeak = frontBuffer.toString();
             weakSource = OcrNameSource.mixedTokenFront;
             // 이름 바로 다음 토큰이 로고 오인식 잡음인 경우가 실제
@@ -2408,7 +2409,8 @@ class OcrScannerService {
             continue;
           }
           if (_koreanNameRegExp.hasMatch(tokens.last) &&
-              !_isRejectedName(tokens.last)) {
+              !_isRejectedName(tokens.last) &&
+              _hangulNameLooksReal(tokens.last)) {
             nameLineWeak = tokens.last;
             weakSource = OcrNameSource.mixedTokenLast;
             final restTokens = tokens.sublist(0, tokens.length - 1);
