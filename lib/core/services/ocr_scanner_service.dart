@@ -1396,6 +1396,29 @@ class OcrScannerService {
     return leftover.removeAt(idx);
   }
 
+  /// 직함 키워드도, 이름에서 갈라낸 나머지도 없을 때 쓰는 **가장 약한**
+  /// 직함 폴백. leftover 맨 앞 줄을 검증 없이 그대로 썼던 것을 좁힌다
+  /// (테스터 제보 2026-08-20, 뒷면에 회사 영문명만 있는 명함).
+  ///
+  /// ## 왜 순수 영문 줄을 거르나
+  ///
+  /// 이 자리는 직함 키워드(`_titleKeywords`)로도, 이름-직함 분리로도 못
+  /// 찾았을 때 오는 **마지막 자리**다. 한국 명함에서 직함은 거의 항상
+  /// 한글이거나(이미 위 두 경로가 잡는다) 영문이어도 `_titleKeywords`에 있는
+  /// 단어(Manager·Director 등)를 포함한다 — 그것도 이미 titleLine으로
+  /// 잡힌다. 그래서 **이 폴백까지 내려온 순수 영문 줄**은 대부분 회사
+  /// 영문명·부서 잔여 텍스트다. 실측: 뒷면에 회사 영문명만 있는 명함에서
+  /// `LG CNS`, `PRIME LOGISTICS` 같은 회사명 조각이 직함 칸에 그대로
+  /// 들어갔다.
+  ///
+  /// ⚠️ **한글이 하나라도 있으면 그대로 쓴다** — 기존 동작을 바꾸지 않는다.
+  /// 이 필터는 "순수 영문" 한 갈래만 좁힌다.
+  static String _pickWeakTitleFallback(List<String> leftover) {
+    if (leftover.isEmpty) return '';
+    if (!_hasHangul(leftover.first)) return '';
+    return leftover.removeAt(0);
+  }
+
   /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
   ///
   /// 103장 전수 측정(추가 280)에서 회사 오류의 한 덩어리가 *"회사명은 맞게
@@ -2626,7 +2649,7 @@ class OcrScannerService {
     // 값 자체는 위에서 홈페이지 칸으로 이미 담았고, 여기서는 직함 줄에 남은
     // 찌꺼기를 지우는 일만 한다.
     var title = _stripContacts(
-      titleLine ?? (leftover.isNotEmpty ? leftover.removeAt(0) : ''),
+      titleLine ?? _pickWeakTitleFallback(leftover),
     ).replaceAll(RegExp(r'\s+'), ' ').trim();
 
     // ── 빈자리 재검증 (2) — 직함 칸에 섞여 들어간 이름 ─────────────────────
