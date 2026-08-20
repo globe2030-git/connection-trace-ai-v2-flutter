@@ -184,6 +184,47 @@ class RadarViewModel extends ChangeNotifier {
     await _resolveLocationAccess(requestPermission: true);
   }
 
+  /// 마지막으로 좌표를 **받은** 시각. 앱 복귀 때 너무 자주 GPS를 부르지
+  /// 않으려고 둔다(추가 346).
+  DateTime? _lastFixAt;
+
+  /// 앱 복귀 때 이 시간 안에 받은 좌표가 있으면 **GPS를 다시 안 부른다.**
+  ///
+  /// ## 왜 필요했나 — 실측
+  ///
+  /// 2026-08-20 실기기(SM-F966N)에서 **홈 → 복귀를 5번 했더니 GPS 요청이
+  /// 3회**였다(15초 사이). 시스템 로그(`GnssNmeaProvider`)로 셌다. 하루에 앱을
+  /// 수십 번 여닫으면 그만큼 돈다.
+  ///
+  /// ## ⚠️ 이동 조건은 못 건다
+  ///
+  /// *"많이 움직였을 때만 다시 받자"*가 자연스러워 보이지만, **움직였는지 알려면
+  /// GPS를 받아야 한다** — 그게 바로 아끼려는 것이다. 걸 수 있는 것은 시간뿐이다.
+  ///
+  /// ## 2분인 이유
+  ///
+  /// ⚠️ **이 값은 잰 것이 아니라 정한 것이다.** 레이더는 주변 인맥까지의 거리를
+  /// 보여 주는데, 걸어서 2분이면 대략 150m다 — 그 정도 오차는 "주변에 누가
+  /// 있나"를 보는 데 지장이 없다고 판단했다. 실사용에서 *"위치가 안 따라온다"*는
+  /// 제보가 오면 줄여야 한다.
+  ///
+  /// 위 실측(15초에 3회)은 이 값이면 **1회로 준다.**
+  static const positionFreshFor = Duration(minutes: 2);
+
+  /// 앱이 앞으로 나왔을 때 부른다. **최근에 받은 좌표가 있으면 건너뛴다.**
+  ///
+  /// ⚠️ 사용자가 직접 누른 갱신([refreshLocation])은 **건너뛰지 않는다** — 사람이
+  /// 새로고침을 눌렀는데 아무 일도 안 일어나면 고장으로 보인다.
+  Future<void> refreshLocationAccess() async {
+    final last = _lastFixAt;
+    if (_currentPosition != null &&
+        last != null &&
+        DateTime.now().difference(last) < positionFreshFor) {
+      return;
+    }
+    return refreshLocation();
+  }
+
   Future<void> refreshLocation() async {
     if (!hasLocationConsent) {
       _currentPosition = null;
@@ -197,8 +238,6 @@ class RadarViewModel extends ChangeNotifier {
     }
     await _resolveLocationAccess(requestPermission: false);
   }
-
-  Future<void> refreshLocationAccess() => refreshLocation();
 
   Future<bool> openRelevantLocationSettings() {
     if (_locationAccessState == LocationAccessState.serviceDisabled) {
@@ -222,6 +261,8 @@ class RadarViewModel extends ChangeNotifier {
       case DeviceLocationAccess.granted:
         final position = await _locationService.getCurrentPosition();
         _currentPosition = position;
+        // 받은 것만 시각을 남긴다 — 실패는 "최근에 받았다"로 치지 않는다.
+        if (position != null) _lastFixAt = DateTime.now();
         _locationAccessState = position == null
             ? LocationAccessState.unavailable
             : LocationAccessState.ready;
