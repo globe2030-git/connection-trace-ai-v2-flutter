@@ -129,6 +129,28 @@ tool/build_app.sh ios release     # iOS
 - [ ] 개인정보처리방침이 **실제 구현과 맞는지** — 새로 수집·전송하는 항목이
       생겼으면 반드시 반영. 방침과 구현이 어긋나는 것 자체가 법적 리스크다
 - [ ] 법적 고지 배포: `firebase deploy --only hosting`
+
+⚠️ **`firebase` 명령이 PATH에 없을 수 있다** — 셸에 따라 `command not found`가
+난다. 전체 경로는 `~/.npm-global/bin/firebase`(firebase-tools 15.25.1).
+
+⚠️ **비밀값을 넣을 때는 `2>&1 | cat`을 붙인다** (2026-08-20 실측).
+
+```
+~/.npm-global/bin/firebase functions:secrets:set <이름> 2>&1 | cat
+```
+
+붙이지 않으면 `Invalid secret key … must start with an uppercase ASCII letter`가
+뜬다. **이름이 규칙에 맞는데도 뜬다** — 이름 문제가 아니므로 이름을 고치려
+들지 말 것. 원인은 규명하지 못했다.
+
+⚠️ **참조된 비밀값이 하나라도 없으면 `deploy --only functions`가 통째로 막힌다.**
+함수를 골라 배포해도 소스 분석 단계에서 전부 요구한다. 현재 필요한 것:
+
+```
+GEMINI_API_KEY · APPLE_SIGNIN_KEY · DEVICE_HASH_SALT · APPLE_IAP_SHARED_SECRET
+KAKAO_REST_KEY · KAKAO_CLIENT_SECRET · NAVER_CLIENT_ID · NAVER_CLIENT_SECRET
+```
+
 - [ ] Play Data safety / Apple App Privacy 양식이 방침과 **일치**하는지
       (불일치하면 즉시 반려)
 
