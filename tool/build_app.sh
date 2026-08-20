@@ -74,7 +74,16 @@ fi
 #
 # ⚠️ 예전에는 이 스크립트가 키를 안 넘겨서 **손으로 --dart-define을 붙여야**
 # 했고, 그러면 잊기 쉽다. 이 스크립트를 쓰는 이유가 원래 그것이다(위 9행).
-for KEY_NAME in VWORLD_KEY KAKAO_JS_KEY; do
+# 소셜 로그인 키(KAKAO_REST_KEY·NAVER_CLIENT_ID)도 같은 방식으로 넘긴다.
+#
+# ⚠️ **비밀값이 아니다.** 인증 화면 주소에 그대로 실려 나가는 공개 식별자라
+# 숨길 수 없다. 안전장치는 콘솔에 등록한 redirect_uri다. 진짜 비밀값
+# (client_secret)은 서버(Cloud Functions 비밀값)에만 있고 앱에 넣지 않는다.
+#
+# 📌 키가 없으면 **로그인 화면에서 그 버튼이 아예 안 보인다**
+# (sns_auth_provider.dart 의 isAvailable). 눌러도 안 되는 버튼을 두지 않기
+# 위해서다 — 그래서 키를 빠뜨리면 "버튼이 없다"로 나타난다.
+for KEY_NAME in VWORLD_KEY KAKAO_JS_KEY KAKAO_REST_KEY NAVER_CLIENT_ID; do
   KEY_VALUE="$(eval "printf '%s' \"\${$KEY_NAME:-}\"")"
   if [ -n "$KEY_VALUE" ]; then
     EXTRA_DEFINES="$EXTRA_DEFINES --dart-define=$KEY_NAME=$KEY_VALUE"
