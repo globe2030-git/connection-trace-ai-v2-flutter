@@ -961,6 +961,15 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 ```
 P0            ①도로명 무한 팝업 ✅ 수정·병합(추가349, PR #361) · ②이름/회사/상세주소
               영문 혼입 3건(진행 중, ocr_scanner_service·add_card_modal_view.dart)
+
+⚠️ **중복 작업 발견(2026-08-20) — PR #365(다른 세션, 카카오)에 우리 점유
+파일 수정이 섞여 있었다.** `_pickWeakTitleFallback`(직함 영문 폴백 차단)·
+`_stripBrandNoiseFromAddressDetail`(상세주소 로고 잔재 제거) 두 지점이
+P0②와 정확히 겹친다. **우리 쪽 flutter-developer(`fix/ocr-english-bleed`,
+워크트리 `-ocrfix`)도 이미 같은 두 함수를 독립적으로 작성했다**(제목 폴백은
+커밋 완료, 상세주소 쪽은 작업 중이던 시점에 확인). PM이 PR #365에서 이
+파일을 분리 요청함 — **분리된 PR이 오면 병합 전에 두 구현을 함수 단위로
+비교해 하나를 택한다.** 그 전까지 P0② PR은 병합하지 않는다.
 카카오 좌표    ✅ 확정(추가351) — 좌표 저장 연결(add_card_modal_view.dart)은
               **P0②와 웹뷰 PR(다른 세션, feat/kakao-geocode-in-webview) 둘 다
               병합된 뒤** 착수. 인터페이스 확정(AddressSearchResult.geo:
