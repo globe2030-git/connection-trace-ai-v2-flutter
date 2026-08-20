@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/camera_capture_mode.dart';
+import '../../../../core/utils/camera_frame_jpeg.dart';
 import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/card_photo_downscale.dart';
 import '../../../../core/utils/card_quad_warp.dart';
@@ -203,6 +205,23 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   bool _isCapturing = false;
   bool _isStreamingForAutoCapture = false;
   bool _isFrameStable = false;
+
+  /// 자동↔수동 촬영 전환(추가 — 테스터 B 요청).
+  ///
+  /// ⚠️ **기본값은 기존 그대로 자동이다.** "촬영 버튼을 직접 눌러야 찍히게
+  /// 해 달라"는 요청에 맞춰 수동을 **공존 옵션으로 추가**하는 것이지, 자동
+  /// 촬영 설계를 갈아엎는 것이 아니다(사용자 확정). 안정성 감지·테두리
+  /// 검출은 두 모드 모두에서 그대로 계산한다 — 화면 피드백("고정됨")과
+  /// 무음 촬영이 쓰는 프레임 스트림 유지가 그 계산에 기대기 때문이다.
+  /// 갈리는 지점은 [shouldTriggerAutoCapture] 딱 하나뿐이다.
+  CameraCaptureMode _captureMode = CameraCaptureMode.auto;
+
+  /// 무음 촬영이 **다음 스트림 프레임**을 기다릴 때 쓰는 완료자.
+  ///
+  /// ⚠️ [_onCameraFrame] 콜백이 끝나면 그 프레임의 바이트는 네이티브가
+  /// 재사용한다 — 그래서 콜백 **안에서, 첫 await 전에** 복사해 완료시킨다
+  /// (`CardRectDetector.detect`가 같은 이유로 같은 규칙을 쓴다).
+  Completer<_CapturedFrame>? _silentFrameCompleter;
 
   /// 디버그 빌드에서만 화면에 띄우는 "대비 / 지배톤" 실측값.
   ///
@@ -483,6 +502,14 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   }
 
   void _onCameraFrame(CameraImage image) {
+    // ⚠️ **다른 조건보다 먼저** 처리한다. 무음 촬영이 기다리는 프레임은
+    // `_isCapturing`·`mounted` 같은 아래 이른 반환에 걸리면 안 되고, 바이트도
+    // 이 콜백이 끝나기 전에 복사해야 한다(위 [_silentFrameCompleter] 문서).
+    final pendingSilent = _silentFrameCompleter;
+    if (pendingSilent != null && !pendingSilent.isCompleted) {
+      pendingSilent.complete(_copyFrameForSilentCapture(image));
+      _silentFrameCompleter = null;
+    }
     if (_isCapturing || !mounted) return;
     final now = DateTime.now();
     final lastAnalyzedAt = _lastAnalyzedAt;
@@ -605,8 +632,38 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     if (stableSince != null &&
         now.difference(stableSince) >= _requiredStableDuration) {
       _stableSince = null;
-      _capturePhoto();
+      // ⚠️ **수동 모드에서는 여기서 멈춘다.** 안정성 판정 자체는 계속 돌아
+      // 화면에 "고정됨/준비됐어요" 피드백을 주지만, 실제로 셔터를 누르는
+      // 것은 이 한 줄이 갈라 낸다 — 그 외 판정 로직은 자동/수동이 같다.
+      if (shouldTriggerAutoCapture(
+        mode: _captureMode,
+        stabilityConditionMet: true,
+      )) {
+        _capturePhoto();
+      }
     }
+  }
+
+  /// 무음 촬영을 위해 스트림 콜백 **안에서** 프레임 바이트를 복사해 온다.
+  ///
+  /// ⚠️ 원본 `CameraImage.planes[i].bytes`는 콜백이 끝나면 재사용되므로,
+  /// 여기서 만든 사본만 콜백 밖(비동기 처리)으로 들고 나갈 수 있다.
+  _CapturedFrame _copyFrameForSilentCapture(CameraImage image) {
+    // 아이폰(NV12)은 2평면, 안드로이드(YUV420)는 3평면 — 평면 수로 갈린다는
+    // 것은 `camera_frame_jpeg.dart`가 문서로 남긴 실측(플러그인 소스 확인)이다.
+    final isBiPlanar = image.planes.length == 2;
+    return _CapturedFrame(
+      width: image.width,
+      height: image.height,
+      planes: [
+        for (final plane in image.planes)
+          CameraFramePlaneData(
+            bytes: Uint8List.fromList(plane.bytes),
+            bytesPerRow: plane.bytesPerRow,
+            bytesPerPixel: plane.bytesPerPixel ?? (isBiPlanar ? 2 : 1),
+          ),
+      ],
+    );
   }
 
   /// 마지막 검출이 떨어진 이유(디버그 화면용).
@@ -914,6 +971,132 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       // 실패해서 다시 화면이 보이는 상태로 남으면, 재시도할 수 있게 안정성
       // 감지를 다시 시작한다.
       await _startAutoCaptureStream();
+    }
+  }
+
+  /// **무음 촬영**(추가 — 테스터 B 요청, 수동 모드 전용).
+  ///
+  /// `takePicture()`(= "사진 촬영" API, 시스템 셔터음을 강제로 낸다)를 아예
+  /// 쓰지 않는다. 대신 이미 자동 촬영 판정을 위해 돌고 있는 **프리뷰 프레임
+  /// 스트림**에서 한 장을 그대로 잡아 저장한다 — 자세한 이유와 대안(시스템
+  /// 사운드 우회)을 버린 근거는 `camera_frame_jpeg.dart` 문서 참고.
+  ///
+  /// ⚠️ **그래도 항상 무음은 아니다.** 한국 등 셔터음이 강제되는 기기·지역
+  /// 에서는 OS·제조사가 이 경로에도 소리를 붙일 수 있다 — 화면에 그렇게
+  /// 안내한다(조건 ③). 강제로 죽이는 시도는 하지 않는다(조건 ④).
+  ///
+  /// ⚠️ **실기기 확인 필요.** 이 경로는 자동 테스트로 픽셀 변환 정확성만
+  /// 확인했다 — 실제 무음 여부·화질은 실기기에서 듣고 봐야 안다.
+  Future<void> _captureSilently() async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized || _isCapturing) {
+      return;
+    }
+    // 프레임 스트림이 안 도는 기기·상태에서는 이 경로 자체가 성립하지
+    // 않는다 — 조용히 무시하지 않고 평범한 촬영 버튼을 쓰라고 알린다.
+    if (!_isStreamingForAutoCapture) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 이 기기에서는 무음 촬영을 쓸 수 없어요. 촬영 버튼을 눌러주세요.')),
+      );
+      return;
+    }
+
+    final frame = await _grabNextStreamFrame();
+    if (frame == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('⚠️ 프레임을 받지 못했습니다. 다시 시도해 주세요.')),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    // 스트림을 멈추기 **전에** 지금 보고 있던 사각형을 붙잡아 둔다 — 기존
+    // 촬영과 같은 순서([_capturePhoto] 참고).
+    _detectionAtCapture = _rectHold.visibleAt(DateTime.now());
+    await _stopAutoCaptureStream();
+    if (!mounted) return;
+
+    setState(() {
+      _isCapturing = true;
+      _isFrameStable = false;
+      _stableSince = null;
+    });
+
+    try {
+      final screenSize = MediaQuery.of(context).size;
+      // 화면(사용자가 보는 방향) 기준으로 세우는 회전 — 테두리 검출이 이미
+      // 같은 프레임 모양으로 쓰고 있는 계산을 그대로 재사용한다.
+      final quarterTurns = quarterTurnsForFrame(
+        sensorOrientation: _sensorOrientation,
+        frameWidth: frame.width,
+        frameHeight: frame.height,
+      );
+      final rawPath =
+          '${Directory.systemTemp.path}/card_silent_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final encoded = await compute(
+        encodeCameraFrameToJpeg,
+        CameraFrameEncodeRequest(
+          width: frame.width,
+          height: frame.height,
+          planes: frame.planes,
+          quarterTurns: quarterTurns,
+          outputPath: rawPath,
+        ),
+      );
+      if (encoded == null) {
+        throw StateError('프레임을 사진으로 바꾸지 못했습니다');
+      }
+      final rawFile = XFile(encoded.path);
+      if (!mounted) return;
+
+      // 화면 방향으로 세운 원본이 준비됐으니, **기존 촬영과 똑같은 크롭
+      // 경로**를 그대로 탄다 — 두 촬영 방식이 서로 다르게 틀리기 시작하지
+      // 않도록, 새 크롭 코드를 만들지 않는다.
+      _lastCropLongEdge = null;
+      if (!kReleaseMode) _lastCropSummary = null;
+      var croppedFile = await _cropByDetectedQuad(rawFile, screenSize);
+      croppedFile ??= await _cropToGuideFrame(rawFile, screenSize);
+
+      if (croppedFile.path != rawFile.path) {
+        await deleteQuietly(rawFile.path);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _pendingShot = croppedFile;
+        _isCapturing = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCapturing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ 무음 촬영에 실패했습니다: $e'),
+          backgroundColor: AppColors.destructive,
+        ),
+      );
+      await _startAutoCaptureStream();
+    }
+  }
+
+  /// 스트림에서 다음 프레임 한 장을 기다린다. 시간 안에 못 받으면 null.
+  Future<_CapturedFrame?> _grabNextStreamFrame({
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    final completer = Completer<_CapturedFrame>();
+    _silentFrameCompleter = completer;
+    try {
+      return await completer.future.timeout(timeout);
+    } on TimeoutException {
+      return null;
+    } finally {
+      // ⚠️ **자기 것일 때만 지운다.** 타임아웃 이후 다른 요청이 새 완료자를
+      // 걸었을 수 있어, 무조건 null로 덮으면 그 요청을 깨뜨린다.
+      if (identical(_silentFrameCompleter, completer)) {
+        _silentFrameCompleter = null;
+      }
     }
   }
 
@@ -1551,6 +1734,58 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       ),
                     ],
                   ),
+                  // 자동↔수동 촬영 전환(추가 — 테스터 B 요청). 확인 화면에서는
+                  // 이미 찍은 사진을 보고 있으므로 숨긴다 — 그때는 모드를 바꿔도
+                  // 아무 뜻이 없다.
+                  if (_pendingShot == null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _captureMode = _captureMode.toggled;
+                            // 모드를 바꾼 순간의 안정 판정은 버린다 — 안 그러면
+                            // 방금 자동으로 바꾸자마자 "이미 멈춰 있던" 판정이
+                            // 그대로 남아 곧바로 찍힐 수 있다.
+                            _stableSince = null;
+                            _isFrameStable = false;
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _captureMode.isManual
+                                    ? Icons.touch_app
+                                    : Icons.auto_awesome,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _captureMode.isManual
+                                    ? '수동 촬영 · 눌러서 자동으로 전환'
+                                    : '자동 촬영 중 · 눌러서 수동으로 전환',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   if (!OcrScannerService.isSupportedOnThisPlatform)
                     Container(
                       margin: const EdgeInsets.only(top: 8),
@@ -1777,9 +2012,16 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  _isFrameStable
-                                      ? '고정됨 · 자동으로 촬영합니다'
-                                      : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요',
+                                  // 수동 모드에서는 "자동으로 촬영합니다"가
+                                  // 거짓 안내가 된다 — 실제로는 버튼을 눌러야
+                                  // 찍힌다([shouldTriggerAutoCapture]).
+                                  _captureMode.isManual
+                                      ? (_isFrameStable
+                                            ? '준비됐어요 · 촬영 버튼을 눌러주세요'
+                                            : '가이드 틀 안에 명함을 맞춰주세요')
+                                      : (_isFrameStable
+                                            ? '고정됨 · 자동으로 촬영합니다'
+                                            : '가이드 틀 안에 명함을 맞추고 잠시 멈춰 주세요'),
                                   style: TextStyle(
                                     color: _isFrameStable
                                         ? AppColors.accent
@@ -2074,13 +2316,33 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Text(
-                      widget.sideLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.sideLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        // 무음 촬영 옵션이 보이는 동안만 안내한다(조건 ③ —
+                        // 한국 등에서는 시스템 정책대로 소리가 날 수 있다는
+                        // 것을 사용자에게 투명하게 알린다).
+                        if (_captureMode.isManual)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              '무음 촬영은 기기·지역 설정에 따라 소리가 날 수 있어요',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -2092,32 +2354,64 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                 bottom: 30,
                 left: 0,
                 right: 0,
-                child: Center(
-                  child: GestureDetector(
-                    onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
-                    child: Container(
-                      width: 76,
-                      height: 76,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 4),
-                      ),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isReady
-                              ? AppColors.accent
-                              : AppColors.textMuted,
-                          shape: BoxShape.circle,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 무음 촬영(B) — 수동 모드에서만 보인다. 자동 모드에서는
+                    // 셔터를 사람이 누르지 않으므로 이 버튼이 뜻이 없다.
+                    if (_captureMode.isManual) ...[
+                      GestureDetector(
+                        onTap: (_isCapturing || !isReady)
+                            ? null
+                            : _captureSilently,
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.black54,
+                            border: Border.all(
+                              color: Colors.white54,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.volume_off,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.camera_alt,
-                          color: Colors.white,
-                          size: 36,
+                      ),
+                      const SizedBox(width: 28),
+                    ],
+                    GestureDetector(
+                      onTap: (_isCapturing || !isReady)
+                          ? null
+                          : _capturePhoto,
+                      child: Container(
+                        width: 76,
+                        height: 76,
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 4),
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isReady
+                                ? AppColors.accent
+                                : AppColors.textMuted,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.white,
+                            size: 36,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
           ],
@@ -2125,4 +2419,18 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       ),
     );
   }
+}
+
+/// 무음 촬영을 위해 스트림에서 복사해 온 프레임 한 장(원본 바이트가 아니라
+/// [_copyFrameForSilentCapture]가 만든 사본).
+class _CapturedFrame {
+  const _CapturedFrame({
+    required this.width,
+    required this.height,
+    required this.planes,
+  });
+
+  final int width;
+  final int height;
+  final List<CameraFramePlaneData> planes;
 }
