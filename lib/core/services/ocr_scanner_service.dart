@@ -2819,7 +2819,7 @@ class OcrScannerService {
       fax: fax ?? '',
       email: email ?? '',
       website: website ?? '',
-      addressDetail: addressDetail ?? '',
+      addressDetail: _stripBrandNoiseFromAddressDetail(addressDetail ?? ''),
       postalCode: postalCode ?? '',
       address: address ?? '',
       tags: const [],
@@ -2827,6 +2827,51 @@ class OcrScannerService {
       imagePath: imagePath,
       parseShape: shape,
     );
+  }
+
+  /// 상세주소 줄에 명함과 무관한 **영문 로고·브랜드 잔재**가 섞여 들어오는
+  /// 것을 막는다(테스터 제보, 2026-08-20).
+  ///
+  /// 원인: 상세주소를 채우는 두 경로(층/호 패턴이 걸린 줄을 통째로 쓰는
+  /// 직접 매칭, 그리고 "주소 다음 줄에 숫자가 있으면 줄 전체" 폴백)가 모두
+  /// **줄 전체**를 그대로 담는다. 명함이 2단 레이아웃이면 `_extractOrderedLines`가
+  /// 같은 높이의 서로 다른 열을 한 줄로 합치는 일이 흔해서, 층수 옆에 로고체
+  /// 브랜드명이 붙어 함께 읽히는 경우가 있다(`5층 ARCTERYX`).
+  ///
+  /// ⚠️ **한글 꼬리는 건드리지 않는다.** "3층 인사팀"처럼 부서명이 실제로
+  /// 상세주소 줄에 함께 인쇄되는 경우가 흔해서 회귀 테스트로 이미 고정돼
+  /// 있다. 그래서 **순수 로마자 대문자로만 된 토큰**(숫자·한글이 하나도
+  /// 안 섞인, 로고체 표기의 전형적인 모양)만 앞뒤 끝에서 뗀다. 중간 토큰이나
+  /// 숫자·기호가 섞인 토큰(`B1F`처럼 실제 상세주소 표기일 수 있는 것)은
+  /// 손대지 않는다 — 확신 없이 떼면 진짜 상세주소를 깎을 수 있다.
+  static String _stripBrandNoiseFromAddressDetail(String detail) {
+    final trimmed = detail.trim();
+    if (trimmed.isEmpty) return trimmed;
+    final tokens = trimmed.split(RegExp(r'\s+'));
+    if (tokens.length < 2) return trimmed;
+
+    bool isBrandNoiseToken(String t) {
+      // 숫자·한글·기호가 하나라도 섞이면 주소 표기(동/호수/층수 등)일 수
+      // 있으므로 순수 로마자 토큰만 본다.
+      if (!RegExp(r'^[A-Za-z]+$').hasMatch(t)) return false;
+      if (t.length < 3) return false;
+      return t == t.toUpperCase();
+    }
+
+    var start = 0;
+    var end = tokens.length;
+    while (start < end && isBrandNoiseToken(tokens[start])) {
+      start++;
+    }
+    while (end > start && isBrandNoiseToken(tokens[end - 1])) {
+      end--;
+    }
+    // 토큰이 전부 로고 잡음으로 판정되면(=상세주소 전체가 영문 대문자뿐이면)
+    // 뗄 근거가 약하다 — 그대로 둔다. 판정은 "명백한 잔재를 거른다"는 것이지
+    // "영문 상세주소는 없다"는 것이 아니다.
+    if (start >= end) return trimmed;
+    if (start == 0 && end == tokens.length) return trimmed;
+    return tokens.sublist(start, end).join(' ');
   }
 
   /// 숫자와 헷갈리기 쉬운 알파벳(0↔O)을 전화번호 패턴 매칭 전에 바로잡는다.
