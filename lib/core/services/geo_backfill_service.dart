@@ -255,6 +255,36 @@ class GeoBackfillService {
     }
   }
 
+  /// **주소는 있는데 좌표가 없는 명함 수**와 **주소가 있는 명함 수**를 센다
+  /// (추가 344).
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// 진단 화면이 실패 **건수**만 보여 줘서 *"11건이 많은 건가 적은 건가"*를
+  /// 말할 수 없었다(추가 343). 분모가 있어야 판단이 선다 — 주소 있는 명함
+  /// 20장 중 11건이면 시급하고, 150장 중이면 뒤로 미뤄도 된다.
+  ///
+  /// ## ⚠️ 새 카운터를 두지 않은 이유
+  ///
+  /// 시도 횟수를 세는 카운터를 새로 넣으면 **0부터 시작한다.** 이미 쌓인 실패
+  /// 11건과 짝이 안 맞아, 한동안 *"실패 11건 / 시도 0건"*이라는 말이 안 되는
+  /// 숫자가 뜬다.
+  ///
+  /// **지금 명함 목록에서 세면 그 문제가 없다** — 상태를 직접 보는 것이라
+  /// 기록이 언제 시작됐는지와 무관하다.
+  static ({int withAddress, int missingGeo}) countGeoCoverage(
+    List<ContactModel> contacts,
+  ) {
+    var withAddress = 0;
+    var missingGeo = 0;
+    for (final c in contacts) {
+      if (!(c.address?.trim().isNotEmpty ?? false)) continue;
+      withAddress++;
+      if (c.geo == null) missingGeo++;
+    }
+    return (withAddress: withAddress, missingGeo: missingGeo);
+  }
+
   /// 형태 코드를 **사람이 읽을 말로 푼다**(추가 342).
   ///
   /// ⚠️ **만드는 쪽([_addressShape])과 같은 파일에 둔다.** 코드 모양이 바뀌면

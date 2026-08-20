@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/services/ocr_stats_service.dart';
 import '../../../../core/services/geo_backfill_service.dart';
+import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../core/theme/app_colors.dart';
 
 /// 명함 인식(OCR 파싱) 품질 진단 화면.
@@ -260,13 +262,27 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   /// ⚠️ **개인정보는 안 담긴다.** 동 이름·번지·건물명은 애초에 저장하지 않고
   /// *"도로명인가/지번인가/숫자가 있나/건물명이 있나/길이"*만 남는다.
   List<Widget> _geoFailureSection() {
-    if (_geoFail.isEmpty) return const [];
+    // ⚠️ **분모를 함께 보여준다**(추가 344). 건수만으로는 *"11건이 많은 건가"*를
+    // 말할 수 없다 — 주소 있는 명함 20장 중이면 시급하고 150장 중이면 아니다.
+    //
+    // 명함 목록에서 **지금 상태로** 센다. 시도 횟수를 새로 세면 0부터 시작해
+    // 이미 쌓인 실패와 짝이 안 맞는다.
+    final cov = GeoBackfillService.countGeoCoverage(
+      context.read<ContactsRepository>().contacts,
+    );
+    if (_geoFail.isEmpty && cov.withAddress == 0) return const [];
     final total = _geoFail.values.fold<int>(0, (a, b) => a + b);
     final sorted = _geoFail.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
-      _card('주소 → 좌표 변환 실패', [
-        _statRow('합계', '$total건'),
+      _card('주소 → 좌표 변환', [
+        _statRow('주소가 있는 명함', '${cov.withAddress}장'),
+        _statRow(
+          '그중 좌표가 없음',
+          '${cov.missingGeo}장'
+          '${cov.withAddress > 0 ? ' (${_pct(cov.missingGeo, cov.withAddress)})' : ''}',
+        ),
+        if (total > 0) _statRow('실패로 기록된 횟수', '$total건'),
         for (final e in sorted)
           _statRow(GeoBackfillService.describeFailureShape(e.key), '${e.value}건'),
       ]),
