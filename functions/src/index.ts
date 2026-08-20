@@ -1853,6 +1853,17 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
  * 로그인하기 위한 함수라 `request.auth`가 없는 것이 정상이다. 대신 위처럼
  * 외부 제공자에게 물어 신원을 확인한다.
  */
+/** 실패해도 로그인을 막지 않는 곁다리 작업용. 이유만 남기고 넘어간다. */
+async function tryQuiet(fn: () => Promise<unknown>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    logger.warn("소셜 레코드 보조 작업 실패(로그인은 계속)", {
+      reason: (e as Error).message,
+    });
+  }
+}
+
 export const socialSignIn = onCall(
   {
     secrets: [
@@ -1970,15 +1981,49 @@ export const socialSignIn = onCall(
     // 갱신한다. ⚠️ 실패해도 로그인은 막지 않는다 — 레코드는 표시용이고,
     // 커스텀 토큰만 있으면 인증은 성립한다.
     const fields = firebaseUserFields(profile);
+    // ⚠️ 이 블록은 실패해도 로그인을 막지 않는다. 레코드는 표시·조회용이고,
+    // 커스텀 토큰만 있으면 인증은 성립한다.
+    //
+    // ⚠️ 처음에는 "고쳐 보고 안 되면 만든다"로만 짰다가 고쳤다(2026-08-20).
+    // 그러면 **이메일 충돌로 updateUser가 실패한 것**도 createUser로 흘러가
+    // "uid가 이미 있다"는 엉뚱한 오류만 로그에 남는다. 진짜 이유가 가려진다.
+    const authAdmin = getAuth();
+    // ⚠️ 이름을 errCode로 둔다 — 이 함수 안에 이미 `code`(카카오 인가 코드)가
+    // 있어서 겹치면 컴파일이 막힌다.
+    const errCode = (e: unknown) => (e as {code?: string}).code ?? "";
     try {
-      await getAuth().updateUser(profile.uid, fields);
-    } catch {
-      try {
-        await getAuth().createUser({uid: profile.uid, ...fields});
-      } catch (e) {
-        logger.warn("소셜 사용자 레코드 준비 실패(로그인은 계속)", {
+      await authAdmin.updateUser(profile.uid, fields);
+    } catch (e1) {
+      if (errCode(e1) === "auth/user-not-found") {
+        try {
+          await authAdmin.createUser({uid: profile.uid, ...fields});
+        } catch (e2) {
+          // 만들 때도 이메일이 걸리면 이메일 없이 만든다 — 계정 자체는 있어야
+          // 닉네임·사진이라도 붙는다.
+          if (errCode(e2) === "auth/email-already-exists") {
+            await tryQuiet(() =>
+              authAdmin.createUser({uid: profile.uid, ...fields, email: undefined}),
+            );
+            logger.info("이메일이 다른 계정에 있어 이메일 없이 만들었다", {provider});
+          } else {
+            logger.warn("소셜 사용자 레코드 생성 실패(로그인은 계속)", {
+              provider,
+              reason: errCode(e2) || (e2 as Error).message,
+            });
+          }
+        }
+      } else if (errCode(e1) === "auth/email-already-exists") {
+        // ⭐ 여기가 실제로 자주 걸리는 자리다. 같은 사람이 구글로도 가입해
+        // 두면 그 이메일이 이미 쓰이고 있어 Firebase가 거부한다.
+        // 이메일만 빼고 나머지(닉네임·사진)는 넣는다.
+        await tryQuiet(() =>
+          authAdmin.updateUser(profile.uid, {...fields, email: undefined}),
+        );
+        logger.info("이메일이 다른 계정에 있어 이메일 없이 갱신했다", {provider});
+      } else {
+        logger.warn("소셜 사용자 레코드 갱신 실패(로그인은 계속)", {
           provider,
-          reason: (e as Error).message,
+          reason: errCode(e1) || (e1 as Error).message,
         });
       }
     }
