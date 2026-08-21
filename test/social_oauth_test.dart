@@ -229,6 +229,40 @@ void main() {
     });
   });
 
+  group('⚠️ 앱 링크는 웹뷰에 넘기지 않는다', () {
+    // 넘기면 웹뷰가 ERR_UNKNOWN_URL_SCHEME 오류 화면을 띄우고, 이용자에게는
+    // 로그인이 고장 난 것으로 보인다.
+    test('웹 주소는 통과한다', () {
+      expect(isWebNavigation(Uri.parse('https://kauth.kakao.com/oauth/authorize')), isTrue);
+      expect(isWebNavigation(Uri.parse('http://nid.naver.com/oauth2.0/authorize')), isTrue);
+      expect(isWebNavigation(Uri.parse('about:blank')), isTrue);
+    });
+
+    test('⚠️ 카카오톡 앱 링크는 막는다 — 실제로 이 스킴으로 이동하려 한다', () {
+      expect(isWebNavigation(Uri.parse('kakaotalk://kakaolink')), isFalse);
+      expect(isWebNavigation(Uri.parse('kakaoplus://')), isFalse);
+    });
+
+    test('⚠️ 안드로이드 intent:// 도 막는다 — 같은 오류를 낸다', () {
+      expect(
+        isWebNavigation(Uri.parse('intent://login#Intent;scheme=kakaotalk;end')),
+        isFalse,
+      );
+    });
+
+    test('⚠️ 대문자 스킴에 속지 않는다', () {
+      // Uri 는 스킴을 소문자로 정규화하지만, 그것에 기대지 않고 우리도 낮춘다.
+      expect(isWebNavigation(Uri.parse('HTTPS://kauth.kakao.com/')), isTrue);
+      expect(isWebNavigation(Uri.parse('KAKAOTALK://x')), isFalse);
+    });
+
+    test('⚠️ 파일·데이터 스킴도 막는다 — 이 저장소의 file:// 전례', () {
+      expect(isWebNavigation(Uri.parse('file:///etc/passwd')), isFalse);
+      expect(isWebNavigation(Uri.parse('data:text/html,<h1>x</h1>')), isFalse);
+      expect(isWebNavigation(Uri.parse('javascript:alert(1)')), isFalse);
+    });
+  });
+
   test('generateState 는 주입한 난수원을 쓴다 — 재현 가능한 테스트를 위해', () {
     final a = generateState(Random(1));
     final b = generateState(Random(1));

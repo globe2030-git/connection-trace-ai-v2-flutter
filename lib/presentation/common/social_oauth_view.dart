@@ -59,6 +59,9 @@ class _SocialOauthViewState extends State<SocialOauthView> {
   /// `Navigator.pop`이 두 번 불릴 수 있다. 그러면 그 뒤 화면까지 닫힌다.
   bool _finished = false;
 
+  /// 앱 링크 차단 안내를 이미 띄웠는지.
+  bool _appLinkNotified = false;
+
   @override
   void initState() {
     super.initState();
@@ -84,6 +87,14 @@ class _SocialOauthViewState extends State<SocialOauthView> {
               // 오류 화면이 잠깐 스치고, 이용자에게는 고장으로 보인다.
               return NavigationDecision.prevent;
             }
+
+            // ⚠️ 앱 링크(kakaotalk://·intent:// …)를 그대로 넘기면 웹뷰가
+            // ERR_UNKNOWN_URL_SCHEME 오류 화면을 띄운다. 막고, 왜 막혔는지
+            // 알린다 — 아무 반응이 없으면 이용자는 버튼이 고장 났다고 읽는다.
+            if (!isWebNavigation(uri)) {
+              _notifyAppLinkBlocked();
+              return NavigationDecision.prevent;
+            }
             return NavigationDecision.navigate;
           },
           onWebResourceError: (error) {
@@ -97,6 +108,21 @@ class _SocialOauthViewState extends State<SocialOauthView> {
 
     _controller.loadRequest(
       authorizeUrl(provider: widget.provider, state: _state),
+    );
+  }
+
+  /// 앱 링크를 막았을 때 한 번만 알린다.
+  ///
+  /// 📌 카카오 로그인 화면은 같은 이동을 여러 번 시도하기도 한다. 그때마다
+  /// 띄우면 안내가 쌓인다.
+  void _notifyAppLinkBlocked() {
+    if (_appLinkNotified || !mounted) return;
+    _appLinkNotified = true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('이 화면에서는 앱으로 넘어갈 수 없어요. 아이디와 비밀번호로 로그인해 주세요.'),
+        duration: Duration(seconds: 4),
+      ),
     );
   }
 

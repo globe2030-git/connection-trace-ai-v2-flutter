@@ -129,6 +129,30 @@ bool isRedirect(Uri uri, SocialProvider provider) {
       uri.path == target.path;
 }
 
+/// 웹뷰가 **그대로 열어도 되는 주소**인지 — `http`/`https` 만 통과한다.
+///
+/// ## ⚠️ 왜 걸러야 하나
+///
+/// 카카오 로그인 화면에는 *"카카오톡으로 로그인"* 이 있고, 그것을 누르면
+/// `kakaotalk://` 또는 `intent://` 로 이동하려 한다. 웹뷰는 이런 스킴을
+/// 모르기 때문에 **`ERR_UNKNOWN_URL_SCHEME` 오류 화면**을 띄운다. 이용자
+/// 눈에는 로그인이 고장 난 것으로 보인다.
+///
+/// 📌 이 저장소에는 **같은 유형의 전례**가 있다 — 주소 검색이 안 되던 버그에서
+/// 화면에 뜬 `ERR_UNKNOWN_URL_SCHEME`은 증상이었고 원인은 `file://` origin
+/// 이었다. 증상이 같으니 원인도 같다고 읽지 말 것: 이번 원인은 **앱 링크**다.
+///
+/// ## ⚠️ 막기만 하고 열어 주지는 않는다
+///
+/// `url_launcher`로 카카오톡을 띄울 수는 있다. 하지만 **띄우면 돌아올 길이
+/// 없다** — 우리는 네이티브 SDK를 쓰지 않아 앱에 되돌아오는 URL 스킴을
+/// 등록해 두지 않았다. 카카오톡에서 동의를 마쳐도 앱으로 못 돌아오고 거기서
+/// 끊긴다. 그래서 **막고 웹 로그인 화면에 머무르게 하는 편이 낫다.**
+bool isWebNavigation(Uri uri) {
+  final scheme = uri.scheme.toLowerCase();
+  return scheme == 'http' || scheme == 'https' || scheme == 'about';
+}
+
 /// 되돌아온 주소를 읽는다.
 ///
 /// ⚠️ **`state`를 반드시 대조한다.** 다르면 우리가 시작한 인증이 아니다.
