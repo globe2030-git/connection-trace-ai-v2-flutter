@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -614,8 +615,21 @@ class _GroupedCard extends StatelessWidget {
 /// (2026-08-21 실제로 캡처에 찍혔다). 공용 기기·시연·영업 현장도 마찬가지다.
 /// 본인 정보라 법적 의무는 아니지만 **필요 이상으로 계속 떠 있을 이유가 없다.**
 ///
-/// ⚠️ 펼침은 **이 화면을 벗어나면 사라진다.** 한 번 펼쳤다고 계속 펼쳐 두면
-/// 가리는 의미가 없다 — 다음에 설정을 열면 다시 가려져 있어야 한다.
+/// ## ⚠️ 펼친 채로 두지 않는다 — 스스로 다시 가린다
+///
+/// 처음에는 *"화면을 벗어나면 사라진다"* 고 적어 뒀는데 **실기기에서 아니었다.**
+/// 탭을 옮겼다 돌아와도 펼쳐진 채였다(탭 전환이 위젯을 살려 두기 때문이다).
+/// 코드가 안 지키는 것을 주석이 약속하고 있었다.
+///
+/// 그래서 화면 구조에 기대지 않는 방법으로 바꿨다.
+///
+/// ```
+/// [_hideAfter] 가 지나면        스스로 다시 가린다
+/// 앱이 뒤로 넘어가면            즉시 가린다 (앱 전환 화면·캡처에 남지 않도록)
+/// ```
+///
+/// 📌 **시간으로 거는 편이 안전하다.** "어느 화면을 벗어났을 때"는 탭·모달·
+/// 라우트마다 달라서, 한 군데를 놓치면 조용히 펼쳐진 채로 남는다.
 class _AccountRow extends StatefulWidget {
   final AuthRepository auth;
 
@@ -625,8 +639,49 @@ class _AccountRow extends StatefulWidget {
   State<_AccountRow> createState() => _AccountRowState();
 }
 
-class _AccountRowState extends State<_AccountRow> {
+class _AccountRowState extends State<_AccountRow> with WidgetsBindingObserver {
+  /// 펼친 뒤 이만큼 지나면 스스로 가린다. 확인에는 충분하고, 켜 둔 채
+  /// 자리를 뜨기에는 짧은 길이.
+  static const Duration _hideAfter = Duration(seconds: 20);
+
   bool _revealed = false;
+  Timer? _hideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 뒤로 넘어가면 즉시 가린다 — 앱 전환 화면 미리보기와 캡처에
+    // 펼쳐진 이메일이 남지 않도록.
+    if (state != AppLifecycleState.resumed) _hide();
+  }
+
+  void _hide() {
+    _hideTimer?.cancel();
+    _hideTimer = null;
+    if (_revealed && mounted) setState(() => _revealed = false);
+  }
+
+  void _toggle() {
+    if (_revealed) {
+      _hide();
+      return;
+    }
+    setState(() => _revealed = true);
+    _hideTimer?.cancel();
+    _hideTimer = Timer(_hideAfter, _hide);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -646,7 +701,7 @@ class _AccountRowState extends State<_AccountRow> {
       subtitle: parts.join(' · '),
       // 이메일이 없으면 펼칠 것도 없다 — 누를 수 없게 둔다(Apple '이메일
       // 가리기'나 카카오 이메일 미동의에서 실제로 없다).
-      onTap: email == null ? null : () => setState(() => _revealed = !_revealed),
+      onTap: email == null ? null : _toggle,
       trailing: email == null
           ? null
           : Icon(
