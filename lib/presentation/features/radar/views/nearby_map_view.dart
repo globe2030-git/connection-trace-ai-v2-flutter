@@ -10,6 +10,7 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
+import '../utils/nearby_map_camera.dart';
 import '../view_models/radar_view_model.dart';
 // 반경 선택 칩은 주변 화면과 공유한다 — 옵션·라벨·선택 시트가 갈라지면
 // 두 화면이 서로 다른 반경 목록을 보여주게 된다.
@@ -134,11 +135,34 @@ class _NearbyMapViewState extends State<NearbyMapView> {
 
     // 반경이 바뀌었으면 원이 화면에 들어오도록 배율을 다시 맞춘다. 빌드 중에는
     // 지도를 움직일 수 없어 다음 프레임으로 미룬다.
+    // 반경이 "전체"면 담을 원이 없다. 그때는 인맥이 실제로 있는 곳까지 담도록
+    // 좌표 목록으로 맞춘다(2026-08-22 실측 — 예전에는 내 위치만 보고 배율을
+    // 정해서, 인맥이 30km 밖에 있으면 핀이 하나도 없는 지도가 열렸다).
+    final fitPoints = mapFitCoordinates(
+      radiusMeters: radius,
+      center: center,
+      myPoint: myPoint,
+      contactPoints: [
+        for (final c in plottable) LatLng(c.geo!.lat, c.geo!.lng),
+      ],
+    );
+    final cameraFit = fitPoints == null
+        ? null
+        : CameraFit.coordinates(
+            coordinates: fitPoints,
+            padding: const EdgeInsets.all(48),
+            maxZoom: kMapFitMaxZoom,
+          );
+
     if (_lastRadius != null && _lastRadius != radius) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         try {
-          _mapController.move(center, _initialZoom(radius));
+          if (cameraFit != null) {
+            _mapController.fitCamera(cameraFit);
+          } else {
+            _mapController.move(center, _initialZoom(radius));
+          }
         } catch (_) {
           // 지도가 아직 준비되지 않았으면 그냥 넘어간다 — 다음 조작 때 맞춰진다.
         }
@@ -156,6 +180,9 @@ class _NearbyMapViewState extends State<NearbyMapView> {
             options: MapOptions(
               initialCenter: center,
               initialZoom: _initialZoom(radius),
+              // 맞춤이 있으면 flutter_map이 첫 프레임에 이걸로 덮어쓴다.
+              // `initialCenter`/`initialZoom`은 맞춤이 없을 때의 값으로 남는다.
+              initialCameraFit: cameraFit,
               // 지도를 돌릴 수 있으면 "북쪽이 위"라는 기준이 흔들려 주변 인맥의
               // 방향을 읽기 어려워진다. 회전만 막고 확대·이동은 열어 둔다.
               interactionOptions: const InteractionOptions(
@@ -477,9 +504,7 @@ class _AnchorMark extends StatelessWidget {
           color: AppColors.cardSurface,
           shape: BoxShape.circle,
           border: Border.all(color: AppColors.accent, width: 2.5),
-          boxShadow: const [
-            BoxShadow(color: Color(0x33000000), blurRadius: 4),
-          ],
+          boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 4)],
         ),
         child: const Icon(
           Icons.center_focus_strong,
