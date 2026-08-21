@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -22,30 +23,53 @@ import 'package:connection_trace_ai_flutter/core/utils/camera_guide_frame_size.d
 void main() {
   /// 짧은 변이 화면 폭에서 차지하는 비율.
   double widthRatio(Size screen) =>
-      guideFrameSizeFor(screen).width / screen.width;
+      guideFrameSizeFor(screen, platform: TargetPlatform.android).width / screen.width;
 
-  group('규칙: min(폭 × 0.65, 267dp)', () {
-    test('상한에 안 닿는 화면은 폭의 65%', () {
-      final s = guideFrameSizeFor(const Size(402, 874)); // iPhone 16 Pro
-      expect(s.width, closeTo(402 * 0.65, 0.01));
+  group('규칙: min(폭 × 플랫폼별 비율, 267dp)', () {
+    test('아이폰은 폭의 50%', () {
+      final s = guideFrameSizeFor(const Size(402, 874), platform: TargetPlatform.iOS);
+      expect(s.width, closeTo(402 * kGuideShortEdgeRatioIos, 0.01));
+    });
+
+    test('⚠️ 아이폰 비율을 0.65 로 올리지 말 것 — 초점이 흐렸다', () {
+      // 2026-08-21 실측. 폴드 커버는 0.65 에서 괜찮았지만 아이폰은 아니었다.
+      // 카메라 최소 초점 거리가 기기마다 달라서다.
+      expect(kGuideShortEdgeRatioIos, lessThan(0.65));
+    });
+
+    test('⭐ 안드로이드는 0.65 를 유지한다 — 폴드 커버에서 확인된 값', () {
+      expect(kGuideShortEdgeRatioDefault, 0.65);
+      final s = guideFrameSizeFor(const Size(411.4, 960),
+          platform: TargetPlatform.android);
+      expect(s.width, closeTo(267, 0.5), reason: '#384 값 그대로여야 한다');
+    });
+
+    test('⚠️ 같은 화면이라도 플랫폼이 다르면 크기가 다르다', () {
+      const screen = Size(402, 874);
+      final ios = guideFrameSizeFor(screen, platform: TargetPlatform.iOS);
+      final android = guideFrameSizeFor(screen, platform: TargetPlatform.android);
+      expect(ios.width, lessThan(android.width),
+          reason: '아이폰은 초점 때문에 더 작아야 한다');
     });
 
     test('⭐ 넓은 화면은 절대 상한에서 멈춘다', () {
       // 폴드 펼침. 예전에는 309dp 였고 "너무 크다"는 제보를 받았다.
-      final s = guideFrameSizeFor(const Size(749.7, 831.4));
+      final s = guideFrameSizeFor(const Size(749.7, 831.4), platform: TargetPlatform.android);
       expect(s.width, closeTo(kGuideMaxShortEdgeDp, 0.01));
       expect(s.width, lessThan(309), reason: '⭐ 줄어들어야 8/17 제보와 맞는다');
     });
 
-    test('⭐ 폴더블 커버는 개정 전과 같은 크기를 유지한다', () {
-      // 267dp — #384 이후 실제로 돌고 있고 크기 제보가 없던 값이다.
-      // ⚠️ 이 값이 바뀌면 "좋다고 확인된 것"을 되돌리는 것이다.
-      final s = guideFrameSizeFor(const Size(411.4, 960));
+    test('⭐ 폴더블 커버는 #384 값(267dp)을 그대로 유지한다', () {
+      // 한때 전 기기를 한 값으로 맞추려다 커버를 226 으로 줄이는 안까지
+      // 갔지만, 플랫폼으로 가르면 **좋다고 확인된 값을 건드리지 않아도
+      // 된다.** 그게 플랫폼 분기를 택한 이유 중 하나다.
+      final s = guideFrameSizeFor(const Size(411.4, 960),
+          platform: TargetPlatform.android);
       expect(s.width, closeTo(267, 0.5));
     });
 
     test('카드 비율은 그대로다', () {
-      final s = guideFrameSizeFor(const Size(402, 874));
+      final s = guideFrameSizeFor(const Size(402, 874), platform: TargetPlatform.iOS);
       expect(s.width / s.height, closeTo(kCardGuideAspectRatio, 0.0001));
     });
   });
@@ -70,7 +94,7 @@ void main() {
     test('⚠️ 어떤 기기도 높이 상한에 닿지 않는다 — 세로로 안 넘친다', () {
       // 폴더블 가로 화면에서 아래가 넘친 전례가 있다.
       devices.forEach((name, screen) {
-        final s = guideFrameSizeFor(screen);
+        final s = guideFrameSizeFor(screen, platform: TargetPlatform.android);
         expect(
           s.height,
           lessThanOrEqualTo(screen.height * kGuideMaxHeightRatio + 0.01),
@@ -84,7 +108,7 @@ void main() {
       // 초점이 영영 안 맞는다(2026-08-06 실기기).
       devices.forEach((name, screen) {
         expect(
-          guideFrameSizeFor(screen).width,
+          guideFrameSizeFor(screen, platform: TargetPlatform.android).width,
           lessThanOrEqualTo(kGuideMaxShortEdgeDp + 0.01),
           reason: '$name 에서 상한을 넘었다',
         );
@@ -95,7 +119,7 @@ void main() {
       devices.forEach((name, screen) {
         expect(
           widthRatio(screen),
-          lessThanOrEqualTo(kGuideShortEdgeRatio + 0.001),
+          lessThanOrEqualTo(kGuideShortEdgeRatioDefault + 0.001),
           reason: '$name 에서 화면을 너무 채운다',
         );
       });
@@ -105,14 +129,14 @@ void main() {
   group('이상한 입력', () {
     test('⚠️ 0이나 음수에도 예외를 던지지 않는다', () {
       // 여기서 던지면 촬영 화면이 통째로 안 뜬다.
-      expect(guideFrameSizeFor(Size.zero), Size.zero);
-      expect(guideFrameSizeFor(const Size(-100, -100)), Size.zero);
-      expect(guideFrameSizeFor(const Size(0, 800)), Size.zero);
+      expect(guideFrameSizeFor(Size.zero, platform: TargetPlatform.android), Size.zero);
+      expect(guideFrameSizeFor(const Size(-100, -100), platform: TargetPlatform.android), Size.zero);
+      expect(guideFrameSizeFor(const Size(0, 800), platform: TargetPlatform.android), Size.zero);
     });
 
     test('아주 낮은 화면에서는 높이 상한이 먼저 걸린다', () {
       // 가로로 눕힌 상태 등.
-      final s = guideFrameSizeFor(const Size(800, 300));
+      final s = guideFrameSizeFor(const Size(800, 300), platform: TargetPlatform.android);
       expect(s.height, closeTo(300 * kGuideMaxHeightRatio, 0.01));
       expect(s.width / s.height, closeTo(kCardGuideAspectRatio, 0.0001));
     });

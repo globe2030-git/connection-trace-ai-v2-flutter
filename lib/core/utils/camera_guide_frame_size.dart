@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'dart:ui' show Size;
 
 /// 명함 촬영 가이드 상자의 가로세로비(짧은 변 / 긴 변).
@@ -21,36 +22,53 @@ const double kCardGuideAspectRatio = 184 / 330;
 /// 폴더블 펼친 화면에서는 여전히 가로가 되므로 크기 자체를 맞춰야 한다.
 const double kGuideMaxHeightRatio = 0.72;
 
-/// 가이드 상자의 **짧은 변이 화면 폭에서 차지하는 비율**.
+/// 가이드 상자의 **짧은 변이 화면 폭에서 차지하는 비율** — 플랫폼별로 다르다.
 ///
-/// ## ⚠️ 2026-08-21 개정 — 비율이 아니라 **절대 크기**가 문제였다
+/// ## ⚠️ 왜 플랫폼으로 가르나 — 카메라가 다르기 때문이다
 ///
-/// 그 전에는 일반 화면 41.3%, 폴더블 커버만 65%였다. 그런데 실기기 치수를
-/// 늘어놓고 보니 **비율은 같은데 절대 크기가 제각각**이었다.
+/// 가이드를 키우면 이용자가 명함을 **더 가까이** 대게 된다. 그 거리가 렌즈
+/// 최소 초점 거리보다 가까우면 **초점이 안 맞는다.** 그 한계가 **기기마다
+/// 다르다.**
 ///
-/// ```
-/// 폴드 펼침      41.3% = 309dp   → "너무 크네" (8/17, 추가 293)
-/// 폴드 커버      65.0% = 267dp   → 좋다 (#384 이후)
-/// 아이폰 16 Pro  41.3% = 166dp   → "작다" (2026-08-21)
-/// ```
+/// 2026-08-21 실기기 실측(아이폰 16 Pro · 갤럭시 폴드):
 ///
-/// ⭐ **같은 비율이 어떤 화면에서는 크고 어떤 화면에서는 작았다.** 사용자가
-/// 반응한 값은 비율이 아니라 **dp** 였다.
+/// | 비율 | 아이폰 초점 | 폴드 커버 초점 |
+/// |---|---|---|
+/// | 41.3% (개정 전) | ◎ | ◎ (가이드가 작다는 제보) |
+/// | 50% | ○ 잡힘 | — |
+/// | 55% | △ 아쉽다 | — |
+/// | 65% | ✕ **흐림** | ◎ (#384 이후 이 값) |
 ///
-/// ⚠️ 그리고 아이폰(2.17)과 갤럭시 S24(2.17)는 **세로세로비가 소수점 둘째
-/// 자리까지 같다.** 그래서 "아이폰만 키우고 안드로이드는 그대로"는 세로비로는
-/// 불가능했다 — 문턱값 방식(옛 `kNarrowAspectThreshold`)을 버린 이유다.
+/// ⭐ **같은 65%가 폴드에서는 되고 아이폰에서는 안 됐다.** 화면 크기나
+/// 세로세로비 문제가 아니다 — 아이폰과 갤럭시 S24 는 세로세로비가 소수점
+/// 둘째 자리까지 같아서, **세로비로는 아예 가를 수 없었다.**
 ///
-/// ## 지금 규칙
+/// 📌 플랫폼으로 가르는 것이 편법이 아닌 이유: 원인이 **카메라 하드웨어**에
+/// 붙어 있고, 화면 모양이 아니라 그 축으로 갈라야 맞기 때문이다.
 ///
-/// ```
-/// 짧은 변 = min(화면 폭 × 0.65, kGuideMaxShortEdgeDp)
-/// ```
+/// ## ⚠️ 안드로이드는 폴드에서만 확인했다
 ///
-/// 커버 화면에만 걸던 65%를 **전 기기로 넓히고**, 절대 상한을 달았다.
-/// 폴드 커버는 267dp 그대로이고, 폴드 펼침은 309 → 267로 **줄어든다**
-/// (8/17 "너무 크다" 제보와 방향이 맞는다).
-const double kGuideShortEdgeRatio = 0.65;
+/// 65% 에서 초점이 확인된 안드로이드는 **폴더블 커버 화면 하나**다. 일반
+/// 안드로이드(갤럭시 S24 등)에서도 괜찮은지는 **모른다.** 지금 테스터 기기가
+/// 폴드라 당장 문제는 없지만, **다른 안드로이드에서 같은 제보가 오면 이
+/// 값부터 의심할 것.**
+///
+/// ## ⚠️ 크기와 초점은 맞바꿈 관계다 — 값으로는 못 푼다
+///
+/// 아이폰에서 50% 는 초점이 잡히지만 *"맞추기 불편하다"* 는 평가였다.
+/// 키우면 초점이 깨지고 줄이면 맞추기 어렵다. **가이드를 크게 두되 꽉 채우지
+/// 않아도 되게** 하고 자르기 기준을 검출된 테두리로 옮기는 것이 방향인데,
+/// 그건 값이 아니라 화면 설계 변경이라 별건으로 뺐다.
+double guideShortEdgeRatioFor(TargetPlatform platform) =>
+    platform == TargetPlatform.iOS
+        ? kGuideShortEdgeRatioIos
+        : kGuideShortEdgeRatioDefault;
+
+/// 아이폰. 초점이 잡히는 것으로 확인된 최대에 가까운 값이다.
+const double kGuideShortEdgeRatioIos = 0.50;
+
+/// 아이폰 외. 폴더블 커버에서 초점이 확인된 값이다(#384 부터 쓰던 값).
+const double kGuideShortEdgeRatioDefault = 0.65;
 
 /// 가이드 상자 짧은 변의 **절대 상한(dp)**.
 ///
@@ -71,7 +89,7 @@ const double kGuideMaxShortEdgeDp = 267;
 /// 화면 크기에 맞는 명함 촬영 가이드 상자 크기를 계산한다.
 ///
 /// ```
-/// 짧은 변 = min(화면 폭 × kGuideShortEdgeRatio, kGuideMaxShortEdgeDp)
+/// 짧은 변 = min(화면 폭 × 플랫폼별 비율, kGuideMaxShortEdgeDp)
 /// 긴 변   = 짧은 변 ÷ 카드 비율,  단 화면 높이 × kGuideMaxHeightRatio 이내
 /// ```
 ///
@@ -80,10 +98,11 @@ const double kGuideMaxShortEdgeDp = 267;
 ///
 /// 📌 실측 12종에서 높이 상한에 닿는 기기는 없었다 — 아이폰 SE(667dp)처럼
 /// 낮은 화면에서도 여유가 있다.
-Size guideFrameSizeFor(Size screenSize) {
+Size guideFrameSizeFor(Size screenSize, {TargetPlatform? platform}) {
   if (screenSize.width <= 0 || screenSize.height <= 0) return Size.zero;
 
-  var shortEdge = screenSize.width * kGuideShortEdgeRatio;
+  final ratio = guideShortEdgeRatioFor(platform ?? defaultTargetPlatform);
+  var shortEdge = screenSize.width * ratio;
   if (shortEdge > kGuideMaxShortEdgeDp) shortEdge = kGuideMaxShortEdgeDp;
 
   var longEdge = shortEdge / kCardGuideAspectRatio;
