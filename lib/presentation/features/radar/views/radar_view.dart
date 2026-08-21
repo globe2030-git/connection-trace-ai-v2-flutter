@@ -9,6 +9,7 @@ import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/ai_usage_chip.dart';
+import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../../../common/same_address_group_header.dart';
@@ -16,6 +17,7 @@ import '../../../common/same_address_group_header.dart';
 import '../../../navigation/main_tab_screen.dart';
 import '../view_models/radar_view_model.dart';
 import 'my_profile_edit_modal_view.dart';
+import 'nearby_map_card.dart';
 import 'qr_code_modal_view.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import '../../wallet/views/add_card_modal_view.dart';
@@ -40,6 +42,12 @@ class _RadarViewState extends State<RadarView> {
   /// (테스터 빌드6 피드백, backlog B6-01). 관리자 문의 화면엔 이미 있는데
   /// 여기만 빠져 있었다.
   final _searchController = TextEditingController();
+
+  // 목록 상단 고정(UI 개선 ⑦, 2026-08-21). 큰 제목·지도 카드는 접어 흘려보내고
+  // 축약 제목+반경·지도 칩+검색창은 화면 위에 고정한다 — 판정 로직은 지갑
+  // 화면과 같은 공용 [HeaderCollapseTracker]를 쓴다(브리프 ⑦ 순서표대로 지갑이
+  // 먼저 만든 컴포넌트를 그대로 재사용).
+  final HeaderCollapseTracker _headerTracker = HeaderCollapseTracker();
 
   @override
   void dispose() {
@@ -75,6 +83,15 @@ class _RadarViewState extends State<RadarView> {
     // 그때 사용자가 보려는 것은 "찾는 사람이 여기 있나" 하나뿐이다.
     final isSearching = viewModel.searchTerm.trim().isNotEmpty;
 
+    // 검색으로 결과가 다 걸러지면 스크롤할 내용이 거의 안 남는다 — 접힌
+    // 채로 그렇게 되면 큰 제목·지도 카드로 돌아갈 방법이 없어진다(지갑
+    // 화면의 "목록이 검색으로 다 걸러지면 접힌 채로 남지 않는다"와 같은
+    // 이유로 강제로 편다).
+    if (isSearching && nearbyList.isEmpty) _headerTracker.reset();
+    final headerCollapsed = (isSearching && nearbyList.isEmpty)
+        ? false
+        : _headerTracker.collapsed;
+
     return Stack(
       children: [
         Scaffold(
@@ -107,548 +124,396 @@ class _RadarViewState extends State<RadarView> {
                   ),
                 ),
                 SafeArea(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header: title + greeting, 명함등록 / QR
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          // 오른쪽 버튼 묶음의 높이가 화면마다 달라도(원형
-                          // 아이콘 2개 vs 라벨 있는 버튼 등) 제목이 항상
-                          // 같은 높이에서 시작하도록 맨 위로 고정 — 기본값인
-                          // center로 두면 제목이 버튼 높이에 따라 미묘하게
-                          // 위아래로 밀린다(다른 탭과 비교 시 눈에 띔).
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '주변 인맥',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
-                                      letterSpacing: -0.5,
-                                    ),
-                                  ),
-                                  // 제목과 인사말이 붙어 있어 머리글이 한
-                                  // 덩어리로 뭉쳐 보였다. 줄 간격을 벌리고
-                                  // 인사말을 한 단계 키워 위쪽에 숨 쉴 자리를
-                                  // 만든다 — 그만큼 아래 카드가 내려가
-                                  // "가까운 인맥" 쪽으로 붙는다(사용자 요청,
-                                  // 2026-08-10).
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    // 검색 중에는 인사말 대신 **무엇을 찾고
-                                    // 있는지**를 보여 준다(F-11). 결과만 보면
-                                    // 어떤 말로 걸러졌는지 알 수 없고,
-                                    // 검색창은 스크롤하면 시야에서 사라진다.
-                                    isSearching
-                                        ? '"${viewModel.searchTerm.trim()}" 검색 중'
-                                        : _greetingForNow(),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      height: 1.4,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+                  child: Column(
+                    children: [
+                      // 목록 상단 고정(UI 개선 ⑦). 맨 위에서는 지금까지와
+                      // 같은 큰 제목이 보이고, 스크롤하면 축약 제목+반경·지도
+                      // 칩+검색창만 남아 화면 위에 고정된다.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                        child: CollapsingListHeader(
+                          collapsed: headerCollapsed,
+                          expandedTop: _buildExpandedTop(
+                            context,
+                            viewModel,
+                            isSearching,
+                          ),
+                          collapsedTop: _buildCollapsedTop(
+                            context,
+                            viewModel,
+                            nearbyCount,
+                          ),
+                          pinnedTools: _buildPinnedTools(
+                            context,
+                            viewModel,
+                            headerCollapsed,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (notification) {
+                            if (_headerTracker.update(
+                              notification.metrics.pixels,
+                            )) {
+                              setState(() {});
+                            }
+                            return false;
+                          },
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                IconButton(
-                                  tooltip: '명함 등록',
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: AppColors.accentSoftStrong,
-                                    shape: const CircleBorder(),
-                                    // 기본 IconButton은 최소 48x48로 렌더링돼
-                                    // 옆의 QR 버튼과 크기가 안 맞았다 —
-                                    // 두 아이콘을 정확히 같은 크기(40px)로 고정.
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: const Size(40, 40),
-                                    maximumSize: const Size(40, 40),
-                                  ),
-                                  icon: const AppIcon(
-                                    AppIconId.addCard,
-                                    color: AppColors.accentText,
-                                    size: 20,
-                                  ),
-                                  onPressed: () =>
-                                      AddCardModalView.show(context),
-                                ),
-                                IconButton(
-                                  tooltip: 'QR 스캔',
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: AppColors.accentSoftStrong,
-                                    shape: const CircleBorder(),
-                                    // 기본 IconButton은 최소 48x48로 렌더링돼
-                                    // 옆의 명함등록 버튼과 크기가 안 맞았다 —
-                                    // 두 아이콘을 정확히 같은 크기(40px)로 고정.
-                                    padding: EdgeInsets.zero,
-                                    minimumSize: const Size(40, 40),
-                                    maximumSize: const Size(40, 40),
-                                  ),
-                                  icon: const AppIcon(
-                                    AppIconId.qrScan,
-                                    color: AppColors.accentText,
-                                    size: 20,
-                                  ),
-                                  onPressed: () {
-                                    showModalBottomSheet<ContactModel>(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (_) => const QrCodeModalView(),
-                                    ).then((scannedContact) {
-                                      if (scannedContact == null ||
-                                          !context.mounted) {
-                                        return;
-                                      }
-                                      AddCardModalView.show(
-                                        context,
-                                        prefillData: scannedContact,
-                                      );
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        if (viewModel.locationAccessState !=
-                            LocationAccessState.ready) ...[
-                          _LocationStatusCard(
-                            viewModel: viewModel,
-                            onAction: () =>
-                                handleLocationAccessAction(context, viewModel),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // 새 기기에서 복원한 직후에는 명함 좌표가 없어 거리
-                        // 계산이 안 된다(좌표는 서버에 백업하지 않고 주소로
-                        // 다시 계산한다 — backlog 추가 75). 그동안 "주변에
-                        // 아무도 없음"으로 보이면 오해를 사므로 준비 중임을
-                        // 알린다.
-                        // 앱을 처음 깔면 내 명함이 없는데 화면 어디에도 그걸
-                        // 알리는 표시가 없어서, 무엇을 먼저 해야 하는지 알 수
-                        // 없었다(실사용 피드백). 위치 안내보다 아래, 인맥
-                        // 목록보다 위에 둬서 "권한 → 내 명함 → 인맥"이라는
-                        // 자연스러운 순서가 되게 한다.
-                        if (context
-                            .watch<MyProfileRepository>()
-                            .profile
-                            .isUnset) ...[
-                          const _SetupMyCardCard(),
-                          const SizedBox(height: 16),
-                        ],
-
-                        if (viewModel.isPreparingContactLocations) ...[
-                          _PreparingLocationsCard(
-                            done: viewModel.contactLocationsPrepared,
-                            total: viewModel.contactLocationsToPrepare,
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // 감지 반경 선택. 원래 설정 화면에만 있었는데, 반경을
-                        // 바꾸면 바로 이 목록이 달라지므로 결과를 보면서 고를
-                        // 수 있는 이 화면이 제자리다(사용자 요청, 추가 139).
-                        // 반경 선택과 지도 열기를 한 줄에 나란히 둔다(사용자
-                        // 요청, 2026-08-10). 둘은 "주변을 어디까지, 어떻게 볼
-                        // 것인가"라는 같은 결정에 속하는데 각각 한 줄씩 차지해
-                        // 화면 위쪽을 두 줄이나 먹고 있었다.
-                        //
-                        // `Row`가 아니라 `Wrap`인 이유: 반경이 "제한 없음"일
-                        // 때 라벨이 가장 길어지는데, 화면이 좁거나 시스템 글자
-                        // 크기를 키운 기기에서는 두 버튼이 한 줄에 안 들어갈 수
-                        // 있다. `Row`면 그 상황에서 오버플로 줄무늬가 뜨지만
-                        // `Wrap`은 조용히 아랫줄로 내려 준다.
-                        Wrap(
-                          // 오른쪽 정렬에서 가운데 정렬로(사용자 요청,
-                          // 2026-08-10). 이 줄은 화면 폭을 거의 다 쓰는 카드
-                          // 위에 얹혀 있어, 오른쪽으로 몰아 두면 왼쪽이 크게
-                          // 비어 균형이 맞지 않았다.
-                          alignment: WrapAlignment.center,
-                          spacing: 6,
-                          runSpacing: 6,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            // 지도 → 반경 순서(사용자 요청, 2026-08-10).
-                            // 지도를 먼저 열고 그 안에서 범위를 가늠하는
-                            // 흐름을 앞세운다.
-                            _ExpandToMapButton(
-                              enabled: viewModel.usingRealGps,
-                              onTap: () => NearbyMapView.show(context),
-                            ),
-                            RadiusSelector(
-                              radiusMeters: viewModel.settings.radiusMeters,
-                              onChanged: viewModel.updateRadius,
-                            ),
-                            // 남은 AI 생성 횟수(탭하면 상세). 제목 아래 →
-                            // 위치 줄을 거쳐 반경 칩 옆으로 옮겼다(사용자
-                            // 요청, 2026-08-10). 셋 다 "이 화면을 어떻게 쓸
-                            // 것인가"를 정하는 칩이라 한 줄에 모인다.
-                            //
-                            // 서비스 미배포·미조회 시에는 스스로 아무것도
-                            // 그리지 않으므로 줄이 비어 보이지 않는다.
-                            const AiUsageChip(),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-
-                        // 검색창을 반경·지도 줄 바로 아래로 옮겼다(사용자 요청,
-                        // 2026-08-10). 예전에는 대표 카드 아래에 있어서, 찾고
-                        // 싶은 사람이 있을 때 화면을 한참 내려야 보였다.
-                        // Rounded Capsule Search Bar — 근접 인맥 리스트를 이름/회사/직함으로 필터링
-                        Container(
-                          // 높이를 약 15% 줄인다(사용자 요청, 2026-08-10).
-                          // 캡슐 자체의 세로 여백을 없애고 TextField가 스스로
-                          // 잡는 높이만 남긴다 — 글자 크기는 건드리지 않아
-                          // 읽기 어려워지지 않는다.
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          // 사용자 요청으로 10% 키운다(40 → 44, 2026-08-10).
-                          // 앞서 15% 줄였다가 조금 낮다는 판단이라 되돌리는
-                          // 셈이다. 44는 iOS 최소 터치 목표와도 맞는다.
-                          constraints: const BoxConstraints(minHeight: 44),
-                          decoration: BoxDecoration(
-                            color: AppColors.capsuleInputBg,
-                            borderRadius: BorderRadius.circular(30),
-                            border: Border.all(color: AppColors.borderSubtle),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _searchController,
-                                  onChanged: (value) {
-                                    viewModel.setSearchTerm(value);
-                                    // 지우기 버튼이 나타나고 사라지는 것만
-                                    // 반영하면 되므로 값 자체는 뷰모델이 갖는다.
-                                    setState(() {});
-                                  },
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    color: AppColors.capsuleInputText,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  decoration: const InputDecoration(
-                                    isDense: true,
-                                    // 기본 세로 여백(약 8)을 줄여 캡슐 높이를
-                                    // 낮춘다. 터치는 캡슐 전체가 받으므로
-                                    // 목표 크기는 minHeight 40으로 지킨다.
-                                    contentPadding: EdgeInsets.symmetric(
-                                      vertical: 6,
-                                    ),
-                                    border: InputBorder.none,
-                                    // 이 검색은 **주변 목록 안에서만** 걸러낸다.
-                                    // 예전 문구('이름, 회사명, 키워드로 검색해
-                                    // 보세요')는 명함 전체를 찾는다고 오해하게
-                                    // 만들었고, 주변에 아무도 없을 때 결과가 0인
-                                    // 것을 "검색이 고장났다"고 느끼게 했다
-                                    // (테스터 E-07). 범위를 문구에 밝힌다.
-                                    hintText: '주변 인맥 중에서 검색',
-                                    hintStyle: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textMuted,
-                                      fontWeight: FontWeight.w500,
+                                if (viewModel.locationAccessState !=
+                                    LocationAccessState.ready) ...[
+                                  _LocationStatusCard(
+                                    viewModel: viewModel,
+                                    onAction: () => handleLocationAccessAction(
+                                      context,
+                                      viewModel,
                                     ),
                                   ),
-                                ),
-                              ),
-                              if (_searchController.text.isNotEmpty)
-                                Semantics(
-                                  button: true,
-                                  label: '검색어 지우기',
-                                  child: InkWell(
-                                    borderRadius: BorderRadius.circular(999),
-                                    onTap: () {
-                                      _searchController.clear();
-                                      viewModel.setSearchTerm('');
-                                      setState(() {});
-                                    },
-                                    child: const Padding(
-                                      padding: EdgeInsets.all(4),
-                                      child: Icon(
-                                        Icons.close,
-                                        color: AppColors.textMuted,
-                                        size: 18,
-                                      ),
+                                  const SizedBox(height: 16),
+                                ],
+
+                                // 새 기기에서 복원한 직후에는 명함 좌표가
+                                // 없어 거리 계산이 안 된다(좌표는 서버에
+                                // 백업하지 않고 주소로 다시 계산한다 —
+                                // backlog 추가 75). 그동안 "주변에 아무도
+                                // 없음"으로 보이면 오해를 사므로 준비 중임을
+                                // 알린다.
+                                // 앱을 처음 깔면 내 명함이 없는데 화면
+                                // 어디에도 그걸 알리는 표시가 없어서, 무엇을
+                                // 먼저 해야 하는지 알 수 없었다(실사용
+                                // 피드백). 위치 안내보다 아래, 인맥 목록보다
+                                // 위에 둬서 "권한 → 내 명함 → 인맥"이라는
+                                // 자연스러운 순서가 되게 한다.
+                                if (context
+                                    .watch<MyProfileRepository>()
+                                    .profile
+                                    .isUnset) ...[
+                                  const _SetupMyCardCard(),
+                                  const SizedBox(height: 16),
+                                ],
+
+                                if (viewModel.isPreparingContactLocations) ...[
+                                  _PreparingLocationsCard(
+                                    done: viewModel.contactLocationsPrepared,
+                                    total: viewModel.contactLocationsToPrepare,
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
+
+                                // 지도에서 기준점을 옮겨 뒀으면 그 사실을
+                                // 알린다(F-13).
+                                //
+                                // ⚠️ 이 줄은 **검색 중에도 남긴다.** 아래
+                                // F-11 분기가 감추는 것은 "지금 내 주변이
+                                // 어떤가"를 말하는 조작 줄이지, **"지금
+                                // 무엇을 기준으로 잰 거리인가"가 아니다.**
+                                // 이걸 같이 감추면 검색 결과의 거리가 내
+                                // 위치 기준이 아닌데 그 사실을 알 길이
+                                // 없어져, F-11이 깨진 것처럼 보이는 결함으로
+                                // 접수된다.
+                                if (viewModel.isUsingCustomAnchor) ...[
+                                  _AnchorNoticeBar(
+                                    onReset: viewModel.clearAnchor,
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+
+                                // 내 위치가 얼마나 믿을 만한지 알린다(E-12).
+                                //
+                                // ⚠️ 기준점 안내와 같은 이유로 **검색 중에도
+                                // 남긴다** — 이것도 "지금 무엇을 기준으로 잰
+                                // 거리인가"에 관한 정보다. 알릴 것이 없으면
+                                // 뷰모델이 null을 주므로 줄 자체가 안
+                                // 생긴다(억지로 채우지 않는다).
+                                if (viewModel.locationQualityMessage !=
+                                    null) ...[
+                                  _LocationQualityBar(
+                                    message: viewModel.locationQualityMessage!,
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+
+                                // 검색 중에는 이 섹션들을 감춘다(F-11) —
+                                // 전부 "지금 내 주변이 어떤가"를 말하는
+                                // 것이라 검색 결과를 밀어낼 이유가 없다.
+                                if (!isSearching) ...[
+                                  // F-10 A — "오늘 연락하면 좋은 사람".
+                                  //
+                                  // 왜 여기(위치 카드보다 위)인가: 이 섹션은
+                                  // 앱을 매일 여는 이유고, 나머지는 "지금
+                                  // 주변이 어떤가"다. 아래에 두면 주변에
+                                  // 아무도 없는 날(대부분의 날)에는 스크롤
+                                  // 해야 보이는데, 그러면 매일 열 이유가
+                                  // 안 된다.
+                                  //
+                                  // 위치와 무관하게 뜬다 — GPS를 못 잡아도
+                                  // "누굴 까먹었나"에는 답할 수 있다.
+                                  // 후보가 없으면 섹션 자체가 사라진다
+                                  // (억지로 채우지 않는다).
+                                  ReconnectTodaySection(
+                                    candidates: viewModel.reconnectCandidates,
+                                    onOpenGuide: viewModel.openBriefing,
+                                    onSnooze: viewModel.snoozeReconnect,
+                                  ),
+
+                                  const SizedBox(height: 16),
+
+                                  // 주변 홈 지도 카드(⑥-C, 2026-08-21
+                                  // 확정). 예전 "지금 가까운 사람 N명"
+                                  // 카드(map.jpg 배경)를 대신한다 — 실제
+                                  // 근처 인맥을 거리·방위 기준으로 배치한
+                                  // 지도풍 그래픽. 카드 자체를 탭하면
+                                  // 예전과 같은 동작(위치 새로고침)을 하고,
+                                  // 실제 지도 화면은 카드 안 "지도로 보기"
+                                  // 버튼으로 연다.
+                                  NearbyMapCard(
+                                    locationAccessState:
+                                        viewModel.locationAccessState,
+                                    origin: viewModel.referencePosition,
+                                    contactsSortedByDistance: nearbyList,
+                                    radiusMeters:
+                                        viewModel.settings.radiusMeters,
+                                    isRefreshing:
+                                        viewModel.isRefreshingLocation,
+                                    onTap: () => handleLocationAccessAction(
+                                      context,
+                                      viewModel,
                                     ),
+                                    onOpenMap: () =>
+                                        NearbyMapView.show(context),
                                   ),
-                                )
-                              else
-                                const Icon(
-                                  Icons.search,
-                                  color: AppColors.capsuleInputText,
-                                  size: 22,
-                                ),
-                            ],
-                          ),
-                        ),
 
-                        const SizedBox(height: 12),
+                                  const SizedBox(height: 8),
 
-                        // 지도에서 기준점을 옮겨 뒀으면 그 사실을 알린다(F-13).
-                        //
-                        // ⚠️ 이 줄은 **검색 중에도 남긴다.** 아래 F-11 분기가
-                        // 감추는 것은 "지금 내 주변이 어떤가"를 말하는 조작
-                        // 줄이지, **"지금 무엇을 기준으로 잰 거리인가"가
-                        // 아니다.** 이걸 같이 감추면 검색 결과의 거리가 내 위치
-                        // 기준이 아닌데 그 사실을 알 길이 없어져, F-11이 깨진
-                        // 것처럼 보이는 결함으로 접수된다.
-                        if (viewModel.isUsingCustomAnchor) ...[
-                          _AnchorNoticeBar(
-                            onReset: viewModel.clearAnchor,
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-
-                        // 내 위치가 얼마나 믿을 만한지 알린다(E-12).
-                        //
-                        // ⚠️ 기준점 안내와 같은 이유로 **검색 중에도 남긴다** —
-                        // 이것도 "지금 무엇을 기준으로 잰 거리인가"에 관한
-                        // 정보다. 알릴 것이 없으면 뷰모델이 null을 주므로 줄
-                        // 자체가 안 생긴다(억지로 채우지 않는다).
-                        if (viewModel.locationQualityMessage != null) ...[
-                          _LocationQualityBar(
-                            message: viewModel.locationQualityMessage!,
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-
-                        // 검색 중에는 이 카드와 아래 조작 줄을 감춘다(F-11) —
-                        // 둘 다 "지금 내 주변이 어떤가"를 말하는 것이라
-                        // 검색 결과를 밀어낼 이유가 없다.
-                        if (!isSearching) ...[
-                          // F-10 A — "오늘 연락하면 좋은 사람".
-                          //
-                          // 왜 여기(위치 카드보다 위)인가: 이 섹션은 앱을 매일
-                          // 여는 이유고, 나머지는 "지금 주변이 어떤가"다. 아래에
-                          // 두면 주변에 아무도 없는 날(대부분의 날)에는 스크롤
-                          // 해야 보이는데, 그러면 매일 열 이유가 안 된다.
-                          //
-                          // 위치와 무관하게 뜬다 — GPS를 못 잡아도 "누굴
-                          // 까먹었나"에는 답할 수 있다. 후보가 없으면 섹션
-                          // 자체가 사라진다(억지로 채우지 않는다).
-                          ReconnectTodaySection(
-                            candidates: viewModel.reconnectCandidates,
-                            onOpenGuide: viewModel.openBriefing,
-                            onSnooze: viewModel.snoozeReconnect,
-                          ),
-
-                          // "지금 가까운 사람 N명" 요약 카드 — 탭하면 위치를
-                          // 새로고침한다.
-                          _NearbyCountCard(
-                            count: nearbyCount,
-                            isRefreshing: viewModel.isRefreshingLocation,
-                            onTap: viewModel.isRefreshingLocation
-                                ? null
-                                : () => handleLocationAccessAction(
-                                    context,
-                                    viewModel,
-                                  ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                        // 위치 아이콘과 조작 안내를 "지금 가까운 사람" 카드
-                        // 바로 아래 한 줄에 둔다(사용자 요청, 2026-08-10).
-                        // 아이콘이 무엇을 켜고 끄는지가 그 카드의 숫자이므로,
-                        // 상단 버튼 줄보다 여기가 가깝다.
-                        //
-                        // 길게 누르기는 눌러 보기 전에는 알 수 없는 동작이라
-                        // 설명을 옆에 붙인다. 툴팁만으로는 길게 눌러야 뜨는데,
-                        // 그 자체가 길게 누를 줄 아는 사람에게만 보인다.
-                          Row(
-                            children: [
-                              _RefreshLocationButton(
-                                isRefreshing: viewModel.isRefreshingLocation,
-                                usingRealGps: viewModel.usingRealGps,
-                                isDetecting: viewModel.hasLocationConsent,
-                                onTap: () => handleLocationAccessAction(
-                                  context,
-                                  viewModel,
-                                ),
-                                onToggleDetect: () =>
-                                    _toggleNearbyDetect(context, viewModel),
-                              ),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textMuted,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-                        ],
-
-                        // 가장 가까운 한 명을 큰 대표 카드로 따로 보여 주던
-                        // 것을 없앴다(사용자 요청, 2026-08-10). 같은 사람이
-                        // 카드와 목록 두 곳에 다른 모양으로 나타나 "왜 저
-                        // 사람만 다른가"를 설명해야 했고, 대표 카드가 화면
-                        // 절반을 먹어 정작 목록은 스크롤해야 보였다.
-                        // 이제 **가장 가까운 사람도 목록의 첫 줄**로 들어간다.
-                        // 비어 있을 때 **왜 비었는지**를 밝힌다. 예전에는 이유와
-                        // 상관없이 같은 문구뿐이라, 위치를 못 잡은 것인지 검색어와
-                        // 맞는 사람이 없는 것인지 구분할 수 없었다 — 그래서 QA도
-                        // "빈 화면"을 정상으로 넘겼고 테스터는 "검색이 안 된다"고
-                        // 느꼈다(E-07).
-                        if (viewModel.filteredContacts.isEmpty)
-                          _NearbyEmptyState(
-                            hasLocation: viewModel.currentPosition != null,
-                            usingRealGps: viewModel.usingRealGps,
-                            searchTerm: viewModel.searchTerm,
-                            radiusIsUnlimited:
-                                viewModel.settings.radiusMeters.isInfinite,
-                            onOpenWallet: _openWalletTab,
-                          ),
-
-                        const SizedBox(height: 16),
-
-                        const SizedBox(height: 16),
-
-                        // 목록 제목도 화면의 성격을 따라간다(F-11) — 같은
-                        // 목록이라도 검색 중에는 "주변에 있는 사람들"이 아니라
-                        // "찾은 결과"다. 제목이 그대로면 사용자는 걸러진
-                        // 목록을 전체 목록으로 오해한다.
-                        Text(
-                          isSearching
-                              ? '검색 결과 (${nearbyList.length}명)'
-                              : '가까운 인맥 (${nearbyList.length}명)',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // 명함 지갑 목록과 같은 형태로 맞춘다(사용자 요청,
-                        // 2026-08-10) — 이름/직함/회사명 세 줄, 아바타 왼쪽,
-                        // 오른쪽에 동작 버튼. 같은 인맥을 두 화면에서 다른
-                        // 모양으로 보여 줄 이유가 없다.
-                        //
-                        // 다른 점 하나: 여기에는 **근접 거리**가 함께 붙는다.
-                        // 이 화면의 존재 이유가 "지금 얼마나 가까운가"이므로
-                        // 목록에서도 그 값이 보여야 한다.
-                        // 같은 주소에 여러 명이 있으면 묶어서 보여 준다(F-15).
-                        // 한 건물에 3명이 있는데 같은 거리가 세 줄 나열되면,
-                        // 사용자가 그걸 스스로 세어야 한다. 묶음 머리글은
-                        // 2명 이상일 때만 붙인다 — 1명짜리 머리글은 아무
-                        // 정보도 주지 않는다.
-                        ...groupContactsByAddress(nearbyList).expand((group) {
-                          final tiles = group.contacts.map((contact) {
-                            // 내 위치가 아니라 기준점에서 잰다(F-13). 목록
-                            // 정렬도 같은 기준을 쓰므로(뷰모델), 여기만 내
-                            // 위치로 재면 "거리는 커지는데 순서는 그대로"인
-                            // 목록이 된다.
-                            final distance = GeoUtils.getDistanceMeters(
-                              viewModel.referencePosition,
-                              contact.geo,
-                            );
-                            return _NearbyContactTile(
-                              contact: contact,
-                              distanceMeters: distance,
-                              // 묶음 안에서는 주소를 줄마다 반복하지 않는다 —
-                              // 머리글에 이미 있고, 같은 값이 세 번 나오면
-                              // 오히려 읽기 어렵다.
-                              showAddress: !group.isGrouped,
-                              onOpen: () => viewModel.openBriefing(contact),
-                              onCall: () => PhoneCallService.showCallPicker(
-                                context,
-                                contact,
-                              ),
-                            );
-                          });
-                          if (!group.isGrouped) return tiles;
-                          // 머리글만으로는 묶음이 "닫히지" 않는다 — 아래로
-                          // 이어지는 낱개 카드까지 묶음으로 읽힌다. 그래서
-                          // 속한 카드들을 들여쓰기 + 왼쪽 세로선으로 감싼다
-                          // (추가 313, 실기기에서 "2명" 밑에 5장이 이어져
-                          // 보였다).
-                          return [
-                            SameAddressGroupHeader(
-                              address: group.address,
-                              count: group.contacts.length,
-                            ),
-                            SameAddressGroupBody(children: tiles.toList()),
-                          ];
-                        }),
-
-                        // ⭐ 좌표가 없어 반경 목록에 못 드는 명함을 **지역별로**
-                        // 이어서 보여 준다.
-                        //
-                        // 반경 목록은 좌표로 거르기 때문에, 좌표를 못 얻은
-                        // 명함은 화면에서 **조용히 사라진다**(추가 79에서
-                        // 실기기로 겪었다). 이용자는 등록한 명함이 왜 안
-                        // 보이는지 알 수 없다.
-                        //
-                        // 📌 실측(2026-08-21): 등록 93건 중 좌표를 못 얻은
-                        // 30건 **전부** 주소에서 구까지 뽑혔다.
-                        //
-                        // ⚠️ 거리 목록과 **섞지 않는다.** 위는 "몇 m"이고
-                        // 여기는 "같은 구"라, 한 목록에 섞으면 순서가
-                        // 거짓이 된다.
-                        if (viewModel.contactsWithoutGeoCount > 0) ...[
-                          const SizedBox(height: 24),
-                          _RegionSectionHeader(
-                            count: viewModel.contactsWithoutGeoCount,
-                          ),
-                          const SizedBox(height: 8),
-                          ...viewModel.contactsByRegionWithoutGeo.expand(
-                            (entry) => [
-                              SameAddressGroupHeader(
-                                address: entry.key,
-                                count: entry.value.length,
-                              ),
-                              SameAddressGroupBody(
-                                children: entry.value
-                                    .map(
-                                      (contact) => _NearbyContactTile(
-                                        contact: contact,
-                                        // ⚠️ 거리를 넣지 않는다. 좌표가 없어
-                                        // 잴 수가 없고, 0이나 빈 값을 넣으면
-                                        // "아주 가깝다"로 읽힌다.
-                                        distanceMeters: null,
-                                        showAddress: true,
-                                        onOpen: () =>
-                                            viewModel.openBriefing(contact),
-                                        onCall: () =>
-                                            PhoneCallService.showCallPicker(
+                                  // 위치 아이콘과 조작 안내를 지도 카드
+                                  // 바로 아래 한 줄에 둔다(사용자 요청,
+                                  // 2026-08-10). 아이콘이 무엇을 켜고
+                                  // 끄는지가 그 카드의 숫자이므로, 상단
+                                  // 버튼 줄보다 여기가 가깝다.
+                                  //
+                                  // 길게 누르기는 눌러 보기 전에는 알 수
+                                  // 없는 동작이라 설명을 옆에 붙인다.
+                                  // 툴팁만으로는 길게 눌러야 뜨는데, 그
+                                  // 자체가 길게 누를 줄 아는 사람에게만
+                                  // 보인다.
+                                  Row(
+                                    children: [
+                                      _RefreshLocationButton(
+                                        isRefreshing:
+                                            viewModel.isRefreshingLocation,
+                                        usingRealGps: viewModel.usingRealGps,
+                                        isDetecting:
+                                            viewModel.hasLocationConsent,
+                                        onTap: () =>
+                                            handleLocationAccessAction(
                                               context,
-                                              contact,
+                                              viewModel,
+                                            ),
+                                        onToggleDetect: () =>
+                                            _toggleNearbyDetect(
+                                              context,
+                                              viewModel,
                                             ),
                                       ),
-                                    )
-                                    .toList(),
-                              ),
-                            ],
+                                      const SizedBox(width: 8),
+                                      const Expanded(
+                                        child: Text(
+                                          '짧게: 위치 갱신 · 길게: 주변 인맥 감지 켜기/끄기',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: AppColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+
+                                  const SizedBox(height: 10),
+                                ],
+
+                                // 가장 가까운 한 명을 큰 대표 카드로 따로
+                                // 보여 주던 것을 없앴다(사용자 요청,
+                                // 2026-08-10). 같은 사람이 카드와 목록 두
+                                // 곳에 다른 모양으로 나타나 "왜 저 사람만
+                                // 다른가"를 설명해야 했고, 대표 카드가
+                                // 화면 절반을 먹어 정작 목록은 스크롤해야
+                                // 보였다. 이제 **가장 가까운 사람도 목록의
+                                // 첫 줄**로 들어간다.
+                                // 비어 있을 때 **왜 비었는지**를 밝힌다.
+                                // 예전에는 이유와 상관없이 같은 문구뿐이라,
+                                // 위치를 못 잡은 것인지 검색어와 맞는
+                                // 사람이 없는 것인지 구분할 수 없었다 —
+                                // 그래서 QA도 "빈 화면"을 정상으로 넘겼고
+                                // 테스터는 "검색이 안 된다"고 느꼈다
+                                // (E-07).
+                                if (viewModel.filteredContacts.isEmpty)
+                                  _NearbyEmptyState(
+                                    hasLocation:
+                                        viewModel.currentPosition != null,
+                                    usingRealGps: viewModel.usingRealGps,
+                                    searchTerm: viewModel.searchTerm,
+                                    radiusIsUnlimited: viewModel
+                                        .settings
+                                        .radiusMeters
+                                        .isInfinite,
+                                    onOpenWallet: _openWalletTab,
+                                  ),
+
+                                const SizedBox(height: 16),
+
+                                // 목록 제목도 화면의 성격을 따라간다(F-11)
+                                // — 같은 목록이라도 검색 중에는 "주변에
+                                // 있는 사람들"이 아니라 "찾은 결과"다.
+                                // 제목이 그대로면 사용자는 걸러진 목록을
+                                // 전체 목록으로 오해한다.
+                                Text(
+                                  isSearching
+                                      ? '검색 결과 (${nearbyList.length}명)'
+                                      : '가까운 인맥 (${nearbyList.length}명)',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+
+                                // 명함 지갑 목록과 같은 형태로 맞춘다(사용자
+                                // 요청, 2026-08-10) — 이름/직함/회사명 세 줄,
+                                // 아바타 왼쪽, 오른쪽에 동작 버튼. 같은
+                                // 인맥을 두 화면에서 다른 모양으로 보여 줄
+                                // 이유가 없다.
+                                //
+                                // 다른 점 하나: 여기에는 **근접 거리**가
+                                // 함께 붙는다. 이 화면의 존재 이유가 "지금
+                                // 얼마나 가까운가"이므로 목록에서도 그 값이
+                                // 보여야 한다.
+                                // 같은 주소에 여러 명이 있으면 묶어서
+                                // 보여 준다(F-15). 한 건물에 3명이 있는데
+                                // 같은 거리가 세 줄 나열되면, 사용자가 그걸
+                                // 스스로 세어야 한다. 묶음 머리글은 2명
+                                // 이상일 때만 붙인다 — 1명짜리 머리글은
+                                // 아무 정보도 주지 않는다.
+                                ...groupContactsByAddress(nearbyList).expand((
+                                  group,
+                                ) {
+                                  final tiles = group.contacts.map((contact) {
+                                    // 내 위치가 아니라 기준점에서
+                                    // 잰다(F-13). 목록 정렬도 같은 기준을
+                                    // 쓰므로(뷰모델), 여기만 내 위치로
+                                    // 재면 "거리는 커지는데 순서는 그대로"
+                                    // 인 목록이 된다.
+                                    final distance = GeoUtils.getDistanceMeters(
+                                      viewModel.referencePosition,
+                                      contact.geo,
+                                    );
+                                    return _NearbyContactTile(
+                                      contact: contact,
+                                      distanceMeters: distance,
+                                      // 묶음 안에서는 주소를 줄마다
+                                      // 반복하지 않는다 — 머리글에 이미
+                                      // 있고, 같은 값이 세 번 나오면
+                                      // 오히려 읽기 어렵다.
+                                      showAddress: !group.isGrouped,
+                                      onOpen: () =>
+                                          viewModel.openBriefing(contact),
+                                      onCall: () =>
+                                          PhoneCallService.showCallPicker(
+                                            context,
+                                            contact,
+                                          ),
+                                    );
+                                  });
+                                  if (!group.isGrouped) return tiles;
+                                  // 머리글만으로는 묶음이 "닫히지" 않는다 —
+                                  // 아래로 이어지는 낱개 카드까지 묶음으로
+                                  // 읽힌다. 그래서 속한 카드들을 들여쓰기 +
+                                  // 왼쪽 세로선으로 감싼다(추가 313,
+                                  // 실기기에서 "2명" 밑에 5장이 이어져
+                                  // 보였다).
+                                  return [
+                                    SameAddressGroupHeader(
+                                      address: group.address,
+                                      count: group.contacts.length,
+                                    ),
+                                    SameAddressGroupBody(
+                                      children: tiles.toList(),
+                                    ),
+                                  ];
+                                }),
+
+                                // ⭐ 좌표가 없어 반경 목록에 못 드는 명함을
+                                // **지역별로** 이어서 보여 준다.
+                                //
+                                // 반경 목록은 좌표로 거르기 때문에, 좌표를
+                                // 못 얻은 명함은 화면에서 **조용히
+                                // 사라진다**(추가 79에서 실기기로 겪었다).
+                                // 이용자는 등록한 명함이 왜 안 보이는지
+                                // 알 수 없다.
+                                //
+                                // 📌 실측(2026-08-21): 등록 93건 중 좌표를
+                                // 못 얻은 30건 **전부** 주소에서 구까지
+                                // 뽑혔다.
+                                //
+                                // ⚠️ 거리 목록과 **섞지 않는다.** 위는
+                                // "몇 m"이고 여기는 "같은 구"라, 한 목록에
+                                // 섞으면 순서가 거짓이 된다.
+                                if (viewModel.contactsWithoutGeoCount >
+                                    0) ...[
+                                  const SizedBox(height: 24),
+                                  _RegionSectionHeader(
+                                    count: viewModel.contactsWithoutGeoCount,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ...viewModel.contactsByRegionWithoutGeo
+                                      .expand(
+                                        (entry) => [
+                                          SameAddressGroupHeader(
+                                            address: entry.key,
+                                            count: entry.value.length,
+                                          ),
+                                          SameAddressGroupBody(
+                                            children: entry.value
+                                                .map(
+                                                  (contact) =>
+                                                      _NearbyContactTile(
+                                                        contact: contact,
+                                                        // ⚠️ 거리를 넣지
+                                                        // 않는다. 좌표가
+                                                        // 없어 잴 수가
+                                                        // 없고, 0이나 빈
+                                                        // 값을 넣으면
+                                                        // "아주 가깝다"로
+                                                        // 읽힌다.
+                                                        distanceMeters: null,
+                                                        showAddress: true,
+                                                        onOpen: () => viewModel
+                                                            .openBriefing(
+                                                              contact,
+                                                            ),
+                                                        onCall: () =>
+                                                            PhoneCallService.showCallPicker(
+                                                              context,
+                                                              contact,
+                                                            ),
+                                                      ),
+                                                )
+                                                .toList(),
+                                          ),
+                                        ],
+                                      ),
+                                ],
+                              ],
+                            ),
                           ),
-                        ],
-                      ],
-                    ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -662,6 +527,308 @@ class _RadarViewState extends State<RadarView> {
             contact: viewModel.selectedContactForBriefing!,
             onClose: viewModel.closeBriefing,
           ),
+      ],
+    );
+  }
+
+  /// 스크롤 맨 위에서만 보이는 큰 제목 블록 — 큰 제목("주변 인맥")과 인사말/
+  /// 검색 문구, 명함등록·QR 버튼. 브리프 ⑦ 표에서 "흘려보냄"으로 지정한 두
+  /// 항목 중 하나(나머지 하나인 지도 카드는 스크롤 본문 쪽에서 `!isSearching`
+  /// 조건과 함께 그린다 — 검색 중에는 원래도 숨겼던 카드라 이 자리에 두면
+  /// 그 규칙과 부딪힌다).
+  /// [context]를 지역 매개변수로 받는다 — `State.context`(게터)를 그대로
+  /// 쓰면 분석기가 `await` 뒤 `mounted` 가드를 좁혀 읽지 못해
+  /// `use_build_context_synchronously`가 잘못 걸린다(2026-08-22 실측,
+  /// `build(BuildContext context)`처럼 지역 매개변수여야 좁혀 읽는다).
+  Widget _buildExpandedTop(
+    BuildContext context,
+    RadarViewModel viewModel,
+    bool isSearching,
+  ) {
+    return Row(
+      // 오른쪽 버튼 묶음의 높이가 화면마다 달라도(원형 아이콘 2개 vs 라벨
+      // 있는 버튼 등) 제목이 항상 같은 높이에서 시작하도록 맨 위로 고정 —
+      // 기본값인 center로 두면 제목이 버튼 높이에 따라 미묘하게 위아래로
+      // 밀린다(다른 탭과 비교 시 눈에 띔).
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '주변 인맥',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              // 제목과 인사말이 붙어 있어 머리글이 한 덩어리로 뭉쳐 보였다.
+              // 줄 간격을 벌리고 인사말을 한 단계 키워 위쪽에 숨 쉴 자리를
+              // 만든다 — 그만큼 아래 카드가 내려가 "가까운 인맥" 쪽으로
+              // 붙는다(사용자 요청, 2026-08-10).
+              const SizedBox(height: 6),
+              Text(
+                // 검색 중에는 인사말 대신 **무엇을 찾고 있는지**를 보여
+                // 준다(F-11). 결과만 보면 어떤 말로 걸러졌는지 알 수 없고,
+                // 검색창은 스크롤하면 시야에서 사라진다.
+                isSearching
+                    ? '"${viewModel.searchTerm.trim()}" 검색 중'
+                    : _greetingForNow(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              tooltip: '명함 등록',
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.accentSoftStrong,
+                shape: const CircleBorder(),
+                // 기본 IconButton은 최소 48x48로 렌더링돼 옆의 QR 버튼과
+                // 크기가 안 맞았다 — 두 아이콘을 정확히 같은 크기(40px)로
+                // 고정.
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(40, 40),
+                maximumSize: const Size(40, 40),
+              ),
+              icon: const AppIcon(
+                AppIconId.addCard,
+                color: AppColors.accentText,
+                size: 20,
+              ),
+              onPressed: () => AddCardModalView.show(context),
+            ),
+            IconButton(
+              tooltip: 'QR 스캔',
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.accentSoftStrong,
+                shape: const CircleBorder(),
+                // 기본 IconButton은 최소 48x48로 렌더링돼 옆의 명함등록
+                // 버튼과 크기가 안 맞았다 — 두 아이콘을 정확히 같은
+                // 크기(40px)로 고정.
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(40, 40),
+                maximumSize: const Size(40, 40),
+              ),
+              icon: const AppIcon(
+                AppIconId.qrScan,
+                color: AppColors.accentText,
+                size: 20,
+              ),
+              onPressed: () {
+                showModalBottomSheet<ContactModel>(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const QrCodeModalView(),
+                ).then((scannedContact) {
+                  if (scannedContact == null || !context.mounted) {
+                    return;
+                  }
+                  AddCardModalView.show(context, prefillData: scannedContact);
+                });
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// 접혔을 때만 보이는 축약 제목 줄 — "주변"+"가까운 N명" 배지에 반경
+  /// 칩·지도 버튼을 같은 줄로 흡수한다(브리프 ⑦ 표: "반경 칩·지도 버튼
+  /// (제목 줄 흡수)"). 펼친 상태에서는 이 두 칩이 [_buildPinnedTools]의
+  /// 별도 줄에 있다가, 접히는 순간 이 줄로 옮겨 붙는 셈이다 — 사라지는 게
+  /// 아니라 위치만 바뀐다(브리프의 "고정" 요구를 지킨다).
+  Widget _buildCollapsedTop(
+    BuildContext context,
+    RadarViewModel viewModel,
+    int? nearbyCount,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Flexible(
+                child: Text(
+                  '주변',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _NearbyCountBadge(count: nearbyCount),
+            ],
+          ),
+        ),
+        const SizedBox(width: 6),
+        RadiusSelector(
+          radiusMeters: viewModel.settings.radiusMeters,
+          onChanged: viewModel.updateRadius,
+        ),
+        const SizedBox(width: 6),
+        _ExpandToMapButton(
+          enabled: viewModel.usingRealGps,
+          onTap: () => NearbyMapView.show(context),
+        ),
+      ],
+    );
+  }
+
+  /// 스크롤·접힘과 무관하게 항상 보이는 검색창 — 브리프 표가 "고정"으로
+  /// 못박은 유일한 항목이라 조건 없이 늘 그린다.
+  ///
+  /// 반경 칩·지도 버튼·AI 잔여 횟수 칩은 **펼친 상태에서만** 여기(검색창
+  /// 위)에 그린다. 접히면 반경·지도 칩은 [_buildCollapsedTop]의 축약 제목
+  /// 줄로 옮겨 붙으므로 여기서 또 그리면 같은 조작이 두 번 보인다 — AI
+  /// 잔여 횟수 칩은 브리프 표에 고정으로 지정돼 있지 않아, 접히면 함께
+  /// 접어 높이 예산(~150dp)을 지킨다(디자이너 재량).
+  Widget _buildPinnedTools(
+    BuildContext context,
+    RadarViewModel viewModel,
+    bool collapsed,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!collapsed) ...[
+          const SizedBox(height: 16),
+          // `Row`가 아니라 `Wrap`인 이유: 반경이 "제한 없음"일 때 라벨이
+          // 가장 길어지는데, 화면이 좁거나 시스템 글자 크기를 키운
+          // 기기에서는 세 버튼이 한 줄에 안 들어갈 수 있다. `Row`면 그
+          // 상황에서 오버플로 줄무늬가 뜨지만 `Wrap`은 조용히 아랫줄로
+          // 내려 준다.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // 지도 → 반경 순서(사용자 요청, 2026-08-10). 지도를 먼저
+              // 열고 그 안에서 범위를 가늠하는 흐름을 앞세운다.
+              _ExpandToMapButton(
+                enabled: viewModel.usingRealGps,
+                onTap: () => NearbyMapView.show(context),
+              ),
+              RadiusSelector(
+                radiusMeters: viewModel.settings.radiusMeters,
+                onChanged: viewModel.updateRadius,
+              ),
+              // 남은 AI 생성 횟수(탭하면 상세). 서비스 미배포·미조회 시에는
+              // 스스로 아무것도 그리지 않으므로 줄이 비어 보이지 않는다.
+              const AiUsageChip(),
+            ],
+          ),
+          const SizedBox(height: 14),
+        ] else
+          const SizedBox(height: 10),
+        // Rounded Capsule Search Bar — 근접 인맥 리스트를 이름/회사/직함으로
+        // 필터링
+        Container(
+          // 높이를 약 15% 줄인다(사용자 요청, 2026-08-10). 캡슐 자체의
+          // 세로 여백을 없애고 TextField가 스스로 잡는 높이만 남긴다 —
+          // 글자 크기는 건드리지 않아 읽기 어려워지지 않는다.
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          // 사용자 요청으로 10% 키운다(40 → 44, 2026-08-10). 앞서 15%
+          // 줄였다가 조금 낮다는 판단이라 되돌리는 셈이다. 44는 iOS 최소
+          // 터치 목표와도 맞는다.
+          constraints: const BoxConstraints(minHeight: 44),
+          decoration: BoxDecoration(
+            color: AppColors.capsuleInputBg,
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: AppColors.borderSubtle),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) {
+                    viewModel.setSearchTerm(value);
+                    // 지우기 버튼이 나타나고 사라지는 것만 반영하면 되므로
+                    // 값 자체는 뷰모델이 갖는다.
+                    setState(() {});
+                  },
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.capsuleInputText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    // 기본 세로 여백(약 8)을 줄여 캡슐 높이를 낮춘다.
+                    // 터치는 캡슐 전체가 받으므로 목표 크기는 minHeight
+                    // 40으로 지킨다.
+                    contentPadding: EdgeInsets.symmetric(vertical: 6),
+                    border: InputBorder.none,
+                    // 이 검색은 **주변 목록 안에서만** 걸러낸다. 예전
+                    // 문구('이름, 회사명, 키워드로 검색해 보세요')는 명함
+                    // 전체를 찾는다고 오해하게 만들었고, 주변에 아무도
+                    // 없을 때 결과가 0인 것을 "검색이 고장났다"고 느끼게
+                    // 했다(테스터 E-07). 범위를 문구에 밝힌다.
+                    hintText: '주변 인맥 중에서 검색',
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textMuted,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+              if (_searchController.text.isNotEmpty)
+                Semantics(
+                  button: true,
+                  label: '검색어 지우기',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () {
+                      _searchController.clear();
+                      viewModel.setSearchTerm('');
+                      setState(() {});
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        color: AppColors.textMuted,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.search,
+                  color: AppColors.capsuleInputText,
+                  size: 22,
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -686,12 +853,38 @@ class _RadarViewState extends State<RadarView> {
   }
 }
 
-/// "지금 가까운 사람 N명" 요약 카드.
-/// 명함 좌표를 주소로부터 다시 계산하는 동안 보여주는 안내.
-///
-/// 좌표는 서버에 백업하지 않기 때문에(backlog 추가 75, C안) 기기를 바꾸거나
-/// 계정을 다시 연결하면 이 구간이 잠깐 생긴다. 이 카드가 없으면 사용자에게는
-/// "인맥이 다 사라진 것"처럼 보인다.
+/// 접힌 축약 제목 옆의 "가까운 N명" 배지. 명함 지갑의
+/// [HeaderCountBadge](숫자만 표시)와 달리 이 화면은 숫자 하나만으로는
+/// 무엇을 세는지 알 수 없어(가까운 사람? 전체 인맥?) 문구를 함께 넣는다.
+class _NearbyCountBadge extends StatelessWidget {
+  const _NearbyCountBadge({required this.count});
+
+  /// 위치를 아직 못 잡았으면 null — 그때는 "0명"이 아니라 "확인 중"이라고
+  /// 알려야 한다. 0으로 보이면 "왜 아무도 없지"로 오해한다.
+  final int? count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.accentSoft,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        count != null ? '가까운 $count명' : '위치 확인 중',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: AppColors.accentText,
+        ),
+      ),
+    );
+  }
+}
+
 /// 내 명함을 아직 만들지 않았을 때 첫 화면에 띄우는 안내.
 ///
 /// 왜 필요한가: 앱을 처음 설치하면 할 일이 무엇인지 알려주는 것이 아무것도
@@ -777,6 +970,11 @@ class _SetupMyCardCard extends StatelessWidget {
   }
 }
 
+/// 명함 좌표를 주소로부터 다시 계산하는 동안 보여주는 안내.
+///
+/// 좌표는 서버에 백업하지 않기 때문에(backlog 추가 75, C안) 기기를 바꾸거나
+/// 계정을 다시 연결하면 이 구간이 잠깐 생긴다. 이 카드가 없으면 사용자에게는
+/// "인맥이 다 사라진 것"처럼 보인다.
 class _PreparingLocationsCard extends StatelessWidget {
   final int done;
   final int total;
@@ -838,152 +1036,6 @@ class _PreparingLocationsCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _NearbyCountCard extends StatelessWidget {
-  final int? count;
-  final bool isRefreshing;
-  final VoidCallback? onTap;
-
-  const _NearbyCountCard({
-    required this.count,
-    required this.isRefreshing,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.accentSoft,
-          borderRadius: BorderRadius.circular(20),
-          // 배경이 사진처럼 바뀌면서 카드 경계가 페이지 배경에 묻혀 흐릿해
-          // 보였다(사용자 보고). 또렷한 테두리로 경계를 세운다.
-          border: Border.all(color: AppColors.borderFunctional),
-        ),
-        // 배경을 지도 느낌으로 깐다(사용자 결정, 2026-08-10).
-        //
-        // **실제 지도 타일이 아니라 앱이 그린 그래픽이다.** 홈 화면에 진짜
-        // 지도를 깔면 앱을 켜기만 해도 지도 사업자에게 타일 요청이 나가는데,
-        // 오늘 배포한 개인정보처리방침 10-3은 "지도 화면을 열지 않으면 어떤
-        // 요청도 발생하지 않는다"고 적고 있다. 방침을 고치는 대신 요청이 아예
-        // 없는 방식을 택했다 — 방침과 구현이 어긋나는 것 자체가 리스크다.
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Stack(
-            children: [
-              // 사용자가 준 지도 일러스트를 배경으로 깐다(2026-08-10).
-              // **실제 지도 타일이 아니라 앱에 번들한 그림**이다 — 홈 화면에
-              // 진짜 지도를 깔면 앱을 켤 때마다 지도 사업자에게 요청이 나가는데,
-              // 개인정보처리방침 10-3이 "지도 화면을 열지 않으면 어떤 요청도
-              // 발생하지 않는다"고 적고 있다. 그림이면 요청이 아예 없다.
-              const Positioned.fill(
-                child: ExcludeSemantics(
-                  child: Image(
-                    image: AssetImage('assets/images/nearby/map.jpg'),
-                    fit: BoxFit.cover,
-                    // 카드가 가로로 길어 정사각형 원본의 가운데 위쪽을 쓴다 —
-                    // 그림 한가운데의 파란 현위치 점이 살아 있어야 "지금 내
-                    // 주변"이라는 뜻이 전달된다.
-                    alignment: Alignment.center,
-                  ),
-                ),
-              ),
-              // 글자가 얹히는 자리만 흰 막으로 덮어 대비를 지킨다.
-              //
-              // 처음에는 카드 전체에 55% 막을 씌웠는데 지도가 통째로 흐려
-              // 보였다(사용자 보고, 2026-08-10). 막을 옅게(22%) 하되, 글자가
-              // 실제로 놓이는 **아래쪽에만** 흰색이 짙어지는 그라데이션을
-              // 얹는다 — 지도는 선명하게 남고 글자 대비는 지켜진다.
-              Positioned.fill(
-                child: ExcludeSemantics(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.22),
-                          Colors.white.withValues(alpha: 0.62),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Padding(
-                // 대표 카드를 없앤 자리를 이 카드가 대신한다(사용자 요청,
-                // 2026-08-10). 여백과 아이콘·숫자를 키워 예전 대표 카드와
-                // 비슷한 덩치를 갖게 했다 — 화면 위쪽이 허전해지지 않도록.
-                // 카드를 "가까운 인맥" 목록 바로 앞까지 키운다(사용자 요청,
-                // 2026-08-10). 대표 카드를 없앤 자리가 이 카드로 온전히
-                // 채워지도록 세로 여백을 크게 잡았다.
-                // ⚠️ 가로 여백을 31까지 키웠더니 iPhone(논리 폭 393)에서
-                // "지금 가까운 사람"이 두 줄로 깨졌다(사용자 캡처, 2026-08-10).
-                // 세로는 그대로 두고 **가로만** 줄여 라벨 폭을 되찾는다.
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 68,
-                ),
-                child: Row(
-                  children: [
-                    // 흰 원 안의 레이더 아이콘은 뺐다(사용자 요청,
-                    // 2026-08-10). 배경 지도 그림 한가운데에 이미 파란 현위치
-                    // 점이 있어 같은 뜻을 두 번 그리고 있었고, 흰 원이 지도를
-                    // 가려 배경을 넣은 의미도 반감됐다.
-                    //
-                    // 위치를 새로 읽는 중일 때만 진행 표시기를 띄운다 —
-                    // 이건 상태를 알리는 것이라 지도 그림이 대신할 수 없다.
-                    if (isRefreshing) ...[
-                      const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: AppColors.accent,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    // 라벨은 왼쪽, 숫자는 오른쪽 끝(사용자 요청, 2026-08-10). 예전에는
-                    // 둘이 왼쪽에 붙어 있어 카드 오른쪽 절반이 통째로 비어 있었다.
-                    const Expanded(
-                      child: Text(
-                        '지금 가까운 사람',
-                        // 폭이 모자라도 **두 줄로 깨지지 않게** 한 줄로 못박고,
-                        // 정 안 들어가면 줄여서 그린다. 두 줄로 접히면 카드
-                        // 높이까지 흔들려 아래 요소가 밀린다.
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.fade,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      count != null ? '$count명' : '--',
-                      style: const TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.accentText,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
