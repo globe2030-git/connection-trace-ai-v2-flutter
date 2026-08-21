@@ -377,7 +377,10 @@ class OcrScannerService {
       );
       for (final line in _extractOrderedLines(recognized)) {
         final m = re.firstMatch(line.text);
-        if (m != null) return m.group(0)!.replaceAll(RegExp(r'\s+'), '');
+        if (m != null) {
+          final raw = m.group(0)!.replaceAll(RegExp(r'\s+'), '');
+          return _stripEmailLabelPrefix(raw);
+        }
       }
       return null;
     } catch (_) {
@@ -1191,6 +1194,54 @@ class OcrScannerService {
     return letters.length < 2;
   }
 
+  /// 이메일 정규식이 뽑아낸 값이 완전한 이메일 형태인지(라벨을 떼어낸 뒤
+  /// 재검증할 때 쓴다).
+  static final _fullEmailPattern = RegExp(
+    r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+  );
+
+  /// "E-mail:"/"E-mail."/"Email " 같은 **단어형** 라벨. 대소문자를 가리지
+  /// 않는다 — 로컬파트가 통째로 이 단어("email")로 시작할 확률은 사실상 없다.
+  static final _emailLabelPrefixWordPattern = RegExp(
+    r'^e-?mail[.:\s]*',
+    caseSensitive: false,
+  );
+
+  /// "E." / "E " / "E:" 같은 **한 글자** 라벨. 대문자 `E`일 때만 본다.
+  static final _emailLabelPrefixLetterPattern = RegExp(r'^E[.:\s]+');
+
+  /// 이메일 로컬파트 앞에 라벨 잔재가 그대로 붙어 오는 경우를 걷어낸다.
+  /// 실측(신규 등록 96건, 2026-08-20 — `docs/planning/backlog.md` 참고)에서
+  /// `E.wcho@lgcns.com`처럼 명함의 "E." 라벨이 로컬파트에 그대로 붙어 저장된
+  /// 사례가 4건 나왔다 — 라벨의 마침표가 이메일 로컬파트 허용 문자(`.`)와
+  /// 같아서 이메일 정규식이 라벨까지 통째로 삼킨 것이다.
+  ///
+  /// ⚠️ **대문자 `E` + 구분자(마침표/콜론/공백)가 있을 때만** 걷어낸다.
+  /// `Ejuyeon@sto.or.kr`처럼 구분자 없이 붙은 경우도 같은 데이터에 실재하지만,
+  /// 라벨인지 실제 아이디 앞글자인지 규칙만으로 가릴 수 없어 그대로 둔다 —
+  /// 오탐이 더 위험하다(CLAUDE.md 4절, "조건을 넓게 잡았다가 회귀 난 전례").
+  ///
+  /// ⚠️ 소문자 `e`는 보지 않는다 — 명함 라벨은 인쇄가 대문자인 반면(`E.`),
+  /// 실제 이메일 로컬파트는 소문자 이니셜식 표기가 흔하다(`e.kim@…`,
+  /// `eric.maeng@…`, `eomysj@…` — 셋 다 같은 96건 표본에 실재). 대소문자를
+  /// 신호로 쓰면 라벨과 정상 아이디를 가를 수 있는데, 소문자까지 같이 보면
+  /// 그 신호가 사라진다.
+  ///
+  /// 걷어낸 뒤 남는 부분이 **그 자체로 완전한 이메일**일 때만 값을 바꾼다 —
+  /// 아니면 라벨처럼 보였을 뿐 실제로는 다른 문자열일 수 있다.
+  static String _stripEmailLabelPrefix(String value) {
+    for (final pattern in [
+      _emailLabelPrefixWordPattern,
+      _emailLabelPrefixLetterPattern,
+    ]) {
+      final match = pattern.firstMatch(value);
+      if (match == null) continue;
+      final rest = value.substring(match.end);
+      if (_fullEmailPattern.hasMatch(rest)) return rest;
+    }
+    return value;
+  }
+
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
   static bool _hasHangul(String s) => RegExp(r'[가-힣ㄱ-ㆎ]').hasMatch(s);
@@ -1854,7 +1905,8 @@ class OcrScannerService {
 
       final emailMatch = emailRegExp.firstMatch(line);
       if (email == null && emailMatch != null) {
-        email = emailMatch.group(0)!.replaceAll(RegExp(r'\s+'), '');
+        final rawEmail = emailMatch.group(0)!.replaceAll(RegExp(r'\s+'), '');
+        email = _stripEmailLabelPrefix(rawEmail);
         matchedRanges.add((emailMatch.start, emailMatch.end));
         matchedContactField = true;
       }

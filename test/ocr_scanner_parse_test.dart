@@ -1884,4 +1884,94 @@ void main() {
       expect(r.company, isNot('E-mail. . kr'));
     });
   });
+
+  group('이메일 라벨 잔재 정리 (테스터 제보, 신규 등록 96건 실측, 2026-08-21)', () {
+    // 실측 근거: 신규 등록 96건 중 "E."로 시작한 이메일 4건 전부가 라벨
+    // 잔재를 붙인 채 저장됐다 — 라벨의 마침표가 이메일 로컬파트 허용
+    // 문자(".")와 같아서 이메일 정규식이 라벨까지 통째로 삼킨 것이다.
+    test('"E." 라벨이 로컬파트에 붙어도 걷어낸다', () {
+      final r = parse([
+        '조원창',
+        'LG CNS',
+        'M.010-3144-2154',
+        'E.wcho@lgcns.com',
+      ]);
+      expect(r.email, 'wcho@lgcns.com');
+    });
+
+    test('"E." 라벨 — 실측 4건 중 나머지 세 건도 동일하게 걷어낸다', () {
+      expect(parse(['E.msseo@lgcns.com']).email, 'msseo@lgcns.com');
+      expect(parse(['E.skhong@sportslg.com']).email, 'skhong@sportslg.com');
+      expect(parse(['E.kdw0054@incross.com']).email, 'kdw0054@incross.com');
+    });
+
+    test('"E-mail:"/"Email " 단어형 라벨도 걷어낸다', () {
+      expect(
+        parse(['E-mail:test@test.co.kr']).email,
+        'test@test.co.kr',
+      );
+      expect(
+        parse(['Email test@test.co.kr']).email,
+        'test@test.co.kr',
+      );
+    });
+
+    test('구분자 없이 라벨과 붙은 경우는 건드리지 않는다 — 오탐 위험', () {
+      // "Ejuyeon@sto.or.kr" — 라벨 "E"와 아이디 사이에 마침표/공백 같은
+      // 구분자가 전혀 없다. 라벨이 붙은 것인지 원래 아이디 앞글자("juyeon"
+      // 앞에 우연히 E가 더 붙은 것)인지 규칙만으로 가릴 수 없어 그대로 둔다.
+      final r = parse(['Ejuyeon@sto.or.kr']);
+      expect(r.email, 'Ejuyeon@sto.or.kr');
+    });
+
+    test('회귀 방지 — 소문자 "e"로 시작하는 정상 아이디는 건드리지 않는다', () {
+      // 같은 96건 표본에 실재하는 정상 이메일. 라벨은 인쇄가 대문자("E.")인
+      // 반면 실제 로컬파트는 소문자 이니셜식 표기가 흔해서, 대소문자를
+      // 신호로 나눴다 — 소문자까지 같이 지우면 이 값들이 깨진다.
+      expect(parse(['e.kim@company.com']).email, 'e.kim@company.com');
+      expect(
+        parse(['eric.maeng@sovargen.com']).email,
+        'eric.maeng@sovargen.com',
+      );
+      expect(parse(['eomysj@handballkorea.com']).email, 'eomysj@handballkorea.com');
+    });
+
+    test('회귀 방지 — 대문자 "E"로 시작해도 뒤에 구분자가 없으면 그대로 둔다', () {
+      expect(parse(['Erictest@company.com']).email, 'Erictest@company.com');
+    });
+
+    test('회귀 방지 — "l"로 시작하는 정상 아이디는 건드리지 않는다', () {
+      // 같은 96건 표본에 "lee@…"/"leeh@…" 계열이 다수 실재한다 — 세로
+      // 구분선(│)이 OCR에서 소문자 l로 잘못 읽히는 사례가 보고됐지만, 그
+      // 잔재를 이메일 값 앞에서 지우는 규칙은 넣지 않았다: "l"로 시작하는
+      // 진짜 아이디(성씨 "이"의 로마자 표기 "Lee")가 실제로 흔해서, 문자열
+      // 규칙만으로는 구분선 잔재와 실제 아이디를 가를 수 없다(오탐이 더
+      // 위험 — CLAUDE.md 4절). 파서가 뽑는 이메일 값 자체는 애초에 공백으로
+      // 분리된 "고립 토큰"(예: "…kr l www…")을 삼키지 않으므로(로컬파트
+      // 정규식이 공백을 허용하지 않음), 이 값들은 원래도 깨지지 않는다.
+      expect(parse(['lee@sovargen.com']).email, 'lee@sovargen.com');
+      expect(parse(['leeh@sto.or.kr']).email, 'leeh@sto.or.kr');
+    });
+
+    test('@ 앞뒤 공백은 라벨 정리와 별개로 이미 붙여져 저장된다 — 회귀 확인', () {
+      // 실측: "E jihyun @sto.or.kr" 원문이 "jihyun@sto.or.kr"로 정상
+      // 저장됐다. "E "는 로컬파트 정규식이 공백을 허용하지 않아 애초에
+      // 매치에 안 들어가고, "@" 앞의 공백은 기존 로직(추가 시점 불명,
+      // `_parse`의 emailRegExp 주석 참고)이 이미 붙여 왔다 — 새 규칙과는
+      // 무관하게 유지되는지만 잠근다.
+      final r = parse(['E jihyun @sto.or.kr']);
+      expect(r.email, 'jihyun@sto.or.kr');
+    });
+
+    test('이름 중간 공백은 이어붙이지 않는다 — 범위 밖(의도적)', () {
+      // 실측: "E.seungho. lee@lgcns.com" 원문은 실제로는
+      // "seungho.lee@lgcns.com"이어야 하지만, "seungho." 뒤에 공백이 있어
+      // 로컬파트 정규식이 거기서 끊긴다. 그 결과 앞부분("seungho.")을 통째로
+      // 놓치고 "lee@lgcns.com"만 남는다 — 틀린 값이지만 "존재하지 않는
+      // 값을 추측해 붙이는 것"보다 안전하다(CLAUDE.md "가짜 데이터를 만들지
+      // 않는다"). 이름 중간 공백까지 이어붙이는 규칙은 일부러 넣지 않았다.
+      final r = parse(['E.seungho. lee@lgcns.com']);
+      expect(r.email, 'lee@lgcns.com');
+    });
+  });
 }
