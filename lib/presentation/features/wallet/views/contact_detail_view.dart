@@ -43,6 +43,16 @@ import 'add_card_modal_view.dart';
 ///
 /// ⚠️ **빈 칸은 그리지 않는다.** 이 저장소는 화면을 채우려고 없는 값을 만들지
 /// 않는다(CLAUDE.md 4절). 값이 없으면 그 줄 자체가 없다.
+///
+/// ## 연락 동작은 줄마다 아이콘으로 (2026-08-21 사용자 확정, UI 개선 브리프 ⑤)
+///
+/// 예전엔 화면 위쪽에 큰 파란 "전화" 띠 버튼이 하나 있었다. "화면을 차지하고
+/// 부담스럽다"는 제보로 없앴다 — **이 버튼은 전화만 걸었다.** AI 브리핑 같은
+/// 다른 진입로는 애초에 이 화면에 없었다(그건 명함 목록 행에 이미 별도
+/// 아이콘으로 있다 — `wallet_view.dart`의 `_CompactAction`/`onBriefing`).
+/// 대신 값이 있는 연락처 줄마다 그 값으로 할 수 있는 동작(전화·문자·메일)을
+/// 오른쪽에 원형 아이콘으로 붙였다 — [contactRowActionKinds]가 무엇을
+/// 붙일지 정한다.
 class ContactDetailView extends StatelessWidget {
   const ContactDetailView({super.key, required this.contact});
 
@@ -103,9 +113,6 @@ class ContactDetailView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _header(context, uid),
-                    const SizedBox(height: 18),
-                    _actions(context),
-                    const SizedBox(height: 8),
                     ..._contactRows(context),
                     ..._historyRows(context),
                   ],
@@ -135,17 +142,23 @@ class ContactDetailView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  // ⚠️ [편집]도 [닫기]와 **같은 무채색 외곽선 스타일**로
+                  // 통일했다(2026-08-21, 브리프 ⑤) — 예전엔 파란 강조
+                  // 버튼이라 위쪽 "전화" 띠와 함께 파란 덩어리가 두 개
+                  // 겹쳐 보였다. 연락 동작은 이제 줄마다 아이콘이 맡으므로
+                  // 아래 줄은 이동(닫기·편집) 목적만 남았다 — 둘 다 같은
+                  // 무게로 둔다.
                   Expanded(
-                    child: FilledButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: () {
                         Navigator.of(context).pop();
                         AddCardModalView.show(context, contact: contact);
                       },
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       label: const Text('편집'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: Colors.white,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.textMuted,
+                        side: const BorderSide(color: AppColors.borderSubtle),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
                     ),
@@ -207,30 +220,6 @@ class ContactDetailView extends StatelessWidget {
     );
   }
 
-  /// 연락 동작 — **이미 있는 경로를 그대로 부른다.**
-  ///
-  /// ⚠️ 새로 만들지 않는다. 전화는 목록 타일이 쓰는 것과 **같은 통로**라,
-  /// 번호가 여럿일 때 고르게 하는 처리와 소통 이력 기록이 함께 따라온다.
-  Widget _actions(BuildContext context) {
-    final hasPhone =
-        contact.phone.trim().isNotEmpty ||
-        (contact.officePhone?.trim().isNotEmpty ?? false);
-    if (!hasPhone) return const SizedBox.shrink();
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        onPressed: () => PhoneCallService.showCallPicker(context, contact),
-        icon: const Icon(Icons.call, size: 18),
-        label: const Text('전화'),
-        style: FilledButton.styleFrom(
-          backgroundColor: AppColors.accent,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-        ),
-      ),
-    );
-  }
-
   /// ⚠️ **여기 세 줄이 전부다.** 나머지 칸(직통·팩스·홈페이지·주소·메모)은
   /// [편집]에서 본다 — 2026-08-19 사용자 확정(추가 332).
   ///
@@ -238,10 +227,105 @@ class ContactDetailView extends StatelessWidget {
   /// 이 화면을 여는 목적이 원래 *"연락처 중심 — 전화번호·이메일 등"*이었다.
   /// 전화만 남기면 그 목적의 절반이 [편집] 뒤로 숨는다.
   List<Widget> _contactRows(BuildContext context) => _section('연락처', [
-    _row('휴대폰', contact.phone),
-    _row('사무실', contact.officePhone),
-    _row('이메일', contact.email),
+    _row(
+      '휴대폰',
+      contact.phone,
+      actions: _actionIconsFor(
+        context,
+        rowKind: ContactRowKind.mobile,
+        value: contact.phone,
+      ),
+    ),
+    _row(
+      '사무실',
+      contact.officePhone,
+      actions: _actionIconsFor(
+        context,
+        rowKind: ContactRowKind.office,
+        value: contact.officePhone,
+      ),
+    ),
+    _row(
+      '이메일',
+      contact.email,
+      actions: _actionIconsFor(
+        context,
+        rowKind: ContactRowKind.email,
+        value: contact.email,
+      ),
+    ),
   ]);
+
+  /// [contactRowActionKinds]가 정한 종류대로 아이콘 위젯을 만든다.
+  ///
+  /// 실행은 전부 **이미 있는 launch 경로를 그대로 부른다** — 새 권한·새
+  /// 플러그인 없음(2026-08-21 브리프 ⑤ 지시).
+  /// - 전화: [PhoneCallService.makeCall] — 목록 행([wallet_view.dart]의
+  ///   `onCall`)이 번호가 하나뿐일 때 쓰는 것과 같은 통로다. 여기서는 줄이
+  ///   이미 어느 번호인지 정해 주므로, 둘 중 골라야 하는
+  ///   [PhoneCallService.showCallPicker] 시트는 쓰지 않는다 — 휴대폰 줄의
+  ///   전화 아이콘을 눌렀는데 "휴대폰이냐 사무실이냐" 되묻는 시트가 뜨면
+  ///   오히려 헷갈린다.
+  /// - 문자·메일: 새로 둔 [PhoneCallService.sendSms]/[PhoneCallService.sendEmail]
+  ///   — 브리핑 화면(`briefing_overlay_view.dart`)이 쓰는 것과 같은
+  ///   `sms:`/`mailto:` 스킴이다. 다만 여기는 미리 채울 대화 포인트가 없어
+  ///   본문 없이 앱만 연다.
+  List<Widget> _actionIconsFor(
+    BuildContext context, {
+    required ContactRowKind rowKind,
+    required String? value,
+  }) {
+    final v = value?.trim() ?? '';
+    final kinds = contactRowActionKinds(rowKind: rowKind, value: v);
+    final icons = <Widget>[];
+    for (final kind in kinds) {
+      if (icons.isNotEmpty) icons.add(const SizedBox(width: 4));
+      icons.add(switch (kind) {
+        ContactActionKind.call => ContactActionIcon(
+          icon: Icons.call,
+          label: '${contact.name}에게 전화',
+          onTap: () => PhoneCallService.makeCall(v),
+        ),
+        ContactActionKind.sms => ContactActionIcon(
+          icon: Icons.sms_outlined,
+          label: '문자 보내기',
+          onTap: () => _sendSms(context, v),
+        ),
+        ContactActionKind.email => ContactActionIcon(
+          icon: Icons.mail_outline,
+          label: '이메일 보내기',
+          onTap: () => _sendEmail(context, v),
+        ),
+      });
+    }
+    return icons;
+  }
+
+  Future<void> _sendSms(BuildContext context, String phoneNumber) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final opened = await PhoneCallService.sendSms(phoneNumber);
+    if (!opened) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('문자 앱을 열지 못했어요.'),
+          backgroundColor: AppColors.accent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendEmail(BuildContext context, String email) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final opened = await PhoneCallService.sendEmail(email);
+    if (!opened) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('메일 앱을 열지 못했어요.'),
+          backgroundColor: AppColors.accent,
+        ),
+      );
+    }
+  }
 
   /// **이전 명함** — 명함이 바뀐 사람의 예전 값들.
   ///
@@ -330,13 +414,15 @@ class ContactDetailView extends StatelessWidget {
   }
 
   /// 값이 비면 `null`을 돌려 **줄 자체를 없앤다**(빈 줄을 그리지 않는다).
-  Widget? _row(String label, String? value) {
+  /// [actions]도 값이 없을 땐 함께 사라진다 — 애초에 이 메서드 자체가
+  /// `null`을 돌리기 때문에 별도 분기가 필요 없다.
+  Widget? _row(String label, String? value, {List<Widget> actions = const []}) {
     final v = value?.trim() ?? '';
     if (v.isEmpty) return null;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (label.isNotEmpty)
             SizedBox(
@@ -358,7 +444,76 @@ class ContactDetailView extends StatelessWidget {
               ),
             ),
           ),
+          if (actions.isNotEmpty) ...[const SizedBox(width: 8), ...actions],
         ],
+      ),
+    );
+  }
+}
+
+/// 연락처 줄이 붙일 수 있는 동작 종류.
+enum ContactActionKind { call, sms, email }
+
+/// 어느 연락처 줄인지 — 종류마다 붙는 아이콘이 다르다
+/// (2026-08-21 브리프 ⑤: 휴대폰=전화+문자, 사무실=전화, 이메일=메일).
+enum ContactRowKind { mobile, office, email }
+
+/// 이 줄에 어떤 동작 아이콘을 붙일지 정한다 — **순수 함수**라 위젯을 그리지
+/// 않고도 테스트할 수 있다.
+///
+/// 값이 없는 줄은 빈 목록을 돌려준다(빈 상태 그대로 보여준다는 원칙,
+/// CLAUDE.md 4절 — 가짜 데이터를 만들지 않는다. 값이 없으면 누를 수 있는
+/// 동작도 없다).
+List<ContactActionKind> contactRowActionKinds({
+  required ContactRowKind rowKind,
+  required String? value,
+}) {
+  if ((value ?? '').trim().isEmpty) return const [];
+  switch (rowKind) {
+    case ContactRowKind.mobile:
+      return const [ContactActionKind.call, ContactActionKind.sms];
+    case ContactRowKind.office:
+      return const [ContactActionKind.call];
+    case ContactRowKind.email:
+      return const [ContactActionKind.email];
+  }
+}
+
+/// 연락처 줄 오른쪽에 붙는 동작 아이콘 — 시각 크기 40dp(accentSoft 원형
+/// 배경, accentText 아이콘), 터치 영역은 44dp 이상(2026-08-21 브리프 ⑤).
+///
+/// [IconButton]을 그대로 쓴다 — `tooltip`이 접근성 라벨로도 쓰인다는
+/// 프레임워크 기본 동작을 그대로 활용한다(별도 `Semantics` 래핑 불필요).
+/// 시각 크기(40)와 터치 영역(44)을 다르게 두는 것은, 아이콘을 눈에 띄게
+/// 키우지 않으면서도 손가락으로 누르기엔 충분한 여백을 주기 위함이다.
+class ContactActionIcon extends StatelessWidget {
+  const ContactActionIcon({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap,
+      tooltip: label,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+      icon: Container(
+        width: 40,
+        height: 40,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(
+          color: AppColors.accentSoft,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 20, color: AppColors.accentText),
       ),
     );
   }
