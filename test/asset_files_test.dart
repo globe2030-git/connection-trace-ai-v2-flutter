@@ -28,7 +28,6 @@ void main() {
       'assets/images/brand/ci.png', // login_view.dart
       'assets/images/brand/splash.png', // splash_gate.dart, radar_view.dart
       'assets/images/brand/icon.png', // pubspec flutter_launcher_icons
-      'assets/images/nearby/map.jpg', // radar_view.dart
     ];
     for (final path in paths) {
       try {
