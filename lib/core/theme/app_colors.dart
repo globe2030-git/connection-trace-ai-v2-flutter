@@ -47,6 +47,14 @@ class AppColors {
   static const Color channelEmail = Color(0xFFF59E0B);
   static const Color channelKakao = Color(0xFFFEE500); // 카카오 공식 브랜드 옐로우
 
+  // 소셜 로그인 버튼색 — 위 범례색과 성격이 다르다. 이건 **우리가 고를 수
+  // 있는 값이 아니라** 각 제공자 버튼 가이드가 못박은 값이다.
+  // ⚠️ 바꾸면 규정 위반이고, 네이버는 사전 검수 항목이다.
+  // (카카오 노랑은 channelKakao 와 같은 값이지만 쓰임이 달라 따로 두지
+  //  않고 그대로 쓴다 — 두 벌로 두면 한쪽만 고쳐지는 날이 온다.)
+  static const Color brandNaver = Color(0xFF03C75A);
+  static const Color brandKakaoLabel = Color(0xD9000000); // 카카오 가이드 라벨색(검정 85%)
+
   // 검색 캡슐 바 — 카드 표면과 동일 톤으로 통일(기존엔 흰색 단독 라이트 아일랜드였음)
   static const Color capsuleInputBg = Color(0xFFFFFFFF);
   static const Color capsuleInputText = Color(0xFF171A21);

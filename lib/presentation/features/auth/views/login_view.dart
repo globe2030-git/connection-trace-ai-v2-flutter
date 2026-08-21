@@ -232,16 +232,15 @@ class _SnsButton extends StatelessWidget {
   /// 조합하는 것은 금지"). 지금은 색과 문구만 규정대로 맞춰 두고, 애셋이
   /// 들어오면 `_ProviderIcon`에서 갈아 끼운다.
   Color? get _brandColor => switch (provider) {
-    SnsAuthProvider.kakao => const Color(0xFFFEE500),
-    SnsAuthProvider.naver => const Color(0xFF03C75A),
-    _ => null,
+    SnsAuthProvider.kakao => AppColors.channelKakao,
+    SnsAuthProvider.naver => AppColors.brandNaver,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
   };
 
   Color? get _brandTextColor => switch (provider) {
-    // 카카오 가이드의 라벨 색(검정 85%).
-    SnsAuthProvider.kakao => const Color(0xD9000000),
+    SnsAuthProvider.kakao => AppColors.brandKakaoLabel,
     SnsAuthProvider.naver => Colors.white,
-    _ => null,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
   };
 
   @override

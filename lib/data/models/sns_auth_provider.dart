@@ -45,10 +45,14 @@ enum SnsAuthProvider {
   };
 
   /// `social_oauth.dart` 쪽 제공자 값. 로그인 흐름을 부를 때 쓴다.
+  /// ⚠️ 와일드카드(`_`)를 쓰지 않는다. 제공자를 새로 추가했을 때
+  /// **컴파일러가 여기를 짚어 주도록** 남김없이 적는다 — 와일드카드로 두면
+  /// 새 제공자가 조용히 `null`이 되어 "버튼은 보이는데 눌러도 아무 일이
+  /// 없는" 상태가 된다.
   social.SocialProvider? get socialProvider => switch (this) {
     SnsAuthProvider.kakao => social.SocialProvider.kakao,
     SnsAuthProvider.naver => social.SocialProvider.naver,
-    _ => null,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
   };
 
   String? get unavailableReason => switch (this) {
