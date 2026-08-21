@@ -93,6 +93,20 @@ ContactModel _contactAt(String id, String name, GeoPosition geo) => ContactModel
   geo: geo,
 );
 
+/// 좌표는 없고 **주소만** 있는 명함. 실제로 이런 명함이 30/93 건이었다.
+ContactModel _contactWithAddressOnly(String id, String name, String address) =>
+    ContactModel(
+      id: id,
+      name: name,
+      company: '',
+      title: '',
+      phone: '',
+      email: '',
+      address: address,
+      tags: const [],
+      talkingPoints: const [],
+    );
+
 _FakeConsentStore _acceptedConsent() => _FakeConsentStore(
   LocationConsentRecord(
     decision: LocationConsentDecision.accepted,
@@ -249,6 +263,80 @@ void main() {
       expect(model.anchorPosition, isNull);
       expect(model.referencePosition, isNull);
       expect(model.filteredContacts, isEmpty);
+      model.dispose();
+    });
+  });
+
+  // --- 좌표 없는 명함을 지역으로 묶기 -----------------------------------
+
+  group('⭐ 좌표가 없는 명함을 지역별로 묶는다', () {
+    // 반경 목록은 좌표로 거른다 — 좌표가 없으면 화면에서 조용히 사라진다
+    // (추가 79에서 실기기로 겪었다). 주소만으로 구까지는 뽑히므로
+    // "어느 동네 사람인지"는 보여줄 수 있다.
+    late ContactsRepository repository;
+
+    Future<RadarViewModel> readyModel() async {
+      final model = RadarViewModel(
+        contactsRepository: repository,
+        locationService: _FakeLocationGateway()
+          ..checkResult = DeviceLocationAccess.granted
+          ..position = _seoulCityHall,
+        locationConsentService: _acceptedConsent(),
+      );
+      await model.initialization;
+      return model;
+    }
+
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      repository = ContactsRepository()
+        ..addContact(_contactAt('with-geo', '좌표 있음', _seoulCityHall))
+        ..addContact(_contactWithAddressOnly('a', '강남 사람', '서울특별시 강남구 테헤란로 1'))
+        ..addContact(_contactWithAddressOnly('b', '강남 사람2', '서울 강남구 테헤란로 2'))
+        ..addContact(_contactWithAddressOnly('c', '서초 사람', '서울특별시 서초구 서초대로 1'));
+    });
+
+    test('좌표 있는 명함은 이 묶음에 들어가지 않는다', () async {
+      final model = await readyModel();
+      final all = model.contactsByRegionWithoutGeo
+          .expand((e) => e.value)
+          .map((c) => c.id);
+      expect(all, isNot(contains('with-geo')));
+      model.dispose();
+    });
+
+    test('⭐ 구 단위로 묶고, 명함이 많은 지역부터 준다', () async {
+      final model = await readyModel();
+      final groups = model.contactsByRegionWithoutGeo;
+      expect(groups.first.key, '강남구', reason: '2건인 강남구가 먼저');
+      expect(groups.first.value, hasLength(2));
+      expect(groups[1].key, '서초구');
+      model.dispose();
+    });
+
+    test('⚠️ 줄여 쓴 주소도 같은 묶음에 들어간다', () async {
+      // "서울특별시 강남구"와 "서울 강남구"가 갈리면 묶음이 쪼개진다.
+      final model = await readyModel();
+      expect(model.contactsByRegionWithoutGeo.first.value, hasLength(2));
+      model.dispose();
+    });
+
+    test('검색어는 반경 목록과 똑같이 적용한다', () async {
+      // 검색 결과가 반쪽이면 이용자는 "없다"고 읽는다.
+      final model = await readyModel();
+      model.setSearchTerm('서초');
+      final groups = model.contactsByRegionWithoutGeo;
+      expect(groups, hasLength(1));
+      expect(groups.single.key, '서초구');
+      model.dispose();
+    });
+
+    test('⚠️ 지역을 못 뽑으면 묶지 않는다 — "지역 미상" 묶음을 만들지 않는다', () async {
+      repository.addContact(_contactWithAddressOnly('x', '주소 이상', '오류'));
+      final model = await readyModel();
+      final keys = model.contactsByRegionWithoutGeo.map((e) => e.key);
+      expect(keys, isNot(contains('오류')));
+      expect(model.contactsWithoutGeoCount, 3);
       model.dispose();
     });
   });

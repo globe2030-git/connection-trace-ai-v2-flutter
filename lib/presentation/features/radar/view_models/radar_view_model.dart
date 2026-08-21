@@ -3,6 +3,7 @@ import '../../../../core/services/location_consent_service.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/services/proximity_settings_service.dart';
 import '../../../../core/services/reconnect_priority_service.dart';
+import '../../../../core/utils/address_region.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/location_quality.dart';
 import '../../../../data/models/contact_model.dart';
@@ -328,6 +329,67 @@ class RadarViewModel extends ChangeNotifier {
 
     return list;
   }
+
+  /// ⭐ **좌표가 없어 반경 목록에 못 드는 명함**을 지역별로 묶어 준다.
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// 반경 목록은 좌표로 거른다(`c.geo == null`이면 바로 탈락). 그래서 좌표를
+  /// 못 얻은 명함은 **화면에서 조용히 사라진다** — 실기기에서 겪은 문제다
+  /// (추가 79). 이용자는 등록한 명함이 왜 안 보이는지 알 수 없다.
+  ///
+  /// ```
+  /// 2026-08-21 실측 (등록 명함 93건)
+  ///   좌표를 못 얻은 것            30건
+  ///   그중 지역을 뽑을 수 있는 것   30건  ⭐ 전부
+  /// ```
+  ///
+  /// 주소 문자열만으로 시/도·시군구가 나오므로, **거리는 몰라도 "어느 동네
+  /// 사람인지"는 보여줄 수 있다.** API도 필요 없다.
+  ///
+  /// ## ⚠️ 거리 목록과 섞지 않는다
+  ///
+  /// 좌표가 있는 명함은 "몇 m"이고 없는 명함은 "같은 구"다. 한 목록에 섞으면
+  /// **순서가 거짓이 된다** — 화면에서 구획을 나눠 보여줘야 한다.
+  ///
+  /// 📌 반경 설정도 적용하지 않는다. 좌표가 없으니 반경을 잴 수가 없다.
+  /// 검색어는 반경 목록과 똑같이 적용한다 — 검색 결과가 반쪽이면 안 된다.
+  ///
+  /// 묶음은 **명함이 많은 지역부터**, 같으면 이름순으로 준다.
+  List<MapEntry<String, List<ContactModel>>> get contactsByRegionWithoutGeo {
+    final query = _searchTerm.trim().toLowerCase();
+    final grouped = <String, List<ContactModel>>{};
+
+    for (final c in _contactsRepository.contacts) {
+      if (c.geo != null) continue;
+      if (query.isNotEmpty &&
+          !c.name.toLowerCase().contains(query) &&
+          !c.company.toLowerCase().contains(query) &&
+          !c.title.toLowerCase().contains(query)) {
+        continue;
+      }
+      final label = regionOf(c.address).shortLabel;
+      // ⚠️ 지역조차 못 뽑으면 묶지 않는다. "지역 미상" 묶음을 만들면
+      // 그 자리가 무엇을 뜻하는지 이용자가 알 수 없다.
+      if (label == null) continue;
+      (grouped[label] ??= []).add(c);
+    }
+
+    for (final list in grouped.values) {
+      list.sort((a, b) => a.name.compareTo(b.name));
+    }
+
+    final entries = grouped.entries.toList()
+      ..sort((a, b) {
+        final byCount = b.value.length.compareTo(a.value.length);
+        return byCount != 0 ? byCount : a.key.compareTo(b.key);
+      });
+    return entries;
+  }
+
+  /// 위 묶음에 들어간 명함 수. 화면에서 "○명 더 있어요"에 쓴다.
+  int get contactsWithoutGeoCount =>
+      contactsByRegionWithoutGeo.fold(0, (sum, e) => sum + e.value.length);
 
   /// "지금 근처에 이 사람이 있습니다"로 알릴 후보.
   ///
