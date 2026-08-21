@@ -39,71 +39,102 @@ const double kGuideLongEdgeRatio = 0.74;
 /// 폴더블 펼친 화면에서는 여전히 가로가 되므로 크기 자체를 맞춰야 한다.
 const double kGuideMaxHeightRatio = 0.72;
 
-/// 폴더블 **커버 화면**처럼 화면 폭 자체가 좁은 기기에서 가이드를 다시
-/// 키우는 문턱값(dp). 화면 폭이 이보다 **좁을 때만**
-/// [kNarrowScreenWidthRatio] 보정이 걸린다.
+/// 폴더블 **커버 화면**처럼 세로로 유난히 긴 화면에서 가이드를 다시 키우는
+/// 문턱값 — 화면 **세로세로비**(높이/폭)가 이 값 **이상일 때만**
+/// [kNarrowAspectMaxShortEdgeRatio] 보정이 걸린다.
 ///
 /// ⚠️ 갤럭시 폴드(SM-F966N)를 접은 커버 화면에서 촬영 가이드가 작다는
 /// 실사용 제보로 추가했다(2026-08-21, fix/fold-cover-capture-guide).
 ///
-/// ## 원인 — [kGuideLongEdgeRatio]는 항상 **화면 폭**만 본다
+/// ## 1차 수정(폭 문턱값)이 실기기에서 틀렸다 — 경위
 ///
-/// [guideFrameSizeFor]는 가이드의 긴 변(세로 방향)을 `화면 폭 × 0.74`로
-/// 정한다. 이건 의도된 설계다([kGuideLongEdgeRatio] 문서 참고 — 초점
-/// 문제로 "화면 높이" 기준을 이미 한 번 시도했다가 되돌렸다). 문제는
-/// **비율이 아니라 절대 폭이다.** 이 비율은 화면 모양과 무관하게 항상
-/// "화면 폭의 약 41%"(0.74 × 카드비율)로 고정되는데, 일반 폰이든 커버
-/// 화면이든 **같은 비율**이 적용되므로, 커버 화면처럼 폭 자체가 물리적으로
-/// 좁은 기기에서는 절대 크기(dp)가 작게 나온다 — 세로 공간은 남아도는데도
-/// 그렇다(높이 상한 [kGuideMaxHeightRatio]는 폭 기반 값이 **높이**를 넘칠
-/// 때만 걸리므로, 세로로 긴 화면에서는 애초에 걸리지 않는다).
+/// 처음에는 "화면 **폭**이 340dp보다 좁을 때"로 게이트를 걸었다(계산이었고,
+/// 실기기가 배정되지 않아 실측하지 못한 채 냈다). **실측 결과 틀렸다**
+/// (2026-08-21, `adb dumpsys display`로 SM-F966N을 직접 잰 값):
 ///
-/// ## ⚠️ 계산이다, 실측이 아니다
+/// | | 물리 해상도 | density | 논리 폭 | 논리 높이 |
+/// |---|---|---|---|---|
+/// | 커버(접힘) | 1080×2520px | 420 | **411.4dp** | 960dp |
+/// | 펼침 | 1968×2184px | 420 | 749.7dp | 831.4dp |
 ///
-/// SM-F966N 실기기가 이 작업에는 배정돼 있지 않아 커버 화면의 정확한 논리
-/// 폭(dp)을 재지 못했다. 아래 문턱값 340dp는 **Android가 일반 폰의 최소
-/// 폭으로 흔히 쓰는 360dp보다 확실히 좁게** 잡은 값이고, 삼성이 폴더블
-/// 커버 화면 반응형 레이아웃 기준으로 안내해 온 폭(대략 300~320dp대)보다는
-/// 넉넉하게 잡은 값이다 — **일반 폰을 잘못 건드리지 않는 쪽으로** 여유를
-/// 뒀다. 실기기가 배정되면 실제 커버 화면 폭을 재서 이 값과 비율을 다시
-/// 맞춰야 한다.
-const double kNarrowScreenWidthThreshold = 340.0;
+/// **커버 화면 논리 폭이 411.4dp로, 340dp 문턱값보다 훨씬 넓었다.** 심지어
+/// 일반 폰 폭(360~412dp)보다도 넓다 — **폭이 원인이 아니었다.** 사용자
+/// 실물 캡처·영상 실측으로도 확인됐다: 가이드 상자가 화면 폭의 약 41%,
+/// 높이의 약 31%를 차지해 **기존 계산식과 정확히 일치**했다(= 1차 수정의
+/// 보정 분기가 실기기에서 **한 번도 발동하지 않았다**). 이 저장소가 반복해
+/// 겪은 "계산했다 ≠ 확인했다"의 또 다른 사례다.
+///
+/// ## 진짜 원인 — 폭이 아니라 **세로세로비**
+///
+/// 커버 화면(411.4×960dp)의 세로세로비는 **2.33**이다. 일반 폰
+/// (360~412dp 폭, 800~915dp 안팎 높이)의 세로세로비는 대략 **2.0~2.22**에
+/// 머문다 — 실측 커버 화면과 폭은 비슷하거나 더 좁은데도 **비율이 확연히
+/// 다르다.** [kGuideLongEdgeRatio]가 항상 "화면 폭 × 0.74"로만 긴 변을
+/// 정하기 때문에, 폭이 비슷해도 세로 공간이 훨씬 남는 화면(=세로세로비가
+/// 큰 화면)에서는 그 남는 공간을 전혀 못 쓰고 가이드가 작게 떠 보인다 —
+/// 검출된 명함 테두리는 화면을 거의 채우는데 가이드만 그 안에 조그맣게
+/// 있는 상태(실물 캡처로 확인).
+///
+/// ## 문턱값 2.25를 고른 근거
+///
+/// 일반 폰 상한(약 2.22, 실측 커버와 **같은 논리 폭 411dp**에서도 비율만
+/// 다르면 안 걸려야 함)과 실측 커버 비율(2.33) **사이**에 여유를 두고
+/// 잡았다. 코드에 아래 `kNarrowAspectThreshold`로 남아 있다.
+const double kNarrowAspectThreshold = 2.25;
 
-/// 좁은 화면(위 문턱값 아래)에서 가이드가 **화면 폭에서 차지해야 하는
-/// 최소 비율**(가이드 상자의 짧은 변 기준).
+/// 세로세로비가 [kNarrowAspectThreshold] 이상인 화면에서, 가이드 상자의
+/// **짧은 변이 화면 폭에서 차지할 수 있는 최대 비율**(안전 상한).
 ///
-/// 기존 비율(0.74 × 카드비율 ≈ 0.41)보다 뚜렷이 크게 잡아, 폭이 좁아도
-/// 절대 크기가 작아 보이지 않게 한다. 세로 공간은 커버 화면일수록 더
-/// 넉넉해서(높이 상한 [kGuideMaxHeightRatio]는 그대로 유지) 이만큼 키워도
-/// 위아래 여백이 부족해지지 않는다.
-const double kNarrowScreenWidthRatio = 0.62;
+/// ## ⚠️ 무한정 키우지 않는다 — 초점 거리 회귀 재발 방지
+///
+/// [kGuideLongEdgeRatio] 문서에 남아 있는 대로, 가이드를 과하게 키우면
+/// 사용자가 명함을 렌즈 최소 초점 거리보다 가깝게 대야 해서 **초점이 영영
+/// 안 맞는** 회귀가 이미 한 번 있었다(2026-08-06). 그래서 세로세로비가
+/// 아무리 커도 짧은 변은 **화면 폭의 65%를 넘지 않게** 상한을 둔다 —
+/// 일반 화면의 기존 비율(약 41%)보다는 뚜렷이 크지만, 화면을 거의 채우는
+/// 수준(예전에 되돌렸던 0.86 시절의 문제 — "배경이 많이 들어갔다")까지는
+/// 가지 않는 값이다.
+///
+/// 세로 공간은 커버 화면일수록 더 넉넉해서(높이 상한
+/// [kGuideMaxHeightRatio]는 그대로 유지) 이만큼 키워도 위아래 여백이
+/// 부족해지지 않는다 — 실측 커버(411.4×960dp)에서 계산해도 긴 변이 높이의
+/// 약 50%로, 상한(72%)에 전혀 닿지 않는다.
+const double kNarrowAspectMaxShortEdgeRatio = 0.65;
 
 /// 화면 크기에 맞는 명함 촬영 가이드 상자 크기를 계산한다.
 ///
-/// 일반 폰·펼친 폴드·태블릿(화면 폭이 [kNarrowScreenWidthThreshold] 이상)은
-/// 기존 계산 그대로다 — `화면 폭 × 0.74`를 긴 변으로 삼고, 화면 높이의
-/// [kGuideMaxHeightRatio]를 넘지 않게 자른 뒤, 짧은 변은 카드 비율로 낸다.
+/// 세로세로비(높이/폭)가 [kNarrowAspectThreshold] 미만인 화면(일반
+/// 폰·펼친 폴드·태블릿)은 기존 계산 그대로다 — `화면 폭 × 0.74`를 긴
+/// 변으로 삼고, 화면 높이의 [kGuideMaxHeightRatio]를 넘지 않게 자른 뒤,
+/// 짧은 변은 카드 비율로 낸다.
 ///
-/// 화면 폭이 그보다 좁은 화면(폴더블 커버 디스플레이)에서만, 짧은 변이
-/// 화면 폭의 [kNarrowScreenWidthRatio] 이상이 되도록 다시 계산한다 — 그래도
-/// 긴 변이 [kGuideMaxHeightRatio] 상한을 넘으면 그 상한으로 다시 자른다.
+/// 세로세로비가 그 이상인 화면(폴더블 커버 디스플레이)에서만, 짧은 변이
+/// 화면 폭의 [kNarrowAspectMaxShortEdgeRatio]가 되도록 다시 계산한다 —
+/// 그래도 긴 변이 [kGuideMaxHeightRatio] 상한을 넘으면 그 상한으로 다시
+/// 자른다.
 Size guideFrameSizeFor(Size screenSize) {
   var longEdge = screenSize.width * kGuideLongEdgeRatio;
   final maxLongEdge = screenSize.height * kGuideMaxHeightRatio;
   if (longEdge > maxLongEdge) longEdge = maxLongEdge;
   var shortEdge = longEdge * kCardGuideAspectRatio;
 
-  // ⚠️ **폭이 좁은 화면(커버 디스플레이)에서만** 다시 키운다. 일반
-  // 폰·펼친 폴드·태블릿은 폭이 이 문턱값보다 항상 넓어 아래 분기를 타지
-  // 않고 기존 계산 그대로 나간다 — 그래서 그 기기들의 가이드 크기는 이
-  // 보정 전과 **한 픽셀도 다르지 않다.**
-  if (screenSize.width < kNarrowScreenWidthThreshold) {
-    final boostedShortEdge = screenSize.width * kNarrowScreenWidthRatio;
-    if (boostedShortEdge > shortEdge) {
-      var boostedLongEdge = boostedShortEdge / kCardGuideAspectRatio;
-      if (boostedLongEdge > maxLongEdge) boostedLongEdge = maxLongEdge;
-      longEdge = boostedLongEdge;
-      shortEdge = longEdge * kCardGuideAspectRatio;
+  // ⚠️ **세로세로비가 큰 화면(커버 디스플레이)에서만** 다시 키운다. 일반
+  // 폰·펼친 폴드·태블릿은 비율이 이 문턱값보다 항상 작아 아래 분기를
+  // 타지 않고 기존 계산 그대로 나간다 — 그래서 그 기기들의 가이드
+  // 크기는 이 보정 전과 **한 픽셀도 다르지 않다.** (1차 수정의 폭
+  // 문턱값과 달리, 이번엔 **비율**로 갈라야 실측 커버 화면에서 실제로
+  // 걸린다 — 위 [kNarrowAspectThreshold] 문서의 경위 참고.)
+  if (screenSize.width > 0) {
+    final aspect = screenSize.height / screenSize.width;
+    if (aspect >= kNarrowAspectThreshold) {
+      final cappedShortEdge =
+          screenSize.width * kNarrowAspectMaxShortEdgeRatio;
+      if (cappedShortEdge > shortEdge) {
+        var boostedLongEdge = cappedShortEdge / kCardGuideAspectRatio;
+        if (boostedLongEdge > maxLongEdge) boostedLongEdge = maxLongEdge;
+        longEdge = boostedLongEdge;
+        shortEdge = longEdge * kCardGuideAspectRatio;
+      }
     }
   }
 
