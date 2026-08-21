@@ -158,6 +158,16 @@ class AiBriefingService {
           // App Check 거부 또는 로그인 만료. 서버가 주는 원문이 영문
           // ("Unauthenticated")이라 그대로 노출하면 안 된다.
           throw AiAppCheckRejectedException();
+        case 'failed-precondition':
+          // 앱 무결성 확인(App Check)에 걸렸다. 이용자가 다시 눌러도 같은
+          // 결과이므로 "다시 시도"라고 하지 않는다.
+          //
+          // ⚠️ 예전에는 이 코드가 아래 default 로 떨어져 "AI 응답을 받지
+          // 못했어요" 로 뭉개졌다. 서버는 이미 무엇이 문제인지 정확히
+          // 말하고 있었는데 **앱이 그 말을 지운 셈**이었다(2026-08-21
+          // 실기기에서 확인 — 카카오로 로그인한 뒤 AI 가 막혔는데, 화면만
+          // 보고는 무결성 문제인지 통신 문제인지 가릴 수 없었다).
+          throw AiAppCheckRejectedException();
         case 'resource-exhausted':
           // 서버 문구가 이미 한글이고 어느 한도인지(일/월)까지 알려주므로
           // 그대로 쓴다.

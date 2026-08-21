@@ -135,6 +135,21 @@ service cloud.firestore {
 
     // AI 호출 감사 로그 — 불만 처리·비용 추적용. 관리자만 읽는다. 클라이언트는
     // 절대 쓰지 못하고(위조 방지), 서버(generateBriefing)만 Admin SDK로 기록한다.
+    // 소셜 로그인 이용자의 제공자 이메일(2026-08-21, B안).
+    //
+    // ⚠️ 서버(Admin SDK)만 읽고 쓴다. 클라이언트는 **읽지도 못한다** —
+    // 관리자도 마찬가지다. 테스터 허용목록 대조에만 쓰이는 값이라 사람이
+    // 들여다볼 이유가 없다.
+    //
+    // 📌 아래 catch-all 기본 거부로도 같은 결과지만, **개인정보가 담긴
+    // 컬렉션은 눈에 보이게 적어 둔다**(aiAuditLogs와 같은 이유). 목록에
+    // 없으면 다음 사람이 "빠뜨린 것"인지 "일부러 막은 것"인지 모른다.
+    //
+    // ⚠️ 이 규칙은 기본 거부와 동작이 같아 **배포하지 않아도 차이가 없다.**
+    match /socialTesterEmails/{uid} {
+      allow read, write: if false;
+    }
+
     match /aiAuditLogs/{logId} {
       allow read: if isAdmin();
       allow write: if false;

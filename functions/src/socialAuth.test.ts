@@ -25,6 +25,7 @@ import {
   tokenEndpoint,
   tokenExchangeBody,
   parseTokenResponse,
+  isTesterAllowed,
 } from "./socialAuth";
 
 test("⭐ uid에 제공자 접두사가 붙는다 — 계정이 섞이면 남의 명함이 보인다", () => {
@@ -359,5 +360,84 @@ test("요청 검증: 네이버는 state 없이 들어오면 거부한다", () =>
       state: "s1",
     }),
     {provider: "naver", code: "c", redirectUri: "https://x/y", state: "s1"}
+  );
+});
+
+// ─────────────────────────────────────────────────────────────
+// 테스터 허용목록 판정 (2026-08-21, B안)
+//
+// ⚠️ 계기는 실기기다 — 카카오로 로그인한 테스터가 AI 를 한 번도 못 썼다.
+// 같은 이메일이 이미 다른 계정에 있어 **이메일 없이** 계정이 만들어졌고,
+// 그래서 목록과 대조할 값 자체가 없었다.
+// ─────────────────────────────────────────────────────────────
+
+test("토큰 이메일이 목록에 있으면 통과", () => {
+  assert.equal(
+    isTesterAllowed({allowlist: ["a@x.com"], tokenEmail: "a@x.com"}),
+    true,
+  );
+});
+
+test("대소문자·앞뒤 공백 때문에 빠지지 않는다", () => {
+  assert.equal(
+    isTesterAllowed({allowlist: [" A@X.com "], tokenEmail: "a@x.COM"}),
+    true,
+  );
+});
+
+test("⚠️ 토큰에 이메일이 없으면 서버에 적어 둔 값으로 본다 (카카오·네이버)", () => {
+  // 이 한 줄이 없으면 카카오·네이버 테스터는 AI 를 못 쓴다.
+  assert.equal(
+    isTesterAllowed({
+      allowlist: ["a@x.com"],
+      tokenEmail: null,
+      storedEmail: "a@x.com",
+    }),
+    true,
+  );
+});
+
+test("⚠️⚠️ 토큰에 이메일이 **있는데** 목록에 없으면 서버 기록을 보지 않는다", () => {
+  // 여기가 뒷문이 생기는 자리다. 폴백은 **대조할 값이 아예 없을 때**를
+  // 메우는 것이지, 목록에 없는 사람을 통과시키는 경로가 아니다.
+  assert.equal(
+    isTesterAllowed({
+      allowlist: ["a@x.com"],
+      tokenEmail: "other@x.com",
+      storedEmail: "a@x.com", // 통과시키면 안 된다
+    }),
+    false,
+  );
+});
+
+test("서버 기록도 목록에 없으면 거부", () => {
+  assert.equal(
+    isTesterAllowed({
+      allowlist: ["a@x.com"],
+      tokenEmail: null,
+      storedEmail: "b@x.com",
+    }),
+    false,
+  );
+});
+
+test("⚠️ 목록이 비어 있으면 아무도 통과하지 않는다 — 테스트 종료 후 상태", () => {
+  // 테스트가 끝나면 config/testers 를 비운다. 그때 이 폴백이 남아 있어도
+  // 통과하는 사람이 없어야 한다.
+  assert.equal(isTesterAllowed({allowlist: [], tokenEmail: "a@x.com"}), false);
+  assert.equal(
+    isTesterAllowed({allowlist: [], tokenEmail: null, storedEmail: "a@x.com"}),
+    false,
+  );
+});
+
+test("빈 문자열은 이메일이 없는 것으로 본다", () => {
+  assert.equal(
+    isTesterAllowed({
+      allowlist: ["a@x.com"],
+      tokenEmail: "   ",
+      storedEmail: "a@x.com",
+    }),
+    true,
   );
 });
