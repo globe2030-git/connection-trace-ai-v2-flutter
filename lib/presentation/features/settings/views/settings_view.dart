@@ -8,6 +8,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/models/ai_data_review_memory.dart';
+import '../../../../core/utils/masked_email.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
@@ -94,18 +95,7 @@ class SettingsView extends StatelessWidget {
                         : '아직 설정하지 않았습니다',
                     onTap: () => MyProfileEditModalView.show(context),
                   ),
-                  _SettingsRow(
-                    icon: const Icon(
-                      Icons.account_circle_outlined,
-                      color: AppColors.accentText,
-                      size: 22,
-                    ),
-                    title: auth.displayName ?? '로그인됨',
-                    subtitle: [
-                      if (auth.provider != null) auth.provider!.displayName,
-                      if (auth.email != null) auth.email!,
-                    ].join(' · '),
-                  ),
+                  _AccountRow(auth: auth),
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.logout,
@@ -607,6 +597,69 @@ class _GroupedCard extends StatelessWidget {
   }
 }
 
+/// 지금 어느 계정으로 들어와 있는지 보여주는 줄. **이메일은 가려서** 띄우고,
+/// 누르면 펼친다.
+///
+/// ## 왜 이 줄이 필요한가
+///
+/// 로그인 수단이 넷(구글·애플·카카오·네이버)이고 **제공자가 다르면 서로 다른
+/// 계정**이다. 그래서 *"내 명함이 다 사라졌어요"* 의 가장 흔한 원인이 **다른
+/// 수단으로 로그인한 것**인데, 이 줄이 없으면 이용자도 우리도 그걸 못 가린다.
+///
+/// 📌 그래서 **제공자 이름이 이메일보다 중요하다.** 제공자는 늘 펼쳐 둔다.
+///
+/// ## 왜 가리나
+///
+/// ⚠️ 화면을 남에게 보여주거나 캡처를 공유하면 이메일이 그대로 나간다
+/// (2026-08-21 실제로 캡처에 찍혔다). 공용 기기·시연·영업 현장도 마찬가지다.
+/// 본인 정보라 법적 의무는 아니지만 **필요 이상으로 계속 떠 있을 이유가 없다.**
+///
+/// ⚠️ 펼침은 **이 화면을 벗어나면 사라진다.** 한 번 펼쳤다고 계속 펼쳐 두면
+/// 가리는 의미가 없다 — 다음에 설정을 열면 다시 가려져 있어야 한다.
+class _AccountRow extends StatefulWidget {
+  final AuthRepository auth;
+
+  const _AccountRow({required this.auth});
+
+  @override
+  State<_AccountRow> createState() => _AccountRowState();
+}
+
+class _AccountRowState extends State<_AccountRow> {
+  bool _revealed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = widget.auth;
+    final email = auth.email;
+    final parts = [
+      if (auth.provider != null) auth.provider!.displayName,
+      if (email != null) (_revealed ? email : maskEmail(email)),
+    ];
+    return _SettingsRow(
+      icon: const Icon(
+        Icons.account_circle_outlined,
+        color: AppColors.accentText,
+        size: 22,
+      ),
+      title: auth.displayName ?? '로그인됨',
+      subtitle: parts.join(' · '),
+      // 이메일이 없으면 펼칠 것도 없다 — 누를 수 없게 둔다(Apple '이메일
+      // 가리기'나 카카오 이메일 미동의에서 실제로 없다).
+      onTap: email == null ? null : () => setState(() => _revealed = !_revealed),
+      trailing: email == null
+          ? null
+          : Icon(
+              // ⚠️ 지금 상태가 아니라 **누르면 무엇이 되는지**를 보여준다.
+              _revealed ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              color: AppColors.textMuted,
+              size: 20,
+              semanticLabel: _revealed ? '이메일 가리기' : '이메일 전체 보기',
+            ),
+    );
+  }
+}
+
 class _SettingsRow extends StatelessWidget {
   /// [Icon] 또는 [AppIcon] — 크기/색은 호출부에서 직접 지정한다(22px,
   /// [AppColors.accentText]) 두 위젯 모두 동일 규칙을 따르게 하기 위해서다.
@@ -617,6 +670,12 @@ class _SettingsRow extends StatelessWidget {
   final Color? titleColor;
   final VoidCallback? onTap;
 
+  /// 오른쪽 끝에 놓을 것. 안 주면 **다음 화면으로 간다는 뜻의 꺾쇠(>)** 가 뜬다.
+  ///
+  /// ⚠️ 눌러도 화면이 안 넘어가는 줄에는 꺾쇠를 두면 안 된다 — 이용자는
+  /// 꺾쇠를 보고 "누르면 어딘가로 간다"로 읽는다.
+  final Widget? trailing;
+
   const _SettingsRow({
     required this.icon,
     required this.title,
@@ -624,6 +683,7 @@ class _SettingsRow extends StatelessWidget {
     this.value,
     this.titleColor,
     this.onTap,
+    this.trailing,
   });
 
   @override
@@ -686,13 +746,15 @@ class _SettingsRow extends StatelessWidget {
                   ),
                 ],
                 if (onTap != null)
-                  const Padding(
-                    padding: EdgeInsets.only(left: 6),
-                    child: Icon(
-                      Icons.chevron_right,
-                      color: AppColors.textMuted,
-                      size: 22,
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child:
+                        trailing ??
+                        const Icon(
+                          Icons.chevron_right,
+                          color: AppColors.textMuted,
+                          size: 22,
+                        ),
                   ),
               ],
             ),
