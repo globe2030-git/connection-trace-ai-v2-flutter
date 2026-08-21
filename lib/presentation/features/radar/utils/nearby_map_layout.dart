@@ -92,9 +92,10 @@ List<MapDotPlacement> computeNearbyMapDots({
     final distance = GeoUtils.getDistanceMeters(origin, rep.geo);
     final bearingDeg = GeoUtils.getBearingDegrees(origin, rep.geo);
     final bearingRad = bearingDeg * pi / 180.0;
-    // 반경 밖(예: "전체" 반경이라 척도를 데이터 최대값으로 잡았는데 그 뒤
-    // 갱신 타이밍상 더 먼 사람이 섞여 들어온 경우)으로 나가면 링 가장자리에
-    // 붙여 둔다 — 카드 밖으로 점이 튀어나가는 것보다 낫다.
+    // 반경 밖(예: "전체" 반경에서 [resolveDisplayRadiusMeters]가 90번째
+    // 백분위수로 척도를 잡아, 그보다 먼 이상치가 있는 경우)으로 나가면 링
+    // 가장자리에 붙여 둔다 — 카드 밖으로 점이 튀어나가거나, 화면에서 아예
+    // 사라지는 것보다 낫다.
     final fraction = (distance / displayRadiusMeters).clamp(0.0, 1.0);
     final dx = fraction * sin(bearingRad);
     final dy = -fraction * cos(bearingRad);
@@ -124,10 +125,24 @@ List<MapDotPlacement> computeNearbyMapDots({
     0,
     (sum, g) => sum + g.contacts.length,
   );
-  // 뭉침 점의 위치는 뭉친 것 중 가장 가까운 묶음 자리를 쓴다 — 실제로는
-  // 여러 방향에 흩어져 있지만, 대표할 한 점을 정해야 하므로 "그나마 가장
-  // 가까운 곳"을 고른다(가장 먼 것보다 존재를 알아채기 쉽다).
-  final overflowAnchor = overflowGroups.first;
+  // 뭉침 점의 위치는 뭉친 것 중 **가장 먼** 묶음 자리를 쓴다.
+  //
+  // 처음엔 "가장 가까운 곳"을 썼다(가장 먼 것보다 눈에 띄기 쉬울 거라
+  // 생각해서) — 그런데 이게 실기기 결함으로 이어졌다(backlog 391). "전체"
+  // 반경에서 이상치(예: 230km) 하나가 척도([resolveDisplayRadiusMeters])를
+  // 정하는 상황에서, 그 이상치는 항상 overflow(표시 상한 초과) 묶음에
+  // 속하는데 "가장 가까운" 자리를 앵커로 쓰면 척도를 정한 바로 그 인맥이
+  // 중심 가까이(overflow 중 가장 가까운 자리)에 숨어버려 — 링 바깥 가장자리는
+  // 구조적으로 항상 비게 된다. 척도를 정한 인맥은 화면에 보여야 한다는
+  // 원칙(브리프 ⑥-C)과 맞지 않았다.
+  //
+  // "가장 먼" 자리를 쓰면: 이상치가 있으면 그 이상치가 링 가장자리 근처에
+  // (또는 clamp돼 정확히 가장자리에) 찍혀 "더 멀리도 있다"는 정보가 살고,
+  // 이상치가 없는 보통 상황(선택 반경이 유한할 때)에서도 상한에 밀려
+  // 뭉친 사람 중 가장 반경 끝에 가까운 사람의 위치를 보여주는 쪽이 더
+  // 정직하다 — "이 뭉치가 얼마나 멀리까지 뻗어 있는지"를 가리키지 않고
+  // 숨기지 않는다.
+  final overflowAnchor = overflowGroups.last;
   final overflowPlacement = placementFor(
     overflowAnchor,
     overrideCount: overflowCount,
@@ -148,10 +163,20 @@ String _initialOf(String name) {
 /// - 반경 선택이 유한하면(500m~5km) 그 값을 그대로 척도로 쓴다 — 반경 칩과
 ///   지도가 같은 숫자를 말해야 "5km로 뒀더니 지도도 5km까지 보이는구나"를
 ///   사용자가 스스로 확인할 수 있다.
-/// - "전체"(무제한)를 골랐으면 척도로 쓸 숫자가 없다. 실제로 있는 사람 중
-///   가장 먼 사람의 거리를 척도로 쓴다(전부 카드 안에 들어오게). 그마저
-///   없으면(주변에 아무도 없음) 기본값 1km로 둔다 — 텅 빈 카드에 링만
-///   그리는 최소한의 크기다.
+/// - "전체"(무제한)를 골랐으면 척도로 쓸 숫자가 없다. **가장 먼 사람의 거리를
+///   그대로 쓰지 않는다** — 실기기 결함으로 드러났다(backlog 391). 실측
+///   분포(인맥 30명 중 29명이 28.3~36.8km 무리, 1명만 230.3km)에서 최댓값을
+///   척도로 쓰면 나머지 29명 전부가 척도의 12~16% 안쪽(중심 반지름 27px, 점
+///   반지름 자체보다 작은 영역)에 겹쳐 그려져 지도가 정보를 못 준다. 계산은
+///   맞았지만("전부 카드 안에 들어오게") 화면이 무의미해진 사례다.
+///   → [_robustPercentile]로 상위 10%를 잘라낸 분포의 끝(90번째 백분위수)을
+///   척도로 쓴다. 이상치 1건에 척도가 안 끌려가면서도, 인맥이 적어(예: 3명)
+///   이상치와 척도가 사실상 같은 값일 때는 기존과 동일하게 동작한다(아래
+///   `resolveDisplayRadiusMeters` 테스트가 이 경우를 고정한다). 척도 밖으로
+///   밀려난 사람(위 예의 230km 인맥)은 사라지지 않는다 — 화면 배치
+///   ([computeNearbyMapDots]의 clamp)가 링 가장자리에 붙여 보여준다.
+/// - 인맥이 없으면 기본값 1km로 둔다 — 텅 빈 카드에 링만 그리는 최소한의
+///   크기다.
 double resolveDisplayRadiusMeters({
   required double selectedRadiusMeters,
   required List<double> distancesMeters,
@@ -161,7 +186,23 @@ double resolveDisplayRadiusMeters({
     return selectedRadiusMeters;
   }
   if (distancesMeters.isEmpty) return fallbackMeters;
-  final maxDistance = distancesMeters.reduce(max);
-  if (maxDistance <= 0 || !maxDistance.isFinite) return fallbackMeters;
-  return maxDistance;
+  final scale = _robustPercentile(distancesMeters, 90);
+  if (scale <= 0 || !scale.isFinite) return fallbackMeters;
+  return scale;
+}
+
+/// [values]의 [p]번째 백분위수(0~100)를 최근접 순위(nearest-rank) 방식으로
+/// 구한다. 정렬 여부를 가정하지 않고 내부에서 정렬한다(호출부가 항상 거리순
+/// 정렬된 리스트를 준다는 보장이 없다 — 단위 테스트가 실제로 섞어 넘긴다).
+///
+/// 표본이 적을수록(예: 3개) 90번째 백분위수는 최댓값과 같아진다 — 이상치를
+/// 배제하는 효과는 표본이 많아야(예: 30개) 드러난다. 표본이 적을 때 굳이
+/// "이상치 제외"를 흉내 내려 하지 않는다 — 3개 중 1개를 버리면 척도 근거가
+/// 더 부실해질 뿐이다.
+double _robustPercentile(List<double> values, double p) {
+  final sorted = List<double>.of(values)..sort();
+  final n = sorted.length;
+  if (n == 1) return sorted.first;
+  final rank = ((p / 100) * (n - 1)).round().clamp(0, n - 1);
+  return sorted[rank];
 }

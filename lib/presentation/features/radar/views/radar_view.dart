@@ -928,7 +928,11 @@ class _SetupMyCardCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '내 명함을 먼저 만들어 주세요',
+                  // "만들어"·"주세요" 사이 띄어쓰기를 붙였다(뜻은 그대로 —
+                  // 보조 용언 붙여쓰기도 맞춤법상 허용된다). 좁은 화면에서
+                  // 줄바꿈이 나면 이 공백이 끊기는 자리가 돼 "주세요"만 혼자
+                  // 둘째 줄에 남는 고아 줄바꿈이 실기기에서 났다(backlog 391).
+                  '내 명함을 먼저 만들어주세요',
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
