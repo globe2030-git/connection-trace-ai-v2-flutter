@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dartcv4/dartcv.dart' as cv;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 /// 안드로이드에서 명함 사각형을 찾는다 — OpenCV.
 ///
@@ -73,6 +74,70 @@ const double kMinContourAreaFraction = 0.01;
 /// 한 프레임에서 넘길 후보 개수 상한.
 const int kMaxObservations = 12;
 
+/// 캐니가 만든 경계선의 **끊긴 곳을 잇는** 닫기 연산의 커널 크기.
+///
+/// ⚠️ 이것이 없으면 명함이 **아예 안 잡힌다**(2026-08-22 실측). 캐니가 내놓는
+/// 경계는 1픽셀 선이고, 배경에 무늬가 있으면 그 선이 잘게 끊긴다. 끊긴 선은
+/// `findContours`에서 **닫힌 영역이 되지 못해** 넓이가 0에 가깝고,
+/// `approxPolyDP`에 넣으면 꼭짓점이 1~2개로 나온다 — 네 점이 될 수가 없다.
+///
+/// 표본 8장(같은 무늬 배경)으로 잰 결과:
+///
+/// | | 명함을 잡은 장수 | 한 프레임 |
+/// |---|---|---|
+/// | 닫기 없음(예전) | **0 / 8** | 9.6ms |
+/// | 닫기 5×5 | **4 / 8** | **4.8ms** |
+///
+/// 📌 **더 빨라진다.** 조각난 윤곽선 수천 개가 몇 개로 합쳐지기 때문이다
+/// (실측: 윤곽선 3,784개 → 수십 개).
+///
+/// ⚠️ 3×3은 모자랐다 — 표본 하나에서 명함 대신 화면 테두리를 잡았다.
+const int kEdgeCloseKernel = 5;
+
+/// 후보가 **화면 가장자리에 닿은 변**이 이만큼이면 버린다.
+///
+/// ⚠️ 닫기 연산을 넣으면 화면 테두리를 따라 경계가 이어져 **화면 전체가
+/// 사각형 후보로 잡힌다.** 실측에서 그 가짜 후보의 가로세로비가 1.49로 나와
+/// `judgeCardShape`의 명함 범위(1.35~2.15)를 **통과해 버렸고**, 규칙이
+/// "통과한 것 중 가장 큰 것"이라 진짜 명함(면적 0.339) 대신 화면 전체
+/// (면적 0.886)를 골랐다. 검출은 됐는데 잡은 것이 명함이 아니었다.
+///
+/// 진짜 명함은 네 변 중 **0변**이 닿았고 가짜는 **3~4변**이 닿아, 이 값으로
+/// 완전히 갈렸다.
+///
+/// ⚠️ **아이폰에는 넣지 않는다.** 이 가짜 후보는 닫기 연산이 만드는 것이고,
+/// 아이폰은 OS의 Vision이 검출하므로 애초에 생기지 않는다. 공용 판정
+/// (`judgeCardShape`)에 넣으면 재 보지도 않은 채 아이폰 동작을 바꾸게 된다.
+const int kMaxEdgeTouchingSides = 3;
+
+/// 가장자리에 "닿았다"고 볼 여유(짧은 변 대비 비율).
+const double kEdgeTouchMarginRatio = 0.012;
+
+/// 후보가 화면 가장자리에 닿은 변의 수를 센다.
+@visibleForTesting
+int edgeTouchingSides(
+  List<({double x, double y})> corners, {
+  required int width,
+  required int height,
+}) {
+  if (corners.isEmpty) return 0;
+  final margin = (width < height ? width : height) * kEdgeTouchMarginRatio;
+  var minX = double.infinity, minY = double.infinity;
+  var maxX = -double.infinity, maxY = -double.infinity;
+  for (final c in corners) {
+    if (c.x < minX) minX = c.x;
+    if (c.y < minY) minY = c.y;
+    if (c.x > maxX) maxX = c.x;
+    if (c.y > maxY) maxY = c.y;
+  }
+  var sides = 0;
+  if (minX < margin) sides++;
+  if (minY < margin) sides++;
+  if (maxX > width - margin) sides++;
+  if (maxY > height - margin) sides++;
+  return sides;
+}
+
 /// 검출 결과 — 좌표와 진단값.
 ///
 /// ⚠️ **아이폰 네이티브가 돌려주는 것과 같은 모양**으로 맞춘다. 부르는 쪽이
@@ -142,6 +207,17 @@ OpenCvRectResult detectCardQuadsWithOpenCv(
     blurred = cv.gaussianBlur(gray, (5, 5), 0);
     edges = cv.canny(blurred, kCannyLow, kCannyHigh);
 
+    // 끊긴 경계선을 잇는다. 이게 없으면 무늬 있는 배경에서 명함 외곽선이
+    // 닫히지 않아 네 점 후보가 아예 안 나온다([kEdgeCloseKernel] 참고).
+    final kernel = cv.getStructuringElement(cv.MORPH_RECT, (
+      kEdgeCloseKernel,
+      kEdgeCloseKernel,
+    ));
+    final closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
+    kernel.dispose();
+    edges.dispose();
+    edges = closed;
+
     final (contours, _) = cv.findContours(
       edges,
       cv.RETR_LIST,
@@ -169,6 +245,15 @@ OpenCvRectResult detectCardQuadsWithOpenCv(
       if (approx.length != 4) continue;
       // 오목한 것은 명함이 아니다 — 그림자·글자 덩어리가 이렇게 잡힌다.
       if (!cv.isContourConvex(approx)) continue;
+      // 닫기 연산이 화면 테두리를 따라 만들어 내는 가짜 사각형을 버린다.
+      final corners = [
+        for (final point in approx)
+          (x: point.x.toDouble(), y: point.y.toDouble()),
+      ];
+      if (edgeTouchingSides(corners, width: width, height: height) >=
+          kMaxEdgeTouchingSides) {
+        continue;
+      }
 
       observations++;
       for (final point in approx) {
