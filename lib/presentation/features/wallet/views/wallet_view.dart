@@ -8,6 +8,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/wallet_view_model.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
@@ -34,6 +35,11 @@ class _WalletViewState extends State<WalletView> {
   Set<String> _givenUpGeoIds = {};
   // 마지막으로 판정에 쓴 명함 목록의 서명 — 바뀔 때만 다시 계산한다.
   String _givenUpSig = '';
+
+  // 목록 상단 고정(UI 개선 ⑦). 큰 제목은 스크롤하면 접히고, 검색·정렬은
+  // 계속 화면 위에 남는다 — 판정 로직은 공용 [HeaderCollapseTracker]로
+  // 뽑아 뒀다(주변 탭도 같은 패턴을 쓸 예정, 브리프 ⑦ 순서표).
+  final HeaderCollapseTracker _headerTracker = HeaderCollapseTracker();
 
   // 선택 삭제 모드(F-06). 평소 목록은 깨끗하게 두고(스와이프 삭제만), "선택"을
   // 누르면 각 행에 체크박스가 뜨고 하단에 "N개 삭제" 바가 나온다. 과거 "목록에
@@ -83,6 +89,12 @@ class _WalletViewState extends State<WalletView> {
     final contacts = viewModel.filteredContacts;
     _maybeRefreshGivenUp(viewModel.contacts);
 
+    // 목록이 비어 스크롤할 것이 없어지면(검색·태그로 다 걸러졌거나 전부
+    // 지웠거나) 접힌 채로 남지 않게 강제로 편다 — 스크롤 없이 접혀 있으면
+    // 큰 제목이 왜 안 보이는지 알 길이 없다.
+    if (contacts.isEmpty) _headerTracker.reset();
+    final headerCollapsed = contacts.isEmpty ? false : _headerTracker.collapsed;
+
     return Scaffold(
       backgroundColor: AppColors.bgBase,
       body: SafeArea(
@@ -91,150 +103,16 @@ class _WalletViewState extends State<WalletView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                // 오른쪽 "명함 스캔" 버튼의 높이가 주변 화면의 원형 아이콘
-                // 버튼과 달라도 제목이 항상 같은 높이에서 시작하도록 맨
-                // 위로 고정 — 기본값인 center로 두면 제목이 버튼 높이에
-                // 따라 미묘하게 위아래로 밀려 다른 탭과 위치가 안 맞는다.
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '명함 지갑',
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _selectionMode
-                              ? '${_selectedIds.length}개 선택'
-                              : '${viewModel.contacts.length}명의 인맥',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // "+"와 "명함 스캔" 버튼이 같은 기능이라 하나로 합쳤다 —
-                  // 새 명함 등록 진입점은 이거 하나만 남긴다. 예전엔 라벨이
-                  // 붙은 아웃라인 버튼이었지만, 주변 화면의 "명함 등록"
-                  // 원형 아이콘 버튼과 자리·모양을 완전히 통일했다(사용자
-                  // 결정, 2026-08-12) — 라벨 없이 아이콘만으로도 같은
-                  // 화면 배치에 있는 다른 탭들이 이미 이 스타일을 쓰고 있어
-                  // 낯설지 않다.
-                  if (_selectionMode)
-                    _buildSelectionHeaderActions(contacts)
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // "선택" 진입점(F-06). 명함이 있을 때만 보인다 — 빈
-                        // 지갑에서는 고를 것이 없다. 스와이프 삭제는 그대로 두고,
-                        // 이 버튼으로 다건 선택 삭제에 들어간다.
-                        if (viewModel.contacts.isNotEmpty)
-                          IconButton(
-                            tooltip: '선택 삭제',
-                            style: IconButton.styleFrom(
-                              backgroundColor: AppColors.cardSurface,
-                              shape: const CircleBorder(),
-                              side: const BorderSide(
-                                color: AppColors.borderSubtle,
-                              ),
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(40, 40),
-                              maximumSize: const Size(40, 40),
-                            ),
-                            icon: const Icon(
-                              Icons.checklist_rounded,
-                              color: AppColors.textSecondary,
-                              size: 20,
-                            ),
-                            onPressed: _enterSelectionMode,
-                          ),
-                        if (viewModel.contacts.isNotEmpty)
-                          const SizedBox(width: 8),
-                        IconButton(
-                          tooltip: '명함 등록',
-                          style: IconButton.styleFrom(
-                            backgroundColor: AppColors.accentSoftStrong,
-                            shape: const CircleBorder(),
-                            padding: EdgeInsets.zero,
-                            minimumSize: const Size(40, 40),
-                            maximumSize: const Size(40, 40),
-                          ),
-                          icon: const AppIcon(
-                            AppIconId.addCard,
-                            color: AppColors.accentText,
-                            size: 20,
-                          ),
-                          onPressed: () => _openCardEditor(context),
-                        ),
-                      ],
-                    ),
-                ],
+              // 목록 상단 고정(UI 개선 ⑦, 2026-08-21). 맨 위에서는 지금까지와
+              // 같은 큰 제목이 보이고, 스크롤하면 축약 제목+검색+정렬만 남아
+              // 화면 위에 고정된다 — 명함이 많을 때 도구를 쓰려고 매번 맨
+              // 위로 되돌아가지 않게 하려는 것이다.
+              CollapsingListHeader(
+                collapsed: headerCollapsed,
+                expandedTop: _buildExpandedTop(viewModel, contacts),
+                collapsedTop: _buildCollapsedTop(viewModel, contacts),
+                pinnedTools: _buildPinnedTools(viewModel),
               ),
-              const SizedBox(height: 20),
-              TextField(
-                onChanged: viewModel.setSearchTerm,
-                style: const TextStyle(color: AppColors.textPrimary),
-                decoration: const InputDecoration(
-                  hintText: '이름, 회사, 직함 검색',
-                  hintStyle: TextStyle(color: AppColors.textMuted),
-                  prefixIcon: Icon(
-                    Icons.search,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              if (viewModel.allTags.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 42,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: viewModel.allTags.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final tag = viewModel.allTags[index];
-                      final selected = viewModel.selectedTags.contains(tag);
-                      return FilterChip(
-                        label: Text(tag),
-                        selected: selected,
-                        onSelected: (_) => viewModel.toggleTag(tag),
-                        selectedColor: AppColors.accentSoft,
-                        checkmarkColor: AppColors.accentText,
-                        side: BorderSide(
-                          color: selected
-                              ? AppColors.accent
-                              : AppColors.borderSubtle,
-                        ),
-                        labelStyle: TextStyle(
-                          color: selected
-                              ? AppColors.accentText
-                              : AppColors.textSecondary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-              // 정렬 칩은 태그 아래에 둔다(사용자 요청, 2026-08-11).
-              const SizedBox(height: 12),
-              _buildSortSelector(viewModel),
-              // 위치 진단 배너. **필터가 아닌 전체 명함**(`viewModel.contacts`)을
-              // 기준으로 센다 — 태그·검색으로 걸러진 화면 목록이 아니라 "내
-              // 명함 전체 중 몇 개가 주변 인맥에 안 뜨는가"가 알고 싶은 값이다.
               const SizedBox(height: 14),
               Expanded(
                 child: contacts.isEmpty
@@ -242,13 +120,234 @@ class _WalletViewState extends State<WalletView> {
                         hasSavedContacts: viewModel.contacts.isNotEmpty,
                         onAdd: () => _openCardEditor(context),
                       )
-                    : _buildContactList(context, viewModel, contacts),
+                    // 목록 자체의 스크롤 알림만 여기서 받는다 — 아래
+                    // 스와이프 삭제(Dismissible)나 선택 모드 체크박스 탭은
+                    // ScrollNotification이 아니라 영향이 없다.
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (_headerTracker.update(notification.metrics.pixels)) {
+                            setState(() {});
+                          }
+                          return false;
+                        },
+                        child: _buildContactList(context, viewModel, contacts),
+                      ),
               ),
               if (_selectionMode) _buildDeleteBar(context, viewModel),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  /// 스크롤 맨 위에서만 보이는 큰 제목 블록. 태그 칩도 여기 함께 넣어
+  /// 스크롤하면 제목과 함께 흘려보낸다(브리프 ⑦ 표: "큰 제목 블록·신규
+  /// 칩"이 같은 칸에 묶여 있다) — 검색창처럼 계속 눌러야 하는 도구가
+  /// 아니라, 위에서 한 번 훑고 나면 다시 안 볼 때가 많은 필터라서 접어도
+  /// 손해가 적다.
+  Widget _buildExpandedTop(
+    WalletViewModel viewModel,
+    List<ContactModel> contacts,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          // 오른쪽 동작 버튼의 높이가 왼쪽 제목 칼럼과 달라도 제목이 항상
+          // 같은 높이에서 시작하도록 맨 위로 고정.
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '명함 지갑',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _selectionMode
+                        ? '${_selectedIds.length}개 선택'
+                        : '${viewModel.contacts.length}명의 인맥',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _buildHeaderTrailingActions(viewModel, contacts),
+          ],
+        ),
+        if (viewModel.allTags.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildTagChips(viewModel),
+        ],
+      ],
+    );
+  }
+
+  /// 접혔을 때만 보이는 축약 제목 줄 — "명함 지갑"+개수 배지(선택 모드면
+  /// 선택 개수)만 남기고 태그 칩은 뺀다. 오른쪽 동작(선택/명함 등록, 또는
+  /// 선택 모드의 전체선택·취소)은 스크롤 중에도 계속 쓸 수 있어야 해서
+  /// 그대로 남긴다 — 브리프 표는 "축약 제목+개수 배지"까지만 못 박았지만,
+  /// 등록·선택 진입로가 스크롤하면 사라지는 쪽이 더 불편하다고 판단했다
+  /// (디자이너 재량, 높이 예산 안에서 여유 있게 들어간다).
+  Widget _buildCollapsedTop(
+    WalletViewModel viewModel,
+    List<ContactModel> contacts,
+  ) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  _selectionMode ? '${_selectedIds.length}개 선택' : '명함 지갑',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              if (!_selectionMode) ...[
+                const SizedBox(width: 8),
+                HeaderCountBadge(count: viewModel.contacts.length),
+              ],
+            ],
+          ),
+        ),
+        _buildHeaderTrailingActions(viewModel, contacts),
+      ],
+    );
+  }
+
+  /// 제목 줄 오른쪽 동작 — 선택 모드면 전체선택/취소, 아니면 선택 진입·
+  /// 명함 등록 아이콘. 접힌 줄·펼친 줄이 같은 동작을 그대로 공유한다.
+  Widget _buildHeaderTrailingActions(
+    WalletViewModel viewModel,
+    List<ContactModel> contacts,
+  ) {
+    if (_selectionMode) return _buildSelectionHeaderActions(contacts);
+    // "+"와 "명함 스캔" 버튼이 같은 기능이라 하나로 합쳤다 — 새 명함 등록
+    // 진입점은 이거 하나만 남긴다. 예전엔 라벨이 붙은 아웃라인 버튼이었지만,
+    // 주변 화면의 "명함 등록" 원형 아이콘 버튼과 자리·모양을 완전히
+    // 통일했다(사용자 결정, 2026-08-12) — 라벨 없이 아이콘만으로도 같은
+    // 화면 배치에 있는 다른 탭들이 이미 이 스타일을 쓰고 있어 낯설지 않다.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // "선택" 진입점(F-06). 명함이 있을 때만 보인다 — 빈 지갑에서는 고를
+        // 것이 없다. 스와이프 삭제는 그대로 두고, 이 버튼으로 다건 선택
+        // 삭제에 들어간다.
+        if (viewModel.contacts.isNotEmpty)
+          IconButton(
+            tooltip: '선택 삭제',
+            style: IconButton.styleFrom(
+              backgroundColor: AppColors.cardSurface,
+              shape: const CircleBorder(),
+              side: const BorderSide(color: AppColors.borderSubtle),
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(40, 40),
+              maximumSize: const Size(40, 40),
+            ),
+            icon: const Icon(
+              Icons.checklist_rounded,
+              color: AppColors.textSecondary,
+              size: 20,
+            ),
+            onPressed: _enterSelectionMode,
+          ),
+        if (viewModel.contacts.isNotEmpty) const SizedBox(width: 8),
+        IconButton(
+          tooltip: '명함 등록',
+          style: IconButton.styleFrom(
+            backgroundColor: AppColors.accentSoftStrong,
+            shape: const CircleBorder(),
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(40, 40),
+            maximumSize: const Size(40, 40),
+          ),
+          icon: const AppIcon(
+            AppIconId.addCard,
+            color: AppColors.accentText,
+            size: 20,
+          ),
+          onPressed: () => _openCardEditor(context),
+        ),
+      ],
+    );
+  }
+
+  /// 태그(필터) 칩 가로 목록 — 큰 제목과 함께 스크롤하면 흘려간다.
+  Widget _buildTagChips(WalletViewModel viewModel) {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: viewModel.allTags.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final tag = viewModel.allTags[index];
+          final selected = viewModel.selectedTags.contains(tag);
+          return FilterChip(
+            label: Text(tag),
+            selected: selected,
+            onSelected: (_) => viewModel.toggleTag(tag),
+            selectedColor: AppColors.accentSoft,
+            checkmarkColor: AppColors.accentText,
+            side: BorderSide(
+              color: selected ? AppColors.accent : AppColors.borderSubtle,
+            ),
+            labelStyle: TextStyle(
+              color: selected ? AppColors.accentText : AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 검색창 + 정렬 칩 — 스크롤·접힘과 무관하게 항상 화면 위에 고정된다
+  /// (브리프 ⑦ 표가 이 둘을 명시적으로 "고정"으로 지정했다). 태그 칩과
+  /// 달리 이 둘은 지금 보는 목록을 계속 좁혀 나가는 도구라 손에서 놓지
+  /// 않는 편이 낫다고 판단했다.
+  Widget _buildPinnedTools(WalletViewModel viewModel) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 10),
+        TextField(
+          onChanged: viewModel.setSearchTerm,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(
+            hintText: '이름, 회사, 직함 검색',
+            hintStyle: TextStyle(color: AppColors.textMuted),
+            prefixIcon: Icon(Icons.search, color: AppColors.textSecondary),
+          ),
+        ),
+        // 정렬 칩은 검색 아래에 둔다(기존 배치 유지, 2026-08-11 결정).
+        const SizedBox(height: 10),
+        _buildSortSelector(viewModel),
+      ],
     );
   }
 
