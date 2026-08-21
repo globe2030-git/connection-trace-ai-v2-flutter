@@ -241,6 +241,10 @@ flutter:
     - assets/images/ai/
     - assets/images/settings/
     - assets/images/profile/
+    # 카카오 공식 로그인 버튼 이미지. ⚠️ 우리가 그린 것이 아니라 제공자가
+    # 배포하는 것이고 형태·색·문구를 바꿀 수 없다. 규정 원문은
+    # assets/images/social/README.md 참고.
+    - assets/images/social/
     - assets/web/address_search.html
     # 번들한 폰트의 라이선스 원문. 앱 안 "오픈소스 라이선스" 화면에서
     # 읽어 표시하므로 에셋으로 포함해야 한다(SIL OFL 1.1의 고지 의무).
