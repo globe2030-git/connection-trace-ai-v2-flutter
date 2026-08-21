@@ -17,6 +17,7 @@ import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/card_photo_downscale.dart';
 import '../../../../core/utils/card_quad_warp.dart';
 import '../../../../core/utils/frame_contrast.dart';
+import '../../../../core/utils/image_rotation_bake.dart';
 // ⚠️ 측정 전용 — backlog 277이 끝나면 이 import와 쓰는 곳을 함께 지운다.
 import '../../../../core/utils/measure_sample_sink.dart';
 import '../../../../core/utils/scan_rotation.dart';
@@ -1223,6 +1224,13 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     }
 
     setState(() => _isCapturing = true);
+    // ⚠️ **워프의 실제 원본은 `picked.imagePath`이지 `upright.path`가
+    // 아니다**(P2-③). 크롭 화면(`ManualCropView`) 안에서 [회전]을 눌렀으면
+    // 그 화면이 `upright.path` 위에 한 번 더 구운 파일을 기준으로 귀퉁이를
+    // 찍어 뒀다 — `upright.path`를 그대로 쓰면 회전 전 사진에 회전 후
+    // 좌표를 대는 꼴이 된다(좌표계가 섞인다, 추가 273과 같은 종류의
+    // 결함). [ManualCropResult]의 문서 참고.
+    final sourcePath = picked.imagePath;
     try {
       final outPath =
           '${Directory.systemTemp.path}/card_scan_'
@@ -1230,7 +1238,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
       final result = await compute(
         warpCardToFile,
         CardWarpRequest(
-          sourcePath: upright.path,
+          sourcePath: sourcePath,
           // ⚠️ 화면 크기를 **사진 비율과 같게** 준다. 그러면 워프가 쓰는
           // "가시 영역"이 사진 전체가 되어, 정규 좌표가 그대로 통한다.
           // 새 좌표 변환을 만들지 않으려는 것이다.
@@ -1249,14 +1257,22 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         _toastCropFailed();
         return;
       }
-      // 자른 결과가 새 원본이 된다. 이전 것들은 버린다.
+      // 자른 결과가 새 원본이 된다. 이전 것들은 버린다 — `upright.path`
+      // (여기서 구운 파일)와 `sourcePath`(크롭 화면이 회전으로 한 번 더
+      // 구운 파일)가 서로 다를 수 있어 **둘 다** 후보에 넣는다(중복 제거).
       final previous = shot.path;
+      final orphaned = <String>{
+        if (upright.path != previous) upright.path,
+        if (sourcePath != previous) sourcePath,
+      };
       setState(() {
         _pendingShot = XFile(result.path);
         _pendingRotation = 0;
         _lastCropLongEdge = result.longEdge;
       });
-      if (upright.path != previous) await deleteQuietly(upright.path);
+      for (final path in orphaned) {
+        await deleteQuietly(path);
+      }
       await deleteQuietly(previous);
     } catch (_) {
       if (mounted) _toastCropFailed();
@@ -1284,23 +1300,8 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// ⚠️ **새 파일을 만들 때 원본을 지우지 않는다.** 확인 화면이 아직 원본을
   /// 그리고 있기 때문이다. 지우는 책임은 부르는 쪽([_confirmPendingShot])에
   /// 있다 — 돌려준 경로가 [source]와 다르면 원본은 버려진 것이다.
-  Future<XFile> _bakeRotation(XFile source, int degrees) async {
-    if (!needsRebake(degrees)) return source;
-    try {
-      final bytes = await source.readAsBytes();
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return source;
-      final rotated = img.copyRotate(decoded, angle: normalizeTurn(degrees));
-      final jpgBytes = img.encodeJpg(rotated, quality: 100);
-      final outPath =
-          '${Directory.systemTemp.path}/card_rot_'
-          '${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await File(outPath).writeAsBytes(jpgBytes);
-      return XFile(outPath);
-    } catch (_) {
-      return source;
-    }
-  }
+  Future<XFile> _bakeRotation(XFile source, int degrees) =>
+      bakeImageRotation(source, degrees);
 
   /// 가이드 박스의 실제 픽셀 크기를 현재 화면 크기 기준으로 계산한다.
   /// 명함의 긴 변(90mm)이 화면에서 차지하는 크기를 화면 "폭"의 86%로 고정
