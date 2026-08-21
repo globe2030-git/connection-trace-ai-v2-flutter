@@ -13,6 +13,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/ocr_origin.dart';
+import '../../../../core/utils/scan_field_chips.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/web_tab_guard.dart';
 import '../../../../core/services/address_geocoding_service.dart';
@@ -1158,63 +1159,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isBackDone ? '앞면과 뒷면을 모두 스캔했습니다' : '다음으로 무엇을 할까요?',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  missing.isEmpty
-                      ? '명함 한 장은 앞면과 뒷면까지 스캔할 수 있습니다.'
-                      : '${_withObjectParticle(missing.join(', '))} 찾지 못했습니다. 뒷면에 있을 수 있습니다.',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (!isBackDone)
-                  ListTile(
-                    minTileHeight: 56,
-                    leading: const Icon(
-                      Icons.flip_to_back,
-                      color: AppColors.accentText,
+              children: isBackDone
+                  ? _buildBackDoneSheetBody(
+                      sheetContext: sheetContext,
+                      missing: missing,
+                    )
+                  // P2-④ — 앞면만 끝난 상태는 완전히 다른 구성(칩 요약 +
+                  // 이어찍기 단축)을 쓴다.
+                  : _buildFrontOnlySheetBody(
+                      sheetContext: sheetContext,
+                      isFromCamera: isFromCamera,
+                      missing: missing,
                     ),
-                    title: Text(isFromCamera ? '뒷면 촬영' : '뒷면 이미지 선택'),
-                    subtitle: const Text('지금 채워진 값은 그대로 두고 빈 칸만 채웁니다'),
-                    onTap: () => Navigator.of(sheetContext).pop('back'),
-                  ),
-                ListTile(
-                  minTileHeight: 56,
-                  leading: const Icon(
-                    Icons.refresh,
-                    color: AppColors.accentText,
-                  ),
-                  // 촬영으로 들어왔는지 업로드로 들어왔는지에 따라 말이 다르다 —
-                  // 업로드인데 "다시 찍기"라고 하면 사용자는 카메라가 열릴 줄 안다.
-                  title: Text(isFromCamera ? '다시 찍기' : '다른 이미지 선택'),
-                  subtitle: Text(
-                    isFromCamera
-                        ? '방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'
-                        : '방금 스캔으로 채워진 값을 지우고 이미지를 다시 고릅니다',
-                  ),
-                  onTap: () => Navigator.of(sheetContext).pop('retake'),
-                ),
-                ListTile(
-                  minTileHeight: 56,
-                  leading: const Icon(
-                    Icons.check_circle_outline,
-                    color: AppColors.accentText,
-                  ),
-                  title: const Text('여기서 완료'),
-                  subtitle: const Text('스캔을 끝내고 내용을 확인·수정합니다'),
-                  onTap: () => Navigator.of(sheetContext).pop('done'),
-                ),
-              ],
             ),
           ),
         ),
@@ -1265,6 +1221,185 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       });
     }
     await _performOcrScan(isFromCamera: isFromCamera, sideLabel: nextLabel);
+  }
+
+  /// 앞·뒷면을 **모두** 스캔했을 때의 시트 내용 — 기존 구성 그대로다(회귀
+  /// 0). 뒷면 선택지가 빠지는 것만 `_askNextScanStep`의 원래 조건과 같다.
+  List<Widget> _buildBackDoneSheetBody({
+    required BuildContext sheetContext,
+    required List<String> missing,
+  }) {
+    return [
+      const Text(
+        '앞면과 뒷면을 모두 스캔했습니다',
+        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        missing.isEmpty
+            ? '명함 한 장은 앞면과 뒷면까지 스캔할 수 있습니다.'
+            : '${_withObjectParticle(missing.join(', '))} 찾지 못했습니다. 뒷면에 있을 수 있습니다.',
+        style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
+      ),
+      const SizedBox(height: 12),
+      ListTile(
+        minTileHeight: 56,
+        leading: const Icon(Icons.refresh, color: AppColors.accentText),
+        title: const Text('다시 찍기'),
+        subtitle: const Text('방금 스캔으로 채워진 값을 지우고 이 면을 다시 찍습니다'),
+        onTap: () => Navigator.of(sheetContext).pop('retake'),
+      ),
+      ListTile(
+        minTileHeight: 56,
+        leading: const Icon(
+          Icons.check_circle_outline,
+          color: AppColors.accentText,
+        ),
+        title: const Text('여기서 완료'),
+        subtitle: const Text('스캔을 끝내고 내용을 확인·수정합니다'),
+        onTap: () => Navigator.of(sheetContext).pop('done'),
+      ),
+    ];
+  }
+
+  /// 앞면만 스캔한 직후의 시트 내용(P2-④ "이어찍기 단축", 2026-08-22 확정).
+  ///
+  /// **다시 찍기를 없애지 않는다** — 브리프가 요구한 것은 [뒷면 이어
+  /// 찍기]/[앞면만으로 등록] 두 버튼을 앞세우는 것이지, 초점이 안 맞았을 때
+  /// 되돌릴 유일한 수단인 재촬영을 지우는 것이 아니다. 그래서 작은 텍스트
+  /// 버튼으로 격을 낮춰 남긴다.
+  ///
+  /// ⚠️ **병합 로직을 새로 만들지 않는다.** [뒷면 이어 찍기]는 기존
+  /// `choice == 'back'`(→ `_performOcrScan`이 다시 불려 [_applyOcrResult]가
+  /// 빈 칸만 채운다) 경로를 **그대로** 탄다 — 이 함수는 보여주는 방식만
+  /// 바꾼다.
+  List<Widget> _buildFrontOnlySheetBody({
+    required BuildContext sheetContext,
+    required bool isFromCamera,
+    required List<String> missing,
+  }) {
+    const fieldOrder = ['이름', '회사명', '주소', '휴대폰 번호', '이메일'];
+    return [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Expanded(
+            child: Text(
+              '앞면을 스캔했습니다',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // "앞면 1/2" 단계 칩 — 명함 한 장은 앞·뒷면 최대 두 장이라는 것을
+          // 계속 보이게 한다.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.bgBase,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
+            child: const Text(
+              '앞면 1/2',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      // 읽은 필드 칩 — 있음=accentSoft, 없음=warningSoft. 어느 라벨이
+      // 채워졌는지는 순수 함수([buildScanFieldChipStates])로 고정해 뒀다.
+      Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final state in buildScanFieldChipStates(
+            allLabels: fieldOrder,
+            missingLabels: missing,
+          ))
+            _scanFieldStatusChip(label: state.label, filled: state.filled),
+        ],
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        '주소·이메일이 뒷면에 있는 경우가 많아요',
+        style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+      ),
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: () => Navigator.of(sheetContext).pop('back'),
+          icon: const Icon(Icons.flip_to_back, size: 18, color: Colors.white),
+          label: Text(isFromCamera ? '뒷면 이어 찍기' : '뒷면 이미지 선택'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.accent,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: OutlinedButton(
+          onPressed: () => Navigator.of(sheetContext).pop('done'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.textPrimary,
+            side: const BorderSide(color: AppColors.borderSubtle),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: const Text('앞면만으로 등록'),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Center(
+        child: TextButton(
+          onPressed: () => Navigator.of(sheetContext).pop('retake'),
+          child: Text(
+            isFromCamera ? '다시 찍기' : '다른 이미지 선택',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _scanFieldStatusChip({required String label, required bool filled}) {
+    final bg = filled ? AppColors.accentSoft : AppColors.warningSoft;
+    final fg = filled ? AppColors.accentText : AppColors.warningText;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            filled ? Icons.check_circle : Icons.error_outline,
+            size: 14,
+            color: fg,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 지금 찍고 있는 면. 스캔 횟수로 판단한다 — 아직 한 번도 안 찍었거나
