@@ -8,10 +8,13 @@ import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
 import '../utils/nearby_map_camera.dart';
+import '../utils/nearby_map_clusters.dart';
 import '../view_models/radar_view_model.dart';
+import 'nearby_map_group_sheet.dart';
 // 반경 선택 칩은 주변 화면과 공유한다 — 옵션·라벨·선택 시트가 갈라지면
 // 두 화면이 서로 다른 반경 목록을 보여주게 된다.
 import 'radar_view.dart';
@@ -256,21 +259,37 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                       height: 30,
                       child: const _AnchorMark(),
                     ),
-                  for (final contact in plottable)
+                  // 같은 도로명 주소는 낱개 핀 여러 개 대신 숫자 묶음
+                  // 마커 하나로 합친다(P2-①, 2026-08-22 확정). 판정 규칙은
+                  // 목록 화면(F-15)과 같은 [groupContactsByAddress] —
+                  // 새로 만들지 않고 그대로 재사용한다.
+                  for (final marker in computeMapMarkerGroups(plottable))
                     Marker(
-                      point: LatLng(contact.geo!.lat, contact.geo!.lng),
-                      width: 40,
-                      height: 46,
+                      point: LatLng(marker.point.lat, marker.point.lng),
+                      // 묶음 마커는 "같은 주소 N명" 글자띠가 원 위에 붙어
+                      // 낱개 핀보다 폭이 넓다. 두 자리 인원수("같은 주소
+                      // 12명")까지 잘리지 않게 넉넉히 잡는다.
+                      width: marker.isGrouped ? 132 : 40,
+                      height: marker.isGrouped ? 66 : 46,
                       alignment: Alignment.topCenter,
-                      child: _ContactPin(
-                        contact: contact,
-                        onTap: () => _showContactSheet(
-                          context,
-                          contact,
-                          origin,
-                          isCustomAnchor: anchor != null,
-                        ),
-                      ),
+                      child: marker.isGrouped
+                          ? _GroupPin(
+                              group: marker.group,
+                              onTap: () => showNearbyMapGroupSheet(
+                                context,
+                                group: marker.group,
+                                origin: origin,
+                              ),
+                            )
+                          : _ContactPin(
+                              contact: marker.representative,
+                              onTap: () => _showContactSheet(
+                                context,
+                                marker.representative,
+                                origin,
+                                isCustomAnchor: anchor != null,
+                              ),
+                            ),
                     ),
                 ],
               ),
@@ -576,6 +595,95 @@ class _ContactPin extends StatelessWidget {
             ),
             // 핀 끝을 뾰족하게 — 원만 있으면 어느 지점을 가리키는지 애매하다.
             CustomPaint(size: const Size(10, 8), painter: _PinTailPainter()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 같은 도로명 주소에 여러 명이 있을 때 낱개 핀 대신 그리는 숫자 묶음
+/// 마커(P2-①). 원 안에는 인원수, 위에는 "같은 주소 N명" 라벨을 붙여 —
+/// 그냥 숫자만 있으면 "왜 숫자가 커졌지"가 지도만 보고는 안 읽힌다.
+///
+/// 접근성 라벨은 도로명까지 포함한다("OO로 NN, 같은 주소 N명") — 스크린
+/// 리더 사용자는 원 안의 숫자를 볼 수 없으므로, 어느 주소의 묶음인지까지
+/// 말해 줘야 낱개 핀들과 구분된다.
+class _GroupPin extends StatelessWidget {
+  final AddressGroup group;
+  final VoidCallback onTap;
+
+  const _GroupPin({required this.group, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final count = group.contacts.length;
+    return Semantics(
+      button: true,
+      label: '${group.address}, 같은 주소 $count명',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // "같은 주소 N명" 라벨 — 낱개 핀과 한눈에 구분되도록 원 위에
+            // 알약 모양으로 얹는다.
+            ExcludeSemantics(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.cardSurface,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppColors.accent, width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x33000000), blurRadius: 4),
+                  ],
+                ),
+                child: Text(
+                  '같은 주소 $count명',
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.accentText,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            ExcludeSemantics(
+              child: Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x33000000), blurRadius: 4),
+                  ],
+                ),
+                child: Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            // 핀 끝을 뾰족하게 — 낱개 핀과 같은 모양이라야 "이것도 이
+            // 지점을 가리키는 핀이다"가 한눈에 읽힌다.
+            ExcludeSemantics(
+              child: CustomPaint(
+                size: const Size(10, 8),
+                painter: _PinTailPainter(),
+              ),
+            ),
           ],
         ),
       ),
