@@ -138,19 +138,36 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     // 반경이 "전체"면 담을 원이 없다. 그때는 인맥이 실제로 있는 곳까지 담도록
     // 좌표 목록으로 맞춘다(2026-08-22 실측 — 예전에는 내 위치만 보고 배율을
     // 정해서, 인맥이 30km 밖에 있으면 핀이 하나도 없는 지도가 열렸다).
-    final fitPoints = mapFitCoordinates(
+    final fitPlan = resolveMapFit(
       radiusMeters: radius,
       center: center,
       myPoint: myPoint,
-      contactPoints: [
-        for (final c in plottable) LatLng(c.geo!.lat, c.geo!.lng),
+      contactsNearestFirst: [
+        for (final c in plottable)
+          (
+            point: LatLng(c.geo!.lat, c.geo!.lng),
+            distanceMeters: GeoUtils.getDistanceMeters(origin, c.geo),
+          ),
       ],
     );
+    final fitPoints = fitPlan.coordinates;
     final cameraFit = fitPoints == null
         ? null
         : CameraFit.coordinates(
             coordinates: fitPoints,
-            padding: const EdgeInsets.all(48),
+            // ⚠️ 아래 여백이 큰 이유 — `_FoundBar`가 **지도 위에 겹쳐** 있다.
+            // 맞춤은 그 사실을 모르므로, 여백이 작으면 가장 남쪽 핀을 흰 바
+            // 뒤에 밀어 넣는다. 2026-08-22 실측에서 실제로 그랬다: 광주
+            // 인맥(230.3km)의 핀이 화면 밖이 아니라 **바에 가려** 안 보였고,
+            // "핀이 없는데 화면만 남쪽으로 벌어진" 것처럼 읽혔다.
+            //
+            // 실측: 바가 지도 아래 약 101dp를 덮는데 여백은 48이었다.
+            padding: const EdgeInsets.only(
+              left: 48,
+              right: 48,
+              top: 48,
+              bottom: 150,
+            ),
             maxZoom: kMapFitMaxZoom,
           );
 
@@ -289,6 +306,7 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                 _FoundBar(
                   count: plottable.length,
                   hiddenCount: hiddenCount,
+                  outsideCount: fitPlan.outsideCount,
                   attribution: _attribution,
                   // 탭으로 기준점을 지정하는 것은 **눌러 보기 전에는 알 수 없는
                   // 동작**이라 안내를 글자로 붙인다. 이 저장소가 이미 같은
@@ -611,6 +629,9 @@ class _MapButton extends StatelessWidget {
 class _FoundBar extends StatelessWidget {
   final int count;
   final int hiddenCount;
+
+  /// 처음 화면 밖에 남은 인맥 수. 핀은 지도에 그대로 있고 축소하면 보인다.
+  final int outsideCount;
   final String attribution;
 
   /// 기준점을 옮겨 뒀으면 내 위치에서 그 지점까지의 거리. 옮기지 않았으면
@@ -620,6 +641,7 @@ class _FoundBar extends StatelessWidget {
   const _FoundBar({
     required this.count,
     required this.hiddenCount,
+    required this.outsideCount,
     required this.attribution,
     this.anchorDistanceFromMe,
   });
@@ -689,6 +711,19 @@ class _FoundBar extends StatelessWidget {
             ),
             // 좌표가 없는 인맥은 지도에 못 찍는다. 이 사실을 숨기면 "목록엔
             // 5명인데 지도엔 3명"이 버그로 보인다.
+            // 무리에서 크게 벗어난 인맥은 첫 화면에 안 담는다 — 그 하나
+            // 때문에 나머지가 전부 구석으로 몰리기 때문이다. 다만 **없는 것이
+            // 아니라 밖에 있는 것**이므로 그렇게 말한다.
+            if (outsideCount > 0) ...[
+              const SizedBox(height: 2),
+              Text(
+                '멀리 있는 $outsideCount명은 축소하면 보입니다',
+                style: const TextStyle(
+                  fontSize: 11.5,
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ],
             if (hiddenCount > 0) ...[
               const SizedBox(height: 2),
               Text(
