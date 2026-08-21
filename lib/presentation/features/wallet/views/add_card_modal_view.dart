@@ -805,6 +805,75 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     if (result == null || !mounted) return;
 
+    final missingFields = await _applyOcrResult(result);
+    if (missingFields == null || !mounted) return;
+
+    _showInlineNotice(
+      missingFields.isEmpty
+          ? '📸 스캔한 내용으로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 아래 정보를 확인해 주세요.'
+          : '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요.',
+      isError: missingFields.isNotEmpty,
+    );
+
+    await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
+  }
+
+  /// 갤러리에서 **앞·뒷면 2장을 한 번에** 골라 순서대로 인식한다(P2-②).
+  ///
+  /// **1장만 고르면 [_performOcrScan]과 완전히 같은 경로를 탄다** — 회귀
+  /// 0을 위해 다른 코드를 타지 않게 여기서 바로 나눈다.
+  ///
+  /// 2장이면 각 장을 순서대로 [_applyOcrResult]에 넘긴다 — **기존 앞/뒷면
+  /// 누적 병합 로직을 두 번 태우는 것**이지, 별도 병합 로직을 만들지
+  /// 않는다.
+  Future<void> _performGalleryScan() async {
+    // 이미 한 번이라도 스캔했으면(뒷면 이어서·재촬영 등) "앞·뒤 2장 동시
+    // 선택"의 의미가 없다 — 명함은 두 면이 최대라 이미 자리가 하나뿐이다.
+    // 그 경우는 지금까지와 같은 단일 선택 경로로 보낸다.
+    if (_scanCount != 0) {
+      await _performOcrScan(isFromCamera: false, sideLabel: _currentSideLabel);
+      return;
+    }
+
+    final batch = await showModalBottomSheet<GalleryOcrBatch>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) =>
+          FilePickerModalView(sideLabel: _currentSideLabel, allowMultiSelect: true),
+    );
+    if (batch == null || !mounted || batch.results.isEmpty) return;
+
+    List<String>? missingFields;
+    for (final result in batch.results) {
+      missingFields = await _applyOcrResult(result);
+      // 대화상자를 취소하면 null — 이 장은 반영되지 않았으니 나머지도
+      // 이어가지 않는다(사용자가 이미 멈추기로 고른 것).
+      if (missingFields == null || !mounted) return;
+    }
+
+    _showInlineNotice(
+      missingFields!.isEmpty
+          ? '📸 스캔한 내용으로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 아래 정보를 확인해 주세요.'
+          : '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요.',
+      isError: missingFields.isNotEmpty,
+    );
+
+    await _askNextScanStep(isFromCamera: false, missing: missingFields);
+  }
+
+  /// OCR 결과 하나를 지금 폼에 병합한다 — **기존 앞/뒷면 누적 병합 로직**
+  /// 그 자체다.
+  ///
+  /// [_performOcrScan](카메라·갤러리 단일 스캔)과 [_performGalleryScan]
+  /// (갤러리 2장 선택)이 이 메서드를 공유한다. 2장이면 앞면 결과로 한 번,
+  /// 뒷면 결과로 한 번 — 총 두 번 불러 합친다. **새 병합 로직을 만들지
+  /// 않기 위한 구조다.**
+  ///
+  /// 사용자가 "다른 명함을 스캔하셨나요?" 대화상자를 그냥 닫으면 아무것도
+  /// 바꾸지 않고 `null`을 돌려준다 — 부르는 쪽은 그 경우 안내·다음 단계
+  /// 물음을 건너뛰어야 한다.
+  Future<List<String>?> _applyOcrResult(OcrScanResult result) async {
     // 이미 이름이 채워져 있는데 새로 스캔한 이름이 다르면, 같은 명함의
     // 뒷면이 아니라 완전히 "다른 명함"을 스캔한 것으로 본다 — 이 경우
     // 그대로 fill-if-empty만 하면 새 명함 정보가 하나도 안 들어가고
@@ -830,8 +899,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         existingName: existingName,
         scannedName: scannedName,
       );
-      if (!mounted) return;
-      if (choice == null) return; // 대화상자 닫힘 — 아무것도 안 바꾸고 그대로 둔다.
+      if (!mounted) return null;
+      if (choice == null) return null; // 대화상자 닫힘 — 아무것도 안 바꾸고 그대로 둔다.
       overwrite = choice;
     }
 
@@ -889,7 +958,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       // 여러 번 스캔해도 누적시키지 않고 가장 최근 스캔 결과만 보여준다 — 계속
       // 이어붙이면 같은 면을 다시 스캔했을 때 중복 텍스트가 끝없이 쌓여 오히려
       // 확인하기 어려워짐(폼 필드 자체는 아래에서 이미 누적되고 있음).
-      _scannedRawText = result!.rawText;
+      _scannedRawText = result.rawText;
       // ⚠️ **명함에 인쇄된 구분자에서 쪼갠다** (2026-08-19, 추가 325).
       //
       // 예전에는 원문 줄을 그대로 칩으로 깔았다. 그런데 한 줄에 둘이 들어 있는
@@ -1019,7 +1088,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 다시 묻지 않는다.
     if (!overwrite) {
       await _resolveScanFieldConflicts(result);
-      if (!mounted) return;
+      if (!mounted) return null;
     }
 
     final missingFields = <String>[
@@ -1030,7 +1099,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       if (_emailController.text.trim().isEmpty) '이메일',
     ];
 
-    if (!mounted) return;
+    if (!mounted) return null;
     // "여기서 완료" 뒤에 다시 찍기 시작했다면 새 흐름이다 — 앞면부터 다시 센다.
     if (_scanSessionClosed) {
       _scanCount = 0;
@@ -1038,14 +1107,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
     _scanCount = overwrite ? 1 : _scanCount + 1;
 
-    _showInlineNotice(
-      missingFields.isEmpty
-          ? '📸 스캔한 내용으로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 아래 정보를 확인해 주세요.'
-          : '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요.',
-      isError: missingFields.isNotEmpty,
-    );
-
-    await _askNextScanStep(isFromCamera: isFromCamera, missing: missingFields);
+    return missingFields;
   }
 
   /// 이번 스캔이 **이미 채워져 있던 칸**에 다른 값을 들고 온 경우, 칸마다
@@ -3256,7 +3318,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                         child: OutlinedButton.icon(
                           onPressed: _isScanningOcr
                               ? null
-                              : () => _performOcrScan(isFromCamera: false),
+                              : () => _performGalleryScan(),
                           icon: const AppIcon(
                             AppIconId.galleryUpload,
                             size: 18,

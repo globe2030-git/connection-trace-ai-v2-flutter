@@ -282,6 +282,23 @@ class OcrScannerService {
     return _picker.pickMultiImage(imageQuality: 100);
   }
 
+  /// 갤러리에서 **앞·뒷면 최대 2장**을 한 번에 고른다(P2-②).
+  ///
+  /// `image_picker` 플러그인 소스(`image_picker-1.2.3/lib/image_picker.dart`)를
+  /// 실측한 결과: `pickMultiImage(limit: n)`은 `MultiImagePickerOptions`로
+  /// 네이티브(iOS PHPicker·Android Photo Picker)에 상한을 넘겨 **그 이상은
+  /// 아예 선택되지 않게 막는다** — 앱이 나중에 앞부분만 자르는 방식이 아니다.
+  ///
+  /// ⚠️ **반환 순서가 "탭한 순서"라는 보장은 플랫폼 문서 어디에도 없다.**
+  /// iOS PHPicker는 통상 선택 순서를 유지하지만, 이 앱이 요청하는
+  /// 구성(selectionLimit만 지정)에서 순서가 뒤집히는 사례가 보고돼 있고,
+  /// Android 쪽 보장은 더 약하다. 그래서 이 함수의 반환값을 **"추정
+  /// 앞/뒷면"으로만 쓰고**, 화면에는 반드시 "앞·뒷면 순서 바꾸기"를 함께
+  /// 둔다 — 순서가 실제로 어긋나도 사용자가 바로잡을 수 있게.
+  static Future<List<XFile>> pickUpToTwoImagesFromGallery() {
+    return _picker.pickMultiImage(imageQuality: 100, limit: 2);
+  }
+
   /// 실제로 캡처/선택된 명함 이미지에서 ML Kit 온디바이스 텍스트 인식으로 텍스트를
   /// 추출하고, 위치 기반 재정렬 + 키워드 휴리스틱으로 이름/전화/이메일/주소 등
   /// 필드를 채운다. 명함 레이아웃은 회사마다 제각각이라(2단 레이아웃, 이름이
