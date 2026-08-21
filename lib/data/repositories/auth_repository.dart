@@ -11,6 +11,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/services/google_auth_gateway.dart';
 import '../../core/services/social_oauth.dart' as social;
+import '../../core/services/social_web_session.dart';
 import '../models/sns_auth_provider.dart';
 
 class AuthException implements Exception {
@@ -37,6 +38,12 @@ class AuthRepository extends ChangeNotifier {
 
   final FlutterSecureStorage _secureStorage;
 
+  /// 웹뷰에 남은 카카오·네이버 세션 쿠키를 지우는 함수.
+  ///
+  /// 테스트에서 갈아 끼울 수 있게 주입받는다 — 실제 구현은 플랫폼 채널을
+  /// 타므로 `flutter test`에서는 부를 수 없다.
+  final ClearSocialWebSession _clearWebSession;
+
   bool _isLoading = true;
   bool _isSignedIn = false;
   SnsAuthProvider? _provider;
@@ -44,8 +51,11 @@ class AuthRepository extends ChangeNotifier {
   String? _email;
   String? _photoUrl;
 
-  AuthRepository({FlutterSecureStorage? secureStorage})
-    : _secureStorage = secureStorage ?? const FlutterSecureStorage() {
+  AuthRepository({
+    FlutterSecureStorage? secureStorage,
+    ClearSocialWebSession? clearWebSession,
+  }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+       _clearWebSession = clearWebSession ?? clearSocialWebSession {
     _load();
   }
 
@@ -382,6 +392,19 @@ class AuthRepository extends ChangeNotifier {
         debugPrint('Error signing out of Google: $e');
       }
     }
+    // ⚠️ 카카오·네이버는 웹뷰에 제공자 세션 쿠키를 남긴다. 안 지우면 같은
+    // 기기의 다음 사람이 '카카오로 계속하기'를 눌렀을 때 **아이디를 묻지 않고
+    // 앞사람 계정으로 들어간다** — 이 앱에서는 그게 곧 남의 명함(제3자
+    // 개인정보)을 여는 것이다. 자세한 경위는 social_web_session.dart 참고.
+    //
+    // ⚠️ **여기서 던지면 로그아웃 자체가 막힌다.** 쿠키를 못 지운 것보다
+    // 로그아웃을 못 하는 쪽이 나쁘다. (기본 구현은 스스로 삼키지만, 그것에
+    // 기대면 구현을 바꾸는 날 조용히 깨진다 — 부르는 쪽에서도 막는다.)
+    try {
+      await _clearWebSession();
+    } catch (e) {
+      debugPrint('Error clearing social web session: $e');
+    }
     try {
       await fb_auth.FirebaseAuth.instance.signOut();
     } catch (e) {
@@ -488,8 +511,21 @@ class AuthRepository extends ChangeNotifier {
         await reauthenticateWithApple();
       case SnsAuthProvider.kakao:
       case SnsAuthProvider.naver:
+        // ⚠️ 두 사유를 갈라서 말한다. 문구 하나로 뭉치면 이용자는 **자기가
+        // 뭘 해야 하는지** 알 수 없고, 우리도 화면만 보고는 원인을 못 가린다.
+        if (!_provider!.isAvailable) {
+          // 키 없이 빌드된 판. 이용자가 다시 눌러도 결과가 같으므로
+          // "다시 시도"라고 하지 않는다.
+          throw AuthException(
+            '이 빌드에서는 ${_provider!.displayName} 계정을 확인할 수 없어 계정을 지울 수 없습니다. '
+            '정식 앱에서 다시 시도해 주세요.',
+          );
+        }
         if (openAuth == null) {
-          throw AuthException('${_provider!.displayName} 재인증을 시작할 수 없습니다. 다시 로그인해 주세요.');
+          // 부르는 쪽이 인증 화면 여는 함수를 안 넘긴 것 — 이용자 잘못이
+          // 아니라 **우리 배선 문제**다. 조용히 지나가면 "탈퇴가 안 되는데
+          // 이유를 모르는" 상태가 된다.
+          throw AuthException('${_provider!.displayName} 재인증 화면을 열지 못했습니다. 앱을 다시 켠 뒤 시도해 주세요.');
         }
         // 다시 로그인하는 것이 곧 재인증이다 — signInWithCustomToken 이
         // "최근 로그인" 시각을 갱신한다.
@@ -571,6 +607,15 @@ class AuthRepository extends ChangeNotifier {
       } catch (e) {
         debugPrint('Error signing out of Google after account deletion: $e');
       }
+    }
+    // ⚠️ 탈퇴에서는 더 무겁다 — 쿠키가 남으면 "탈퇴했는데 다시 눌렀더니
+    // 로그인되더라"가 된다. 개인정보 파기 의무와 어긋나 보인다.
+    // 그래도 여기서 던지지 않는다: 계정은 이미 지워진 뒤라, 여기서 멈추면
+    // 로컬 세션만 남아 "지워졌는데 로그인된 것처럼 보이는" 상태가 된다.
+    try {
+      await _clearWebSession();
+    } catch (e) {
+      debugPrint('Error clearing social web session after account deletion: $e');
     }
     _isSignedIn = false;
     _provider = null;

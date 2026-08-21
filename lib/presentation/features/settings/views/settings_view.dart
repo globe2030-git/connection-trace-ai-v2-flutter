@@ -18,6 +18,7 @@ import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
 import '../../../../core/services/photo_improvement_consent_service.dart';
+import '../../../common/social_oauth_view.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
@@ -1446,7 +1447,15 @@ Future<void> _performAccountDeletion(
       if (wantsReauth != true) return;
 
       showLoading();
-      await auth.reauthenticateCurrentProvider();
+      // ⚠️ 카카오·네이버는 커스텀 토큰이라 재인증이 곧 **인증 화면을 다시
+      // 띄우는 것**이다. 이 인자를 안 넘기면 auth_repository가 예외를 던지고,
+      // 그때는 이미 서버 데이터를 지운 뒤(위 deleteAllUserData)라 **서버
+      // 백업은 사라졌는데 계정은 안 지워진** 상태로 갇힌다.
+      // 📌 구글·애플은 이 인자를 쓰지 않는다(네이티브 SDK가 스스로 띄운다).
+      if (!context.mounted) return;
+      await auth.reauthenticateCurrentProvider(
+        openAuth: (target) => SocialOauthView.show(context, target),
+      );
       await auth.deleteFirebaseAccountAndLocalSession();
     }
 
