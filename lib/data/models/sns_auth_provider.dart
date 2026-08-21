@@ -1,13 +1,26 @@
 import 'package:flutter/foundation.dart';
 
-/// 회원가입/로그인에 쓸 수 있는 SNS 인증 수단. 카카오는 이번 범위에서 제외.
+import '../../core/services/social_oauth.dart' as social;
+
+/// 회원가입/로그인에 쓸 수 있는 SNS 인증 수단.
+///
+/// ⚠️ **이름을 바꾸면 기존 이용자의 세션이 끊긴다.** `name`이 그대로 기기
+/// 저장소(`_persist`)와 서버 claims에 적히기 때문이다.
+///
+/// 📌 Google·Apple은 Firebase가 기본 제공자로 알지만 **카카오·네이버는
+/// 모른다.** 그래서 서버(`socialSignIn`)가 커스텀 토큰을 발급하는 경로를
+/// 따로 탄다 — `social_oauth.dart` 참고.
 enum SnsAuthProvider {
   google,
-  apple;
+  apple,
+  kakao,
+  naver;
 
   String get displayName => switch (this) {
     SnsAuthProvider.google => 'Google',
     SnsAuthProvider.apple => 'Apple',
+    SnsAuthProvider.kakao => '카카오',
+    SnsAuthProvider.naver => '네이버',
   };
 
   /// 지금 바로 로그인 가능한지.
@@ -24,6 +37,22 @@ enum SnsAuthProvider {
     SnsAuthProvider.apple =>
       defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.macOS,
+    // 카카오·네이버는 **빌드에 키가 들어 있어야** 쓸 수 있다. 키 없이 빌드된
+    // 판에서는 버튼을 아예 숨긴다 — 눌러도 안 되는 버튼을 두면 이용자는
+    // 고장으로 읽는다. 키 주입은 tool/build_app.sh 가 한다.
+    SnsAuthProvider.kakao => social.isConfigured(social.SocialProvider.kakao),
+    SnsAuthProvider.naver => social.isConfigured(social.SocialProvider.naver),
+  };
+
+  /// `social_oauth.dart` 쪽 제공자 값. 로그인 흐름을 부를 때 쓴다.
+  /// ⚠️ 와일드카드(`_`)를 쓰지 않는다. 제공자를 새로 추가했을 때
+  /// **컴파일러가 여기를 짚어 주도록** 남김없이 적는다 — 와일드카드로 두면
+  /// 새 제공자가 조용히 `null`이 되어 "버튼은 보이는데 눌러도 아무 일이
+  /// 없는" 상태가 된다.
+  social.SocialProvider? get socialProvider => switch (this) {
+    SnsAuthProvider.kakao => social.SocialProvider.kakao,
+    SnsAuthProvider.naver => social.SocialProvider.naver,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
   };
 
   String? get unavailableReason => switch (this) {
@@ -31,5 +60,8 @@ enum SnsAuthProvider {
     SnsAuthProvider.apple => isAvailable
         ? null
         : 'Apple 로그인은 iOS/macOS 앱에서만 지원됩니다.',
+    SnsAuthProvider.kakao || SnsAuthProvider.naver => isAvailable
+        ? null
+        : '$displayName 로그인은 이 빌드에서 준비되지 않았습니다.',
   };
 }

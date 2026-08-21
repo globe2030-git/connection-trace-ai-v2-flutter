@@ -10,6 +10,8 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/services/google_auth_gateway.dart';
+import '../../core/services/social_oauth.dart' as social;
+import '../../core/services/social_web_session.dart';
 import '../models/sns_auth_provider.dart';
 
 class AuthException implements Exception {
@@ -36,6 +38,12 @@ class AuthRepository extends ChangeNotifier {
 
   final FlutterSecureStorage _secureStorage;
 
+  /// 웹뷰에 남은 카카오·네이버 세션 쿠키를 지우는 함수.
+  ///
+  /// 테스트에서 갈아 끼울 수 있게 주입받는다 — 실제 구현은 플랫폼 채널을
+  /// 타므로 `flutter test`에서는 부를 수 없다.
+  final ClearSocialWebSession _clearWebSession;
+
   bool _isLoading = true;
   bool _isSignedIn = false;
   SnsAuthProvider? _provider;
@@ -43,8 +51,11 @@ class AuthRepository extends ChangeNotifier {
   String? _email;
   String? _photoUrl;
 
-  AuthRepository({FlutterSecureStorage? secureStorage})
-    : _secureStorage = secureStorage ?? const FlutterSecureStorage() {
+  AuthRepository({
+    FlutterSecureStorage? secureStorage,
+    ClearSocialWebSession? clearWebSession,
+  }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+       _clearWebSession = clearWebSession ?? clearSocialWebSession {
     _load();
   }
 
@@ -144,6 +155,101 @@ class AuthRepository extends ChangeNotifier {
     _displayName = account.displayName;
     _email = account.email;
     _photoUrl = account.photoUrl;
+    _isSignedIn = true;
+    notifyListeners();
+    await _persist();
+  }
+
+  /// 카카오·네이버 로그인.
+  ///
+  /// ## Google·Apple 과 흐름이 다르다
+  ///
+  /// Firebase Auth는 카카오·네이버를 기본 제공자로 모른다. 그래서
+  ///
+  /// ```
+  /// 1. 앱: 웹뷰로 인증 → 인가 코드
+  /// 2. 서버(socialSignIn): 코드 → 액세스 토큰 → 사용자 정보 → 커스텀 토큰
+  /// 3. 앱: 커스텀 토큰으로 Firebase 로그인
+  /// ```
+  ///
+  /// ⚠️ **여기서는 Firebase 로그인 실패를 넘기지 않는다.** Google 로그인은
+  /// 실패해도 로컬 세션으로 계속 가지만(서버 백업은 부가 기능), 카카오·네이버는
+  /// **Firebase uid 자체가 서버에서 나온다.** 실패하면 명함을 저장할 자리가
+  /// 없으므로 로그인을 성립시키면 안 된다.
+  ///
+  /// [openAuth]는 인증 화면을 띄우는 함수다. 화면 코드를 이 파일에 들이지
+  /// 않으려고 밖에서 넘긴다(테스트에서도 갈아 끼울 수 있다).
+  Future<void> signInWithSocial(
+    SnsAuthProvider provider,
+    Future<social.OauthOutcome> Function(social.SocialProvider) openAuth,
+  ) async {
+    final target = provider.socialProvider;
+    if (target == null) {
+      throw AuthException('${provider.displayName} 로그인은 지원하지 않습니다.');
+    }
+    if (!provider.isAvailable) {
+      throw AuthException(provider.unavailableReason!);
+    }
+
+    final outcome = await openAuth(target);
+    if (outcome is social.OauthFailed) {
+      throw AuthException(outcome.message);
+    }
+    final code = (outcome as social.OauthCode).code;
+
+    final Map<String, dynamic> data;
+    try {
+      final callable = fb_functions.FirebaseFunctions.instanceFor(
+        region: 'asia-northeast3',
+      ).httpsCallable('socialSignIn');
+      final result = await callable.call<Map<String, dynamic>>({
+        'provider': target.wireName,
+        'code': code,
+        'redirectUri': social.redirectUriFor(target),
+        'state': outcome.state,
+      });
+      data = result.data;
+    } on fb_functions.FirebaseFunctionsException catch (e) {
+      // ⚠️ 서버가 주는 영문 메시지를 그대로 띄우지 않는다. 이용자가 할 수
+      // 있는 일이 코드마다 다르다.
+      // ⚠️ 뭉뚱그린 문구 하나로 두면 어디서 막혔는지 알 수 없다. 실기기에서
+      // "카카오 로그인에 실패했어요"만 뜨는 바람에, 서버 함수가 아직 배포되지
+      // 않은 것인지 인증이 거부된 것인지 화면만 보고는 가릴 수 없었다
+      // (2026-08-20). 이용자가 할 수 있는 일이 코드마다 다르므로 갈라 놓는다.
+      debugPrint('socialSignIn 실패: code=${e.code}');
+      throw AuthException(switch (e.code) {
+        'unauthenticated' => '로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.',
+        'unavailable' => '로그인 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
+        // 함수가 아직 배포되지 않았을 때 온다. 이용자가 할 수 있는 일이 없으므로
+        // "다시 시도"라고 하지 않는다 — 눌러도 같은 결과다.
+        'not-found' || 'internal' =>
+          '${provider.displayName} 로그인이 아직 준비되지 않았어요.',
+        'deadline-exceeded' => '응답이 늦어요. 잠시 후 다시 시도해 주세요.',
+        _ => '${provider.displayName} 로그인에 실패했어요. (${e.code})',
+      });
+    } catch (e) {
+      debugPrint('socialSignIn 예외: $e');
+      throw AuthException('${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.');
+    }
+
+    final token = (data['token'] as String?)?.trim();
+    if (token == null || token.isEmpty) {
+      throw AuthException('${provider.displayName} 로그인에 실패했어요. 다시 시도해 주세요.');
+    }
+
+    final fb_auth.UserCredential cred;
+    try {
+      cred = await fb_auth.FirebaseAuth.instance.signInWithCustomToken(token);
+    } catch (e) {
+      debugPrint('커스텀 토큰 로그인 실패: $e');
+      throw AuthException('로그인을 마치지 못했어요. 다시 시도해 주세요.');
+    }
+
+    final user = cred.user;
+    _provider = provider;
+    _displayName = user?.displayName;
+    _email = user?.email;
+    _photoUrl = user?.photoURL;
     _isSignedIn = true;
     notifyListeners();
     await _persist();
@@ -286,6 +392,19 @@ class AuthRepository extends ChangeNotifier {
         debugPrint('Error signing out of Google: $e');
       }
     }
+    // ⚠️ 카카오·네이버는 웹뷰에 제공자 세션 쿠키를 남긴다. 안 지우면 같은
+    // 기기의 다음 사람이 '카카오로 계속하기'를 눌렀을 때 **아이디를 묻지 않고
+    // 앞사람 계정으로 들어간다** — 이 앱에서는 그게 곧 남의 명함(제3자
+    // 개인정보)을 여는 것이다. 자세한 경위는 social_web_session.dart 참고.
+    //
+    // ⚠️ **여기서 던지면 로그아웃 자체가 막힌다.** 쿠키를 못 지운 것보다
+    // 로그아웃을 못 하는 쪽이 나쁘다. (기본 구현은 스스로 삼키지만, 그것에
+    // 기대면 구현을 바꾸는 날 조용히 깨진다 — 부르는 쪽에서도 막는다.)
+    try {
+      await _clearWebSession();
+    } catch (e) {
+      debugPrint('Error clearing social web session: $e');
+    }
     try {
       await fb_auth.FirebaseAuth.instance.signOut();
     } catch (e) {
@@ -375,12 +494,42 @@ class AuthRepository extends ChangeNotifier {
   ///
   /// provider를 알 수 없는 경우(예: 게스트 QA 로그인)에는 재인증할 SNS
   /// 계정 자체가 없으므로 명확한 예외를 던진다.
-  Future<void> reauthenticateCurrentProvider() async {
+  ///
+  /// ## ⚠️ 카카오·네이버는 [openAuth] 가 있어야 한다
+  ///
+  /// 이 둘은 커스텀 토큰으로 로그인하므로, 재인증도 **인증 화면을 다시 띄워
+  /// 새 토큰을 받는 것**이다. 화면을 띄우는 함수가 없으면 재인증을 할 수
+  /// 없고, **재인증이 막히면 계정 삭제가 막힌다** — 개인정보 파기 의무와
+  /// 직결되는 자리라 조용히 실패하게 두지 않고 이유를 밝혀 던진다.
+  Future<void> reauthenticateCurrentProvider({
+    Future<social.OauthOutcome> Function(social.SocialProvider)? openAuth,
+  }) async {
     switch (_provider) {
       case SnsAuthProvider.google:
         await reauthenticateWithGoogle();
       case SnsAuthProvider.apple:
         await reauthenticateWithApple();
+      case SnsAuthProvider.kakao:
+      case SnsAuthProvider.naver:
+        // ⚠️ 두 사유를 갈라서 말한다. 문구 하나로 뭉치면 이용자는 **자기가
+        // 뭘 해야 하는지** 알 수 없고, 우리도 화면만 보고는 원인을 못 가린다.
+        if (!_provider!.isAvailable) {
+          // 키 없이 빌드된 판. 이용자가 다시 눌러도 결과가 같으므로
+          // "다시 시도"라고 하지 않는다.
+          throw AuthException(
+            '이 빌드에서는 ${_provider!.displayName} 계정을 확인할 수 없어 계정을 지울 수 없습니다. '
+            '정식 앱에서 다시 시도해 주세요.',
+          );
+        }
+        if (openAuth == null) {
+          // 부르는 쪽이 인증 화면 여는 함수를 안 넘긴 것 — 이용자 잘못이
+          // 아니라 **우리 배선 문제**다. 조용히 지나가면 "탈퇴가 안 되는데
+          // 이유를 모르는" 상태가 된다.
+          throw AuthException('${_provider!.displayName} 재인증 화면을 열지 못했습니다. 앱을 다시 켠 뒤 시도해 주세요.');
+        }
+        // 다시 로그인하는 것이 곧 재인증이다 — signInWithCustomToken 이
+        // "최근 로그인" 시각을 갱신한다.
+        await signInWithSocial(_provider!, openAuth);
       case null:
         throw AuthException('재인증할 수 있는 로그인 수단이 없습니다. 다시 로그인해 주세요.');
     }
@@ -458,6 +607,15 @@ class AuthRepository extends ChangeNotifier {
       } catch (e) {
         debugPrint('Error signing out of Google after account deletion: $e');
       }
+    }
+    // ⚠️ 탈퇴에서는 더 무겁다 — 쿠키가 남으면 "탈퇴했는데 다시 눌렀더니
+    // 로그인되더라"가 된다. 개인정보 파기 의무와 어긋나 보인다.
+    // 그래도 여기서 던지지 않는다: 계정은 이미 지워진 뒤라, 여기서 멈추면
+    // 로컬 세션만 남아 "지워졌는데 로그인된 것처럼 보이는" 상태가 된다.
+    try {
+      await _clearWebSession();
+    } catch (e) {
+      debugPrint('Error clearing social web session after account deletion: $e');
     }
     _isSignedIn = false;
     _provider = null;

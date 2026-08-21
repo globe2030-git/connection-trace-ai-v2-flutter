@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
+import '../../../common/social_oauth_view.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/legal_document_view.dart';
@@ -46,6 +47,13 @@ class _LoginViewState extends State<LoginView> {
           if (mounted) await _prefillAvatarFromGoogle(auth.photoUrl);
         case SnsAuthProvider.apple:
           await auth.signInWithApple();
+        case SnsAuthProvider.kakao:
+        case SnsAuthProvider.naver:
+          // 인증 화면을 띄우는 일은 화면이 맡고, 저장소는 결과만 받는다.
+          await auth.signInWithSocial(
+            provider,
+            (target) => SocialOauthView.show(context, target),
+          );
       }
     } on AuthException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
@@ -132,6 +140,21 @@ class _LoginViewState extends State<LoginView> {
               // Apple 로그인이 지원되지 않는 플랫폼(Android 등)에서는 버튼을
               // 아예 그리지 않는다 — 비활성 버튼으로 "준비 중"을 보여주는 건
               // Apple 로그인을 지원하지 않는 것처럼 보여 오히려 혼란스럽다.
+              // 카카오·네이버는 **빌드에 키가 들어 있을 때만** 보인다.
+              // 눌러도 안 되는 버튼을 두면 이용자는 고장으로 읽는다.
+              for (final p in const [
+                SnsAuthProvider.kakao,
+                SnsAuthProvider.naver,
+              ])
+                if (p.isAvailable) ...[
+                  const SizedBox(height: 12),
+                  _SnsButton(
+                    provider: p,
+                    isLoading: _loadingProvider == p,
+                    isDisabled: _loadingProvider != null,
+                    onPressed: () => _signIn(p),
+                  ),
+                ],
               if (SnsAuthProvider.apple.isAvailable) ...[
                 const SizedBox(height: 12),
                 _SnsButton(
@@ -198,17 +221,42 @@ class _SnsButton extends StatelessWidget {
     required this.onPressed,
   });
 
+  /// 제공자가 정한 버튼 색.
+  ///
+  /// ⚠️ **카카오·네이버는 색을 바꿀 수 없다.** 각자 버튼 가이드가 지정 컬러를
+  /// 못박고 있다(네이버: "지정 컬러는 변경할 수 없으며", 카카오: 노란색 고정).
+  /// 우리 화면 색에 맞추려고 바꾸면 규정 위반이고, 네이버는 사전 검수 항목이다.
+  ///
+  /// 📌 **로고는 아직 안 들어갔다.** 공식 애셋(PNG)을 받아 `assets/`에 넣어야
+  /// 하고, 임의로 그리는 것은 금지돼 있다("로고 형태를 변경하거나 다른 형태와
+  /// 조합하는 것은 금지"). 지금은 색과 문구만 규정대로 맞춰 두고, 애셋이
+  /// 들어오면 `_ProviderIcon`에서 갈아 끼운다.
+  Color? get _brandColor => switch (provider) {
+    SnsAuthProvider.kakao => AppColors.channelKakao,
+    SnsAuthProvider.naver => AppColors.brandNaver,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
+  };
+
+  Color? get _brandTextColor => switch (provider) {
+    SnsAuthProvider.kakao => AppColors.brandKakaoLabel,
+    SnsAuthProvider.naver => Colors.white,
+    SnsAuthProvider.google || SnsAuthProvider.apple => null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final isAvailable = provider.isAvailable;
+    final brand = _brandColor;
     return SizedBox(
       height: 52,
       child: OutlinedButton(
         onPressed: (!isAvailable || isDisabled) ? null : onPressed,
         style: OutlinedButton.styleFrom(
-          backgroundColor: AppColors.cardSurface,
-          disabledBackgroundColor: AppColors.cardSurface,
-          side: const BorderSide(color: AppColors.borderSubtle),
+          backgroundColor: brand ?? AppColors.cardSurface,
+          disabledBackgroundColor: brand ?? AppColors.cardSurface,
+          side: BorderSide(
+            color: brand ?? AppColors.borderSubtle,
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -223,7 +271,10 @@ class _SnsButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   _ProviderIcon(provider: provider),
-                  const SizedBox(width: 10),
+                  // 로고가 없는 제공자는 간격도 없애야 라벨이 가운데 온다.
+                  if (provider != SnsAuthProvider.kakao &&
+                      provider != SnsAuthProvider.naver)
+                    const SizedBox(width: 10),
                   Text(
                     isAvailable
                         ? '${provider.displayName}로 계속하기'
@@ -232,7 +283,7 @@ class _SnsButton extends StatelessWidget {
                       fontSize: 14.5,
                       fontWeight: FontWeight.w700,
                       color: isAvailable
-                          ? AppColors.textPrimary
+                          ? (_brandTextColor ?? AppColors.textPrimary)
                           : AppColors.textMuted,
                     ),
                   ),
@@ -249,17 +300,30 @@ class _ProviderIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (provider == SnsAuthProvider.apple) {
-      return const Icon(Icons.apple, size: 22, color: AppColors.textPrimary);
-    }
-    return const Text(
-      'G',
-      style: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: AppColors.accent,
+    // ⚠️ 이 함수는 예전에 "Apple이 아니면 구글 G"였다. 카카오·네이버를 넣으면서
+    // 여기를 안 고쳐 **카카오 버튼에 구글 G가 붙었다**(2026-08-20 실기기에서
+    // 발견). 제공자를 추가할 때 같이 고쳐야 하는 자리라 분기를 명시적으로 둔다.
+    //
+    // 📌 카카오·네이버는 공식 로고 애셋을 받아야 한다 — 가이드가 "로고 형태를
+    // 변경하거나 다른 형태와 조합하는 것은 금지"라고 못박고 있어 임의로 그릴 수
+    // 없다. 애셋이 들어오기 전까지는 **아무 표시도 하지 않는다.** 남의 로고를
+    // 흉내 내는 것보다 없는 편이 낫다.
+    return switch (provider) {
+      SnsAuthProvider.apple => const Icon(
+        Icons.apple,
+        size: 22,
+        color: AppColors.textPrimary,
       ),
-    );
+      SnsAuthProvider.google => const Text(
+        'G',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w800,
+          color: AppColors.accent,
+        ),
+      ),
+      SnsAuthProvider.kakao || SnsAuthProvider.naver => const SizedBox.shrink(),
+    };
   }
 }
 

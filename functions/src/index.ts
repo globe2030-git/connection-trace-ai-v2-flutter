@@ -56,6 +56,17 @@ import {
 } from "./purchases";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
+import {
+  firebaseUserFields,
+  parseKakaoUser,
+  parseNaverUser,
+  tokenClaims,
+  tokenEndpoint,
+  tokenExchangeBody,
+  parseTokenResponse,
+  validateRequest,
+  type SocialProfile,
+} from "./socialAuth";
 
 initializeApp();
 
@@ -89,6 +100,19 @@ const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
 // - GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: Google Play Developer API 호출용
 //   서비스 계정 JSON 원문.
 const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
+
+// 카카오·네이버 로그인용. 인가 코드를 액세스 토큰으로 바꿀 때 쓴다.
+//
+// ⚠️ **앱에 넣을 수 없는 값이라 서버가 들고 있다.** 특히 네이버
+// client_secret은 필수이고, 앱을 뜯으면 나오는 자리에 두면 남의 계정으로
+// 토큰을 받아갈 수 있다.
+//
+// 📌 카카오는 콘솔에서 client_secret을 **끈 상태(기본값)** 를 전제로 한다.
+// 켜면 교환 요청에 함께 보내야 하므로 여기에 하나 더 만들어야 한다.
+const kakaoRestKey = defineSecret("KAKAO_REST_KEY");
+const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
+const naverClientId = defineSecret("NAVER_CLIENT_ID");
+const naverClientSecret = defineSecret("NAVER_CLIENT_SECRET");
 const googlePlayServiceAccountJson = defineSecret(
   "GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
 );
@@ -1806,4 +1830,290 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
       "결제 기능은 아직 준비 중이에요."
     );
   }
+);
+
+/**
+ * 카카오·네이버 로그인 — 액세스 토큰을 Firebase 커스텀 토큰으로 바꿔 준다.
+ *
+ * ## 왜 이 함수가 있어야 하나
+ *
+ * Firebase Auth는 Google·Apple만 기본 제공자로 안다. 카카오·네이버를 붙이는
+ * 길은 **커스텀 토큰**과 **OIDC(Identity Platform)** 둘인데, 후자는 SAML/OIDC가
+ * 무료 50 MAU 이후 $0.015/MAU라 이용자 1만 명이면 월 20만원이 나간다. 그래서
+ * 커스텀 토큰을 골랐다(사용자 결정 2026-08-20, backlog 추가 362).
+ *
+ * ## ⚠️ 앱의 주장을 믿지 않는다
+ *
+ * 앱이 넘기는 것은 **액세스 토큰뿐**이다. "나 카카오 12345번이야"라는 회원번호를
+ * 앱에서 받아 그대로 쓰면 아무나 남의 계정이 된다. 그래서 **서버가 카카오·
+ * 네이버에 직접 물어서** 회원번호를 받아 온다.
+ *
+ * ## 인증이 필요 없는 함수다
+ *
+ * 로그인하기 위한 함수라 `request.auth`가 없는 것이 정상이다. 대신 위처럼
+ * 외부 제공자에게 물어 신원을 확인한다.
+ */
+/**
+ * 실패해도 로그인을 막지 않는 곁다리 작업용. 이유만 남기고 넘어간다.
+ *
+ * ⚠️ **성공했는지를 돌려준다.** 예전에는 아무것도 돌려주지 않아서, 부르는
+ * 쪽이 실패한 뒤에도 성공 로그를 그대로 찍었다 — 로그만 보면 잘된 것처럼
+ * 보이는데 실제로는 닉네임·사진이 안 붙어 있는 상태였다.
+ *
+ * 📌 이 저장소에서 로그가 원인을 가린 전례가 있다(카카오 이메일 충돌:
+ * 진짜 이유는 email-already-exists 였는데 두 번째 오류만 남았다).
+ */
+async function tryQuiet(fn: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (e) {
+    logger.warn("소셜 레코드 보조 작업 실패(로그인은 계속)", {
+      reason: (e as Error).message,
+    });
+    return false;
+  }
+}
+
+/**
+ * 소셜 로그인에 App Check(앱 무결성 확인)를 **강제할지**.
+ *
+ * ## ⚠️ 이웃 함수처럼 그냥 켤 수 없다
+ *
+ * `generateBriefing`은 App Check가 없으면 **테스터 이메일 허용목록**으로
+ * 통과시킨다(`isAllowlistedTester`). 그런데 여기는 **로그인 자체**라 아직
+ * `request.auth`가 없다 — 확인할 이메일이 없으므로 그 우회로를 못 쓴다.
+ *
+ * ```
+ * generateBriefing   App Check 없음 → 로그인된 이메일이 허용목록에 있나? → 통과
+ * socialSignIn       App Check 없음 → 볼 이메일이 없다             → 전원 차단
+ * ```
+ *
+ * ⚠️ **그래서 지금 켜면 테스터가 전부 로그인을 못 한다.** 스토어를 거치지
+ * 않은 빌드(App Distribution)는 App Check 토큰을 만들 수 없기 때문이다.
+ *
+ * ## 그래서 스위치를 둔다 — 기본은 꺼짐
+ *
+ * `config/billing.model`과 같은 방식이다: **필드가 없으면 꺼진 것**이고,
+ * 켜는 것은 콘솔에서 필드를 만드는 별도 동작이다(사용자 결정).
+ *
+ * ```
+ * config/socialAuth.requireAppCheck === true 일 때만 강제
+ * 필드 없음 · 읽기 실패 · 그 밖의 값 → 강제하지 않는다
+ * ```
+ *
+ * ⚠️ **읽기에 실패하면 통과시킨다(fail-open).** 로그인 앞단이라, 여기서
+ * 막으면 설정 조회가 잠깐 흔들리는 것만으로 **전 이용자가 앱에 못 들어온다.**
+ * 무결성 확인을 놓치는 것보다 그쪽이 나쁘다.
+ *
+ * 📌 켜기 전 확인: 스토어 서명 빌드에서 App Check 토큰이 실제로 발급되는지.
+ * 확인 전에 켜면 **정식 이용자도 못 들어온다.**
+ */
+async function requireAppCheckForSocialSignIn(): Promise<boolean> {
+  try {
+    const snap = await getFirestore().collection("config").doc("socialAuth").get();
+    return snap.exists && snap.data()?.requireAppCheck === true;
+  } catch (e) {
+    logger.warn("App Check 강제 설정을 읽지 못해 강제하지 않는다", {
+      reason: (e as Error).message,
+    });
+    return false;
+  }
+}
+
+export const socialSignIn = onCall(
+  {
+    secrets: [
+      kakaoRestKey,
+      kakaoClientSecret,
+      naverClientId,
+      naverClientSecret,
+    ],
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+  },
+  async (request): Promise<{token: string; provider: string}> => {
+    // ── 0단계: 앱 무결성(App Check) ──
+    //
+    // 지금은 기록만 한다. 강제는 config/socialAuth.requireAppCheck 로 켠다
+    // (위 함수의 주석 참고 — 켜면 테스터가 못 들어온다).
+    //
+    // 📌 **기록만 해도 쓸모가 있다.** 정식 앱 밖에서 들어오는 호출이 실제로
+    // 있는지, 있다면 얼마나 되는지를 켜기 전에 볼 수 있다. 수치 없이 켜면
+    // 무엇이 막히는지 모르는 채로 막게 된다.
+    const appCheckVerified = !!request.app;
+    if (!appCheckVerified && await requireAppCheckForSocialSignIn()) {
+      throw new HttpsError(
+        "failed-precondition",
+        "앱 무결성 확인에 실패했어요. 최신 버전의 정식 앱에서 다시 시도해 주세요.",
+      );
+    }
+
+    let provider: "kakao" | "naver";
+    let code: string;
+    let redirectUri: string;
+    let state: string;
+    try {
+      const v = validateRequest(request.data);
+      provider = v.provider;
+      code = v.code;
+      redirectUri = v.redirectUri;
+      state = v.state;
+    } catch (e) {
+      throw new HttpsError("invalid-argument", (e as Error).message);
+    }
+
+    // ── 1단계: 인가 코드를 액세스 토큰으로 바꾼다 ──
+    //
+    // ⚠️ 여기서 client_secret이 쓰인다. 앱에 넣을 수 없는 값이라 이 교환을
+    // 서버가 맡는 것이다. **카카오·네이버 둘 다 필수**다 — 한때 "카카오는
+    // 꺼져 있는 것이 기본"이라고 적어 뒀는데 공식 문서와 다르다(REST API
+    // 키는 시크릿이 켜진 채로 생성된다). socialAuth.ts 의 주석 참고.
+    let accessToken: string;
+    try {
+      const body = tokenExchangeBody({
+        provider,
+        code,
+        clientId:
+          provider === "kakao"
+            ? kakaoRestKey.value()
+            : naverClientId.value(),
+        clientSecret:
+          provider === "kakao"
+            ? kakaoClientSecret.value()
+            : naverClientSecret.value(),
+        redirectUri,
+        state,
+      });
+      const res = await fetch(tokenEndpoint(provider), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+        },
+        body,
+      });
+      // ⚠️ 네이버는 실패해도 200으로 답하므로 본문을 봐야 한다.
+      accessToken = parseTokenResponse(await res.json());
+    } catch (e) {
+      // ⚠️ 본문·토큰을 로그에 남기지 않는다.
+      logger.warn("소셜 토큰 교환 실패", {
+        provider,
+        reason: (e as Error).message,
+      });
+      throw new HttpsError(
+        "unauthenticated",
+        "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+      );
+    }
+
+    // ── 2단계: 제공자에게 직접 물어 신원을 확인한다 ──
+    const url =
+      provider === "kakao"
+        ? "https://kapi.kakao.com/v2/user/me"
+        : "https://openapi.naver.com/v1/nid/me";
+
+    let raw: unknown;
+    try {
+      const res = await fetch(url, {
+        headers: {Authorization: `Bearer ${accessToken}`},
+      });
+      if (!res.ok) {
+        // ⚠️ 본문을 로그에 남기지 않는다 — 개인정보가 들어 있다.
+        logger.warn("소셜 사용자 조회 실패", {provider, status: res.status});
+        throw new HttpsError(
+          "unauthenticated",
+          "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+        );
+      }
+      raw = await res.json();
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      logger.warn("소셜 사용자 조회 중 오류", {provider});
+      throw new HttpsError(
+        "unavailable",
+        "로그인 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.",
+      );
+    }
+
+    let profile: SocialProfile;
+    try {
+      profile =
+        provider === "kakao" ? parseKakaoUser(raw) : parseNaverUser(raw);
+    } catch (e) {
+      // 파싱 실패 사유에는 개인정보가 없다(회원번호 유무·resultcode뿐).
+      logger.warn("소셜 응답 파싱 실패", {
+        provider,
+        reason: (e as Error).message,
+      });
+      throw new HttpsError(
+        "unauthenticated",
+        "로그인 정보를 확인하지 못했어요. 다시 시도해 주세요.",
+      );
+    }
+
+    // Firebase 사용자 레코드를 맞춰 둔다. 없으면 만들고, 있으면 표시 정보만
+    // 갱신한다. ⚠️ 실패해도 로그인은 막지 않는다 — 레코드는 표시용이고,
+    // 커스텀 토큰만 있으면 인증은 성립한다.
+    const fields = firebaseUserFields(profile);
+    // ⚠️ 이 블록은 실패해도 로그인을 막지 않는다. 레코드는 표시·조회용이고,
+    // 커스텀 토큰만 있으면 인증은 성립한다.
+    //
+    // ⚠️ 처음에는 "고쳐 보고 안 되면 만든다"로만 짰다가 고쳤다(2026-08-20).
+    // 그러면 **이메일 충돌로 updateUser가 실패한 것**도 createUser로 흘러가
+    // "uid가 이미 있다"는 엉뚱한 오류만 로그에 남는다. 진짜 이유가 가려진다.
+    const authAdmin = getAuth();
+    // ⚠️ 이름을 errCode로 둔다 — 이 함수 안에 이미 `code`(카카오 인가 코드)가
+    // 있어서 겹치면 컴파일이 막힌다.
+    const errCode = (e: unknown) => (e as {code?: string}).code ?? "";
+    try {
+      await authAdmin.updateUser(profile.uid, fields);
+    } catch (e1) {
+      if (errCode(e1) === "auth/user-not-found") {
+        try {
+          await authAdmin.createUser({uid: profile.uid, ...fields});
+        } catch (e2) {
+          // 만들 때도 이메일이 걸리면 이메일 없이 만든다 — 계정 자체는 있어야
+          // 닉네임·사진이라도 붙는다.
+          if (errCode(e2) === "auth/email-already-exists") {
+            const made = await tryQuiet(() =>
+              authAdmin.createUser({uid: profile.uid, ...fields, email: undefined}),
+            );
+            if (made) {
+              logger.info("이메일이 다른 계정에 있어 이메일 없이 만들었다", {provider});
+            }
+          } else {
+            logger.warn("소셜 사용자 레코드 생성 실패(로그인은 계속)", {
+              provider,
+              reason: errCode(e2) || (e2 as Error).message,
+            });
+          }
+        }
+      } else if (errCode(e1) === "auth/email-already-exists") {
+        // ⭐ 여기가 실제로 자주 걸리는 자리다. 같은 사람이 구글로도 가입해
+        // 두면 그 이메일이 이미 쓰이고 있어 Firebase가 거부한다.
+        // 이메일만 빼고 나머지(닉네임·사진)는 넣는다.
+        const updated = await tryQuiet(() =>
+          authAdmin.updateUser(profile.uid, {...fields, email: undefined}),
+        );
+        if (updated) {
+          logger.info("이메일이 다른 계정에 있어 이메일 없이 갱신했다", {provider});
+        }
+      } else {
+        logger.warn("소셜 사용자 레코드 갱신 실패(로그인은 계속)", {
+          provider,
+          reason: errCode(e1) || (e1 as Error).message,
+        });
+      }
+    }
+
+    const token = await getAuth().createCustomToken(
+      profile.uid,
+      tokenClaims(profile),
+    );
+    // ⚠️ uid·이메일·닉네임은 남기지 않는다(제3자 개인정보 원칙, CLAUDE.md 4절).
+    // 남기는 것은 "어느 제공자로, 앱 무결성 확인을 통과한 호출이었는지"뿐이다.
+    // 이 수치가 쌓여야 App Check를 켤 때 무엇이 막히는지 알 수 있다.
+    logger.info("소셜 로그인 성공", {provider: profile.provider, appCheckVerified});
+    return {token, provider: profile.provider};
+  },
 );
