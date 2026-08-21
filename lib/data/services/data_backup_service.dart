@@ -158,6 +158,64 @@ class DataBackupService {
     }
   }
 
+  /// 계정 전환 때 이용자가 **무엇을 골랐는지**를 남긴다.
+  ///
+  /// ## 왜 남기나
+  ///
+  /// 계정 전환 "유지"는 이 기기의 명함이 **지금 로그인한 계정의 데이터가
+  /// 되는** 동작이다. 나중에 *"이 명함들이 왜 이 계정에 있느냐"* 는 물음이
+  /// 생기면, **두 계정이 같은 사람이었다는 것을 회사가 보여야 한다**
+  /// (개인정보 보호법 §16① — 최소수집의 입증책임이 처리자에게 있다).
+  /// 지금 설계는 그 증거를 하나도 남기지 않는다.
+  ///
+  /// ## ⚠️ 무엇을 남기고 무엇을 안 남기나
+  ///
+  /// ```
+  /// 남긴다     시각 · 이전 계정 식별자 · 무엇을 골랐는지
+  /// 안 남긴다  ⚠️ 명함 내용 · 이름 · 전화번호 — 어떤 개인정보도 넣지 않는다
+  /// ```
+  ///
+  /// ## ⚠️ 기기 원장(deviceLedger)과 혼동하지 말 것
+  ///
+  /// 법무 회신(질문 5·6)은 *"uid 목록을 탈퇴 후에도 남기지 말라"* 고 했는데
+  /// **그것과 충돌하지 않는다.** 그쪽은 **탈퇴 후에도 무기한 남는** 기기
+  /// 원장이었고, 이것은 **계정이 살아 있는 동안의 처리 이력**이다.
+  ///
+  /// 📌 `users/{uid}` **문서 안의 필드**로 둔 것이 그 때문이다. 탈퇴하면
+  /// `deleteAllUserData`가 그 문서를 지우므로 **함께 사라진다** — 하위
+  /// 컬렉션으로 두면 문서를 지워도 남아서 따로 지우는 코드가 필요하다
+  /// (이 저장소에서 실제로 겪은 함정이다 — deletedContacts).
+  ///
+  /// 최근 [_switchLogCap]건만 남긴다. 계정 전환은 드문 일이라 이 정도면
+  /// 충분하고, 무한히 쌓아 둘 이유가 없다(§21① 최소보유).
+  static Future<void> recordAccountSwitch(
+    String uid, {
+    required String previousUid,
+    required bool replaced,
+  }) async {
+    try {
+      final doc = _userDoc(uid);
+      final snap = await doc.get();
+      final raw = (snap.data()?['accountSwitches'] as List<dynamic>?) ?? const [];
+      final entries = raw.whereType<Map<String, dynamic>>().toList();
+      entries.add({
+        // ⚠️ serverTimestamp()는 배열 안에서 못 쓴다 — 기기 시각을 쓴다.
+        'at': DateTime.now().toUtc().toIso8601String(),
+        'previousUid': previousUid,
+        'choice': replaced ? 'replace' : 'keep',
+      });
+      final trimmed = entries.length > _switchLogCap
+          ? entries.sublist(entries.length - _switchLogCap)
+          : entries;
+      await doc.set({'accountSwitches': trimmed}, SetOptions(merge: true));
+    } catch (e) {
+      // 실패해도 전환 자체는 막지 않는다 — 기록은 곁다리다.
+      debugPrint('계정 전환 기록 실패: $e');
+    }
+  }
+
+  static const int _switchLogCap = 20;
+
   /// 이 계정으로 서버에 백업된 명함 전체를 내려받는다. 새 기기에서 로그인
   /// 직후, 로컬 명함 목록이 비어있을 때만 호출된다(기존 데이터를 덮어쓰지
   /// 않기 위함).

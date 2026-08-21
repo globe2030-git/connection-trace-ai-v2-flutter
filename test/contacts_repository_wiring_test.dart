@@ -73,18 +73,24 @@ void main() {
     test('⭐ 로그인하면 좌표가 빈 명함의 재계산이 시작된다', () async {
       // 추가 79의 회귀 방지. 예전에는 복원 경로에서만 불러서, 복원이 다시
       // 일어나지 않으면 재시도가 영영 돌지 않았다.
+      //
+      // ⚠️ 2026-08-21: 부르는 자리가 setCurrentUid → runPostSyncMaintenance
+      // 로 옮겨졌다. **이용자가 "교체/유지"를 고르기 전에** 서버로 올라가던
+      // 것을 막기 위해서다(377). 옮겼어도 **재계산이 실제로 불린다는 보장은
+      // 그대로여야 한다** — 이 파일이 지키는 것이 바로 그것이다.
       seedLocalContacts([contact(id: 'c1', address: '서울 중구 세종대로 110')]);
       final fake = fakeBackfill();
       final repo = ContactsRepository(geoBackfillService: fake.service);
       await Future<void>.delayed(Duration.zero);
 
       await repo.setCurrentUid('uid_test');
+      await repo.runPostSyncMaintenance();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       expect(
         fake.calls,
         ['서울 중구 세종대로 110'],
-        reason: 'setCurrentUid가 backfillMissingGeo를 불러야 한다',
+        reason: 'runPostSyncMaintenance가 backfillMissingGeo를 불러야 한다',
       );
     });
 
@@ -101,6 +107,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       await repo.setCurrentUid('uid_test');
+      await repo.runPostSyncMaintenance();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       expect(fake.calls, isEmpty, reason: '불필요한 지오코딩은 하지 않아야 한다');
@@ -113,6 +120,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       await repo.setCurrentUid('uid_test');
+      await repo.runPostSyncMaintenance();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       final updated = repo.contacts.firstWhere((c) => c.id == 'c1');
@@ -127,11 +135,34 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       await repo.setCurrentUid('uid_test');
+      await repo.runPostSyncMaintenance();
       await Future<void>.delayed(const Duration(milliseconds: 50));
 
       expect(repo.contacts, hasLength(1));
       expect(repo.contacts.single.address, '못 찾는 주소');
       expect(repo.contacts.single.geo, isNull);
+    });
+
+    test('⚠️ setCurrentUid만으로는 재계산이 시작되지 않는다 — 377 회귀 방지', () async {
+      // 뒤처리를 옮긴 것이 실제로 옮겨졌는지 못박는다.
+      //
+      // 이 자리에는 서버 쓰기도 함께 있었고, 그것이 **이용자가 "교체/유지"를
+      // 고르기 전에** 이전 계정의 명함을 새 계정 서버로 올렸다.
+      // 2026-08-21 실측: 구글→카카오→네이버 연속 전환으로 같은 명함 95건이
+      // 세 계정 서버에 전부 존재하게 됐다.
+      seedLocalContacts([contact(id: 'c1', address: '서울 중구 세종대로 110')]);
+      final fake = fakeBackfill();
+      final repo = ContactsRepository(geoBackfillService: fake.service);
+      await Future<void>.delayed(Duration.zero);
+
+      await repo.setCurrentUid('uid_test');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        fake.calls,
+        isEmpty,
+        reason: '선택이 끝나기 전에는 아무것도 시작하면 안 된다',
+      );
     });
 
     test('로그아웃(uid null)에는 아무 일도 하지 않는다', () async {

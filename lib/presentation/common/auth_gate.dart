@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/account_bootstrap_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/repositories/auth_repository.dart';
+import '../../core/utils/account_switch_policy.dart';
+import '../../data/services/data_backup_service.dart';
 import '../../data/repositories/contacts_repository.dart';
 import '../../data/repositories/my_profile_repository.dart';
 import '../features/auth/views/login_view.dart';
@@ -84,8 +86,18 @@ class _AuthGateState extends State<AuthGate> {
       prefs = await SharedPreferences.getInstance();
     } catch (e) {
       debugPrint('마지막 로그인 uid 확인 실패: $e');
+      // ⚠️ 마지막 uid를 못 읽으면 **계정 전환인지 알 수 없다.** 모르는 채로
+      // 서버에 올리면 남의 명함을 올릴 수 있으므로, 이 경로에서는 일회성
+      // 마이그레이션을 건너뛴다. 다음 로그인에 다시 기회가 온다.
       await contactsRepo.restoreFromServerIfEmpty(uid);
       await profileRepo.restoreFromServerIfEmpty(uid);
+      await contactsRepo.runPostSyncMaintenance(
+        skipServerMigration: !mayMigrateToServer(
+          lastUidKnown: false,
+          isAccountSwitch: false,
+          replaced: false,
+        ),
+      );
       return;
     }
     final lastUid = prefs.getString(kLastSignedInUidPrefsKey);
@@ -96,11 +108,40 @@ class _AuthGateState extends State<AuthGate> {
       if (!context.mounted) return;
       final replace = await _showAccountSwitchDialog(context);
       if (replace == true) {
+        // ⚠️ **이전 계정의 기기 잔존물(명함 사진 암호문·로컬 암호화 키)은
+        // 일부러 지우지 않는다.** clearLocal은 shared_preferences만 비운다.
+        //
+        // 서버 사진 백업이 꺼져 있어(kCardPhotoBackupEnabled = false)
+        // **지우면 되살릴 방법이 없다.** 개인정보 최소화와 데이터 보전이
+        // 정면으로 부딪히는 자리라, 지금은 보전을 택한다(법무 회신 질문 9-④6).
+        // 사진 서버 백업을 켤 때 이 판단을 다시 봐야 한다.
         await contactsRepo.clearLocal();
         await profileRepo.clearLocal();
         await contactsRepo.forceRestoreFromServer(uid);
         await profileRepo.forceRestoreFromServer(uid);
       }
+      // ⚠️ **여기서 처음으로 서버 쓰기가 허용된다.** 선택이 끝났기 때문이다.
+      //
+      // "유지"를 골랐으면 일회성 마이그레이션을 **건너뛴다** — 그 명함들은
+      // 이 계정이 수집한 것이 아니라 이 기기에 남아 있던 것이고, 통째로
+      // 이 계정의 서버 백업에 올리면 **제3자 개인정보가 두 계정에 이중으로
+      // 존재하게 된다.** ("교체"를 고른 경우는 위에서 이미 이 계정 자신의
+      // 데이터로 갈아 끼운 뒤라 올려도 자기 것이다.)
+      await contactsRepo.runPostSyncMaintenance(
+        skipServerMigration: !mayMigrateToServer(
+          lastUidKnown: true,
+          isAccountSwitch: true,
+          replaced: replace == true,
+        ),
+      );
+      // ⚠️ 무엇을 골랐는지 남긴다. 나중에 "이 명함들이 왜 이 계정에 있느냐"는
+      // 물음에 답하려면 **두 계정이 같은 사람이었다는 것을 회사가 보여야
+      // 한다**(개인정보 보호법 §16①의 입증책임). 명함 내용은 넣지 않는다.
+      await DataBackupService.recordAccountSwitch(
+        uid,
+        previousUid: lastUid,
+        replaced: replace == true,
+      );
       // "유지하고 계속 쓰기"를 선택했어도(또는 다이얼로그가 그대로 닫혀도)
       // uid는 갱신해둔다 — 사용자가 이미 한 번 명시적으로 다룬 상태이므로
       // 다음부터는 다시 묻지 않는다.
@@ -115,6 +156,14 @@ class _AuthGateState extends State<AuthGate> {
     // — 다른 계정 데이터가 섞일 수 있어서다. 여기는 같은 계정(또는 최초)만 도달.
     await contactsRepo.syncWithServer(uid);
     await profileRepo.restoreFromServerIfEmpty(uid);
+    // 같은 계정(또는 최초 로그인)이라 올려도 자기 데이터다.
+    await contactsRepo.runPostSyncMaintenance(
+      skipServerMigration: !mayMigrateToServer(
+        lastUidKnown: true,
+        isAccountSwitch: false,
+        replaced: false,
+      ),
+    );
     await prefs.setString(kLastSignedInUidPrefsKey, uid);
   }
 
@@ -124,10 +173,21 @@ class _AuthGateState extends State<AuthGate> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('다른 계정으로 로그인했습니다'),
+        // ⚠️ 문구가 이 화면의 핵심이다. 예전에는 "기존 데이터를 유지한 채
+        // 계속 쓸까요?" 였는데, **유지가 무슨 일인지 말하지 않았다** — 그
+        // 명함들이 지금 계정의 데이터가 되어 지금 계정의 서버 백업에
+        // 올라간다는 사실이 빠져 있었다.
+        //
+        // 📌 "교체해도 이전 계정 백업은 남는다"도 반드시 함께 말한다.
+        // 이 한 줄이 없으면 이용자는 잃을까 봐 **안전한 쪽(교체)을 못 고른다.**
+        // 실물 확인 결과 clearLocal 은 서버를 건드리지 않는다.
         content: const Text(
           '이 기기에는 이전에 쓰던 계정의 명함·프로필 데이터가 남아 있습니다.\n\n'
-          '지금 로그인한 계정의 서버 데이터로 교체할까요, 아니면 기존 데이터를 '
-          '유지한 채 계속 쓸까요?',
+          '유지하면 이 기기의 명함이 지금 로그인한 계정의 데이터가 되고, '
+          '이후 저장·수정할 때 지금 계정의 서버 백업에 함께 저장됩니다. '
+          '이전 계정과 지금 계정이 같은 분이 아니라면 교체를 선택해 주세요.\n\n'
+          '교체해도 이전 계정에 백업된 명함은 지워지지 않으며, '
+          '그 계정으로 다시 로그인하면 복원됩니다.',
         ),
         actions: [
           TextButton(
