@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -84,6 +85,41 @@ class EncryptionKeyService {
     return db.collection('users').doc(uid);
   }
 
+  // 로컬 키는 있는데 서버 사본이 없는 계정의 재점검을 세션당 한 번으로
+  // 제한하는 가드. 점검이 실패하면 다시 지워 다음 조회 때 재시도한다.
+  final Set<String> _serverCopyChecked = {};
+
+  /// 로컬 키는 있는데 서버(`users/{uid}.encryptionKeyB64`)에 사본이 없는
+  /// 계정을 스스로 복구한다.
+  ///
+  /// 왜 필요한가(2026-08-20 실물 조회에서 발견): 서버 쪽 사용자 문서가
+  /// 초기화된 계정이 기기의 키로 계속 암호화 저장을 하고 있었다 — 이
+  /// 상태에서 앱을 지우거나 기기를 바꾸면 서버 암호문을 열 키가 세상에
+  /// 없다. 기존 흐름은 로컬에 키가 있으면 서버를 다시 보지 않아, 최초
+  /// 업로드 실패·서버 초기화 이후에는 영영 복구되지 않았다.
+  ///
+  /// 서버에 이미 (다른) 키가 있으면 **덮어쓰지 않는다** — 다른 기기가
+  /// 새로 발급한 키로 저장한 암호문이 있을 수 있고, 그걸 덮으면 그쪽
+  /// 데이터가 열리지 않게 된다. 실패는 조용히 넘어간다(오프라인 로컬 전용
+  /// 동작을 바꾸지 않기 위함이며, 다음 조회에서 다시 시도된다).
+  Future<void> _ensureServerCopy(String uid, String keyB64) async {
+    if (!_serverCopyChecked.add(uid)) return;
+    final userDoc = _userDoc(uid);
+    if (userDoc == null) return;
+    try {
+      final doc = await userDoc.get();
+      final remote = doc.data()?[_firestoreFieldName] as String?;
+      if (remote != null && remote.isNotEmpty) return;
+      await userDoc.set({
+        _firestoreFieldName: keyB64,
+      }, SetOptions(merge: true));
+      debugPrint('암호화 키 서버 사본 복구 완료($uid)');
+    } catch (e) {
+      _serverCopyChecked.remove(uid);
+      debugPrint('암호화 키 서버 사본 점검 실패($uid): ${e.runtimeType}');
+    }
+  }
+
   /// [uid] 계정의 암호화 키를 반환한다. 순서: 메모리 캐시 → 로컬 보안
   /// 저장소 → Firestore(있으면 로컬에 캐시 후 반환) → 없으면 새로 생성해
   /// 양쪽(로컬+Firestore)에 저장.
@@ -98,6 +134,8 @@ class EncryptionKeyService {
       if (localB64 != null && localB64.isNotEmpty) {
         final key = SecretKey(base64Decode(localB64));
         _memoryCache[uid] = key;
+        // 반환을 막지 않고 뒤에서 서버 사본 유무를 점검한다(아래 설명).
+        unawaited(_ensureServerCopy(uid, localB64));
         return key;
       }
     } catch (e) {
