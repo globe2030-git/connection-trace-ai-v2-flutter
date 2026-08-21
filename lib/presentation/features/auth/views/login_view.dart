@@ -247,6 +247,12 @@ class _SnsButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final isAvailable = provider.isAvailable;
     final brand = _brandColor;
+    if (provider == SnsAuthProvider.kakao) {
+      return _KakaoOfficialButton(
+        isLoading: isLoading,
+        onPressed: isDisabled ? null : onPressed,
+      );
+    }
     return SizedBox(
       height: 52,
       child: OutlinedButton(
@@ -272,8 +278,8 @@ class _SnsButton extends StatelessWidget {
                 children: [
                   _ProviderIcon(provider: provider),
                   // 로고가 없는 제공자는 간격도 없애야 라벨이 가운데 온다.
-                  if (provider != SnsAuthProvider.kakao &&
-                      provider != SnsAuthProvider.naver)
+                  // ⚠️ 네이버는 아직 공식 버튼 애셋이 없어 이쪽 경로를 탄다.
+                  if (provider != SnsAuthProvider.naver)
                     const SizedBox(width: 10),
                   Text(
                     isAvailable
@@ -304,10 +310,15 @@ class _ProviderIcon extends StatelessWidget {
     // 여기를 안 고쳐 **카카오 버튼에 구글 G가 붙었다**(2026-08-20 실기기에서
     // 발견). 제공자를 추가할 때 같이 고쳐야 하는 자리라 분기를 명시적으로 둔다.
     //
-    // 📌 카카오·네이버는 공식 로고 애셋을 받아야 한다 — 가이드가 "로고 형태를
-    // 변경하거나 다른 형태와 조합하는 것은 금지"라고 못박고 있어 임의로 그릴 수
-    // 없다. 애셋이 들어오기 전까지는 **아무 표시도 하지 않는다.** 남의 로고를
-    // 흉내 내는 것보다 없는 편이 낫다.
+    // 📌 카카오는 공식 버튼 이미지를 통째로 쓰므로 이 함수를 타지 않는다
+    // (_KakaoOfficialButton). **심볼만 떼어 여기 아이콘으로 넣을 수 없다** —
+    // 가이드가 "심볼 없이 카카오 로그인 버튼을 구성할 수 없습니다"와
+    // "기능 아이콘을 카카오 로그인 버튼의 심볼로 사용할 수 없습니다"를
+    // 못박고 있어, 심볼을 우리 버튼에 얹는 조합 자체가 규정 밖이다.
+    //
+    // ⚠️ 네이버는 **아직 공식 버튼 애셋이 없다.** 받아 둔 것은 브랜드
+    // 워드마크(NaverBrand_Logotype)이지 로그인 버튼 리소스가 아니다. 올
+    // 때까지 **아무 표시도 하지 않는다** — 흉내 내는 것보다 없는 편이 낫다.
     return switch (provider) {
       SnsAuthProvider.apple => const Icon(
         Icons.apple,
@@ -324,6 +335,89 @@ class _ProviderIcon extends StatelessWidget {
       ),
       SnsAuthProvider.kakao || SnsAuthProvider.naver => const SizedBox.shrink(),
     };
+  }
+}
+
+/// 카카오 **공식 로그인 버튼**.
+///
+/// ## ⚠️ 왜 우리 버튼 모양을 쓰지 않나
+///
+/// 카카오 가이드가 이렇게 못박고 있다.
+///
+/// > - "심볼 없이 카카오 로그인 버튼을 구성할 수 없습니다"
+/// > - "기능 아이콘을 카카오 로그인 버튼의 심볼로 사용할 수 없습니다"
+/// > - "컨테이너 박스의 radius는 12 픽셀로 적용합니다"
+///
+/// 즉 **심볼이 반드시 있어야 하고, 그 심볼을 우리가 그리거나 다른 아이콘으로
+/// 대신할 수 없다.** 심볼만 따로 떼어 주는 애셋도 없다(배포되는 것은 완성형
+/// 버튼 이미지뿐이다). 그래서 **버튼 이미지를 통째로 쓴다.**
+///
+/// ⚠️ 이전 구현은 우리 버튼에 노란색만 입히고 *"카카오로 계속하기"* 라고
+/// 적어 뒀다. **심볼이 없고, radius 도 16이었고, 문구도 규정 밖이었다** —
+/// 세 가지가 한꺼번에 어긋나 있었다. 네이버는 사전 검수 항목이라 이런
+/// 어긋남이 그대로 반려 사유가 된다.
+///
+/// ## 화면 폭에 맞추는 방법
+///
+/// 가이드는 넓히는 것을 허용한다.
+///
+/// > "컨테이너의 좌, 우 방향으로 동일하게 확장합니다"
+/// > "컨테이너의 크기에 따라 심볼과 레이블 크기 비율을 유지하여 확대합니다"
+///
+/// ⚠️ **"비율을 유지하여"가 조건이다.** 이미지를 가로로만 늘이면 심볼과 글자가
+/// 함께 늘어나 규정을 어긴다. 그래서 **이미지는 늘이지 않고**, 같은 노란색
+/// 컨테이너를 넓힌 뒤 그 위에 원래 비율의 이미지를 얹는다. 이미지의 노랑과
+/// 컨테이너의 노랑이 같은 값이라 이음매가 보이지 않는다.
+///
+/// 📌 좁은 화면에서는 `BoxFit.scaleDown` 이 비율을 지킨 채 줄여 준다.
+/// 늘리지는 않으므로 큰 화면에서 흐려지지 않는다.
+class _KakaoOfficialButton extends StatelessWidget {
+  final bool isLoading;
+  final VoidCallback? onPressed;
+
+  const _KakaoOfficialButton({required this.isLoading, required this.onPressed});
+
+  /// 애셋의 원래 높이(2.0x 는 90). 이 값을 넘겨 확대하지 않는다.
+  static const double _artHeight = 45;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: Material(
+        color: AppColors.channelKakao,
+        // ⚠️ 12는 가이드가 지정한 값이다. 우리 화면의 다른 버튼(16)에
+        // 맞추려고 바꾸면 규정 위반이다.
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      // 노란 바탕 위라 기본색은 잘 안 보인다.
+                      color: AppColors.brandKakaoLabel,
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Image.asset(
+                      'assets/images/social/kakao_login_wide.png',
+                      height: _artHeight,
+                      fit: BoxFit.scaleDown,
+                      // 화면 낭독기에는 버튼 이름이 필요하다. 이미지 안의
+                      // 글자는 낭독되지 않는다.
+                      semanticLabel: '카카오 로그인',
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
