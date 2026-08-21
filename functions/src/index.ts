@@ -1853,14 +1853,71 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
  * 로그인하기 위한 함수라 `request.auth`가 없는 것이 정상이다. 대신 위처럼
  * 외부 제공자에게 물어 신원을 확인한다.
  */
-/** 실패해도 로그인을 막지 않는 곁다리 작업용. 이유만 남기고 넘어간다. */
-async function tryQuiet(fn: () => Promise<unknown>): Promise<void> {
+/**
+ * 실패해도 로그인을 막지 않는 곁다리 작업용. 이유만 남기고 넘어간다.
+ *
+ * ⚠️ **성공했는지를 돌려준다.** 예전에는 아무것도 돌려주지 않아서, 부르는
+ * 쪽이 실패한 뒤에도 성공 로그를 그대로 찍었다 — 로그만 보면 잘된 것처럼
+ * 보이는데 실제로는 닉네임·사진이 안 붙어 있는 상태였다.
+ *
+ * 📌 이 저장소에서 로그가 원인을 가린 전례가 있다(카카오 이메일 충돌:
+ * 진짜 이유는 email-already-exists 였는데 두 번째 오류만 남았다).
+ */
+async function tryQuiet(fn: () => Promise<unknown>): Promise<boolean> {
   try {
     await fn();
+    return true;
   } catch (e) {
     logger.warn("소셜 레코드 보조 작업 실패(로그인은 계속)", {
       reason: (e as Error).message,
     });
+    return false;
+  }
+}
+
+/**
+ * 소셜 로그인에 App Check(앱 무결성 확인)를 **강제할지**.
+ *
+ * ## ⚠️ 이웃 함수처럼 그냥 켤 수 없다
+ *
+ * `generateBriefing`은 App Check가 없으면 **테스터 이메일 허용목록**으로
+ * 통과시킨다(`isAllowlistedTester`). 그런데 여기는 **로그인 자체**라 아직
+ * `request.auth`가 없다 — 확인할 이메일이 없으므로 그 우회로를 못 쓴다.
+ *
+ * ```
+ * generateBriefing   App Check 없음 → 로그인된 이메일이 허용목록에 있나? → 통과
+ * socialSignIn       App Check 없음 → 볼 이메일이 없다             → 전원 차단
+ * ```
+ *
+ * ⚠️ **그래서 지금 켜면 테스터가 전부 로그인을 못 한다.** 스토어를 거치지
+ * 않은 빌드(App Distribution)는 App Check 토큰을 만들 수 없기 때문이다.
+ *
+ * ## 그래서 스위치를 둔다 — 기본은 꺼짐
+ *
+ * `config/billing.model`과 같은 방식이다: **필드가 없으면 꺼진 것**이고,
+ * 켜는 것은 콘솔에서 필드를 만드는 별도 동작이다(사용자 결정).
+ *
+ * ```
+ * config/socialAuth.requireAppCheck === true 일 때만 강제
+ * 필드 없음 · 읽기 실패 · 그 밖의 값 → 강제하지 않는다
+ * ```
+ *
+ * ⚠️ **읽기에 실패하면 통과시킨다(fail-open).** 로그인 앞단이라, 여기서
+ * 막으면 설정 조회가 잠깐 흔들리는 것만으로 **전 이용자가 앱에 못 들어온다.**
+ * 무결성 확인을 놓치는 것보다 그쪽이 나쁘다.
+ *
+ * 📌 켜기 전 확인: 스토어 서명 빌드에서 App Check 토큰이 실제로 발급되는지.
+ * 확인 전에 켜면 **정식 이용자도 못 들어온다.**
+ */
+async function requireAppCheckForSocialSignIn(): Promise<boolean> {
+  try {
+    const snap = await getFirestore().collection("config").doc("socialAuth").get();
+    return snap.exists && snap.data()?.requireAppCheck === true;
+  } catch (e) {
+    logger.warn("App Check 강제 설정을 읽지 못해 강제하지 않는다", {
+      reason: (e as Error).message,
+    });
+    return false;
   }
 }
 
@@ -1876,6 +1933,22 @@ export const socialSignIn = onCall(
     maxInstances: MAX_INSTANCES,
   },
   async (request): Promise<{token: string; provider: string}> => {
+    // ── 0단계: 앱 무결성(App Check) ──
+    //
+    // 지금은 기록만 한다. 강제는 config/socialAuth.requireAppCheck 로 켠다
+    // (위 함수의 주석 참고 — 켜면 테스터가 못 들어온다).
+    //
+    // 📌 **기록만 해도 쓸모가 있다.** 정식 앱 밖에서 들어오는 호출이 실제로
+    // 있는지, 있다면 얼마나 되는지를 켜기 전에 볼 수 있다. 수치 없이 켜면
+    // 무엇이 막히는지 모르는 채로 막게 된다.
+    const appCheckVerified = !!request.app;
+    if (!appCheckVerified && await requireAppCheckForSocialSignIn()) {
+      throw new HttpsError(
+        "failed-precondition",
+        "앱 무결성 확인에 실패했어요. 최신 버전의 정식 앱에서 다시 시도해 주세요.",
+      );
+    }
+
     let provider: "kakao" | "naver";
     let code: string;
     let redirectUri: string;
@@ -1893,8 +1966,9 @@ export const socialSignIn = onCall(
     // ── 1단계: 인가 코드를 액세스 토큰으로 바꾼다 ──
     //
     // ⚠️ 여기서 client_secret이 쓰인다. 앱에 넣을 수 없는 값이라 이 교환을
-    // 서버가 맡는 것이다. 카카오는 콘솔에서 client_secret을 끈 상태를 전제로
-    // 하고(기본값), 네이버는 필수라 반드시 넣는다.
+    // 서버가 맡는 것이다. **카카오·네이버 둘 다 필수**다 — 한때 "카카오는
+    // 꺼져 있는 것이 기본"이라고 적어 뒀는데 공식 문서와 다르다(REST API
+    // 키는 시크릿이 켜진 채로 생성된다). socialAuth.ts 의 주석 참고.
     let accessToken: string;
     try {
       const body = tokenExchangeBody({
@@ -2001,10 +2075,12 @@ export const socialSignIn = onCall(
           // 만들 때도 이메일이 걸리면 이메일 없이 만든다 — 계정 자체는 있어야
           // 닉네임·사진이라도 붙는다.
           if (errCode(e2) === "auth/email-already-exists") {
-            await tryQuiet(() =>
+            const made = await tryQuiet(() =>
               authAdmin.createUser({uid: profile.uid, ...fields, email: undefined}),
             );
-            logger.info("이메일이 다른 계정에 있어 이메일 없이 만들었다", {provider});
+            if (made) {
+              logger.info("이메일이 다른 계정에 있어 이메일 없이 만들었다", {provider});
+            }
           } else {
             logger.warn("소셜 사용자 레코드 생성 실패(로그인은 계속)", {
               provider,
@@ -2016,10 +2092,12 @@ export const socialSignIn = onCall(
         // ⭐ 여기가 실제로 자주 걸리는 자리다. 같은 사람이 구글로도 가입해
         // 두면 그 이메일이 이미 쓰이고 있어 Firebase가 거부한다.
         // 이메일만 빼고 나머지(닉네임·사진)는 넣는다.
-        await tryQuiet(() =>
+        const updated = await tryQuiet(() =>
           authAdmin.updateUser(profile.uid, {...fields, email: undefined}),
         );
-        logger.info("이메일이 다른 계정에 있어 이메일 없이 갱신했다", {provider});
+        if (updated) {
+          logger.info("이메일이 다른 계정에 있어 이메일 없이 갱신했다", {provider});
+        }
       } else {
         logger.warn("소셜 사용자 레코드 갱신 실패(로그인은 계속)", {
           provider,
@@ -2032,6 +2110,10 @@ export const socialSignIn = onCall(
       profile.uid,
       tokenClaims(profile),
     );
+    // ⚠️ uid·이메일·닉네임은 남기지 않는다(제3자 개인정보 원칙, CLAUDE.md 4절).
+    // 남기는 것은 "어느 제공자로, 앱 무결성 확인을 통과한 호출이었는지"뿐이다.
+    // 이 수치가 쌓여야 App Check를 켤 때 무엇이 막히는지 알 수 있다.
+    logger.info("소셜 로그인 성공", {provider: profile.provider, appCheckVerified});
     return {token, provider: profile.provider};
   },
 );
