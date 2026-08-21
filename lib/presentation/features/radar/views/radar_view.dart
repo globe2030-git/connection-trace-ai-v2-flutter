@@ -596,6 +596,57 @@ class _RadarViewState extends State<RadarView> {
                             SameAddressGroupBody(children: tiles.toList()),
                           ];
                         }),
+
+                        // ⭐ 좌표가 없어 반경 목록에 못 드는 명함을 **지역별로**
+                        // 이어서 보여 준다.
+                        //
+                        // 반경 목록은 좌표로 거르기 때문에, 좌표를 못 얻은
+                        // 명함은 화면에서 **조용히 사라진다**(추가 79에서
+                        // 실기기로 겪었다). 이용자는 등록한 명함이 왜 안
+                        // 보이는지 알 수 없다.
+                        //
+                        // 📌 실측(2026-08-21): 등록 93건 중 좌표를 못 얻은
+                        // 30건 **전부** 주소에서 구까지 뽑혔다.
+                        //
+                        // ⚠️ 거리 목록과 **섞지 않는다.** 위는 "몇 m"이고
+                        // 여기는 "같은 구"라, 한 목록에 섞으면 순서가
+                        // 거짓이 된다.
+                        if (viewModel.contactsWithoutGeoCount > 0) ...[
+                          const SizedBox(height: 24),
+                          _RegionSectionHeader(
+                            count: viewModel.contactsWithoutGeoCount,
+                          ),
+                          const SizedBox(height: 8),
+                          ...viewModel.contactsByRegionWithoutGeo.expand(
+                            (entry) => [
+                              SameAddressGroupHeader(
+                                address: entry.key,
+                                count: entry.value.length,
+                              ),
+                              SameAddressGroupBody(
+                                children: entry.value
+                                    .map(
+                                      (contact) => _NearbyContactTile(
+                                        contact: contact,
+                                        // ⚠️ 거리를 넣지 않는다. 좌표가 없어
+                                        // 잴 수가 없고, 0이나 빈 값을 넣으면
+                                        // "아주 가깝다"로 읽힌다.
+                                        distanceMeters: null,
+                                        showAddress: true,
+                                        onOpen: () =>
+                                            viewModel.openBriefing(contact),
+                                        onCall: () =>
+                                            PhoneCallService.showCallPicker(
+                                              context,
+                                              contact,
+                                            ),
+                                      ),
+                                    )
+                                    .toList(),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1604,9 +1655,49 @@ class _AnchorNoticeBar extends StatelessWidget {
   }
 }
 
+/// 좌표가 없는 명함들을 모아 보여 주는 구획의 머리글.
+///
+/// ⚠️ **왜 있는지 한 줄로 말해 준다.** 그냥 목록만 이어 붙이면 이용자는
+/// "왜 이 사람들은 거리가 없지?"에서 멈춘다. 거리를 못 잰 것이 명함의
+/// 문제가 아니라 **주소로 위치를 못 찾은 것**임을 밝힌다.
+class _RegionSectionHeader extends StatelessWidget {
+  final int count;
+
+  const _RegionSectionHeader({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '위치를 못 찾은 인맥 ($count명)',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          '주소로 정확한 위치를 찾지 못해 거리는 표시하지 못하지만, 지역별로 모아 두었어요.',
+          style: TextStyle(
+            fontSize: 11.5,
+            height: 1.4,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _NearbyContactTile extends StatelessWidget {
   final ContactModel contact;
-  final double distanceMeters;
+
+  /// 기준점에서의 거리. ⚠️ **좌표가 없으면 `null`** 이다 — 0이나 빈 값을
+  /// 넣으면 "아주 가깝다"로 읽힌다. 지역 묶음(좌표 없음)에서 그렇다.
+  final double? distanceMeters;
   final VoidCallback onOpen;
   final VoidCallback onCall;
 
@@ -1766,7 +1857,10 @@ class _NearbyContactTile extends StatelessWidget {
                   ),
                 ],
               ),
-              Padding(
+              // 거리를 모르면 뱃지를 아예 그리지 않는다 — 빈 뱃지는
+              // "가깝다"로도 "멀다"로도 읽혀서 없느니만 못하다.
+              if (distanceMeters != null)
+                Padding(
                 padding: const EdgeInsets.only(right: 4, top: 2),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -1780,7 +1874,7 @@ class _NearbyContactTile extends StatelessWidget {
                   child: Text(
                     // `formatDistanceLabel`이 이미 "근접"까지 붙여 준다.
                     // 여기서 한 번 더 붙여 "823m 근접 근접"이 됐었다.
-                    GeoUtils.formatDistanceLabel(distanceMeters),
+                    GeoUtils.formatDistanceLabel(distanceMeters!),
                     style: const TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
