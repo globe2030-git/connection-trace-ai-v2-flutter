@@ -298,3 +298,41 @@ export function parseTokenResponse(raw: unknown): string {
   if (!token) throw new Error("응답에 access_token이 없다");
   return token;
 }
+
+/**
+ * 테스터 허용목록 판정 — **서버에 적어 둔 이메일을 언제 볼지**를 정한다.
+ *
+ * ## 왜 갈라야 하나
+ *
+ * 카카오·네이버는 같은 이메일이 이미 다른 계정에 쓰이고 있으면 **이메일 없이**
+ * 계정이 만들어진다. 그러면 토큰에 이메일이 없어 목록과 대조할 값이 사라진다
+ * (2026-08-21 실기기에서 확인 — 카카오로 로그인한 테스터가 AI 를 못 썼다).
+ *
+ * ```
+ * 토큰에 이메일이 있다   그 값으로만 판단한다. 없으면 그냥 아닌 것이다
+ * 토큰에 이메일이 없다   서버에 적어 둔 제공자 이메일로 한 번 더 본다
+ * ```
+ *
+ * ⚠️ **토큰에 이메일이 있는데 목록에 없을 때 폴백을 보면 안 된다.** 그러면
+ * "목록에 없는 사람"을 서버 기록으로 통과시키는 뒷문이 생긴다. 폴백은
+ * **대조할 값이 아예 없을 때**를 메우는 것이지 판정을 뒤집는 것이 아니다.
+ */
+export function isTesterAllowed(params: {
+  allowlist: readonly string[];
+  tokenEmail?: string | null;
+  storedEmail?: string | null;
+}): boolean {
+  const {allowlist, tokenEmail, storedEmail} = params;
+  if (allowlist.length === 0) return false;
+
+  const has = (value?: string | null): boolean => {
+    const target = (value ?? "").trim().toLowerCase();
+    if (!target) return false;
+    return allowlist.some((e) => String(e).trim().toLowerCase() === target);
+  };
+
+  if (has(tokenEmail)) return true;
+  // 토큰에 이메일이 **있는데** 목록에 없다면 폴백을 보지 않는다.
+  if ((tokenEmail ?? "").trim()) return false;
+  return has(storedEmail);
+}

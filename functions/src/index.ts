@@ -58,6 +58,7 @@ import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
 import {
   firebaseUserFields,
+  isTesterAllowed,
   parseKakaoUser,
   parseNaverUser,
   tokenClaims,
@@ -587,21 +588,74 @@ async function incrementAndCheckUsage(uid: string): Promise<void> {
 const MAX_INSTANCES = 3;
 
 /**
+ * 소셜 로그인 이용자의 **제공자 이메일**을 서버에만 보관하는 자리.
+ *
+ * ⚠️ **테스트 기간 한정 임시 조치다.** 아래 [testerEmailFallback] 하나에만
+ * 쓰이고, 그 대조 자체가 `config/testers` 와 함께 테스트 종료 시 사라진다.
+ */
+const SOCIAL_EMAIL_COLLECTION = "socialTesterEmails";
+
+/**
  * 테스터 허용목록 검사. 스토어를 거치지 않은 빌드는 App Check 토큰을 못 만들어
  * AI 호출이 막힌다. 관리자 콘솔에서 `config/testers.emails`에 등록한 이메일은
  * 테스트 기간 동안 App Check 없이도 허용한다. Admin SDK로 읽어 보안 규칙을
  * 우회한다. 대소문자 차이로 빠지지 않도록 소문자로 비교한다.
+ *
+ * ## ⚠️ 카카오·네이버는 토큰에 이메일이 없을 수 있다 (2026-08-21 실기기에서 확인)
+ *
+ * 같은 이메일이 이미 다른 계정(구글·애플)에 쓰이고 있으면 Firebase 가 중복을
+ * 거부한다. 그래서 `socialSignIn` 은 **이메일만 빼고** 계정을 만든다 — 로그인은
+ * 되지만 `request.auth.token.email` 이 비어 버린다.
+ *
+ * ```
+ * 관리자 콘솔에 이메일을 등록해도 통하지 않는다 — 대조할 값 자체가 없다
+ * → 카카오·네이버로 가입한 테스터는 AI 를 한 번도 못 쓴다
+ * ```
+ *
+ * 그래서 토큰에 이메일이 없을 때만 **서버에 따로 적어 둔 제공자 이메일**로
+ * 한 번 더 본다(사용자 결정, B안).
+ *
+ * ⚠️ **클라이언트가 읽는 토큰·claims 에는 넣지 않는다.** claims 는 앱이 그대로
+ * 디코드해 읽을 수 있어, 거기 넣으면 개인정보를 클라이언트에 흘리는 셈이다.
  */
 async function isAllowlistedTester(
   email: string | undefined | null,
+  uid?: string,
 ): Promise<boolean> {
-  if (!email) return false;
   const db = getFirestore();
   const snap = await db.collection("config").doc("testers").get();
   if (!snap.exists) return false;
   const emails = (snap.data()?.emails ?? []) as string[];
-  const target = email.toLowerCase();
-  return emails.some((e) => String(e).toLowerCase() === target);
+  if (emails.length === 0) return false;
+
+  // 판정 자체는 순수 함수에 있다(socialAuth.ts). 조회가 필요한지도 그쪽
+  // 규칙에 맞춘다 — 토큰에 이메일이 있으면 서버 기록을 아예 보지 않는다.
+  if (isTesterAllowed({allowlist: emails, tokenEmail: email})) return true;
+  if ((email ?? "").trim() || !uid) return false;
+
+  return isTesterAllowed({
+    allowlist: emails,
+    tokenEmail: null,
+    storedEmail: await lookupSocialTesterEmail(uid),
+  });
+}
+
+/** 서버에만 적어 둔 제공자 이메일을 읽는다. 없으면 `null`. */
+async function lookupSocialTesterEmail(uid: string): Promise<string | null> {
+  try {
+    const doc = await getFirestore()
+      .collection(SOCIAL_EMAIL_COLLECTION)
+      .doc(uid)
+      .get();
+    return (doc.data()?.email as string | undefined) ?? null;
+  } catch (e) {
+    // 못 읽으면 허용하지 않는다(fail-closed). 이 폴백은 **통과시키는**
+    // 경로라, 조회 실패를 통과로 바꾸면 가드가 통째로 무의미해진다.
+    logger.warn("소셜 테스터 이메일 조회 실패", {
+      reason: (e as Error).message,
+    });
+    return null;
+  }
 }
 
 function isAdminRequest(auth: {token: {email?: string; email_verified?: boolean}} | undefined): boolean {
@@ -738,7 +792,10 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
     // 테스터 이메일이면 통과. 둘 다 아니면 거부해 외부 스크립트 남용을 막는다.
     const appCheckVerified = !!request.app;
     if (!appCheckVerified &&
-        !(await isAllowlistedTester(request.auth.token.email))) {
+        !(await isAllowlistedTester(
+          request.auth.token.email,
+          request.auth.uid,
+        ))) {
       throw new HttpsError(
         "failed-precondition",
         "앱 무결성 확인에 실패했어요. 최신 버전의 정식 앱에서 다시 시도해 주세요.",
@@ -1355,6 +1412,24 @@ export const onUserDeletedCleanup = onDocumentDeleted(
       logger.warn("Apple 토큰 폐기/정리 실패", {errorType: (e as Error)?.name});
     }
 
+    // 소셜 테스터 이메일 정리(2026-08-21, B안).
+    //
+    // ⚠️ 이 값은 **제공자가 준 이메일 원문**이다. 탈퇴하면 반드시 지워야 한다 —
+    // 방침 14번이 "명함 데이터 전체가 삭제된다"고 단언하는 것과 같은 무게다.
+    //
+    // 📌 위 appleAuth 블록과 같은 모양으로 둔다(문서 하나, uid 가 문서 ID).
+    // 없으면 그냥 넘어간다 — 이메일이 정상으로 들어간 계정은 애초에 안 적힌다.
+    try {
+      await db.collection(SOCIAL_EMAIL_COLLECTION).doc(uid).delete();
+    } catch (e) {
+      // 실패해도 나머지 정리는 계속한다. ⚠️ 여기서 던지면 트리거 전체가
+      // 재시도되어 이미 끝난 삭제를 반복한다(위 블록들과 같은 이유).
+      logger.warn("소셜 테스터 이메일 정리 실패", {
+        uid,
+        errorType: (e as Error)?.name,
+      });
+    }
+
     // AI 호출 감사 로그 삭제(추가 112).
     const snap = await db
       .collection("aiAuditLogs")
@@ -1863,6 +1938,50 @@ export const verifyAndGrantPurchase = onCall<VerifyAndGrantPurchaseRequest>(
  * 📌 이 저장소에서 로그가 원인을 가린 전례가 있다(카카오 이메일 충돌:
  * 진짜 이유는 email-already-exists 였는데 두 번째 오류만 남았다).
  */
+/**
+ * 계정에 이메일을 못 넣었을 때, **서버에만** 제공자 이메일을 적어 둔다.
+ *
+ * ## ⚠️ 언제만 적나
+ *
+ * `auth/email-already-exists` 로 이메일을 빼고 계정을 만든 경우뿐이다.
+ * 이메일이 정상으로 들어간 계정은 토큰에서 바로 읽히므로 적을 이유가 없다 —
+ * **필요 없는 개인정보를 늘리지 않는다.**
+ *
+ * ## ⚠️ 수명 — 테스터 목록과 같다
+ *
+ * 이 값은 오직 `isAllowlistedTester` 의 대조에만 쓰인다. 그 목록
+ * (`config/testers`)은 테스트가 끝나면 비우는 항목이므로, **이 컬렉션도 그때
+ * 함께 비운다.** 탈퇴 시에는 `onUserDeletedCleanup` 이 지운다.
+ *
+ * 📌 근거: 법무 2차 회신(질문 8)은 **네이버 연락처 이메일을 계정 식별·본인
+ * 확인에 영구 불사용**할 것을 권고했다. 여기 쓰임은 식별이 아니라 **테스트
+ * 기간 동안 앱 무결성 우회를 허용할지**를 가리는 것뿐이고, 목록과 같은 수명을
+ * 갖도록 묶어 그 권고와 어긋나지 않게 했다.
+ *
+ * ⚠️ 이메일 원문은 로그에 남기지 않는다. 적었는지 여부만 남긴다.
+ */
+async function recordSocialTesterEmail(
+  uid: string,
+  email: string | null | undefined,
+  provider: string,
+): Promise<void> {
+  const value = (email ?? "").trim();
+  if (!value) return;
+  try {
+    await getFirestore().collection(SOCIAL_EMAIL_COLLECTION).doc(uid).set({
+      email: value.toLowerCase(),
+      provider,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    // 실패해도 로그인은 막지 않는다 — 이건 테스트 편의용 곁다리다.
+    logger.warn("소셜 테스터 이메일 기록 실패", {
+      provider,
+      reason: (e as Error).message,
+    });
+  }
+}
+
 async function tryQuiet(fn: () => Promise<unknown>): Promise<boolean> {
   try {
     await fn();
@@ -2080,6 +2199,9 @@ export const socialSignIn = onCall(
             );
             if (made) {
               logger.info("이메일이 다른 계정에 있어 이메일 없이 만들었다", {provider});
+              // ⚠️ 이 계정은 토큰에 이메일이 없다 — 테스터 허용목록과 대조할
+              // 값이 사라진다. 서버에만 적어 둔다(위 함수 주석 참고).
+              await recordSocialTesterEmail(profile.uid, profile.email, provider);
             }
           } else {
             logger.warn("소셜 사용자 레코드 생성 실패(로그인은 계속)", {
@@ -2097,6 +2219,7 @@ export const socialSignIn = onCall(
         );
         if (updated) {
           logger.info("이메일이 다른 계정에 있어 이메일 없이 갱신했다", {provider});
+          await recordSocialTesterEmail(profile.uid, profile.email, provider);
         }
       } else {
         logger.warn("소셜 사용자 레코드 갱신 실패(로그인은 계속)", {
