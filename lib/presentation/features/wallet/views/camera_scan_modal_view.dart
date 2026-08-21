@@ -12,6 +12,7 @@ import 'package:image/image.dart' as img;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/camera_capture_mode.dart';
 import '../../../../core/utils/camera_frame_jpeg.dart';
+import '../../../../core/utils/camera_guide_frame_size.dart';
 import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/card_photo_downscale.dart';
 import '../../../../core/utils/card_quad_warp.dart';
@@ -54,7 +55,10 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   // 결과물을 고정 -90도(반시계) 회전시켜 정방향으로 되돌린다 — 기기
   // 회전이 없으므로 EXIF 기반이 아니라 항상 같은 방향으로 고정 회전.
   // 실제 픽셀 크기는 화면 크기별로 [_guideFrameSizeFor]가 다시 계산한다.
-  static const _cardAspectRatio = 184 / 330;
+  // 가로세로비 상수(kCardGuideAspectRatio)는
+  // core/utils/camera_guide_frame_size.dart로 옮겼다(2026-08-21,
+  // fix/fold-cover-capture-guide) — 순수 계산을 위젯 밖으로 빼 단위
+  // 테스트로 재기 위함이다.
 
   // 자동 촬영 안정성 감지 파라미터 — 명함이 프레임 안에서 흔들리지 않고
   // 멈춰 있다고 판단되면 자동으로 셔터를 누른다. 셔터 버튼을 손가락으로
@@ -1321,43 +1325,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   /// 잘렸다**(사용자 제보 2026-08-14). 자세한 내력은 쓰는 쪽 주석에 있다.
   static const kGuideCropMargin = 1.2;
 
-  /// 가이드 상자의 **긴 변이 화면 폭에서 차지하는 비율**.
-  ///
-  /// ## ⚠️ 줄일 때는 반드시 실기기에서 **초점**을 확인할 것
-  ///
-  /// 이 값을 줄이면 사용자가 명함을 **더 가까이** 대게 된다. 예전에 가이드를
-  /// 화면 **높이** 기준으로 잡았다가, 렌즈 최소 초점 거리보다 가까워져
-  /// **초점이 영영 안 맞는** 문제가 있었다(2026-08-06 실기기,
-  /// *"가이드에 맞추려 가까이 가면서 초점을 못맞춤"*).
-  ///
-  /// ## 왜 줄였나 (2026-08-17, 추가 293)
-  ///
-  /// 실기기에서 *"흰색 가이드가 너무 크네"* — 가이드가 화면을 거의 채워서
-  /// 명함이 가운데 작게 놓이고, **찍힌 사진에 배경이 많이 들어갔다**
-  /// (`가이드 크롭 1636x2934`).
-  ///
-  /// 📌 배경이 많이 들어가는 **근본 원인은 가이드가 큰 것**이지 자르기 여유가
-  /// 아니다. 여유([kGuideCropMargin])는 글자 잘림을 막는 장치라 건드리지 않았다.
-  ///
-  /// 0.86 → 0.74로 **한 단계만** 줄였다. 이 저장소는 이런 값을 크게 바꿨다가
-  /// 두 번 되돌린 적이 있다(자르기 여유 1.5 → 1.0 → 1.2).
-  static const kGuideLongEdgeRatio = 0.74;
-
-  Size _guideFrameSizeFor(Size screenSize) {
-    var longEdge = screenSize.width * kGuideLongEdgeRatio;
-    // 화면이 낮으면(가로 방향, 폴더블 펼침) 가이드가 세로로 넘친다. 위아래
-    // 안내 문구와 촬영 버튼이 함께 들어가야 하므로 **높이의 0.72까지만** 쓴다.
-    //
-    // ⚠️ 예전 상한은 0.8이었는데, 그것만으로는 모자라 가로에서
-    // `BOTTOM OVERFLOWED BY 52 PIXELS`가 떴다(사용자 제보 "핸드폰을 90도
-    // 돌리니까 아래에 노란색이 보여"). 세로 고정(`setPreferredOrientations`)도
-    // 함께 걸었지만 **Android는 큰 화면에서 앱의 방향 제한을 무시한다** —
-    // 폴더블 펼친 화면에서는 여전히 가로가 되므로 크기 자체를 맞춰야 한다.
-    final maxLongEdge = screenSize.height * 0.72;
-    if (longEdge > maxLongEdge) longEdge = maxLongEdge;
-    final shortEdge = longEdge * _cardAspectRatio;
-    return Size(shortEdge, longEdge);
-  }
+  /// 가이드 상자 크기 계산은 [guideFrameSizeFor]
+  /// (`core/utils/camera_guide_frame_size.dart`)로 뺐다 — 순수 계산이라
+  /// 위젯 없이 단위 테스트로 재기 위함이다(fix/fold-cover-capture-guide,
+  /// 2026-08-21). 관련 상수·이력 주석도 그 파일에 있다.
+  Size _guideFrameSizeFor(Size screenSize) => guideFrameSizeFor(screenSize);
 
   /// 화면에 보이는 가이드 프레임(카드 사각형) 위치를 실제 촬영본의 픽셀 좌표로
   /// 환산해 크롭한다. 프리뷰는 [_buildCameraPreview]에서 cover 방식(화면을
