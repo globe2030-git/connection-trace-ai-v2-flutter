@@ -379,10 +379,21 @@ class _OfficialButtonArt {
 
   /// 공식 버튼이 있는 제공자면 그 제원을, 없으면 `null`.
   static _OfficialButtonArt? of(SnsAuthProvider provider) => switch (provider) {
-    // 카카오: 완성형(넓은 형) 300×45. radius 12 는 가이드가 지정한 값이다 —
-    // 우리 화면의 다른 버튼(16)에 맞추려고 바꾸면 규정 위반이다.
+    // 카카오: 완성형 **좁은 형(narrow)** 183×45.
+    //
+    // ⚠️ 처음에는 넓은 형(wide, 300×45)을 썼는데 **실기기에서 어색했다** —
+    // 넓은 형은 심볼이 왼쪽 끝에 고정되고 글자만 가운데 오는 구조라, 우리처럼
+    // 화면 폭을 꽉 채우는 버튼에 넣으면 심볼과 글자가 멀찍이 떨어져 보인다.
+    // 좁은 형은 심볼과 글자가 붙어 있어 통째로 가운데 놓인다 — 네이버
+    // center 형·구글 버튼과 같은 모양이 된다.
+    //
+    // 📌 둘 다 공식 애셋이므로 고르는 것은 규정 안이다. 넓히는 것도
+    // 허용된다("컨테이너의 좌, 우 방향으로 동일하게 확장합니다").
+    //
+    // radius 12 는 가이드가 지정한 값이다 — 우리 화면의 다른 버튼(16)에
+    // 맞추려고 바꾸면 규정 위반이다.
     SnsAuthProvider.kakao => const _OfficialButtonArt(
-      asset: 'assets/images/social/kakao_login_wide.png',
+      asset: 'assets/images/social/kakao_login_narrow.png',
       background: AppColors.channelKakao,
       radius: 12,
       artHeight: 45,
