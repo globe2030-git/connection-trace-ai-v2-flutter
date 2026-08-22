@@ -786,6 +786,33 @@ class OcrScannerService {
   /// 지워지고 → **정작 진짜 이름은 다시 볼 기회가 없어** 빈 값이 됐다
   /// (card_56 `이희규`가 원문에 멀쩡히 있는데도 빈 값으로 나왔다).
   /// 자리를 차지하기 전에 거르면 순회가 계속되어 뒤쪽 줄에서 이름을 찾는다.
+  /// 약한 폴백에서 고른 값이 **한글이면 비운다**(사용자 결정 2026-08-22, ㉮안).
+  ///
+  /// ## 왜 한글만인가
+  ///
+  /// 이 자리는 규칙이 전부 실패해 확신하지 못하는 구간이다. 실측에서 **여기서
+  /// 고른 한글 값은 한 번도 맞지 않았다.**
+  ///
+  /// ```
+  /// ML Kit(기기, 96장)   약한 경로 12건
+  ///                      한글이 든 값을 넣음  4건 → 0 맞음
+  ///                      영문만 넣음         5건 → 표본에 정답이 없어 판정 불가
+  ///                      이미 빈 값          3건
+  /// ```
+  ///
+  /// ⚠️ **영문은 건드리지 않는다.** 처음에는 약한 폴백 전체를 비우려 했는데,
+  /// 그러면 *"영문 전용 이름/회사명 + 영문 직함"*, *"회사명과 무관한 영문
+  /// 이름은 그대로 이름이다"* 같은 **실제 테스터 제보로 만들어진 테스트 11건이
+  /// 깨졌다**(2026-08-13·08-20). 영문 이름은 이 경로로 정상적으로 들어온다.
+  ///
+  /// 📌 **잰 곳만 비운다.** 표본 95장에 영문 전용 이름이 **0건**이라 영문 쪽은
+  /// 애초에 채점되지 않았다 — 안 잰 것을 지우면 안 된다.
+  ///
+  /// 명함 앱에서 이름이 틀린 채 저장되면 나중에 그 사람을 못 찾고 **사용자는
+  /// 틀린 줄도 모른다.** 빈 칸은 눈에 띄지만 틀린 값은 안 띈다.
+  static String _blankIfUnsureHangul(String candidate) =>
+      _hasHangul(candidate) ? '' : candidate;
+
   static bool _isRejectedName(String name) =>
       _endsWithParticle(name) || _isNonNameWord(name);
 
@@ -2802,17 +2829,17 @@ class OcrScannerService {
         final biggestH = heightByText[biggest] ?? 0;
         final firstH = heightByText[pool.first] ?? 0;
         if (biggest != pool.first && biggestH >= firstH * 1.1) {
-          name = biggest;
+          name = _blankIfUnsureHangul(biggest);
           leftover.remove(biggest);
           nameSource = OcrNameSource.fontSizePreferred;
         } else {
-          name = pool.first;
-          leftover.remove(name);
+          name = _blankIfUnsureHangul(pool.first);
+          leftover.remove(pool.first);
           nameSource = OcrNameSource.leftoverFallback;
         }
       } else {
-        name = pool.first;
-        leftover.remove(name);
+        name = _blankIfUnsureHangul(pool.first);
+        leftover.remove(pool.first);
         nameSource = OcrNameSource.leftoverFallback;
       }
     }
