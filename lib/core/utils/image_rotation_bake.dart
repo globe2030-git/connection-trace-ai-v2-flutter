@@ -12,14 +12,60 @@
 /// 각도만큼 **새 파일을 만들어 돌려줄 뿐**이고, 크롭 좌표 계산과는 아무
 /// 관계가 없다 — 부르는 쪽이 이 함수가 돌려준 "똑바로 선" 파일을 받은
 /// 뒤에 크롭 좌표를 새로 잡아야 한다(예전 좌표를 재사용하면 섞인다).
+///
+/// ## ⚠️ 무거운 부분은 `compute()`로 돌린다(폴드 실측 2~3초 지연, P2-③ 후속)
+///
+/// `img.decodeImage`(순수 Dart JPEG 디코드) + 회전 + 재인코딩은 4000px급
+/// 사진 한 장에서 메인 아이솔레이트를 통째로 막을 만큼 무겁다 — 그동안
+/// 스피너 애니메이션조차 끊겨 보였다. `warpCardToFile`(`card_quad_warp.dart`)이
+/// 같은 이유로 `compute()`를 요구하는 것과 같은 사정이라, 여기도 같은
+/// 패턴을 쓴다: 인자는 평평한 값(파일 경로·정수)만 담아 isolate 경계를
+/// 넘기고, 실제 디코드·회전·파일 쓰기는 톱레벨 동기 함수([_bakeRotationSync])
+/// 안에 둔다.
 library;
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import 'scan_rotation.dart';
+
+/// [_bakeRotationSync]에 넘길 인자 묶음 — isolate 경계를 넘기므로 평범한
+/// 값만 담는다(`card_quad_warp.dart`의 `CardWarpRequest`와 같은 이유).
+class _BakeRotationRequest {
+  const _BakeRotationRequest({
+    required this.sourcePath,
+    required this.degrees,
+    required this.outputDirectoryPath,
+  });
+
+  final String sourcePath;
+  final int degrees;
+  final String outputDirectoryPath;
+}
+
+/// 실제 디코드·회전·인코딩·파일 쓰기 — `compute()`가 별도 isolate에서 돈다.
+///
+/// 실패하면 null(부르는 쪽은 원본을 쓴다). 톱레벨 동기 함수라야 `compute()`가
+/// 클로저 캡처 없이 다른 isolate로 그대로 옮길 수 있다.
+String? _bakeRotationSync(_BakeRotationRequest request) {
+  try {
+    final bytes = File(request.sourcePath).readAsBytesSync();
+    var decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    decoded = img.bakeOrientation(decoded);
+    final rotated = img.copyRotate(decoded, angle: normalizeTurn(request.degrees));
+    final jpgBytes = img.encodeJpg(rotated, quality: 100);
+    final outPath =
+        '${request.outputDirectoryPath}/card_rot_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    File(outPath).writeAsBytesSync(jpgBytes);
+    return outPath;
+  } catch (_) {
+    return null;
+  }
+}
 
 /// [degrees]가 0이면(제자리로 돌아온 경우 포함) **원본을 그대로 돌려준다** —
 /// 재인코딩은 화질만 깎고 결과는 같다.
@@ -45,15 +91,15 @@ Future<XFile> bakeImageRotation(
 }) async {
   if (!needsRebake(degrees)) return source;
   try {
-    final bytes = await source.readAsBytes();
-    var decoded = img.decodeImage(bytes);
-    if (decoded == null) return source;
-    decoded = img.bakeOrientation(decoded);
-    final rotated = img.copyRotate(decoded, angle: normalizeTurn(degrees));
-    final jpgBytes = img.encodeJpg(rotated, quality: 100);
-    final dir = outputDirectoryPath ?? Directory.systemTemp.path;
-    final outPath = '$dir/card_rot_${DateTime.now().millisecondsSinceEpoch}.jpg';
-    await File(outPath).writeAsBytes(jpgBytes);
+    final outPath = await compute(
+      _bakeRotationSync,
+      _BakeRotationRequest(
+        sourcePath: source.path,
+        degrees: degrees,
+        outputDirectoryPath: outputDirectoryPath ?? Directory.systemTemp.path,
+      ),
+    );
+    if (outPath == null) return source;
     return XFile(outPath);
   } catch (_) {
     return source;

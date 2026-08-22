@@ -96,9 +96,11 @@ GalleryCropOutcome galleryCropOutcomeFor(Object? popResult) {
 /// 안내뿐**이다 — 세그먼트에 따라 시작 귀퉁이 위치와 안내 문구만 바뀐다.
 ///
 /// ⚠️ **회전과 자르기 좌표를 섞지 않는다**(추가 273, 실기기에서 두 번 헤맨
-/// 자리). [회전]을 누르면 [bakeImageRotation]으로 **새 파일**을 굽고, 그
-/// 새 파일에 맞춰 귀퉁이를 **다시 초기화**한다 — 이전 좌표를 새로 돌아간
-/// 사진 위에 그대로 쓰지 않는다.
+/// 자리). [회전]을 누르면 [bakeImageRotation]으로 **새 파일**을 굽는다 —
+/// 이전 좌표를 새로 돌아간 사진 위에 **그대로**(재계산 없이) 쓰지는
+/// 않는다. 다만 방법은 [_rotate] 문서에 적었듯 재검출→초기화에서
+/// **정확한 좌표 변환**([rotateCornersCw90])으로 바뀌었다 — "섞지 않는다"는
+/// 원칙 자체는 그대로고, 지키는 방법만 바뀌었다.
 class ManualCropView extends StatefulWidget {
   const ManualCropView({
     super.key,
@@ -298,14 +300,21 @@ class _ManualCropViewState extends State<ManualCropView> {
     setState(() => _corners = _startCornersFor(_mode));
   }
 
-  /// [회전] — 90도씩 시계 방향. 사진을 실제로 다시 굽고, 귀퉁이는
-  /// 초기화한다(좌표계를 섞지 않기 위해 — 클래스 문서 참고).
+  /// [회전] — 90도씩 시계 방향. 사진을 실제로 다시 굽는다.
   ///
-  /// ⚠️ **[widget.autoDetectEnabled]면 검출도 다시 돈다**(결함 399). 회전 전에
-  /// 찾아 둔 [_detectedCorners]는 회전 전 사진 기준이라 그대로 두면 좌표가
-  /// 90도 어긋난 채 "찾았다"고 계속 말하게 된다 — 그건 회전과 자르기 좌표를
-  /// 섞어 실기기에서 두 번 헤맨 것(추가 273)과 같은 종류의 결함이라, 값을
-  /// 버리고 새로 판 사진으로 다시 찾는다.
+  /// ⚠️ **예전에는 귀퉁이를 통째로 버리고 재검출했다**(결함 399 당시 결정).
+  /// 이제는 **버리는 대신 정확히 변환한다** — "회전과 자르기 좌표를 섞지
+  /// 않는다"는 원칙(추가 273)은 그대로 지키되, 지키는 방법이 바뀌었다.
+  /// 재검출도 좌표계가 섞이지 않는 안전한 방법이었지만, 두 가지 대가가
+  /// 있었다: (1) 검출을 다시 도는 동안 화면이 멈춘 것처럼 보였고, (2)
+  /// **사용자가 이미 손으로 맞춘 조정이 회전 한 번에 날아갔다.**
+  /// [rotateCornersCw90](`crop_mode_corners.dart`, 순수 함수 + 테스트)이
+  /// 수학적으로 정확한 변환이라는 게 보장되므로, 재검출 없이도 좌표계가
+  /// 섞일 위험이 없다.
+  ///
+  /// **재검출은 [_detectedCorners]가 없을 때만** 예전처럼 그대로 돈다 —
+  /// 찾은 적도 사용자가 손댄 적도 없는 "빈" 상태에서는 변환할 것 자체가
+  /// 없기 때문이다.
   Future<void> _rotate() async {
     if (_isRotating) return;
     setState(() => _isRotating = true);
@@ -314,18 +323,37 @@ class _ManualCropViewState extends State<ManualCropView> {
       if (!mounted) return;
       final previous = _bakedPathToCleanUp;
       final previousIsOriginal = _imagePath == widget.imagePath;
+      final oldImageSize = _imageSize;
+      // 변환으로 대신할 수 있는 조건: 검출 결과나 사용자 조정 중 무엇이든
+      // 보존할 값이 있고, 변환에 필요한 회전 전 이미지 크기를 알고 있을 때.
+      final canPreserve =
+          widget.autoDetectEnabled &&
+          oldImageSize != null &&
+          (_userInteracted || _detectedCorners != null);
       setState(() {
         _imagePath = baked.path;
         _bakedPathToCleanUp = baked.path == widget.imagePath ? null : baked.path;
         _imageSize = null;
         if (widget.autoDetectEnabled) {
-          // 회전 전 검출 결과는 지금 사진에 안 맞는다 — 통째로 버리고
-          // 수동 시작 자리로 되돌린 뒤 새로 찾는다.
-          _detectedCorners = null;
-          _userInteracted = false;
-          _mode = CropAdjustMode.manual;
+          if (canPreserve) {
+            final detected = _detectedCorners;
+            if (detected != null) {
+              _detectedCorners = rotateCornersCw90(detected, oldImageSize);
+            }
+            // 지금 화면에 보이는 값(검출 결과 그대로든, 사용자가 끌어
+            // 맞춘 값이든) 그대로 변환한다 — 재검출로 덮어쓰지 않는다.
+            _corners = rotateCornersCw90(_corners, oldImageSize);
+          } else {
+            // 검출도 없었고 사용자도 손대지 않은 "빈" 상태만 예전처럼
+            // 수동 시작 자리로 되돌린 뒤 새로 찾는다.
+            _detectedCorners = null;
+            _userInteracted = false;
+            _mode = CropAdjustMode.manual;
+            _corners = _startCornersFor(_mode);
+          }
+        } else {
+          _corners = _startCornersFor(_mode);
         }
-        _corners = _startCornersFor(_mode);
       });
       // 직전에 이 화면 안에서 구운 회전본이 있었다면(=원본이 아니었다면)
       // 더는 쓰이지 않으니 지운다 — 안 지우면 회전을 누를 때마다 평문
@@ -334,7 +362,7 @@ class _ManualCropViewState extends State<ManualCropView> {
         await deleteQuietly(previous);
       }
       await _loadImageSize();
-      if (widget.autoDetectEnabled) {
+      if (widget.autoDetectEnabled && !canPreserve) {
         unawaited(_runAutoDetect());
       }
     } finally {
@@ -342,8 +370,13 @@ class _ManualCropViewState extends State<ManualCropView> {
     }
   }
 
-  /// [_corners]가 처음 놓일 자리. 세그먼트 전환·[다시 찾기]·[회전]이 전부
-  /// 이 함수 하나로 정해야 셋 중 하나만 따로 어긋나지 않는다.
+  /// [_corners]가 처음 놓일 자리. 세그먼트 전환·[다시 찾기]가 이 함수
+  /// 하나로 정해야 서로 어긋나지 않는다.
+  ///
+  /// ⚠️ **[회전]은 보존할 값이 있으면 이 함수를 거치지 않는다** — 대신
+  /// [rotateCornersCw90]으로 지금 좌표를 변환한다([_rotate] 문서 참고).
+  /// 검출도 사용자 조정도 없는 "빈" 상태에서 회전했을 때만 이 함수로
+  /// 되돌아간다.
   ///
   /// 실제 판정은 [cropStartCornersForDetection](순수 함수,
   /// `crop_mode_corners.dart`)이 한다 — 화면 없이 검사할 수 있는 부분은
