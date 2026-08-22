@@ -1387,9 +1387,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         ],
       ),
       const SizedBox(height: 12),
-      const Text(
-        '주소·이메일이 뒷면에 있는 경우가 많아요',
-        style: TextStyle(color: AppColors.textSecondary, height: 1.4),
+      // ⚠️ 못 찾은 항목만 말한다(추가 397 동승 결함) — 주소·이메일을 이미
+      // 찾았는데도 "뒷면에 있는 경우가 많아요"가 고정으로 뜨던 것을 고쳤다.
+      Text(
+        backSideHintFor(missing) ?? '뒷면 정보가 더 있으면 이어 찍으세요',
+        style: const TextStyle(color: AppColors.textSecondary, height: 1.4),
       ),
       const SizedBox(height: 16),
       SizedBox(

@@ -46,6 +46,8 @@ class CardWarpRequest {
     required this.outputPath,
     this.margin = 0.04,
     this.jpegQuality = 100,
+    this.autoUpright = true,
+    this.cornersAreImageRelative = false,
   });
 
   /// 촬영 원본 파일 경로.
@@ -57,9 +59,14 @@ class CardWarpRequest {
   /// 프리뷰 해상도와 촬영본 해상도가 다르기 때문이다 — 픽셀로 미리 바꿔
   /// 넘기려면 촬영본을 한 번 더 디코드해야 하는데, 그건 이 함수가 어차피
   /// 하는 일이다.
+  ///
+  /// ⚠️ [cornersAreImageRelative]가 참이면 이 설명은 적용되지 않는다 —
+  /// 그 필드 문서를 본다.
   final List<double> visibleCornersFlat;
 
   /// 프리뷰가 그려진 화면 크기(논리 픽셀).
+  ///
+  /// ⚠️ [cornersAreImageRelative]가 참이면 **이 값은 읽지 않는다.**
   final double screenWidth;
   final double screenHeight;
 
@@ -78,6 +85,40 @@ class CardWarpRequest {
   /// (`contact_image_service`)이 맡고 있으므로 **여기서 또 깎으면 두 번
   /// 압축된다.**
   final int jpegQuality;
+
+  /// 결과가 세로로 길면 [uprightCard]로 강제로 눕힐지.
+  ///
+  /// 기본값 **참**은 자동 촬영 경로(가이드 크롭·검출 크롭)를 위한 것이다 —
+  /// 그 경로는 "결과물은 항상 눕혀 있어야 한다"는 촬영 규칙을 전제로 한다.
+  ///
+  /// ⚠️ **손으로 자르는 경로(`ManualCropView`)는 반드시 거짓으로 넘겨야
+  /// 한다**(추가 397). 그 화면은 사용자가 [회전] 버튼과 귀퉁이로 **원하는
+  /// 방향을 이미 확정한 뒤** 여기로 넘어온다 — 그 결과를 여기서 "세로면
+  /// 무조건 눕힌다"로 다시 뒤집으면, 사용자가 방금 고른 방향을 **소리
+  /// 없이 취소하는 꼴**이 된다. 화면에는 사용자가 고른 대로 보이는데
+  /// 저장물만 다시 돌아가 있으면 그 차이를 화면에서는 절대 알아챌 수
+  /// 없다 — 이 결함이 크롭 화면만 봐서는 안 잡히는 이유 중 하나였다.
+  final bool autoUpright;
+
+  /// **참**이면 [visibleCornersFlat]을 화면 매핑 없이 **이미지 자체의
+  /// 정규 좌표(0~1)로 바로** 쓴다 — [screenWidth]/[screenHeight]는
+  /// 무시한다.
+  ///
+  /// ⚠️ 왜 필요한가(추가 397 조사): 손으로 자르기(`ManualCropView`)는
+  /// "화면 크기 = 사진 크기"를 넘겨 화면 매핑([visibleImageRect])을
+  /// 항등식으로 만드는 우회를 썼다. 그 우회는 **부르는 쪽이 잰 사진
+  /// 크기(Flutter 디코더, `Image.file`)와 이 함수가 자기 소스를 다시
+  /// 재는 크기(image 패키지 디코더, `img.decodeImage` + `bakeOrientation`)가
+  /// 정확히 같다**는 전제 위에 있다. 두 디코더가 같은 파일을 (원인이
+  /// 무엇이든) 다르게 읽으면, 항등식이 깨지면서 화면 매핑 계산이 "보이는
+  /// 영역"을 실제 이미지와 다르게 잘라 **가장자리에 여백이 대칭으로
+  /// 남거나 카드 일부가 잘리는** 결함이 생긴다 — 회전 버튼을 쓴 뒤에만
+  /// 재현된 결함(추가 397)과 같은 모양이다.
+  ///
+  /// 손으로 자르기는 애초에 "화면에 보이는 것 = 이미지 전체"이므로 이
+  /// 화면 매핑 자체가 불필요하다 — 정규 좌표를 이미지 크기에 바로 곱하면
+  /// 된다. 그래서 **두 디코더가 합의해야 하는 자리를 아예 없앤다.**
+  final bool cornersAreImageRelative;
 }
 
 /// 원근 보정 결과.
@@ -127,11 +168,14 @@ CardWarpResult? warpCardToFile(CardWarpRequest request) {
     // 가시 좌표(화면에 보이는 영역 기준) → 촬영본 픽셀.
     final visibleQuad = cardQuadFromFlat(request.visibleCornersFlat);
     if (visibleQuad == null) return null;
+    // ⚠️ [cornersAreImageRelative] 문서 참고 — 참이면 화면 매핑을 아예
+    // 거치지 않는다. 두 디코더(Flutter/`image` 패키지)가 같은 파일의
+    // 크기에 합의해야 하는 자리를 없애는 것이 핵심이다(추가 397).
+    final rawPixelCorners = request.cornersAreImageRelative
+        ? visibleQuad.toPixels(imageSize)
+        : visibleQuadToImagePixels(visibleQuad, imageSize, screenSize);
     final corners = clampCornersToImage(
-      expandCorners(
-        visibleQuadToImagePixels(visibleQuad, imageSize, screenSize),
-        margin: request.margin,
-      ),
+      expandCorners(rawPixelCorners, margin: request.margin),
       imageSize,
     );
 
@@ -208,7 +252,8 @@ CardWarpResult? warpCardToFile(CardWarpRequest request) {
       order: img.ChannelOrder.rgb,
     );
 
-    final upright = uprightCard(warped);
+    // ⚠️ [autoUpright] 문서 참고 — 손으로 자르기는 거짓으로 넘어온다.
+    final upright = request.autoUpright ? uprightCard(warped) : warped;
     final jpg = img.encodeJpg(upright, quality: request.jpegQuality);
     File(request.outputPath).writeAsBytesSync(jpg);
     return CardWarpResult(

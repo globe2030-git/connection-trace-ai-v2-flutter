@@ -26,6 +26,18 @@ import 'scan_rotation.dart';
 ///
 /// 실패하면 원본을 쓴다. 회전을 못 했다고 인식/자르기 자체를 막는 것보다,
 /// 방향이 어긋난 채로라도 계속 진행하는 편이 낫다.
+///
+/// ⚠️ **먼저 EXIF 방향을 굽는다**(추가 397 조사 중 추가). `warpCardToFile`이
+/// 자기 소스를 읽을 때 이미 하는 것과 같은 순서다(`card_quad_warp.dart`
+/// 주석 참고) — 이 함수만 빠져 있었다. 소스에 방향 태그가 남아 있는 채로
+/// `copyRotate`만 하면, 물리적으로는 돌아간 픽셀 위에 **예전 방향 태그가
+/// 그대로 복제되어 남는다**(`image` 패키지의 `copyRotate`는 회전 전
+/// exif를 그대로 복제한다 — 지우지 않는다). Flutter의 `Image.file`은 이
+/// 태그를 그대로 반영하지 않는 것으로 보이는 반면, 이 저장소의 크롭
+/// 함수(`warpCardToFile`)는 자기 소스를 읽을 때 **항상** exif 방향을
+/// 구워 반영한다 — 같은 파일을 두 곳이 다른 방향으로 읽는 조합이 된다.
+/// 실촬영 원본에 남아 있을 수 있는 태그를 여기서 먼저 지워 두면, 그
+/// 조합 자체가 생기지 않는다.
 Future<XFile> bakeImageRotation(
   XFile source,
   int degrees, {
@@ -34,8 +46,9 @@ Future<XFile> bakeImageRotation(
   if (!needsRebake(degrees)) return source;
   try {
     final bytes = await source.readAsBytes();
-    final decoded = img.decodeImage(bytes);
+    var decoded = img.decodeImage(bytes);
     if (decoded == null) return source;
+    decoded = img.bakeOrientation(decoded);
     final rotated = img.copyRotate(decoded, angle: normalizeTurn(degrees));
     final jpgBytes = img.encodeJpg(rotated, quality: 100);
     final dir = outputDirectoryPath ?? Directory.systemTemp.path;

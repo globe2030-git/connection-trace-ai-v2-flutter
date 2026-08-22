@@ -1239,9 +1239,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
         warpCardToFile,
         CardWarpRequest(
           sourcePath: sourcePath,
-          // ⚠️ 화면 크기를 **사진 비율과 같게** 준다. 그러면 워프가 쓰는
-          // "가시 영역"이 사진 전체가 되어, 정규 좌표가 그대로 통한다.
-          // 새 좌표 변환을 만들지 않으려는 것이다.
+          // ⚠️ 화면에 보이는 것이 이미지 전체이므로, 정규 좌표를 화면
+          // 매핑 없이 이미지 크기에 바로 곱한다(추가 397) —
+          // `cornersAreImageRelative: true`. screenWidth/Height는 이 경로
+          // 에서 읽지 않지만, 그래도 `picked.imageSize`를 넘겨 둔다(무의미한
+          // 값을 넘기지 않기 위함).
           visibleCornersFlat: [
             for (final c in picked.corners) ...[c.dx, c.dy],
           ],
@@ -1250,6 +1252,11 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
           outputPath: outPath,
           // 사람이 모서리를 직접 짚었으니 여백을 더하지 않는다.
           margin: 0,
+          cornersAreImageRelative: true,
+          // 사용자가 크롭 화면의 [회전] 버튼과 귀퉁이로 방향을 이미
+          // 확정했다 — 여기서 "세로면 무조건 눕힌다"로 다시 뒤집으면 그
+          // 선택을 소리 없이 취소하는 꼴이 된다(추가 397).
+          autoUpright: false,
         ),
       );
       if (!mounted) return;

@@ -44,4 +44,32 @@ void main() {
       expect(states.map((s) => s.label).toList(), labels);
     });
   });
+
+  group('backSideHintFor (추가 397 동승 결함)', () {
+    test('주소·이메일을 둘 다 찾았으면(=missing 아님) null이다', () {
+      // ⚠️ 이 결함의 핵심 — 예전에는 여기서도 "뒷면에 있는 경우가 많아요"가
+      // 고정으로 떴다. 다 찾았으면 아무 말도 안 하는 게 맞다.
+      expect(backSideHintFor(const []), isNull);
+      expect(backSideHintFor(const ['이름', '휴대폰 번호']), isNull);
+    });
+
+    test('주소만 못 찾았으면 주소만 말한다', () {
+      expect(backSideHintFor(const ['주소']), '주소가 뒷면에 있는 경우가 많아요');
+    });
+
+    test('이메일만 못 찾았으면 이메일만 말한다', () {
+      expect(backSideHintFor(const ['이메일']), '이메일이 뒷면에 있는 경우가 많아요');
+    });
+
+    test('둘 다 못 찾았으면 예전과 같은 문구다', () {
+      expect(
+        backSideHintFor(const ['주소', '이메일']),
+        '주소·이메일이 뒷면에 있는 경우가 많아요',
+      );
+    });
+
+    test('이름·회사명·휴대폰만 못 찾은 것은 뒷면 안내 대상이 아니다', () {
+      expect(backSideHintFor(const ['이름', '회사명', '휴대폰 번호']), isNull);
+    });
+  });
 }
