@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/card_form_validation.dart' as form_validation;
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/ocr_origin.dart';
@@ -118,6 +119,13 @@ class AddCardModalView extends StatefulWidget {
 
 class _AddCardModalViewState extends State<AddCardModalView> {
   final _formKey = GlobalKey<FormState>();
+
+  // 휴대폰 칸의 either-or 검증(휴대폰 또는 사무실 전화 중 하나)이 사무실
+  // 전화 칸의 값에 달려 있다(추가 361 스펙). 사무실 전화를 입력/수정할 때마다
+  // 휴대폰 칸만 콕 집어 재검증하려고 전용 키를 둔다 — Form 전체를
+  // validate()하면 아직 손대지 않은 다른 필수 칸(이름·회사명·이메일)까지
+  // 때 이르게 오류가 뜬다.
+  final _mobilePhoneFieldKey = GlobalKey<FormFieldState<String>>();
   // 이 화면은 자체 Scaffold 없이 showModalBottomSheet의 콘텐츠로만 쓰여서
   // ScaffoldMessenger.of(context)를 쓰면 스낵바가 모달 뒤 페이지로 가서 시트에
   // 가려 안 보인다. 그렇다고 이 화면을 Scaffold로 감싸면 showModalBottomSheet가
@@ -472,6 +480,14 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         _pickedGeo = null;
         _pickedGeoAddress = null;
       }
+    });
+
+    // 사무실 전화를 입력/수정하면 휴대폰 칸의 either-or 오류가 갱신되도록
+    // 휴대폰 칸만 재검증한다(추가 361 스펙). 휴대폰 칸 자체를 고칠 때는
+    // Form의 AutovalidateMode.onUserInteraction이 알아서 재검증한다.
+    _officePhoneController.addListener(() {
+      if (!mounted) return;
+      _mobilePhoneFieldKey.currentState?.validate();
     });
 
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
@@ -1455,7 +1471,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     final fg = filled ? AppColors.accentText : AppColors.warningText;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1467,7 +1486,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
           ),
         ],
       ),
@@ -1880,8 +1903,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         // 명함이 흔하다 — 그대로 두면 이름 칸으로 보낼 때 전화가 딸려 간다.
         // 영문 라벨(`T` `F` `Mobile.`)은 한글이 아니라 안 걸린다 — 그건
         // 떼어내면 쓸모없는 칩만 늘어난다(추가 327).
-        final restHasHangul =
-            RegExp(r'[가-힣]').hasMatch(piece.replaceAll(_valueShapeRegExp, ' '));
+        final restHasHangul = RegExp(
+          r'[가-힣]',
+        ).hasMatch(piece.replaceAll(_valueShapeRegExp, ' '));
         if (values.length < 2 && !(values.length == 1 && restHasHangul)) {
           out.add(piece);
           continue;
@@ -2133,13 +2157,29 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   }
 
   Future<void> _saveCard() async {
-    // 1. Basic required validations
-    if (_nameController.text.trim().isEmpty) {
-      _focusAndShowError(_nameFocusNode, '⚠️ 이름을 입력해 주세요.');
+    // 1. Basic required validations — TextFormField의 validator(아래 폼
+    // 위젯)와 정확히 같은 규칙을 쓴다(core/utils/card_form_validation.dart).
+    // 이 저장 버튼 핸들러가 폼 검증보다 먼저 실행돼 여기서 걸리면
+    // `_formKey.currentState!.validate()`까지 가지 않으므로, 규칙이
+    // 어긋나면 폼 쪽 validator를 아무리 고쳐도 실제로는 반영되지 않는다.
+    final nameError = form_validation.validateRequiredTextField(
+      value: _nameController.text,
+      emptyMessage: '이름을 입력해 주세요.',
+      isEditing: _isEditing,
+      wasInitiallyEmpty: _initialValues['name']!.trim().isEmpty,
+    );
+    if (nameError != null) {
+      _focusAndShowError(_nameFocusNode, '⚠️ $nameError');
       return;
     }
-    if (_companyController.text.trim().isEmpty) {
-      _focusAndShowError(_companyFocusNode, '⚠️ 회사명을 입력해 주세요.');
+    final companyError = form_validation.validateRequiredTextField(
+      value: _companyController.text,
+      emptyMessage: '회사명을 입력해 주세요.',
+      isEditing: _isEditing,
+      wasInitiallyEmpty: _initialValues['company']!.trim().isEmpty,
+    );
+    if (companyError != null) {
+      _focusAndShowError(_companyFocusNode, '⚠️ $companyError');
       return;
     }
 
@@ -2149,25 +2189,37 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // (빈 주소일 때의 저장 경로는 아래 지오코딩 단계에서 분기한다.)
     final rawAddress = _addressController.text.trim();
 
+    // 전화는 휴대폰 또는 사무실 전화 중 하나만 있으면 통과한다(추가 361).
+    // 둘 다 비어 있을 때의 오류는 휴대폰 칸에서만 보여준다.
     final phoneVal = _phoneController.text.trim();
-    final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
-    if (phoneVal.isEmpty) {
-      _focusAndShowError(_phoneFocusNode, '⚠️ 휴대폰 번호를 입력해 주세요.');
+    final phoneWasInitiallyEmpty =
+        _initialValues['phone']!.trim().isEmpty &&
+        _initialValues['officePhone']!.trim().isEmpty;
+    final phoneError = form_validation.validateMobilePhoneField(
+      mobileValue: _phoneController.text,
+      officeValue: _officePhoneController.text,
+      isEditing: _isEditing,
+      wasInitiallyEmpty: phoneWasInitiallyEmpty,
+    );
+    if (phoneError != null) {
+      _focusAndShowError(_phoneFocusNode, '⚠️ $phoneError');
       return;
-    } else if (!phoneRegExp.hasMatch(phoneVal)) {
-      _focusAndShowError(
-        _phoneFocusNode,
-        '⚠️ 올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.',
-      );
+    }
+    final officePhoneError = form_validation.validateOfficePhoneField(
+      _officePhoneController.text,
+    );
+    if (officePhoneError != null) {
+      _focusAndShowError(_officePhoneFocusNode, '⚠️ $officePhoneError');
       return;
     }
 
-    final emailVal = _emailController.text.trim();
-    if (emailVal.isEmpty) {
-      _focusAndShowError(_emailFocusNode, '⚠️ 이메일을 입력해 주세요.');
-      return;
-    } else if (!emailVal.contains('@') || !emailVal.contains('.')) {
-      _focusAndShowError(_emailFocusNode, '⚠️ 올바른 이메일 형식을 입력해 주세요.');
+    final emailError = form_validation.validateEmailField(
+      value: _emailController.text,
+      isEditing: _isEditing,
+      wasInitiallyEmpty: _initialValues['email']!.trim().isEmpty,
+    );
+    if (emailError != null) {
+      _focusAndShowError(_emailFocusNode, '⚠️ $emailError');
       return;
     }
 
@@ -3620,12 +3672,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     label: '이름 *',
                     hint: '예: 홍길동',
                     trailingLegend: '* 필수 입력 항목',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '이름을 입력해 주세요.';
-                      }
-                      return null;
-                    },
+                    validator: (val) =>
+                        form_validation.validateRequiredTextField(
+                          value: val,
+                          emptyMessage: '이름을 입력해 주세요.',
+                          isEditing: _isEditing,
+                          wasInitiallyEmpty: _initialValues['name']!
+                              .trim()
+                              .isEmpty,
+                        ),
                   ),
                   const SizedBox(height: 10),
 
@@ -3638,12 +3693,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     nextFocusNode: _titleFocusNode,
                     label: '회사명 *',
                     hint: '예: 카카오 / 삼성전자',
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '회사명을 입력해 주세요.';
-                      }
-                      return null;
-                    },
+                    validator: (val) =>
+                        form_validation.validateRequiredTextField(
+                          value: val,
+                          emptyMessage: '회사명을 입력해 주세요.',
+                          isEditing: _isEditing,
+                          wasInitiallyEmpty: _initialValues['company']!
+                              .trim()
+                              .isEmpty,
+                        ),
                   ),
                   const SizedBox(height: 10),
 
@@ -3756,31 +3814,37 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 10),
 
-                  // 5. 휴대폰 번호 (필수 + 실시간 형식 감시)
+                  // 5. 휴대폰 번호 (휴대폰 또는 사무실 전화 중 하나만 있으면
+                  // 통과 — 추가 361 스펙. 요즘 명함은 휴대폰만 있거나 사무실
+                  // 전화만 있는 경우가 흔한데, 예전에는 휴대폰이 단독 필수라
+                  // 사무실 전화뿐인 명함에도 가짜 휴대폰(010-2345-6789 등)을
+                  // 강요했다. either-or 오류는 이 칸에서만 뜬다.
                   _buildFormField(
+                    fieldKey: _mobilePhoneFieldKey,
                     controller: _phoneController,
                     ocrKey: 'mobile',
                     focusNode: _phoneFocusNode,
                     order: 5,
                     nextFocusNode: _officePhoneFocusNode,
                     label: '휴대폰 번호 *',
-                    hint: '예: 010-1234-5678',
+                    hint: '예: 010-1234-5678 · 사무실 전화만 있어도 돼요',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '휴대폰 번호를 입력해 주세요.';
-                      }
-                      final phoneRegExp = RegExp(r'^\d{2,3}-\d{3,4}-\d{4}$');
-                      if (!phoneRegExp.hasMatch(val.trim())) {
-                        return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
-                      }
-                      return null;
-                    },
+                    validator: (val) =>
+                        form_validation.validateMobilePhoneField(
+                          mobileValue: val,
+                          officeValue: _officePhoneController.text,
+                          isEditing: _isEditing,
+                          wasInitiallyEmpty:
+                              _initialValues['phone']!.trim().isEmpty &&
+                              _initialValues['officePhone']!.trim().isEmpty,
+                        ),
                   ),
                   const SizedBox(height: 10),
 
-                  // 6. 사무실 전화번호 (선택)
+                  // 6. 사무실 전화번호 — 휴대폰이 없으면 이 칸이 대신 필수가
+                  // 된다(either-or). 이 칸 자체는 값이 있을 때 형식만 본다 —
+                  // "비어 있음" 오류는 휴대폰 칸에서만 보여준다(스펙).
                   _buildFormField(
                     controller: _officePhoneController,
                     ocrKey: 'office',
@@ -3788,9 +3852,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     order: 6,
                     nextFocusNode: _directPhoneFocusNode,
                     label: '사무실 전화번호 (선택)',
-                    hint: '예: 02-123-4567',
+                    hint: '예: 02-123-4567 · 휴대폰이 없으면 이 칸이 필요해요',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
+                    validator: form_validation.validateOfficePhoneField,
                   ),
                   const SizedBox(height: 10),
 
@@ -3831,15 +3896,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     label: '이메일 *',
                     hint: '예: example@company.com',
                     keyboardType: TextInputType.emailAddress,
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty) {
-                        return '이메일을 입력해 주세요.';
-                      }
-                      if (!val.contains('@') || !val.contains('.')) {
-                        return '올바른 이메일 형식을 입력해 주세요.';
-                      }
-                      return null;
-                    },
+                    validator: (val) => form_validation.validateEmailField(
+                      value: val,
+                      isEditing: _isEditing,
+                      wasInitiallyEmpty: _initialValues['email']!
+                          .trim()
+                          .isEmpty,
+                    ),
                   ),
                   const SizedBox(height: 10),
 
@@ -4002,6 +4065,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     FocusNode? nextFocusNode,
     required String label,
     required String hint,
+    // 다른 필드 값에 따라 이 필드만 콕 집어 재검증해야 할 때 쓴다(예:
+    // 사무실 전화가 바뀌면 휴대폰 칸의 either-or 오류를 갱신).
+    GlobalKey<FormFieldState<String>>? fieldKey,
     TextInputType keyboardType = TextInputType.text,
     bool isLast = false,
     int maxLines = 1,
@@ -4046,6 +4112,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           const SizedBox(height: 4),
         ],
         TextFormField(
+          key: fieldKey,
           controller: controller,
           focusNode: focusNode,
           autofocus: autofocus,
