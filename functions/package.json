@@ -9,7 +9,7 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "tsc && node --test lib/usageReset.test.js lib/walletCredits.test.js lib/creditGrant.test.js lib/chunk.test.js lib/freeGrant.test.js lib/referralCode.test.js lib/deviceLedger.test.js lib/purchases.test.js lib/pilotEvents.test.js lib/cardPhotoCleanup.test.js lib/tombstoneCleanup.test.js lib/socialAuth.test.js"
+    "test": "tsc && node --test lib/usageReset.test.js lib/walletCredits.test.js lib/creditGrant.test.js lib/chunk.test.js lib/freeGrant.test.js lib/referralCode.test.js lib/deviceLedger.test.js lib/purchases.test.js lib/pilotEvents.test.js lib/cardPhotoCleanup.test.js lib/tombstoneCleanup.test.js lib/socialAuth.test.js lib/kakaoUnlink.test.js"
   },
   "engines": {
     "node": "22"
