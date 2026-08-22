@@ -74,3 +74,38 @@ List<Offset> cropStartCornersForDetection({
   }
   return cropStartCornersFor(mode);
 }
+
+/// [corners]를 이미지가 **시계 방향 90도** 돌아갔을 때의 좌표로 옮긴다.
+///
+/// ## 왜 재검출 대신 이 함수인가([회전] 지연 개선)
+///
+/// [회전]을 누르면 사진은 이미 `bakeImageRotation`이 실제로 돌려 새로
+/// 굽는다 — 그런데 예전에는 `_detectedCorners`·사용자가 손으로 맞춘
+/// `_corners`를 **버리고** 돌아간 사진에 검출을 처음부터 다시 돌렸다.
+/// 검출은 싸지 않고(디코드+리사이즈+OpenCV), 무엇보다 **사용자가 이미
+/// 맞춰 둔 조정이 회전 한 번에 날아갔다.** 이 함수는 재검출 대신 정확한
+/// 좌표 변환으로 그 자리를 대신한다.
+///
+/// ## 공식
+///
+/// [corners]는 **이미지 정규 좌표(0~1)**다. 픽셀로 풀면 원본 크기 (W,H)의
+/// 점 (x,y)가 시계 방향 90도 회전 뒤 (H−y, x)로 옮겨간다. 정규 좌표로
+/// 되돌리면 W·H가 서로 지워져 `(1−y, x)` 하나만 남는다 — 그래도
+/// [oldImageSize]를 인자로 받는 것은 이 사실이 우연이 아니라 **의도**임을
+/// 코드에 남기기 위해서다. 호출부가 실수로 이미 픽셀 좌표를 넘기면(0~1
+/// 범위를 벗어나면) `assert`가 즉시 드러낸다 — 디버그 빌드에서만이지만,
+/// "좌표계가 섞였는데 조용히 통과한다"보다는 낫다.
+///
+/// ⚠️ **호출하는 쪽이 알아야 할 것**: 이 함수는 좌표만 옮길 뿐, 화면이
+/// 들고 있는 이미지 크기(회전 뒤 가로세로가 (H,W)로 바뀐다)는 대신
+/// 계산해주지 않는다 — `ManualCropView`는 회전 뒤 실제 파일을 다시 읽어
+/// (`_loadImageSize`) 채운다.
+///
+/// 90도를 네 번 적용하면 원래 좌표로 돌아온다(항등) — 테스트로 고정.
+List<Offset> rotateCornersCw90(List<Offset> corners, Size oldImageSize) {
+  assert(
+    oldImageSize.width > 0 && oldImageSize.height > 0,
+    'rotateCornersCw90: 회전 전 이미지 크기가 있어야 한다',
+  );
+  return [for (final c in corners) Offset(1 - c.dy, c.dx)];
+}
