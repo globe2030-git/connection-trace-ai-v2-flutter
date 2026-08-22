@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/crop_mode_corners.dart';
+import '../../../../core/utils/gallery_auto_detect.dart';
+import '../../../../core/utils/gallery_crop_banner.dart';
 import '../../../../core/utils/image_rotation_bake.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 
@@ -103,6 +106,7 @@ class ManualCropView extends StatefulWidget {
     this.allowSkip = false,
     this.stepLabel,
     this.initialMode = CropAdjustMode.auto,
+    this.autoDetectEnabled = false,
   });
 
   /// **똑바로 선** 사진 경로(부르는 쪽이 이미 회전을 구워서 넘긴다).
@@ -123,13 +127,27 @@ class ManualCropView extends StatefulWidget {
 
   /// 처음 열릴 때 어느 세그먼트로 시작할지.
   ///
-  /// ⚠️ 갤러리 경로(398)는 [CropAdjustMode.manual]로 연다 — 촬영 경로와
-  /// 달리 갤러리 원본은 **아무 자동 검출도 거치지 않은 사진**이라, 여기서
-  /// [CropAdjustMode.auto]로 열면 "테두리를 자동으로 찾았어요" 배너가
-  /// 실제로 하지 않은 일을 한 것처럼 보여준다(가짜 데이터 금지 원칙). 촬영
+  /// ⚠️ 갤러리 경로(398·399)는 [CropAdjustMode.manual]로 연다. [autoDetectEnabled]가
+  /// 켜져 있어도 검출은 이 화면이 뜬 **뒤에 비동기로** 도니, 화면이 열리는
+  /// 순간에는 아직 결과가 없다 — 그래서 안전한 수동 시작 자리에서 출발하고,
+  /// 검출이 성공하면(그리고 사용자가 아직 아무것도 만지지 않았으면)
+  /// [CropAdjustMode.auto]로 스스로 전환한다(`_runAutoDetect` 참고). 촬영
   /// 경로는 기존대로 [CropAdjustMode.auto]를 그대로 쓴다 — 그 경로는 이
   /// 화면에 오기 전에 가이드·검출 크롭을 실제로 거친 사진이다.
   final CropAdjustMode initialMode;
+
+  /// 이 화면 안에서 **정지 이미지 검출을 직접 돌릴지**(결함 399).
+  ///
+  /// ⚠️ 기본값 false — 촬영 경로는 이 화면에 오기 전에 이미 실시간 검출을
+  /// 거친 사진을 받으므로(`camera_scan_modal_view.dart`), 여기서 또 돌리면
+  /// 중복이다. **갤러리 경로만 켠다**: 그 경로의 원본은 한 번도 검출을 거친
+  /// 적이 없는 사진이라, [CropAdjustMode.auto] 세그먼트와 "찾았어요" 배너가
+  /// 뜻하는 바를 실제로 만들어 내야 한다.
+  ///
+  /// 켜면 [initState]에서 [detectGalleryCardCorners]를 `compute()`로 돌린다
+  /// (`gallery_auto_detect.dart`). 결과에 따라 배너·세그먼트·시작 귀퉁이가
+  /// 갈린다 — [_buildBanner]·[_startCornersFor] 참고.
+  final bool autoDetectEnabled;
 
   @override
   State<ManualCropView> createState() => _ManualCropViewState();
@@ -149,10 +167,9 @@ class _ManualCropViewState extends State<ManualCropView> {
 
   /// 네 귀퉁이 — **이미지 정규 좌표(0~1)**, 시계 방향(좌상·우상·우하·좌하).
   ///
-  /// 모드별 시작 위치는 [cropStartCornersFor](순수 함수,
-  /// `crop_mode_corners.dart`)가 정한다 — 세그먼트 전환·[다시 찾기]·
-  /// [회전]이 전부 이 함수 하나로 리셋해야 셋 중 하나만 따로 어긋나지
-  /// 않는다.
+  /// 모드별 시작 위치는 [_startCornersFor]가 정한다 — 세그먼트 전환·
+  /// [다시 찾기]·[회전]이 전부 이 함수 하나로 리셋해야 셋 중 하나만 따로
+  /// 어긋나지 않는다.
   late List<Offset> _corners;
 
   /// 지금 끌고 있는 귀퉁이 번호. 없으면 null.
@@ -161,6 +178,28 @@ class _ManualCropViewState extends State<ManualCropView> {
   Size? _imageSize;
   Object? _loadError;
   bool _isRotating = false;
+
+  // ── 정지 이미지 자동 검출(결함 399, [widget.autoDetectEnabled]일 때만) ──
+
+  /// [detectGalleryCardCorners]가 실제로 찾아낸 귀퉁이. 성공하기 전에는
+  /// null — 이때 [CropAdjustMode.auto]를 골라도 "찾은 것"을 보여줄 수
+  /// 없다([_startCornersFor] 참고).
+  List<Offset>? _detectedCorners;
+
+  /// 검출이 지금 도는 중인가 — 배너에 진행 표시를 띄우는 데만 쓴다.
+  ///
+  /// ⚠️ "실패했나"는 별도 필드로 안 둔다. [_detectedCorners]가 null이고
+  /// 이것도 false면 그 자체가 "끝났는데 못 찾았다"는 뜻이다 — 상태 두 개를
+  /// 따로 들면 언젠가 서로 어긋난다.
+  bool _autoDetecting = false;
+
+  /// 사용자가 세그먼트를 직접 바꾸거나 귀퉁이를 끌었는가.
+  ///
+  /// ⚠️ 검출이 끝나기 전에 사용자가 먼저 손을 대면, 검출이 뒤늦게 성공해도
+  /// **그 결과로 사용자가 이미 하던 조정을 덮어쓰지 않는다.** 검출은
+  /// 대개 눈 깜짝할 새 끝나지만(386 측정: 다운샘플 후 프레임당 ~5ms 수준),
+  /// 큰 사진 디코드까지 합치면 0이 아니다 — 그 틈을 사용자가 이길 수 있다.
+  bool _userInteracted = false;
 
   /// **[_imagePath]의 책임을 부른 쪽에 넘겼는지**(file_picker_modal_view.dart의
   /// `_handedOverToCaller`와 같은 패턴).
@@ -177,8 +216,11 @@ class _ManualCropViewState extends State<ManualCropView> {
     super.initState();
     _imagePath = widget.imagePath;
     _mode = widget.initialMode;
-    _corners = cropStartCornersFor(_mode);
+    _corners = _startCornersFor(_mode);
     unawaited(_loadImageSize());
+    if (widget.autoDetectEnabled) {
+      unawaited(_runAutoDetect());
+    }
   }
 
   @override
@@ -231,10 +273,12 @@ class _ManualCropViewState extends State<ManualCropView> {
   /// 세그먼트를 바꾸면 그 모드의 시작 귀퉁이로 되돌린다 — 두 모드가 같은
   /// 좌표를 공유하면 "자동에서 다듬은 것"과 "직접 새로 잡은 것"이 섞인다.
   void _selectMode(CropAdjustMode mode) {
+    // 검출이 늦게 끝나도 사용자가 방금 고른 세그먼트를 덮어쓰지 않는다.
+    _userInteracted = true;
     if (mode == _mode) return;
     setState(() {
       _mode = mode;
-      _corners = cropStartCornersFor(mode);
+      _corners = _startCornersFor(mode);
     });
   }
 
@@ -246,16 +290,22 @@ class _ManualCropViewState extends State<ManualCropView> {
 
   /// [다시 찾기] — 지금 모드의 시작 자리로 귀퉁이를 되돌린다.
   ///
-  /// ⚠️ 살아 있는 카메라 스트림이 없는 화면이라 "재검출"은 할 수 없다 —
-  /// 이 화면이 받는 사진은 이미 촬영이 끝난 정지 이미지다. 그래서 "다시
-  /// 찾기"는 **자동/수동 각 모드가 처음 제안하던 자리로 리셋**하는
-  /// 동작이다(귀퉁이를 만지다 잘못 짚었을 때 되돌리는 용도).
+  /// ⚠️ **다시 검출을 돌리지는 않는다** — [_detectedCorners]가 이미 있으면
+  /// (결함 399, [widget.autoDetectEnabled]) 그 값으로 되돌릴 뿐이다. 매번
+  /// 다시 디코드·검출하면 버튼을 누를 때마다 짧게 멈추는데, "다시 찾기"는
+  /// 귀퉁이를 만지다 잘못 짚었을 때 되돌리는 용도라 새로 찾을 이유가 없다.
   void _resetCorners() {
-    setState(() => _corners = cropStartCornersFor(_mode));
+    setState(() => _corners = _startCornersFor(_mode));
   }
 
   /// [회전] — 90도씩 시계 방향. 사진을 실제로 다시 굽고, 귀퉁이는
   /// 초기화한다(좌표계를 섞지 않기 위해 — 클래스 문서 참고).
+  ///
+  /// ⚠️ **[widget.autoDetectEnabled]면 검출도 다시 돈다**(결함 399). 회전 전에
+  /// 찾아 둔 [_detectedCorners]는 회전 전 사진 기준이라 그대로 두면 좌표가
+  /// 90도 어긋난 채 "찾았다"고 계속 말하게 된다 — 그건 회전과 자르기 좌표를
+  /// 섞어 실기기에서 두 번 헤맨 것(추가 273)과 같은 종류의 결함이라, 값을
+  /// 버리고 새로 판 사진으로 다시 찾는다.
   Future<void> _rotate() async {
     if (_isRotating) return;
     setState(() => _isRotating = true);
@@ -268,7 +318,14 @@ class _ManualCropViewState extends State<ManualCropView> {
         _imagePath = baked.path;
         _bakedPathToCleanUp = baked.path == widget.imagePath ? null : baked.path;
         _imageSize = null;
-        _corners = cropStartCornersFor(_mode);
+        if (widget.autoDetectEnabled) {
+          // 회전 전 검출 결과는 지금 사진에 안 맞는다 — 통째로 버리고
+          // 수동 시작 자리로 되돌린 뒤 새로 찾는다.
+          _detectedCorners = null;
+          _userInteracted = false;
+          _mode = CropAdjustMode.manual;
+        }
+        _corners = _startCornersFor(_mode);
       });
       // 직전에 이 화면 안에서 구운 회전본이 있었다면(=원본이 아니었다면)
       // 더는 쓰이지 않으니 지운다 — 안 지우면 회전을 누를 때마다 평문
@@ -277,9 +334,62 @@ class _ManualCropViewState extends State<ManualCropView> {
         await deleteQuietly(previous);
       }
       await _loadImageSize();
+      if (widget.autoDetectEnabled) {
+        unawaited(_runAutoDetect());
+      }
     } finally {
       if (mounted) setState(() => _isRotating = false);
     }
+  }
+
+  /// [_corners]가 처음 놓일 자리. 세그먼트 전환·[다시 찾기]·[회전]이 전부
+  /// 이 함수 하나로 정해야 셋 중 하나만 따로 어긋나지 않는다.
+  ///
+  /// 실제 판정은 [cropStartCornersForDetection](순수 함수,
+  /// `crop_mode_corners.dart`)이 한다 — 화면 없이 검사할 수 있는 부분은
+  /// 그쪽에 둔다.
+  List<Offset> _startCornersFor(CropAdjustMode mode) =>
+      cropStartCornersForDetection(
+        mode: mode,
+        autoDetectEnabled: widget.autoDetectEnabled,
+        detectedCorners: _detectedCorners,
+      );
+
+  /// 갤러리 사진에 실제 테두리 검출을 돌린다(결함 399).
+  ///
+  /// `compute()`로 별도 isolate에서 돈다 — 디코드·리사이즈·OpenCV 검출이
+  /// 화면 진입을 막으면 안 되는 무거운 일이다(브리프 요구사항 3).
+  Future<void> _runAutoDetect() async {
+    setState(() => _autoDetecting = true);
+    GalleryAutoDetectResult result;
+    try {
+      result = await compute(
+        detectGalleryCardCorners,
+        GalleryAutoDetectRequest(_imagePath),
+      );
+    } catch (_) {
+      result = const GalleryAutoDetectResult(success: false);
+    }
+    if (!mounted) return;
+    setState(() {
+      _autoDetecting = false;
+      final flat = result.cornersFlat;
+      if (result.success && flat != null && flat.length == 8) {
+        final corners = <Offset>[
+          for (var i = 0; i < 8; i += 2) Offset(flat[i], flat[i + 1]),
+        ];
+        _detectedCorners = corners;
+        // 사용자가 이미 손을 댔으면 지금 보고 있는 것을 조용히 덮지 않는다
+        // — 다시 [자동 인식] 탭으로 가면 그때 이 값을 쓴다.
+        if (!_userInteracted) {
+          _mode = CropAdjustMode.auto;
+          _corners = corners;
+        }
+      } else if (!_userInteracted && _mode == CropAdjustMode.auto) {
+        // 못 찾았다 — "찾았다"는 상자(2~98%)를 계속 보여주지 않는다.
+        _corners = _startCornersFor(_mode);
+      }
+    });
   }
 
   /// 손가락에서 가장 가까운 귀퉁이를 고른다.
@@ -394,12 +504,14 @@ class _ManualCropViewState extends State<ManualCropView> {
                         );
                         return GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onPanStart: (d) => setState(
-                            () => _dragging = _nearestCorner(
-                              d.localPosition,
-                              box,
-                            ),
-                          ),
+                          onPanStart: (d) => setState(() {
+                            final index = _nearestCorner(d.localPosition, box);
+                            _dragging = index;
+                            // 귀퉁이를 실제로 잡았을 때만 "손을 댔다"로 본다
+                            // — 사진을 그냥 톡 눌러서는(귀퉁이가 안 잡히면)
+                            // 늦게 끝난 검출 결과를 덮어쓸 이유가 없다.
+                            if (index != null) _userInteracted = true;
+                          }),
                           onPanUpdate: (d) => _moveCorner(d.localPosition, box),
                           onPanEnd: (_) => setState(() => _dragging = null),
                           child: Stack(
@@ -540,8 +652,29 @@ class _ManualCropViewState extends State<ManualCropView> {
     );
   }
 
+  /// 배너에 띄울 아이콘·문구를 정한다.
+  ///
+  /// 실제 판정은 [galleryCropBannerKind](순수 함수, `gallery_crop_banner.dart`)가
+  /// 한다 — "찾지 못했는데 찾았다고 말하는" 경로가 있는지를 화면 없이
+  /// 검사하기 위해서다(그 함수 문서 참고).
+  ({IconData icon, String text}) _bannerContent() {
+    final kind = galleryCropBannerKind(
+      autoDetectEnabled: widget.autoDetectEnabled,
+      detecting: _autoDetecting,
+      hasDetectedCorners: _detectedCorners != null,
+      mode: _mode,
+    );
+    final icon = switch (kind) {
+      GalleryCropBannerKind.detecting => Icons.hourglass_top,
+      GalleryCropBannerKind.notFound => Icons.crop,
+      GalleryCropBannerKind.autoFound => Icons.auto_fix_high,
+      GalleryCropBannerKind.manualHint => Icons.crop,
+    };
+    return (icon: icon, text: galleryCropBannerText(kind));
+  }
+
   Widget _buildBanner() {
-    final isAuto = _mode == CropAdjustMode.auto;
+    final content = _bannerContent();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
       child: Container(
@@ -554,17 +687,21 @@ class _ManualCropViewState extends State<ManualCropView> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              isAuto ? Icons.auto_fix_high : Icons.crop,
-              size: 16,
-              color: Colors.white70,
-            ),
+            if (_autoDetecting)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white70,
+                ),
+              )
+            else
+              Icon(content.icon, size: 16, color: Colors.white70),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                isAuto
-                    ? '테두리를 자동으로 찾았어요 — 모서리 점을 끌어 바로 고칠 수 있어요'
-                    : '네 귀퉁이를 명함 모서리에 맞춰 주세요',
+                content.text,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12.5,

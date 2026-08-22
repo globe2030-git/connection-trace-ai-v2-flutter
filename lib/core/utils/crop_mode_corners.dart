@@ -41,3 +41,36 @@ List<Offset> cropStartCornersFor(CropAdjustMode mode) => switch (mode) {
   CropAdjustMode.auto => kAutoModeStartCorners,
   CropAdjustMode.manual => kManualModeStartCorners,
 };
+
+/// [cropStartCornersFor]에 **정지 이미지 검출 결과**(결함 399,
+/// `gallery_auto_detect.dart`)를 얹은 버전.
+///
+/// 왜 따로 두나: [ManualCropView]가 갤러리 경로에서 [자동 인식]을 고를 때,
+/// "이미 잘린 사진을 살짝 다듬는 자리"([kAutoModeStartCorners], 2~98%)는
+/// 전제 자체가 성립하지 않는다 — 갤러리 원본은 잘린 적이 없다. 그래서
+/// [autoDetectEnabled]가 켜져 있을 때는 세 갈래로 나눈다.
+///
+/// | 상황 | 시작 귀퉁이 |
+/// |---|---|
+/// | 자동 인식 + 실제로 찾음([detectedCorners] 있음) | **찾은 자리 그대로** |
+/// | 자동 인식 + 아직 못 찾음(검출 중이거나 실패) | [kManualModeStartCorners] — "찾았다"는 상자를 보여주지 않는다 |
+/// | 직접 조정, 또는 [autoDetectEnabled]가 꺼짐(촬영 경로) | [cropStartCornersFor]와 완전히 같다 |
+///
+/// ⚠️ 마지막 줄이 중요하다 — **촬영 경로는 이 함수를 써도 결과가 예전과
+/// 한 치도 다르지 않다.** [autoDetectEnabled]가 꺼져 있으면 첫 번째·두
+/// 번째 갈래에 들어가지 않기 때문이다.
+List<Offset> cropStartCornersForDetection({
+  required CropAdjustMode mode,
+  required bool autoDetectEnabled,
+  List<Offset>? detectedCorners,
+}) {
+  // ⚠️ [autoDetectEnabled]를 먼저 본다 — [detectedCorners]가 우연히
+  // 채워져 있어도, 이 플래그가 꺼져 있으면(촬영 경로) 검출 결과를 아예
+  // 쳐다보지 않는다. 그래야 "촬영 경로는 예전과 완전히 같다"는 계약이
+  // 호출하는 쪽의 실수(예: 잘못 채운 detectedCorners)로부터도 지켜진다.
+  if (!autoDetectEnabled) return cropStartCornersFor(mode);
+  if (mode == CropAdjustMode.auto) {
+    return detectedCorners ?? kManualModeStartCorners;
+  }
+  return cropStartCornersFor(mode);
+}
