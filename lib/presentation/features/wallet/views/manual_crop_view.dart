@@ -39,6 +39,44 @@ class ManualCropResult {
   final Size imageSize;
 }
 
+/// [ManualCropView]가 [ManualCropResult] 대신 돌려줄 수 있는 값(398) —
+/// **[자르기 없이 사용]**을 눌렀다는 신호.
+///
+/// ⚠️ **뒤로 가기(취소)와 다르다.** 취소는 `null`을 그대로 돌려준다(예전과
+/// 같은 계약 — `camera_scan_modal_view.dart`의 `_cropPendingShotByHand`가
+/// 이미 그렇게 본다). 이 값은 "잘라내지 않고 **원본 그대로** 쓰겠다"는
+/// 명시적 선택이라 부르는 쪽이 둘을 구분해야 한다 — 취소는 처리를 멈추고,
+/// 이것은 원본으로 계속 진행한다.
+class ManualCropSkipped {
+  const ManualCropSkipped();
+}
+
+/// [ManualCropView]가 닫히며 넘긴 값을 보고 **다음에 할 일**을 정한다(398).
+///
+/// Navigator·위젯 없이 순수하게 검사하려고 뺐다 — 부르는 쪽 화면
+/// (`file_picker_modal_view.dart`) 안에서만 이 갈래를 타면, `is` 검사
+/// 순서 하나가 잘못 뒤집혀도 위젯 테스트 없이는 못 잡는다.
+enum GalleryCropOutcome {
+  /// 잘라낸 새 파일을 쓴다 — [popResult]가 유효한 [ManualCropResult].
+  cropped,
+
+  /// [자르기 없이 사용] — 원본 그대로 쓴다.
+  useOriginal,
+
+  /// 뒤로 가기 등으로 취소 — 부르는 쪽은 전체 처리를 중단한다.
+  cancelled,
+}
+
+/// [ManualCropView]를 `Navigator.push<Object?>`로 연 뒤 받은 값을
+/// [GalleryCropOutcome]으로 분류한다.
+GalleryCropOutcome galleryCropOutcomeFor(Object? popResult) {
+  if (popResult is ManualCropResult && popResult.corners.length == 4) {
+    return GalleryCropOutcome.cropped;
+  }
+  if (popResult is ManualCropSkipped) return GalleryCropOutcome.useOriginal;
+  return GalleryCropOutcome.cancelled;
+}
+
 /// 크롭 UX 공존안(P2-③, 2026-08-22 확정) + F-03(추가 290) 손으로 자르기.
 ///
 /// ## 무엇이 바뀌었나
@@ -59,10 +97,39 @@ class ManualCropResult {
 /// 새 파일에 맞춰 귀퉁이를 **다시 초기화**한다 — 이전 좌표를 새로 돌아간
 /// 사진 위에 그대로 쓰지 않는다.
 class ManualCropView extends StatefulWidget {
-  const ManualCropView({super.key, required this.imagePath});
+  const ManualCropView({
+    super.key,
+    required this.imagePath,
+    this.allowSkip = false,
+    this.stepLabel,
+    this.initialMode = CropAdjustMode.auto,
+  });
 
   /// **똑바로 선** 사진 경로(부르는 쪽이 이미 회전을 구워서 넘긴다).
   final String imagePath;
+
+  /// **[자르기 없이 사용]** 탈출구를 보여줄지(398, 갤러리 경로).
+  ///
+  /// ⚠️ 기본값 false — 촬영 경로(`camera_scan_modal_view.dart`)는 이 화면에
+  /// 들어오는 것 자체가 이미 선택 사항이다(F-03 "손으로 자르기" 버튼을 눌러야만
+  /// 온다). 탈출구가 따로 필요 없다. 갤러리 경로(398)는 이 화면이 사진을 고르면
+  /// **자동으로** 열리므로, 원본 그대로 쓰고 싶은 사용자를 막지 않기 위해 켠다
+  /// (공존 원칙).
+  final bool allowSkip;
+
+  /// 2장 선택(P2-②)에서 "앞면 자르기 1/2"처럼 단계를 보여줄 라벨. null이면
+  /// 아무것도 표시하지 않는다 — 촬영 경로·갤러리 1장 선택은 항상 null이다.
+  final String? stepLabel;
+
+  /// 처음 열릴 때 어느 세그먼트로 시작할지.
+  ///
+  /// ⚠️ 갤러리 경로(398)는 [CropAdjustMode.manual]로 연다 — 촬영 경로와
+  /// 달리 갤러리 원본은 **아무 자동 검출도 거치지 않은 사진**이라, 여기서
+  /// [CropAdjustMode.auto]로 열면 "테두리를 자동으로 찾았어요" 배너가
+  /// 실제로 하지 않은 일을 한 것처럼 보여준다(가짜 데이터 금지 원칙). 촬영
+  /// 경로는 기존대로 [CropAdjustMode.auto]를 그대로 쓴다 — 그 경로는 이
+  /// 화면에 오기 전에 가이드·검출 크롭을 실제로 거친 사진이다.
+  final CropAdjustMode initialMode;
 
   @override
   State<ManualCropView> createState() => _ManualCropViewState();
@@ -76,7 +143,9 @@ class _ManualCropViewState extends State<ManualCropView> {
   /// 나갈 때 지워야 하는 임시 파일이다.
   String? _bakedPathToCleanUp;
 
-  CropAdjustMode _mode = CropAdjustMode.auto;
+  /// [widget.initialMode]로 initState에서 채운다 — 필드 초기화 목록에서는
+  /// `widget`을 아직 못 읽는다.
+  late CropAdjustMode _mode;
 
   /// 네 귀퉁이 — **이미지 정규 좌표(0~1)**, 시계 방향(좌상·우상·우하·좌하).
   ///
@@ -84,7 +153,7 @@ class _ManualCropViewState extends State<ManualCropView> {
   /// `crop_mode_corners.dart`)가 정한다 — 세그먼트 전환·[다시 찾기]·
   /// [회전]이 전부 이 함수 하나로 리셋해야 셋 중 하나만 따로 어긋나지
   /// 않는다.
-  List<Offset> _corners = cropStartCornersFor(CropAdjustMode.auto);
+  late List<Offset> _corners;
 
   /// 지금 끌고 있는 귀퉁이 번호. 없으면 null.
   int? _dragging;
@@ -107,6 +176,8 @@ class _ManualCropViewState extends State<ManualCropView> {
   void initState() {
     super.initState();
     _imagePath = widget.imagePath;
+    _mode = widget.initialMode;
+    _corners = cropStartCornersFor(_mode);
     unawaited(_loadImageSize());
   }
 
@@ -165,6 +236,12 @@ class _ManualCropViewState extends State<ManualCropView> {
       _mode = mode;
       _corners = cropStartCornersFor(mode);
     });
+  }
+
+  /// [자르기 없이 사용](398) — 잘라내지 않고 원본 그대로 쓰겠다는 신호를
+  /// 돌려준다. [widget.allowSkip]일 때만 화면에 버튼이 보인다.
+  void _skip() {
+    Navigator.of(context).pop(const ManualCropSkipped());
   }
 
   /// [다시 찾기] — 지금 모드의 시작 자리로 귀퉁이를 되돌린다.
@@ -257,6 +334,43 @@ class _ManualCropViewState extends State<ManualCropView> {
       body: SafeArea(
         child: Column(
           children: [
+            if (widget.stepLabel != null || widget.allowSkip)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    if (widget.stepLabel != null)
+                      Text(
+                        widget.stepLabel!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    else
+                      const SizedBox.shrink(),
+                    // 398: 갤러리 경로에서만 켠다 — 클래스 문서(allowSkip) 참고.
+                    if (widget.allowSkip)
+                      TextButton(
+                        onPressed: _isRotating ? null : _skip,
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          minimumSize: const Size(44, 44),
+                        ),
+                        child: const Text(
+                          '자르기 없이 사용',
+                          style: TextStyle(
+                            fontSize: 13,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
               child: _buildModeSegment(),
