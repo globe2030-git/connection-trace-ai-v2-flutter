@@ -70,6 +70,19 @@ String formatMeasureRow({
 /// 측정 파일에 한 줄 덧붙인다. 꺼져 있으면 아무것도 하지 않는다.
 ///
 /// 실패해도 **던지지 않는다** — 측정 때문에 스캔이 죽으면 안 된다.
+///
+/// ## ⚠️ 어디에 쓰는지가 중요하다 (2026-08-22 실기기에서 데임)
+///
+/// 처음에는 **앱 내부 문서 폴더**에 썼다. 그런데 **릴리스 빌드는 debuggable이
+/// 아니라 `adb run-as`가 거부된다** — 101장을 다 돌리고도 **파일을 꺼낼 수가
+/// 없었다.** 같은 함정이 이 저장소 코드에 이미 적혀 있었는데
+/// (`ocr_batch_scan_view.dart`의 "앱 내부 문서 폴더는 run-as로 넣는다") 그것을
+/// 읽고도 **release에서는 run-as가 막힌다**는 것을 못 이었다.
+///
+/// 그래서 **앱 전용 외부 저장소**(`/sdcard/Android/data/<pkg>/files`)에 쓴다.
+/// `adb shell`이 읽고 쓸 수 있는 것을 실기기에서 확인했다.
+///
+/// 📌 부르는 쪽이 경로를 정해 넘긴다 — 이 함수는 어디에 쓸지 모른다.
 Future<void> appendMeasureRow({
   required Directory directory,
   required String row,

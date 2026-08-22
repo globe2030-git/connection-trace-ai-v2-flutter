@@ -350,7 +350,13 @@ class OcrScannerService {
       // 통째로 죽는다 — 릴리스에 영향이 없다.
       if (ocrMeasureDumpEnabled) {
         await appendMeasureRow(
-          directory: await getApplicationSupportDirectory(),
+          // ⚠️ **앱 전용 외부 저장소**에 쓴다. 내부 폴더에 쓰면 릴리스
+          // 빌드에서 `adb run-as`가 막혀 **꺼낼 수가 없다**(2026-08-22 실기기
+          // 에서 101장을 다 돌리고도 못 꺼냈다). 외부가 없으면 내부로
+          // 되돌아간다 — 안 쓰는 것보다는 낫다.
+          directory:
+              await getExternalStorageDirectory() ??
+              await getApplicationSupportDirectory(),
           row: formatMeasureRow(
             imageName: imageFile.name,
             lines: [
