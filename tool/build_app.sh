@@ -17,6 +17,12 @@
 #   세 번째 인자로 appcheck-debug를 주면 App Check를 debug 제공자로 빌드한다:
 #   tool/build_app.sh ios release appcheck-debug
 #   tool/build_app.sh apk release appcheck-debug
+#
+#   세 번째 인자로 cleanup을 주면 명함 폼의 필수 입력 검증을 전부 푼
+#   정리용 빌드가 나온다(card_form_validation.dart 참고). 테스터 배포·
+#   스토어 업로드에는 쓰지 않는다. appcheck-debug와 동시에 쓸 필요는
+#   없다 — 둘 중 하나만 준다.
+#   tool/build_app.sh apk debug cleanup
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -64,8 +70,11 @@ EXTRA_DEFINES=""
 if [ "${3:-}" = "appcheck-debug" ]; then
   EXTRA_DEFINES="--dart-define=APP_CHECK_DEBUG=true"
   echo "⚠️  App Check를 debug 제공자로 빌드합니다 — 스토어 업로드용 빌드에는 쓰지 마세요."
+elif [ "${3:-}" = "cleanup" ]; then
+  EXTRA_DEFINES="--dart-define=RELAX_REQUIRED_FOR_CLEANUP=true"
+  echo "⚠️  필수 입력 검증이 풀린 정리용 빌드입니다 — 테스터 배포·스토어 업로드에 쓰지 마세요."
 elif [ -n "${3:-}" ]; then
-  echo "세 번째 인자는 appcheck-debug만 쓸 수 있습니다: ${3}" >&2; exit 2
+  echo "세 번째 인자는 appcheck-debug 또는 cleanup만 쓸 수 있습니다: ${3}" >&2; exit 2
 fi
 
 # 지도·좌표 키는 저장소에 안 넣는다(nearby_map_view.dart·address_search_view.dart
