@@ -18,6 +18,10 @@
 #   tool/build_app.sh ios release appcheck-debug
 #   tool/build_app.sh apk release appcheck-debug
 #
+#   세 번째 인자 measure: OCR 측정 빌드(추가 405). 명함별 인식 줄·이름 경로를
+#   기기 파일로 남기고 등록은 하지 않는다. 릴리스에는 절대 쓰지 않는다.
+#   tool/build_app.sh apk release measure
+#
 #   세 번째 인자로 cleanup을 주면 명함 폼의 필수 입력 검증을 전부 푼
 #   정리용 빌드가 나온다(card_form_validation.dart 참고). 테스터 배포·
 #   스토어 업로드에는 쓰지 않는다. appcheck-debug와 동시에 쓸 필요는
@@ -72,9 +76,16 @@ if [ "${3:-}" = "appcheck-debug" ]; then
   echo "⚠️  App Check를 debug 제공자로 빌드합니다 — 스토어 업로드용 빌드에는 쓰지 마세요."
 elif [ "${3:-}" = "cleanup" ]; then
   EXTRA_DEFINES="--dart-define=RELAX_REQUIRED_FOR_CLEANUP=true"
+elif [ "${3:-}" = "measure" ]; then
+  # OCR 측정 빌드(추가 405). 명함별 인식 줄과 이름 경로를 기기 파일로 남기고
+  # **등록은 하지 않는다.** 파서를 고칠 때 명함 단위로 전후를 대조하는 용도다.
+  #
+  # ⚠️ 떨군 파일에는 OCR 원문(제3자 개인정보)이 담긴다. 꺼낸 뒤 기기 쪽 파일을
+  # 지우고, 보관은 명함데이터/(700) 규칙을 따른다.
+  EXTRA_DEFINES="--dart-define=OCR_MEASURE_DUMP=true"
   echo "⚠️  필수 입력 검증이 풀린 정리용 빌드입니다 — 테스터 배포·스토어 업로드에 쓰지 마세요."
 elif [ -n "${3:-}" ]; then
-  echo "세 번째 인자는 appcheck-debug 또는 cleanup만 쓸 수 있습니다: ${3}" >&2; exit 2
+  echo "세 번째 인자는 appcheck-debug · cleanup · measure만 쓸 수 있습니다: ${3}" >&2; exit 2
 fi
 
 # 지도·좌표 키는 저장소에 안 넣는다(nearby_map_view.dart·address_search_view.dart

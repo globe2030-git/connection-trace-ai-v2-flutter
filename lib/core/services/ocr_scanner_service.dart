@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+
+import '../utils/ocr_measure_dump.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -342,6 +345,22 @@ class OcrScannerService {
       }
 
       var result = _parse(orderedLines, imageFile.path);
+
+      // 측정 전용 기록(추가 405). 기본 빌드에서는 상수가 false라 이 블록이
+      // 통째로 죽는다 — 릴리스에 영향이 없다.
+      if (ocrMeasureDumpEnabled) {
+        await appendMeasureRow(
+          directory: await getApplicationSupportDirectory(),
+          row: formatMeasureRow(
+            imageName: imageFile.name,
+            lines: [
+              for (final l in orderedLines) (text: l.text, height: l.height),
+            ],
+            nameSource: result.parseShape?.nameSource.name ?? '없음',
+            parsedName: result.name.trim(),
+          ),
+        );
+      }
 
       // 이메일이 안 잡혔으면 **라틴 인식기로 한 번 더** 읽는다(추가 336).
       if (result.email.trim().isEmpty) {
