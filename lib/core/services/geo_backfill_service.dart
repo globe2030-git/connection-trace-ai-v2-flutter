@@ -285,6 +285,46 @@ class GeoBackfillService {
     return (withAddress: withAddress, missingGeo: missingGeo);
   }
 
+  /// **좌표가 없는 명함들의 주소 형태**를 지금 상태로 센다(추가 404).
+  ///
+  /// ## ⚠️ 왜 따로 세나 — [readFailureShapeStats]로는 못 본다
+  ///
+  /// 2026-08-22 실기기에서 **좌표 없는 명함이 67장인데 형태 집계는 비어
+  /// 있었다.** 버그가 아니라 **설계의 공백**이었다.
+  ///
+  /// ```
+  /// 형태 기록   그 주소의 **첫 실패**에서만 쌓는다(중복 집계를 피하려고)
+  /// 포기 규칙   3회 실패하면 재시도 대상에서 **아예 뺀다**
+  /// 계측 도입   2026-08-10 — 나중에 붙었다
+  /// ```
+  ///
+  /// 셋이 겹치면 **그 전에 이미 실패한 것은 영원히 집계에 못 들어온다.** 첫
+  /// 실패가 아니라 안 쌓이고, 재시도조차 안 해서 쌓일 기회도 없다.
+  ///
+  /// 📌 **집계는 시도 시점에 쌓이는데, 알고 싶은 것은 시도가 끝난 것들이다.**
+  ///
+  /// 그래서 추가 344와 같은 손을 쓴다 — 새 카운터를 두지 않고 **지금 명함
+  /// 목록에서 센다.** 기록이 언제 시작됐는지와 무관해진다.
+  ///
+  /// ## ⚠️ 값의 뜻이 다르다
+  ///
+  /// [readFailureShapeStats]는 *"실패로 기록된 형태"*이고 이것은 *"좌표가 없는
+  /// 주소의 형태"*다. **엄밀히 다른 값**이라 화면 문구도 그렇게 적어야 한다 —
+  /// 아직 시도조차 안 한 명함도 여기에는 들어온다.
+  ///
+  /// 주소 원문은 세고 **버린다.** 형태 코드만 남는다.
+  static Map<String, int> countShapesWithoutGeo(List<ContactModel> contacts) {
+    final counts = <String, int>{};
+    for (final c in contacts) {
+      final address = c.address?.trim() ?? '';
+      if (address.isEmpty) continue;
+      if (c.geo != null) continue;
+      final shape = _addressShape(address);
+      counts[shape] = (counts[shape] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   /// 형태 코드를 **사람이 읽을 말로 푼다**(추가 342).
   ///
   /// ⚠️ **만드는 쪽([_addressShape])과 같은 파일에 둔다.** 코드 모양이 바뀌면

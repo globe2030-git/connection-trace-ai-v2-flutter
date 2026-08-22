@@ -24,6 +24,7 @@ class OcrStatsView extends StatefulWidget {
 class _OcrStatsViewState extends State<OcrStatsView> {
   final OcrStatsService _service = OcrStatsService();
   OcrStatsSummary? _summary;
+
   /// 주소 → 좌표 변환 실패 형태 집계(추가 342). `{형태코드: 건수}`.
   Map<String, int> _geoFail = const {};
   bool _loading = true;
@@ -86,7 +87,10 @@ class _OcrStatsViewState extends State<OcrStatsView> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('초기화', style: TextStyle(color: AppColors.destructive)),
+            child: const Text(
+              '초기화',
+              style: TextStyle(color: AppColors.destructive),
+            ),
           ),
         ],
       ),
@@ -150,48 +154,36 @@ class _OcrStatsViewState extends State<OcrStatsView> {
           _statRow(
             '자동 인식을 고친 명함',
             '${s.correctedCards}건'
-            '${s.scans > 0 ? ' (${_pct(s.correctedCards, s.scans)})' : ''}',
+                '${s.scans > 0 ? ' (${_pct(s.correctedCards, s.scans)})' : ''}',
           ),
         ]),
         const SizedBox(height: 16),
-        _card(
-          '필드별 인식률 (채워진 비율)',
-          [
-            for (final key in _fieldLabels.keys)
-              _statRow(
-                _fieldLabels[key]!,
-                '${s.filled[key] ?? 0}/${s.scans}'
-                ' (${_pct(s.filled[key] ?? 0, s.scans)})',
-              ),
-          ],
-        ),
+        _card('필드별 인식률 (채워진 비율)', [
+          for (final key in _fieldLabels.keys)
+            _statRow(
+              _fieldLabels[key]!,
+              '${s.filled[key] ?? 0}/${s.scans}'
+              ' (${_pct(s.filled[key] ?? 0, s.scans)})',
+            ),
+        ]),
         const SizedBox(height: 16),
-        _card(
-          '이름을 뽑은 경로',
-          [
-            for (final entry in _sortedEntries(s.nameSource))
-              _statRow(
-                _nameSourceLabels[entry.key] ?? entry.key,
-                '${entry.value} (${_pct(entry.value, s.scans)})',
-              ),
-          ],
-        ),
+        _card('이름을 뽑은 경로', [
+          for (final entry in _sortedEntries(s.nameSource))
+            _statRow(
+              _nameSourceLabels[entry.key] ?? entry.key,
+              '${entry.value} (${_pct(entry.value, s.scans)})',
+            ),
+        ]),
         const SizedBox(height: 16),
-        _card(
-          '회사명을 뽑은 경로',
-          [
-            for (final entry in _sortedEntries(s.companySource))
-              _statRow(
-                _companySourceLabels[entry.key] ?? entry.key,
-                '${entry.value} (${_pct(entry.value, s.scans)})',
-              ),
-          ],
-        ),
+        _card('회사명을 뽑은 경로', [
+          for (final entry in _sortedEntries(s.companySource))
+            _statRow(
+              _companySourceLabels[entry.key] ?? entry.key,
+              '${entry.value} (${_pct(entry.value, s.scans)})',
+            ),
+        ]),
         const SizedBox(height: 16),
-        _card(
-          '필드별 사용자 수정 (오인식 신호)',
-          _correctionRows(s),
-        ),
+        _card('필드별 사용자 수정 (오인식 신호)', _correctionRows(s)),
       ],
     );
   }
@@ -204,12 +196,7 @@ class _OcrStatsViewState extends State<OcrStatsView> {
       final edited = byKind['edited'] ?? 0;
       final cleared = byKind['cleared'] ?? 0;
       if (edited == 0 && cleared == 0) continue;
-      rows.add(
-        _statRow(
-          _fieldLabels[key]!,
-          '고침 $edited · 지움 $cleared',
-        ),
-      );
+      rows.add(_statRow(_fieldLabels[key]!, '고침 $edited · 지움 $cleared'));
     }
     if (rows.isEmpty) {
       rows.add(
@@ -267,12 +254,24 @@ class _OcrStatsViewState extends State<OcrStatsView> {
     //
     // 명함 목록에서 **지금 상태로** 센다. 시도 횟수를 새로 세면 0부터 시작해
     // 이미 쌓인 실패와 짝이 안 맞는다.
-    final cov = GeoBackfillService.countGeoCoverage(
-      context.read<ContactsRepository>().contacts,
-    );
-    if (_geoFail.isEmpty && cov.withAddress == 0) return const [];
-    final total = _geoFail.values.fold<int>(0, (a, b) => a + b);
-    final sorted = _geoFail.entries.toList()
+    final contacts = context.read<ContactsRepository>().contacts;
+    final cov = GeoBackfillService.countGeoCoverage(contacts);
+
+    // ⚠️ **지금 상태로 센다**(추가 404). 쌓아 둔 실패 집계(`_geoFail`)만 보면
+    // 화면이 비는 일이 실제로 있었다 — 형태는 "그 주소의 첫 실패"에서만
+    // 쌓이는데 3회 실패한 명함은 재시도조차 안 하고, 계측은 나중에 붙었다.
+    // 그래서 **이미 실패한 것은 영원히 집계에 못 들어온다.**
+    //
+    // 2026-08-22 실기기: 좌표 없는 명함 67장인데 형태 집계는 0줄이었다.
+    final nowShapes = GeoBackfillService.countShapesWithoutGeo(contacts);
+
+    if (_geoFail.isEmpty && nowShapes.isEmpty && cov.withAddress == 0) {
+      return const [];
+    }
+    final recorded = _geoFail.values.fold<int>(0, (a, b) => a + b);
+    final sortedNow = nowShapes.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final sortedRecorded = _geoFail.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
       _card('주소 → 좌표 변환', [
@@ -280,13 +279,34 @@ class _OcrStatsViewState extends State<OcrStatsView> {
         _statRow(
           '그중 좌표가 없음',
           '${cov.missingGeo}장'
-          '${cov.withAddress > 0 ? ' (${_pct(cov.missingGeo, cov.withAddress)})' : ''}',
+              '${cov.withAddress > 0 ? ' (${_pct(cov.missingGeo, cov.withAddress)})' : ''}',
         ),
-        if (total > 0) _statRow('실패로 기록된 횟수', '$total건'),
-        for (final e in sorted)
-          _statRow(GeoBackfillService.describeFailureShape(e.key), '${e.value}건'),
       ]),
       const SizedBox(height: 16),
+      // ⚠️ 두 묶음을 **갈라 둔다.** 위는 "지금 좌표가 없는 주소의 형태"이고
+      // 아래는 "실패로 기록된 형태"다 — 엄밀히 다른 값이라 한 표에 섞으면
+      // 합계가 말이 안 된다. 위에는 아직 시도조차 안 한 명함도 들어온다.
+      if (sortedNow.isNotEmpty) ...[
+        _card('좌표가 없는 주소의 형태', [
+          for (final e in sortedNow)
+            _statRow(
+              GeoBackfillService.describeFailureShape(e.key),
+              '${e.value}장',
+            ),
+        ]),
+        const SizedBox(height: 16),
+      ],
+      if (recorded > 0) ...[
+        _card('실패로 기록된 형태', [
+          _statRow('기록된 횟수', '$recorded건'),
+          for (final e in sortedRecorded)
+            _statRow(
+              GeoBackfillService.describeFailureShape(e.key),
+              '${e.value}건',
+            ),
+        ]),
+        const SizedBox(height: 16),
+      ],
     ];
   }
 
