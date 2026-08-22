@@ -799,7 +799,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => FilePickerModalView(sideLabel: sideLabel),
+        // 398: 명함 등록 경로만 자르기를 거친다(내 프로필 수정은 기본값
+        // false로 그대로 둔다 — file_picker_modal_view.dart의
+        // enableManualCrop 문서 참고).
+        builder: (_) =>
+            FilePickerModalView(sideLabel: sideLabel, enableManualCrop: true),
       );
     }
 
@@ -839,8 +843,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          FilePickerModalView(sideLabel: _currentSideLabel, allowMultiSelect: true),
+      builder: (_) => FilePickerModalView(
+        sideLabel: _currentSideLabel,
+        allowMultiSelect: true,
+        // 398: 2장 선택 경로도 앞·뒷면을 순서대로 자른다.
+        enableManualCrop: true,
+      ),
     );
     if (batch == null || !mounted || batch.results.isEmpty) return;
 

@@ -59,3 +59,41 @@ Future<XFile> bakeImageRotation(
     return source;
   }
 }
+
+/// **EXIF 방향만** 굽는다 — 화면에서 돌린 각도(위 [degrees]) 없이도 항상
+/// 굽는다(398, 갤러리 자르기).
+///
+/// ⚠️ [bakeImageRotation]은 `degrees`가 0이면 **원본을 그대로 돌려준다**
+/// (재인코딩 낭비를 막으려는 것) — 그런데 그 판단은 "사용자가 화면에서
+/// 돌리지 않았다"는 뜻이지 "EXIF 방향 태그가 없다"는 뜻이 아니다. 갤러리
+/// 사진(카메라 앱·다른 기기 촬영본)은 이 화면에서 돌린 적이 없어도 **파일
+/// 자체에 방향 태그가 남아 있는 경우가 흔하다** — 촬영 경로의 원본과 달리
+/// 이 앱이 만든 파일이 아니라서 어떤 방향 태그가 붙어 있을지 알 수 없다.
+///
+/// 그 태그가 안 구워진 채로 [ManualCropView]에 넘기면, 그 화면(Flutter
+/// `Image.file`)이 보여주는 방향과 [warpCardToFile]이 자기 소스를 다시 읽을
+/// 때 굽는 방향(`img.bakeOrientation`, 그쪽은 **항상** 돈다)이 달라질 수
+/// 있다 — 그 차이가 `cornersAreImageRelative` 우회의 전제(두 디코더가 같은
+/// 이미지 크기에 합의한다)를 깨고, 자른 결과가 명함과 안 맞는 결함으로
+/// 이어진다(추가 397이 회전 버튼에서 겪은 것과 같은 종류의 어긋남).
+///
+/// 그래서 이 함수는 방향 태그가 이미 "정상"인지 미리 가리지 않고 **항상**
+/// 다시 인코딩한다 — 갤러리 선택마다(최대 2장) 한 번씩만 불려 비용도 작다.
+Future<XFile> bakeExifOrientation(
+  XFile source, {
+  String? outputDirectoryPath,
+}) async {
+  try {
+    final bytes = await source.readAsBytes();
+    var decoded = img.decodeImage(bytes);
+    if (decoded == null) return source;
+    decoded = img.bakeOrientation(decoded);
+    final jpgBytes = img.encodeJpg(decoded, quality: 100);
+    final dir = outputDirectoryPath ?? Directory.systemTemp.path;
+    final outPath = '$dir/card_rot_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await File(outPath).writeAsBytes(jpgBytes);
+    return XFile(outPath);
+  } catch (_) {
+    return source;
+  }
+}

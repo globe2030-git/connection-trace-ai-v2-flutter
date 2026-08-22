@@ -1,13 +1,20 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/card_quad_warp.dart';
+import '../../../../core/utils/crop_mode_corners.dart';
+import '../../../../core/utils/gallery_crop_step.dart';
 import '../../../../core/utils/gallery_pick_order.dart';
 import '../../../../core/utils/gallery_picker_ui.dart';
+import '../../../../core/utils/image_rotation_bake.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
+import 'manual_crop_view.dart';
 
 /// 갤러리에서 **2장을 한 번에** 골랐을 때 각 장을 인식한 결과(P2-②).
 ///
@@ -45,10 +52,20 @@ class FilePickerModalView extends StatefulWidget {
   /// [_picked]가 1장 이하일 때 하던 대로 [OcrScanResult]를 그대로 반환한다.
   final bool allowMultiSelect;
 
+  /// 인식 전에 자르기 화면(`ManualCropView`)을 거치게 할지(398).
+  ///
+  /// ⚠️ **기본값은 false다.** 이 화면은 명함 등록(`add_card_modal_view.dart`)
+  /// 말고도 "내 프로필 수정"(`my_profile_edit_modal_view.dart`)에서도 쓰는데,
+  /// 398은 **명함 등록 경로만** 겨냥한 확장이다(브리프에 프로필 쪽 언급이
+  /// 없어 회귀 0을 위해 손대지 않는 쪽을 택함 — PM 보고 참고). 명함 등록
+  /// 화면만 이 값을 켠다.
+  final bool enableManualCrop;
+
   const FilePickerModalView({
     super.key,
     this.sideLabel = '앞면',
     this.allowMultiSelect = false,
+    this.enableManualCrop = false,
   });
 
   @override
@@ -168,12 +185,50 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
 
     setState(() => _isProcessing = true);
     try {
+      final filesToScan = <XFile>[];
+      // 자르기로 새 파일이 생겨 원본을 대신하게 된 경로들 — **성공해서 화면을
+      // 닫기 직전에** 한꺼번에 지운다. 도중에 취소해 처음부터 다시 시도할 수
+      // 있어야 하므로, 여기서 바로 지우지 않는다(아래 취소 분기 참고).
+      final supersededOriginals = <String>[];
+
+      if (widget.enableManualCrop) {
+        for (var i = 0; i < _picked.length; i++) {
+          final stepLabel = galleryCropStepLabel(
+            index: i,
+            totalCount: _picked.length,
+          );
+          final cropped = await _cropPickedImage(
+            _picked[i],
+            stepLabel: stepLabel,
+          );
+          if (!mounted) return;
+          if (cropped == null) {
+            // 자르기 화면에서 뒤로 가 취소했다 — 전체 처리를 중단하고 고른
+            // 사진 목록으로 돌아간다(카메라 경로의 취소 처리와 같은 판단).
+            setState(() => _isProcessing = false);
+            return;
+          }
+          filesToScan.add(cropped);
+          if (cropped.path != _picked[i].path) {
+            supersededOriginals.add(_picked[i].path);
+          }
+        }
+      } else {
+        filesToScan.addAll(_picked);
+      }
+
       final results = <OcrScanResult>[];
-      for (final file in _picked) {
+      for (final file in filesToScan) {
         results.add(await OcrScannerService.scanBusinessCard(file));
       }
       if (!mounted) return;
       _handedOverToCaller = true;
+      for (final path in supersededOriginals) {
+        await deleteQuietly(path);
+      }
+      // ⚠️ 위 삭제 루프도 await를 거치는 비동기 틈이다 — mounted를 한 번 더
+      // 확인한 뒤에 context를 쓴다(use_build_context_synchronously).
+      if (!mounted) return;
       if (widget.allowMultiSelect) {
         Navigator.pop(context, GalleryOcrBatch(results));
       } else {
@@ -188,6 +243,113 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
         _isProcessing = false;
         _errorNotice = '⚠️ 명함 인식에 실패했습니다: $e';
       });
+    }
+  }
+
+  /// 자르기 화면(`ManualCropView`)을 열어 갤러리 사진 한 장을 다듬는다(398).
+  ///
+  /// 반환:
+  /// - 자르기 완료 → 잘라낸 새 파일.
+  /// - [자르기 없이 사용] → [original] 그대로(공존 원칙 — 기존 동작).
+  /// - 취소(뒤로 가기) → null. 부르는 쪽이 전체 처리를 중단한다.
+  ///
+  /// ⚠️ **[original] 자체는 이 함수가 지우지 않는다.** 도중에 취소하면
+  /// 사용자가 같은 사진으로 다시 시도할 수 있어야 하는데, 여기서 원본을
+  /// 지워 버리면 그 재시도가 "사진을 열지 못했습니다"로 막힌다 — 원본을
+  /// 대신할 파일이 생겼을 때 원본을 지우는 결정은 **전체 배치가 끝까지
+  /// 성공한 뒤에** [_processSelectedImages]가 한다.
+  Future<XFile?> _cropPickedImage(XFile original, {String? stepLabel}) async {
+    // ⚠️ **먼저 EXIF 방향을 굽는다**(398). `bakeExifOrientation` 문서
+    // 참고 — 갤러리 사진은 이 화면에서 돌린 적이 없어도 파일 자체에 방향
+    // 태그가 남아 있을 수 있다. 안 구우면 이 화면(Flutter `Image.file`)과
+    // `warpCardToFile`(항상 굽는다)이 같은 파일을 다른 방향으로 읽는 조합이
+    // 생겨, 자른 결과가 명함과 안 맞는다(추가 397과 같은 종류의 어긋남).
+    final baked = await bakeExifOrientation(original);
+    if (!mounted) {
+      if (baked.path != original.path) unawaited(deleteQuietly(baked.path));
+      return null;
+    }
+
+    final popped = await Navigator.of(context).push<Object?>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ManualCropView(
+          imagePath: baked.path,
+          allowSkip: true,
+          stepLabel: stepLabel,
+          // 398: 갤러리 원본은 실제 자동 테두리 검출을 거치지 않았다 —
+          // [CropAdjustMode.auto]로 열면 "테두리를 자동으로 찾았어요" 배너가
+          // 실제로 하지 않은 일을 한 것처럼 보인다(가짜 데이터 금지 원칙).
+          // `ManualCropView.initialMode` 문서 참고.
+          initialMode: CropAdjustMode.manual,
+        ),
+      ),
+    );
+    if (!mounted) {
+      if (baked.path != original.path) unawaited(deleteQuietly(baked.path));
+      return null;
+    }
+
+    final outcome = galleryCropOutcomeFor(popped);
+    if (outcome == GalleryCropOutcome.cancelled) {
+      if (baked.path != original.path) await deleteQuietly(baked.path);
+      return null;
+    }
+    if (outcome == GalleryCropOutcome.useOriginal) {
+      if (baked.path != original.path) await deleteQuietly(baked.path);
+      return original;
+    }
+
+    // outcome == GalleryCropOutcome.cropped
+    final picked = popped as ManualCropResult;
+    // ⚠️ **워프의 실제 원본은 `picked.imagePath`이지 `baked.path`가
+    // 아니다**(P2-③과 같은 이유). 크롭 화면 안에서 [회전]을 눌렀으면 그
+    // 화면이 `baked.path` 위에 한 번 더 구운 파일을 기준으로 귀퉁이를
+    // 찍어 뒀다 — `baked.path`를 그대로 쓰면 좌표계가 섞인다.
+    final sourcePath = picked.imagePath;
+    // baked·회전 중간본은 이 지점부터 더는 쓰이지 않는다(성공하든 실패하든).
+    Future<void> cleanUpIntermediates() async {
+      final intermediates = <String>{
+        if (baked.path != original.path) baked.path,
+        if (sourcePath != baked.path && sourcePath != original.path)
+          sourcePath,
+      };
+      for (final path in intermediates) {
+        await deleteQuietly(path);
+      }
+    }
+
+    try {
+      final outPath =
+          '${Directory.systemTemp.path}/card_scan_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final result = await compute(
+        warpCardToFile,
+        CardWarpRequest(
+          sourcePath: sourcePath,
+          visibleCornersFlat: cornersToFlat(picked.corners),
+          screenWidth: picked.imageSize.width,
+          screenHeight: picked.imageSize.height,
+          outputPath: outPath,
+          // 사람이 모서리를 직접 짚었으니 여백을 더하지 않는다.
+          margin: 0,
+          // ⚠️ 397 수정과 같은 좌표계를 그대로 쓴다 — 화면 매핑을 거치지
+          // 않는다(갤러리 이미지는 EXIF 방향이 다양해 이 경로가 더 중요하다).
+          cornersAreImageRelative: true,
+          // 사용자가 자르기 화면의 [회전] 버튼과 귀퉁이로 방향을 이미
+          // 확정했다 — 여기서 다시 뒤집지 않는다(추가 397).
+          autoUpright: false,
+        ),
+      );
+      await cleanUpIntermediates();
+      if (result == null) {
+        // 자르기 실패 — 원본으로 되돌아간다(카메라 경로와 같은 안전선).
+        return original;
+      }
+      return XFile(result.path);
+    } catch (_) {
+      await cleanUpIntermediates();
+      return original;
     }
   }
 
