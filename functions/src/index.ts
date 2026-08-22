@@ -21,8 +21,11 @@
  *   남긴다(아래 incrementAndCheckUsage).
  */
 
-import {HttpsError, onCall} from "firebase-functions/v2/https";
-import {onDocumentDeleted} from "firebase-functions/v2/firestore";
+import {HttpsError, onCall, onRequest} from "firebase-functions/v2/https";
+import {
+  onDocumentCreated,
+  onDocumentDeleted,
+} from "firebase-functions/v2/firestore";
 import {sign as cryptoSign} from "crypto";
 import {defineSecret} from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
@@ -34,6 +37,12 @@ import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
+import {
+  SOCIAL_UNLINK_REQUESTS,
+  adminKeyMatches,
+  appIdAllowed,
+  parseKakaoUnlinkPayload,
+} from "./kakaoUnlink";
 import {
   BillingModel,
   WalletExhaustedError,
@@ -65,6 +74,7 @@ import {
   tokenEndpoint,
   tokenExchangeBody,
   parseTokenResponse,
+  socialUid,
   validateRequest,
   type SocialProfile,
 } from "./socialAuth";
@@ -111,6 +121,14 @@ const appleIapSharedSecret = defineSecret("APPLE_IAP_SHARED_SECRET");
 // 📌 카카오는 콘솔에서 client_secret을 **끈 상태(기본값)** 를 전제로 한다.
 // 켜면 교환 요청에 함께 보내야 하므로 여기에 하나 더 만들어야 한다.
 const kakaoRestKey = defineSecret("KAKAO_REST_KEY");
+
+// 카카오 **대표 어드민 키**. 연결 해제 웹훅의 진위를 가리는 데만 쓴다 —
+// 카카오가 이 값을 `Authorization: KakaoAK ...`에 담아 보낸다.
+//
+// ⚠️ 이 시크릿이 **없으면 웹훅은 아무것도 통과시키지 않는다**(adminKeyMatches가
+// 빈 기대값을 항상 거짓으로 본다). 검증이 무력해진 채 열려 있는 것보다
+// 안 받는 쪽이 안전하기 때문이다.
+const kakaoAdminKey = defineSecret("KAKAO_ADMIN_KEY");
 const kakaoClientSecret = defineSecret("KAKAO_CLIENT_SECRET");
 const naverClientId = defineSecret("NAVER_CLIENT_ID");
 const naverClientSecret = defineSecret("NAVER_CLIENT_SECRET");
@@ -1385,6 +1403,180 @@ export const storeAppleRefreshToken = onCall<StoreAppleRefreshTokenRequest>(
       updatedAt: FieldValue.serverTimestamp(),
     });
     return {stored: true};
+  },
+);
+
+/**
+ * 카카오 **연결 해제 웹훅** 수신구.
+ *
+ * 이용자가 카카오계정 설정에서 우리 앱 연결을 끊으면 카카오가 여기로 알린다.
+ * 앱 안의 탈퇴와 달리 **클라이언트가 없으므로** 파기를 서버가 전부 해야 한다.
+ *
+ * ## ⚠️ 여기서 하는 일은 "접수"뿐이다
+ *
+ * 카카오는 **3초 안에 200**을 요구한다(공식 문서). 파기는 문서 여러 개를
+ * 지우는 일이라 3초를 넘길 수 있다.
+ *
+ * ⚠️ **"200을 보낸 뒤 이어서 지운다"는 안 된다.** Cloud Functions는 응답을
+ * 끝내는 순간 인스턴스 CPU를 죄기 때문에, 응답 후 백그라운드 작업은 조용히
+ * 죽는다 — **에뮬레이터에서는 되고 실서버에서 안 되는** 유형이다.
+ *
+ * 그래서 접수 문서만 남기고 끝낸다. 실제 파기는 그 문서가 만들어질 때 도는
+ * [onSocialUnlinkRequested]가 한다. 접수 문서는 그대로 **재시도 장부**가 된다
+ * — 카카오의 재시도 정책은 문서에 없으므로 우리 쪽에 남겨야 한다.
+ *
+ * 📌 접수 문서에는 **uid·사유·시각만** 넣는다. 이름·이메일 같은 개인정보 원문은
+ * 담지 않는다.
+ */
+export const kakaoUnlinkWebhook = onRequest(
+  {region: "asia-northeast3", secrets: [kakaoAdminKey], cors: false},
+  async (req, res) => {
+    // ⚠️ **본문을 읽기 전에** 인증한다. 검증이 이 정적 비밀값 대조 하나뿐이라,
+    // 빠뜨리면 아무나 호출해 남의 계정을 지울 수 있는 구멍이 된다.
+    if (!adminKeyMatches(req.get("authorization"), kakaoAdminKey.value())) {
+      // 어느 키가 왔는지는 남기지 않는다 — 로그가 곧 키 유출이 된다.
+      logger.warn("카카오 연결 해제 웹훅: 인증 실패", {method: req.method});
+      res.status(401).send("unauthorized");
+      return;
+    }
+
+    const payload = parseKakaoUnlinkPayload(
+      req.body as Record<string, unknown> | undefined,
+      req.query as unknown as Record<string, unknown> | undefined,
+    );
+    if (!payload) {
+      logger.warn("카카오 연결 해제 웹훅: 회원번호 없음", {method: req.method});
+      res.status(400).send("user_id required");
+      return;
+    }
+
+    // 어드민 키에 더한 이중 확인. 기대값이 없으면 막지 않는다 — 자세한 이유는
+    // `kakaoUnlink.ts`의 appIdAllowed 주석 참고.
+    if (!appIdAllowed(payload.appId, process.env.KAKAO_APP_ID)) {
+      logger.warn("카카오 연결 해제 웹훅: 다른 앱의 알림", {
+        referrerType: payload.referrerType,
+      });
+      res.status(200).send("ok");
+      return;
+    }
+
+    const uid = socialUid("kakao", payload.userId);
+    try {
+      await getFirestore()
+        .collection(SOCIAL_UNLINK_REQUESTS)
+        .doc(uid)
+        .set(
+          {
+            uid,
+            provider: "kakao",
+            referrerType: payload.referrerType,
+            receivedAt: FieldValue.serverTimestamp(),
+            status: "received",
+          },
+          {merge: true},
+        );
+    } catch (e) {
+      // ⚠️ 접수에 실패하면 **200을 주면 안 된다.** 카카오가 성공으로 알고
+      // 다시 보내지 않으면 그 사람 데이터는 영영 남는다.
+      logger.error("카카오 연결 해제 접수 실패", {
+        uid,
+        errorType: (e as Error)?.name,
+      });
+      res.status(500).send("failed to record");
+      return;
+    }
+
+    logger.info("카카오 연결 해제 접수", {
+      uid,
+      referrerType: payload.referrerType,
+    });
+    res.status(200).send("ok");
+  },
+);
+
+/**
+ * 접수된 연결 해제를 실제로 파기한다.
+ *
+ * [kakaoUnlinkWebhook]이 남긴 문서가 만들어질 때 돈다. 트리거로 분리한 이유는
+ * 위 주석 참고 — 3초 제약과 **실행 보장**을 동시에 만족하기 위해서다.
+ *
+ * ## 무엇을 지우나
+ *
+ * ```
+ * users/{uid} 및 그 아래 전부   contacts·commLogs·deletedContacts
+ * ocrStats/{uid}
+ * Firebase Auth 사용자
+ * ```
+ *
+ * 📌 `users/{uid}` **문서가 지워지면 [onUserDeletedCleanup]이 깨어나** 나머지
+ * (appleAuth·socialTesterEmails·aiAuditLogs·inquiries·pilotEvents·명함 사진
+ * 서버 사본)를 이어서 지운다. 앱 안의 탈퇴와 **같은 경로를 그대로 쓴다** —
+ * 파기 대상이 두 벌로 갈라지면 한쪽만 고쳐지는 날이 온다.
+ *
+ * ⚠️ `deviceLedger`는 여기서도 지우지 않는다. 재가입×무료체험 무한 루프
+ * 방어가 "계정 삭제와 무관하게 남는 기기 단위 기록"이기 때문이다.
+ *
+ * ## 멱등하다
+ *
+ * 이미 지워진 uid로 다시 와도 조용히 끝난다. 하위 문서 삭제는 쿼리 기반이고,
+ * Auth 사용자 삭제는 없음(not-found)을 성공으로 본다.
+ */
+export const onSocialUnlinkRequested = onDocumentCreated(
+  {
+    document: `${SOCIAL_UNLINK_REQUESTS}/{uid}`,
+    region: "asia-northeast3",
+  },
+  async (event) => {
+    const uid = event.params.uid;
+    const db = getFirestore();
+    const requestRef = db.collection(SOCIAL_UNLINK_REQUESTS).doc(uid);
+
+    try {
+      const userRef = db.collection("users").doc(uid);
+
+      // ⚠️ 문서를 지우는 것만으로는 **하위 컬렉션이 안 지워진다.** 명함이
+      // users/{uid}/contacts 아래 있으므로 recursiveDelete를 쓴다.
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        // 문서가 없으면 onUserDeletedCleanup이 깨어나지 않는다. 하위만 남은
+        // 상태일 수 있으므로 정리는 하되, 이어지는 정리가 안 돈다는 사실을
+        // 남긴다 — 조용히 넘어가면 남은 감사 로그를 아무도 못 찾는다.
+        logger.warn("연결 해제 파기: users 문서가 이미 없음", {uid});
+      }
+      await db.recursiveDelete(userRef);
+
+      // uid 스코프인데 위 정리가 안 건드리는 것.
+      await db.collection("ocrStats").doc(uid).delete();
+
+      try {
+        await getAuth().deleteUser(uid);
+      } catch (e) {
+        const code = (e as {code?: string})?.code;
+        if (code !== "auth/user-not-found") throw e;
+      }
+
+      await requestRef.set(
+        {status: "deleted", deletedAt: FieldValue.serverTimestamp()},
+        {merge: true},
+      );
+      logger.info("연결 해제 파기 완료", {uid});
+    } catch (e) {
+      // ⚠️ 접수 문서를 **남긴다.** 지우면 무엇이 안 끝났는지 알 길이 없다 —
+      // 파기 의무가 걸린 일이라 "실패했다는 사실"이 남아야 한다.
+      await requestRef.set(
+        {
+          status: "failed",
+          failedAt: FieldValue.serverTimestamp(),
+          errorType: (e as Error)?.name ?? "unknown",
+        },
+        {merge: true},
+      );
+      logger.error("연결 해제 파기 실패", {
+        uid,
+        errorType: (e as Error)?.name,
+      });
+      throw e; // 트리거 재시도에 맡긴다
+    }
   },
 );
 
