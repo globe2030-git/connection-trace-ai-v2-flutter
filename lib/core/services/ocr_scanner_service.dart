@@ -412,9 +412,7 @@ class OcrScannerService {
   /// 순서가 뒤섞이기 쉽다(왼쪽 단 중간 줄 다음에 오른쪽 단 줄이 끼어드는 식).
   /// 각 줄의 실제 화면 좌표(boundingBox)를 기준으로 위→아래, 같은 줄 안에서는
   /// 왼→오 순으로 다시 정렬해 실제 명함을 읽는 순서에 가깝게 재구성한다.
-  static List<OcrLineBox> _extractOrderedLines(
-    RecognizedText recognizedText,
-  ) {
+  static List<OcrLineBox> _extractOrderedLines(RecognizedText recognizedText) {
     final allLines = <TextLine>[];
     for (final block in recognizedText.blocks) {
       allLines.addAll(block.lines);
@@ -1110,9 +1108,7 @@ class OcrScannerService {
   /// ⚠️ 조건을 좁게 잡는다: 앞 줄에 **01X + 4자리로 끝나는 미완성 번호**가 있고
   /// (뒤에 숫자가 더 없어야 한다), 뒤 줄이 **숫자 4자리만** 있는 줄이어야 한다.
   /// 없는 번호를 만들어 내지 않기 위해서다 — 잇는 숫자는 둘 다 원문에 있다.
-  static List<OcrLineBox> _joinSplitPhoneNumbers(
-    List<OcrLineBox> lineData,
-  ) {
+  static List<OcrLineBox> _joinSplitPhoneNumbers(List<OcrLineBox> lineData) {
     final incomplete = RegExp(r'01[016789][-.\s]?\d{4}(?![\d\s.\-]*\d)');
     final onlyFourDigits = RegExp(r'^\s*(\d{4})\s*$');
     final out = [...lineData];
@@ -1568,8 +1564,9 @@ class OcrScannerService {
   /// 골랐는데 앞뒤에 뭐가 붙어 있는 것"*이었다. 고르기를 다시 하는 것보다
   /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
   /// 갑자기 다른 값으로 바뀌지 않는다.**
-  static String _tidyCompany(String company) =>
-      _restoreCorpParen(_stripCompanyTitleTail(_stripCompanyLogoPrefix(company)));
+  static String _tidyCompany(String company) => _restoreCorpParen(
+    _stripCompanyTitleTail(_stripCompanyLogoPrefix(company)),
+  );
 
   /// OCR이 놓친 **여는 괄호를 되살린다** (`주)어디` → `(주)어디`, 추가 340).
   ///
@@ -1754,13 +1751,11 @@ class OcrScannerService {
   /// 여기로 검증한다. 위 두 통로는 좌표를 0으로 채우므로 **좌표 규칙을 못
   /// 본다.**
   @visibleForTesting
-  static OcrScanResult parseLinesForTestingWithBoxes(List<OcrLineBox> lineData) =>
-      _parse(lineData, '');
-
-  static OcrScanResult _parse(
+  static OcrScanResult parseLinesForTestingWithBoxes(
     List<OcrLineBox> lineData,
-    String imagePath,
-  ) {
+  ) => _parse(lineData, '');
+
+  static OcrScanResult _parse(List<OcrLineBox> lineData, String imagePath) {
     // 자간을 벌려 인쇄한 글자를 먼저 붙인다. 모든 칸이 같은 규칙을 보게 하려고
     // 파싱 맨 앞에서 한 번만 정리한다(사용자 제안 2026-08-14).
     lineData = [
@@ -2368,6 +2363,64 @@ class OcrScannerService {
     var companySource = OcrCompanySource.none;
     final leftover = <String>[];
 
+    // 한글 2~4자 줄이 **여럿이면 가장 큰 줄**을 이름으로 본다(추가 405).
+    //
+    // ## 왜
+    //
+    // `koreanStripped`는 규칙에 걸리는 **첫 줄**을 이름으로 썼다. 그런데 명함에는
+    // 부서명·브랜드어처럼 **이름과 형태가 똑같은 한글 2~4자 줄**이 이름보다 위에
+    // 있는 경우가 흔하다. 그때 이름은 영영 안 잡힌다.
+    //
+    // 2026-08-22 실측(정답지 대조 95장, macOS Vision OCR로 뽑은 줄을 이 파서에
+    // 넣어 잰 값):
+    //
+    // ```
+    // 후보가 여럿일 때 첫 줄을 고르면    42 / 60  (70%)
+    // 가장 큰 줄을 고르면               49 / 60  (82%)
+    // ```
+    //
+    // 갈린 건들의 높이 차가 **2~3배**였다(예: 36 대 97). 이름이 명함에서 가장 크게
+    // 인쇄된다는 상식이 수치로 확인된 셈이다.
+    //
+    // ⚠️ **아래 약한 폴백(`fontSizePreferred`)이 이미 쓰던 손이다.** 거기서는
+    // "규칙이 다 실패했을 때"만 높이를 봤는데, 이 측정은 **확신 경로 안에서도**
+    // 봐야 한다는 뜻이었다. 여유 1.1배도 그쪽과 같은 값을 쓴다 — 살짝 큰 정도는
+    // 잡음일 수 있다.
+    //
+    // ⚠️ **높이를 모르면 예전 그대로 첫 줄**이다(테스트 입력 등). 그래서 이
+    // 변경은 높이 정보가 있을 때만 동작한다.
+    //
+    // ⚠️ 위 수치는 **Vision OCR 기준**이다. 앱은 ML Kit을 쓰므로 줄 나눔이 달라
+    // 실제 이득은 다를 수 있다 — 실기기에서 다시 재야 확정이다.
+    String? preferredKoreanNameLine;
+    {
+      final candidates = <String>[];
+      for (final line in remaining) {
+        final stripped = line.replaceAll(RegExp(r'\s+'), '');
+        if (_koreanNameRegExp.hasMatch(stripped) &&
+            !_isRejectedName(stripped)) {
+          candidates.add(line);
+        }
+      }
+      if (candidates.length >= 2) {
+        var tallest = candidates.first;
+        var tallestH = heightByText[tallest] ?? 0;
+        for (final c in candidates.skip(1)) {
+          final h = heightByText[c] ?? 0;
+          if (h > tallestH) {
+            tallest = c;
+            tallestH = h;
+          }
+        }
+        final firstH = heightByText[candidates.first] ?? 0;
+        if (tallest != candidates.first &&
+            firstH > 0 &&
+            tallestH >= firstH * 1.1) {
+          preferredKoreanNameLine = tallest;
+        }
+      }
+    }
+
     for (final line in remaining) {
       // 연락처 라벨만 남은 줄은 **어떤 판정도 하지 않고** 버린다. 번호·이메일은
       // 이미 앞 단계에서 뽑아 갔고, 남은 "TEL. FAX." 같은 조각은 어느 칸에도
@@ -2468,7 +2521,11 @@ class OcrScannerService {
       final strippedForName = line.replaceAll(RegExp(r'\s+'), '');
       if (nameLineStrong == null &&
           _koreanNameRegExp.hasMatch(strippedForName) &&
-          !_isRejectedName(strippedForName)) {
+          !_isRejectedName(strippedForName) &&
+          // 더 큰 후보가 있으면 그 줄이 올 때까지 미룬다(추가 405). 밀린 줄은
+          // 예전처럼 leftover로 흘러가 회사명 후보로 계속 쓰인다.
+          (preferredKoreanNameLine == null ||
+              line == preferredKoreanNameLine)) {
         nameLineStrong = strippedForName;
         nameSource = OcrNameSource.koreanStripped;
         continue;
