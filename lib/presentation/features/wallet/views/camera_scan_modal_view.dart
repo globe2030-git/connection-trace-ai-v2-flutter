@@ -25,6 +25,7 @@ import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/services/card_rect_detector.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import 'card_rect_overlay.dart';
+import 'guide_corner_marks.dart';
 import 'manual_crop_view.dart';
 
 class CameraScanModalView extends StatefulWidget {
@@ -1001,7 +1002,9 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
     // 않는다 — 조용히 무시하지 않고 평범한 촬영 버튼을 쓰라고 알린다.
     if (!_isStreamingForAutoCapture) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('⚠️ 이 기기에서는 무음 촬영을 쓸 수 없어요. 촬영 버튼을 눌러주세요.')),
+        const SnackBar(
+          content: Text('⚠️ 이 기기에서는 무음 촬영을 쓸 수 없어요. 촬영 버튼을 눌러주세요.'),
+        ),
       );
       return;
     }
@@ -1892,6 +1895,32 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                     ),
                                   ),
                                 ),
+                              // ⚠️ B′(검출 기준 자르기)일 때는 **네 변을 안
+                              // 그린다**(추가 387). 네 변이 다 그려진
+                              // 직사각형은 "채우라"는 신호인데, 자르기가
+                              // 검출 테두리를 따라가므로 채울 이유가 없다.
+                              // 사용자 평가 *"맞추기 불편"*의 원인이었다.
+                              //
+                              // 📌 **크기는 그대로다.** 추가 383이 플랫폼별로
+                              // 재고 실기기 확인까지 받은 값이라 안 건드린다.
+                              //
+                              // ⚠️ 자르기가 가이드 기준일 때는 네 변을 그대로
+                              // 둔다 — 그때는 이 상자가 진짜로 잘리는 자리라
+                              // "채우세요"가 맞는 말이다(추가 293).
+                              if (useDetectionCrop)
+                                SizedBox(
+                                  width: guideSize.width,
+                                  height: guideSize.height,
+                                  child: CustomPaint(
+                                    painter: GuideCornerMarksPainter(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.75,
+                                      ),
+                                      strokeWidth: 2.5,
+                                      radius: 16,
+                                    ),
+                                  ),
+                                ),
                               AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
                                 width: guideSize.width,
@@ -1899,41 +1928,39 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                                 decoration: BoxDecoration(
                                   color: Colors.transparent,
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    // ⚠️ **실제로 잘리는 자리를 흐리게 만들면 안 된다**
-                                    // (추가 293, 실기기 지적).
-                                    //
-                                    // 예전에는 검출 테두리가 붙으면 이 상자를 물렸다.
-                                    // 그런데 **자르기가 꺼져 있으면 잘리는 자리는
-                                    // 여전히 이 상자**다 — 안 잘리는 테두리를 강조하고
-                                    // 잘리는 상자를 가린 셈이라, 찍어 보면 테두리와
-                                    // 결과가 어긋나 보인다.
-                                    //
-                                    // ⚠️ **B′로 자를 때는 이 상자를 가만히 둔다**
-                                    // (실기기 지적: *"흰 가이드가 파란 테두리
-                                    // 움직일 때 같이 움직이니 헷갈리네"*).
-                                    //
-                                    // 예전에는 검출 여부에 따라 밝기·굵기가
-                                    // 바뀌었다. 검출은 붙었다 떨어졌다 하므로
-                                    // **흰 상자가 파란 테두리를 따라 깜빡인다** —
-                                    // 두 개가 함께 움직이는 것처럼 보인다.
-                                    //
-                                    // 📌 B′에서는 역할이 갈린다. **파란 테두리가
-                                    // 움직이는 것**이고, **흰 상자는 "이쯤 두세요"
-                                    // 라는 고정된 안내**다. 그러니 반응하지 않는
-                                    // 것이 맞다.
-                                    // 📌 B′에서는 **이 상자 하나만 남는다**
-                                    // (바깥 선을 안 그리므로). 그래서 옅게 두면
-                                    // 어디에 둘지 안 보인다 — 또렷하게 둔다.
-                                    color: useDetectionCrop
-                                        ? Colors.white.withValues(alpha: 0.75)
-                                        : (_isFrameStable
+                                  border: useDetectionCrop
+                                      ? null
+                                      : Border.all(
+                                          // ⚠️ **실제로 잘리는 자리를 흐리게 만들면 안 된다**
+                                          // (추가 293, 실기기 지적).
+                                          //
+                                          // 예전에는 검출 테두리가 붙으면 이 상자를 물렸다.
+                                          // 그런데 **자르기가 꺼져 있으면 잘리는 자리는
+                                          // 여전히 이 상자**다 — 안 잘리는 테두리를 강조하고
+                                          // 잘리는 상자를 가린 셈이라, 찍어 보면 테두리와
+                                          // 결과가 어긋나 보인다.
+                                          //
+                                          // ⚠️ **B′로 자를 때는 이 상자를 가만히 둔다**
+                                          // (실기기 지적: *"흰 가이드가 파란 테두리
+                                          // 움직일 때 같이 움직이니 헷갈리네"*).
+                                          //
+                                          // 예전에는 검출 여부에 따라 밝기·굵기가
+                                          // 바뀌었다. 검출은 붙었다 떨어졌다 하므로
+                                          // **흰 상자가 파란 테두리를 따라 깜빡인다** —
+                                          // 두 개가 함께 움직이는 것처럼 보인다.
+                                          //
+                                          // 📌 B′에서는 역할이 갈린다. **파란 테두리가
+                                          // 움직이는 것**이고, **흰 상자는 "이쯤 두세요"
+                                          // 라는 고정된 안내**다. 그러니 반응하지 않는
+                                          // 것이 맞다.
+                                          // 📌 B′에서는 **이 상자 하나만 남는다**
+                                          // (바깥 선을 안 그리므로). 그래서 옅게 두면
+                                          // 어디에 둘지 안 보인다 — 또렷하게 둔다.
+                                          color: _isFrameStable
                                               ? AppColors.accent
-                                              : Colors.white),
-                                    width: useDetectionCrop
-                                        ? 1.5
-                                        : (_isFrameStable ? 3 : 1.5),
-                                  ),
+                                              : Colors.white,
+                                          width: _isFrameStable ? 3 : 1.5,
+                                        ),
                                 ),
                                 child: Stack(
                                   children: [
@@ -2365,9 +2392,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                       const SizedBox(width: 28),
                     ],
                     GestureDetector(
-                      onTap: (_isCapturing || !isReady)
-                          ? null
-                          : _capturePhoto,
+                      onTap: (_isCapturing || !isReady) ? null : _capturePhoto,
                       child: Container(
                         width: 76,
                         height: 76,
