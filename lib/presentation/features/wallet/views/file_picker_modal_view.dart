@@ -277,11 +277,15 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
           imagePath: baked.path,
           allowSkip: true,
           stepLabel: stepLabel,
-          // 398: 갤러리 원본은 실제 자동 테두리 검출을 거치지 않았다 —
-          // [CropAdjustMode.auto]로 열면 "테두리를 자동으로 찾았어요" 배너가
-          // 실제로 하지 않은 일을 한 것처럼 보인다(가짜 데이터 금지 원칙).
-          // `ManualCropView.initialMode` 문서 참고.
+          // 399: [CropAdjustMode.manual]로 열어 검출이 끝나기 전에는 안전한
+          // 수동 시작 자리에 있게 한다. `ManualCropView.initialMode` 문서 참고
+          // — 검출이 성공하면 화면이 스스로 [CropAdjustMode.auto]로 전환한다.
           initialMode: CropAdjustMode.manual,
+          // 399: 갤러리 원본은 실제 자동 테두리 검출을 한 번도 거치지 않은
+          // 사진이다(398이 열어 둔 [자동 인식] 세그먼트·배너는 이 검출이
+          // 실제로 돌아야 뜻이 선다 — 가짜 데이터 금지 원칙). 촬영 경로는
+          // 이 화면에 오기 전에 이미 실시간 검출을 거치므로 켜지 않는다.
+          autoDetectEnabled: true,
         ),
       ),
     );
