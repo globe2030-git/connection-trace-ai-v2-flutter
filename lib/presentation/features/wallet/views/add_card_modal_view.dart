@@ -24,6 +24,7 @@ import '../../../../core/services/card_rect_detector.dart';
 import '../../../../core/utils/measure_sample_sink.dart';
 import '../../../../core/services/doc_scanner_capture_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
+import '../../../../core/utils/ocr_measure_dump.dart';
 import '../../../../core/utils/scan_conflict.dart';
 import '../../../../core/services/ocr_stats_service.dart';
 import '../../../../data/models/contact_model.dart';
@@ -202,6 +203,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   String? _scannedRawText;
   List<String> _scannedRawLines = [];
   bool _isScanningOcr = false;
+
+  // 측정 전용 상태(추가 405). 기본 빌드에서는 쓰이지 않는다.
+  bool _measuring = false;
+  int _measureTotal = 0;
+  int _measureDone = 0;
   bool _showRawTextCard = false;
   bool _isSavingCard = false;
   // 사용자가 "네, 도로명으로 변경"을 눌러 확정한 주소를 기억해 둔다. 매번
@@ -619,6 +625,60 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// ⚠️ **`kDebugMode`가 아니라 `!kReleaseMode`**다. 아이폰 debug 빌드는
   /// 디버거 없이 뜨지 않아(2026-08-16 실측) **debug 전용이면 아이폰에서
   /// 스위치를 아예 쓸 수 없다.**
+  /// 측정 전용: 갤러리에서 여러 장을 골라 **OCR만 돌리고 등록하지 않는다**.
+  ///
+  /// ⚠️ 101장을 재려고 등록하면 명함이 두 배로 불어나고, 되돌리는 손이 만드는
+  /// 손보다 커진다(2026-08-22 자리채움 정리에서 실제로 겪었다). 그래서 결과를
+  /// 파일로만 남긴다 — 기기에는 명함이 안 쌓인다.
+  Widget _buildMeasureBulkButton() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: OutlinedButton.icon(
+        onPressed: _measuring ? null : _runMeasureBulkScan,
+        icon: const Icon(Icons.science_outlined, size: 18),
+        label: Text(
+          _measuring
+              ? '측정 중... ($_measureDone / $_measureTotal)'
+              : '측정: 여러 장 스캔(등록 안 함)',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runMeasureBulkScan() async {
+    final files = await OcrScannerService.pickImagesFromGallery();
+    if (files.isEmpty || !mounted) return;
+    setState(() {
+      _measuring = true;
+      _measureTotal = files.length;
+      _measureDone = 0;
+    });
+    var failed = 0;
+    for (final f in files) {
+      try {
+        // scanBusinessCard가 결과를 파일에 덧붙인다. 반환값은 쓰지 않는다 —
+        // 등록하지 않는 것이 이 경로의 요지다.
+        await OcrScannerService.scanBusinessCard(f);
+      } catch (_) {
+        failed++;
+      }
+      if (!mounted) return;
+      setState(() => _measureDone++);
+    }
+    if (!mounted) return;
+    setState(() => _measuring = false);
+    final dir = await getApplicationSupportDirectory();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '측정 $_measureDone장 기록'
+          '${failed > 0 ? ' (실패 $failed장)' : ''}\n${dir.path}/ocr_measure.tsv',
+        ),
+      ),
+    );
+  }
+
   Widget _buildDocScannerDebugSwitch() {
     if (kReleaseMode) return const SizedBox.shrink();
     return ValueListenableBuilder<bool>(
@@ -3407,6 +3467,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       ),
                     ],
                   ),
+
+                  // 측정 전용 진입점(추가 405). `OCR_MEASURE_DUMP` 없이
+                  // 빌드하면 상수가 false라 **화면에 아예 안 나온다.**
+                  if (ocrMeasureDumpEnabled) _buildMeasureBulkButton(),
 
                   _buildDocScannerDebugSwitch(),
                   _buildCardRectDebugSwitch(),
