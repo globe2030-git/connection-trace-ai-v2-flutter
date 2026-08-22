@@ -40,4 +40,67 @@ void main() {
       }
     });
   });
+
+  // 결함 399 — 정지 이미지 검출 결과를 얹은 버전.
+  group('cropStartCornersForDetection', () {
+    const detected = [
+      Offset(0.12, 0.20),
+      Offset(0.80, 0.18),
+      Offset(0.82, 0.75),
+      Offset(0.10, 0.77),
+    ];
+
+    test('자동 인식 + 실제로 찾음 → 찾은 자리 그대로', () {
+      final corners = cropStartCornersForDetection(
+        mode: CropAdjustMode.auto,
+        autoDetectEnabled: true,
+        detectedCorners: detected,
+      );
+      expect(corners, detected);
+    });
+
+    test('자동 인식 + 아직 못 찾음(검출 실패·진행 중) → 고정 상자(2~98%)가 아니라 직접 조정 자리', () {
+      final corners = cropStartCornersForDetection(
+        mode: CropAdjustMode.auto,
+        autoDetectEnabled: true,
+        detectedCorners: null,
+      );
+      expect(
+        corners,
+        kManualModeStartCorners,
+        reason:
+            '"이미 잘려 있어 살짝만 다듬으면 된다"는 kAutoModeStartCorners의 전제가 '
+            '갤러리 원본에는 성립하지 않는다 — 못 찾았다는 배너와 상자가 어긋나면 안 된다.',
+      );
+      expect(corners, isNot(kAutoModeStartCorners));
+    });
+
+    test('직접 조정은 검출 여부와 무관하게 기존과 같다', () {
+      for (final detectedCorners in [null, detected]) {
+        expect(
+          cropStartCornersForDetection(
+            mode: CropAdjustMode.manual,
+            autoDetectEnabled: true,
+            detectedCorners: detectedCorners,
+          ),
+          kManualModeStartCorners,
+        );
+      }
+    });
+
+    test('⚠️ 회귀 방지: autoDetectEnabled가 꺼지면(촬영 경로) cropStartCornersFor와 완전히 같다', () {
+      for (final mode in CropAdjustMode.values) {
+        for (final detectedCorners in [null, detected]) {
+          expect(
+            cropStartCornersForDetection(
+              mode: mode,
+              autoDetectEnabled: false,
+              detectedCorners: detectedCorners,
+            ),
+            cropStartCornersFor(mode),
+          );
+        }
+      }
+    });
+  });
 }
