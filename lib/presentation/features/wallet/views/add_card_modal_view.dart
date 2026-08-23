@@ -667,13 +667,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
     if (!mounted) return;
     setState(() => _measuring = false);
-    final dir = await getApplicationSupportDirectory();
+    // ⚠️ **쓰는 쪽과 같은 함수로 경로를 얻는다.** 예전에는 여기서 따로
+    // 내부 폴더를 골라, 파일은 외부에 쓰이는데 안내는 내부를 가리켰다.
+    final path = await measureDumpPath();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           '측정 $_measureDone장 기록'
-          '${failed > 0 ? ' (실패 $failed장)' : ''}\n${dir.path}/ocr_measure.tsv',
+          '${failed > 0 ? ' (실패 $failed장)' : ''}\n$path',
         ),
       ),
     );

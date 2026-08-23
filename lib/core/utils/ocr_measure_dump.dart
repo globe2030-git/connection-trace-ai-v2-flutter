@@ -33,6 +33,8 @@ library;
 
 import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
+
 /// 측정 기록이 켜져 있는지. 기본(정의 안 함)에서는 항상 false다.
 const bool ocrMeasureDumpEnabled = bool.fromEnvironment('OCR_MEASURE_DUMP');
 
@@ -43,6 +45,17 @@ const String kMeasureLineSep = '';
 /// 한 줄 안에서 글자와 높이를 가르는 구분자.
 const String kMeasureFieldSep = '';
 
+/// 측정 파일 형식 판. **줄 높이만 남기던 v1에 토큰 칸을 더한 것이 v2다**(추가 409).
+///
+/// ⚠️ **판이 바뀌면 파일 이름도 바뀐다.** 같은 이름에 이어 쓰면 기기에 남아
+/// 있던 지난 판 줄과 새 판 줄이 **한 파일에 섞인다.** 섞여도 앞 네 칸은
+/// 그대로라 읽히기 때문에 **조용히 틀린 대조**가 된다 — 어긋난 것을 사람이
+/// 알아채지 못한다.
+const int kMeasureFormatVersion = 2;
+
+/// 측정 파일 이름. 판마다 다르다(위 경고 참고).
+const String kMeasureFileName = 'ocr_measure_v$kMeasureFormatVersion.tsv';
+
 /// 측정 한 줄을 만든다. 형식은 Vision 도구와 같다.
 ///
 /// ```
@@ -51,11 +64,31 @@ const String kMeasureFieldSep = '';
 ///
 /// ⚠️ 글자에 구분자가 섞이면 대조가 깨지므로 **미리 지운다.** OCR이 제어문자를
 /// 돌려주는 일은 없지만, 깨지면 조용히 어긋나는 종류의 사고라 막아 둔다.
+///
+/// ## 토큰 칸을 왜 더했나 (추가 409)
+///
+/// 줄 높이는 **한 행으로 묶인 뒤의 값**이다. `_extractOrderedLines`가 좌우로
+/// 나란한 줄을 한 행으로 합치면서 **높이를 그중 가장 큰 것으로** 잡는다.
+/// 그래서 "홍길동  ㈜회사이름"처럼 이름과 회사가 나란히 인쇄돼 있으면
+/// **회사까지 이름만큼 큰 것으로 기록된다.** 글자 크기로 이름을 고르는 규칙이
+/// 흔들리는 자리가 여기다.
+///
+/// 그래서 **합치기 전의 낱말 상자**를 따로 남긴다. 위·왼 좌표를 같이 남기는
+/// 것은 대조하는 쪽이 **행 묶음을 스스로 다시 만들 수 있게** 하려는 것이다 —
+/// 앱의 묶는 규칙이 바뀌어도 지난 측정을 다시 해석할 수 있다.
+///
+/// ⚠️ **재료일 뿐 규칙이 아니다.** 토큰 높이로 이름을 고르는 규칙은 아직 만들지
+/// 않았다. 먼저 재고, 기대 이득을 본 뒤에 정한다(PM 지시, 2026-08-23).
+///
+/// 토큰 칸은 **맨 뒤에** 붙였다. 앞 네 칸이 v1과 같아서 지난 판으로 만든 대조
+/// 스크립트가 그대로 돈다.
 String formatMeasureRow({
   required String imageName,
   required List<({String text, double height})> lines,
   required String nameSource,
   required String parsedName,
+  List<({String text, double height, double top, double left})> tokens =
+      const [],
 }) {
   String clean(String s) =>
       s.replaceAll(kMeasureLineSep, ' ').replaceAll(kMeasureFieldSep, ' ');
@@ -63,22 +96,65 @@ String formatMeasureRow({
   final payload = lines
       .map((l) => '${clean(l.text)}$kMeasureFieldSep${l.height.round()}')
       .join(kMeasureLineSep);
+  final tokenPayload = tokens
+      .map(
+        (t) =>
+            '${clean(t.text)}$kMeasureFieldSep${t.height.round()}'
+            '$kMeasureFieldSep${t.top.round()}$kMeasureFieldSep${t.left.round()}',
+      )
+      .join(kMeasureLineSep);
   return '${clean(imageName)}\t$payload\t${clean(nameSource)}'
-      '\t${clean(parsedName)}';
+      '\t${clean(parsedName)}\t$tokenPayload';
 }
 
 /// 측정 파일에 한 줄 덧붙인다. 꺼져 있으면 아무것도 하지 않는다.
 ///
 /// 실패해도 **던지지 않는다** — 측정 때문에 스캔이 죽으면 안 된다.
+///
+/// ## ⚠️ 어디에 쓰는지가 중요하다 (2026-08-22 실기기에서 데임)
+///
+/// 처음에는 **앱 내부 문서 폴더**에 썼다. 그런데 **릴리스 빌드는 debuggable이
+/// 아니라 `adb run-as`가 거부된다** — 101장을 다 돌리고도 **파일을 꺼낼 수가
+/// 없었다.** 같은 함정이 이 저장소 코드에 이미 적혀 있었는데
+/// (`ocr_batch_scan_view.dart`의 "앱 내부 문서 폴더는 run-as로 넣는다") 그것을
+/// 읽고도 **release에서는 run-as가 막힌다**는 것을 못 이었다.
+///
+/// 그래서 **앱 전용 외부 저장소**(`/sdcard/Android/data/<pkg>/files`)에 쓴다.
+/// `adb shell`이 읽고 쓸 수 있는 것을 실기기에서 확인했다.
+///
+/// 📌 부르는 쪽이 경로를 정해 넘긴다 — 이 함수는 어디에 쓸지 모른다.
 Future<void> appendMeasureRow({
   required Directory directory,
   required String row,
 }) async {
   if (!ocrMeasureDumpEnabled) return;
   try {
-    final file = File('${directory.path}/ocr_measure.tsv');
+    final file = File('${directory.path}/$kMeasureFileName');
     await file.writeAsString('$row\n', mode: FileMode.append, flush: true);
   } catch (_) {
     // 조용히 넘어간다. 측정은 부수적인 일이다.
   }
 }
+
+/// 측정 파일을 **어디에 쓰는지 한 곳에서 정한다**.
+///
+/// ## ⚠️ 왜 함수로 묶었나 (추가 409)
+///
+/// 2026-08-22에 저장 위치를 내부 → 앱 전용 외부로 옮겼는데, **파일만 옮기고
+/// 화면 안내는 그대로 뒀다.** 스캔이 끝나면 뜨는 안내가 여전히 내부 폴더를
+/// 가리켜, 그 자리를 뒤지면 **파일이 없다.** 위치를 못 찾아 101장을 다시
+/// 돌릴 뻔한 그 사고의 재판이다.
+///
+/// 쓰는 쪽과 알려 주는 쪽이 **서로 다른 값을 고를 수 있으면 언젠가 갈린다.**
+/// 그래서 둘 다 이 함수를 부른다.
+///
+/// 앱 전용 외부 저장소(`/sdcard/Android/data/<pkg>/files`)를 쓴다. 릴리스
+/// 빌드는 debuggable이 아니라 `adb run-as`가 막혀 **내부 폴더는 꺼낼 수가
+/// 없다.** 외부를 못 얻으면 내부로 되돌아간다 — 안 쓰는 것보다는 낫다.
+Future<Directory> measureDumpDirectory() async =>
+    await getExternalStorageDirectory() ??
+    await getApplicationSupportDirectory();
+
+/// 측정 파일의 전체 경로. 화면에 안내할 때 쓴다.
+Future<String> measureDumpPath() async =>
+    '${(await measureDumpDirectory()).path}/$kMeasureFileName';
