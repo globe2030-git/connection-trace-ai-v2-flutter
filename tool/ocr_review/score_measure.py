@@ -96,8 +96,14 @@ def parse_row(row):
     if len(c) >= 5:
         for part in c[4].split(LS):
             f = part.split(FS)
+            # v2는 네 칸(글자·높이·위·왼), v3는 너비가 더 붙어 다섯 칸이다.
+            # 지난 측정본도 그대로 읽히게 둘 다 받는다 — 너비가 없으면 0으로
+            # 채우되, **0을 실제 너비로 쓰면 안 된다**(틈 계산이 통째로 틀린다).
             if len(f) == 4:
-                tokens.append((f[0], int(f[1]), int(f[2]), int(f[3])))
+                tokens.append((f[0], int(f[1]), int(f[2]), int(f[3]), 0))
+            elif len(f) == 5:
+                tokens.append(
+                    (f[0], int(f[1]), int(f[2]), int(f[3]), int(f[4])))
     return dict(image=c[0], lines=lines, source=c[2], name=c[3], tokens=tokens)
 
 

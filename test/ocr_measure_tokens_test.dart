@@ -67,6 +67,8 @@ void main() {
       );
       expect(tokens.map((t) => t.text), ['홍길동', '㈜회사이름']);
       expect(tokens.map((t) => t.height), [88, 33]);
+      // ⭐ 너비도 실제 상자에서 온다(추가 412) — 틈을 재려면 있어야 한다.
+      expect(tokens.map((t) => t.width), [120, 180]);
     });
 
     test('위→아래, 같은 높이면 왼→오로 정렬한다', () {

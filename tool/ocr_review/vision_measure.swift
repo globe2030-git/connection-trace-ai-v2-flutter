@@ -1,4 +1,4 @@
-// macOS Vision으로 명함 사진에서 글자를 읽어 **측정 형식 v2**로 찍는다.
+// macOS Vision으로 명함 사진에서 글자를 읽어 **측정 형식 v3**로 찍는다.
 //
 // ## 왜 있나 (추가 405·409)
 //
@@ -25,7 +25,7 @@
 //   사진이름 \t 줄칸 \t 경로 \t 뽑은이름 \t 토큰칸
 //
 //   줄칸    글자<0x02>높이<0x01>글자<0x02>높이 …
-//   토큰칸  글자<0x02>높이<0x02>위<0x02>왼<0x01>… 
+//   토큰칸  글자<0x02>높이<0x02>위<0x02>왼<0x02>너비<0x01>…   (v3)
 //
 // 경로·뽑은이름 두 칸은 **앱만 채울 수 있으므로 비운다**(파서를 태운 뒤 그 자리에
 // 넣는다). 칸 수는 앱과 똑같이 다섯이라 같은 스크립트로 읽힌다.
@@ -56,7 +56,12 @@ for path in CommandLine.arguments.dropFirst() {
     // Vision의 좌표계는 아래가 0이다. 위→아래로 읽으려면 maxY 내림차순.
     let obs = (req.results ?? []).sorted { $0.boundingBox.maxY > $1.boundingBox.maxY }
 
+    // 세로 눈금: 이미지 높이 대비 비율 × 1000.
     func scaled(_ v: CGFloat) -> Int { Int((v * 1000).rounded()) }
+    // 가로 눈금: **가로세로 비를 곱해** 세로와 같은 자로 만든다. 이렇게
+    // 해야 "틈이 글자 높이의 몇 배인가"를 바로 견줄 수 있다.
+    let aspect = CGFloat(cg.width) / CGFloat(cg.height)
+    func scaledX(_ v: CGFloat) -> Int { Int((v * aspect * 1000).rounded()) }
     /// Vision 좌표(아래가 0)를 위에서 잰 값으로 뒤집는다 — 앱과 방향을 맞춘다.
     func topOf(_ box: CGRect) -> Int { scaled(1 - box.maxY) }
 
@@ -77,9 +82,17 @@ for path in CommandLine.arguments.dropFirst() {
         }) {
             guard let box = try? cand.boundingBox(for: range) else { continue }
             let word = String(text[range])
+            // ⚠️ 너비가 있어야 **낱말 사이 틈**을 잰다(추가 412).
+            // 틈 = 다음 낱말의 왼쪽 − (이 낱말의 왼쪽 + 너비). v2에는 이 칸이
+            // 없어 자간 넓은 이름과 별개 낱말을 못 갈랐다(추가 411).
+            //
+            // ⚠️ 가로는 **이미지 너비**로 재야 한다. 높이 쪽 눈금(× 1000)을
+            // 그대로 쓰면 사진이 가로로 길 때 틈이 실제보다 좁아 보인다.
             tokenParts.append(
                 "\(word)\(FS)\(scaled(box.boundingBox.height))"
-                    + "\(FS)\(topOf(box.boundingBox))\(FS)\(scaled(box.boundingBox.minX))")
+                    + "\(FS)\(topOf(box.boundingBox))"
+                    + "\(FS)\(scaledX(box.boundingBox.minX))"
+                    + "\(FS)\(scaledX(box.boundingBox.width))")
         }
     }
 
