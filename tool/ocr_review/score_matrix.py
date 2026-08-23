@@ -33,6 +33,8 @@ SCRATCH = os.environ.get('SCRATCH', '')
 # (표시 이름, 파일, 키 칸, 낼 수 있는 칸)
 MODEL_FIELDS = ['이름', '회사', '직함', '휴대폰', '사무실', '이메일', '주소']
 APP_FIELDS = MODEL_FIELDS + ['부서', '팩스', '홈페이지', '상세주소']
+# 12칸 완전판은 정답지가 가진 칸을 전부 요구받았다(우편번호 포함).
+FULL_FIELDS = APP_FIELDS + ['우편번호']
 
 AXES = [
     ('앱(ML Kit+규칙)', SCRATCH + 'app_all.tsv', '사진', APP_FIELDS),
@@ -43,6 +45,8 @@ AXES = [
      '순번', MODEL_FIELDS),
     ('2.5서울(기본)', A + 'server_ocr_vertex25_base_2026-08-23.tsv',
      '순번', MODEL_FIELDS),
+    ('2.5서울(12칸완전판)', A + 'server_ocr_vertex25_full_2026-08-23.tsv',
+     '순번', FULL_FIELDS),
 ]
 
 TRUTH_COL = {
@@ -50,9 +54,10 @@ TRUTH_COL = {
     '부서': '정답_부서', '휴대폰': '정답_휴대폰', '사무실': '정답_사무실',
     '팩스': '정답_팩스', '이메일': '정답_이메일', '홈페이지': '정답_홈페이지',
     '주소': '정답_주소', '상세주소': '정답_상세주소',
+    '우편번호': '정답_우편번호',
 }
 ORDER = ['이름', '회사', '직함', '부서', '휴대폰', '사무실', '팩스',
-         '이메일', '홈페이지', '주소', '상세주소']
+         '이메일', '홈페이지', '우편번호', '주소', '상세주소']
 
 HANGUL = re.compile(r'[가-힣]')
 _CORP = ('주식회사', '(주)', '㈜', '주)', '유한회사', '(유)', '재단법인', '사단법인',
@@ -95,6 +100,7 @@ NORM = {
     '휴대폰': (digits, digits), '사무실': (digits, digits), '팩스': (digits, digits),
     '이메일': (lambda s: (s or '').strip().lower(),) * 2,
     '홈페이지': (lambda s: re.sub(r'^https?://|^www\.|/$', '', (s or '').strip().lower()),) * 2,
+    '우편번호': (digits, digits),
 }
 
 
