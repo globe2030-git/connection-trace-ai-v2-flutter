@@ -66,6 +66,10 @@ enum OcrNameSource {
   /// 개선 경로 — 명함에서 이름이 대개 가장 큰 글자라는 점을 이용한다.
   fontSizePreferred,
 
+  /// 같은 줄의 **로마자가 그 한글 성씨의 표기**와 맞아 확정한 경우
+  /// (`이선경 Sun-Kyoung Lee`, 추가 429).
+  romanizedSurname,
+
   /// **빈자리 재검증**에서 건짐 — 주소와 한 줄로 뭉쳐 나온 이름
   /// ("박병훈 서울특별시 은평구 통일로 65길 26, 7층"). 1차 배정에서 이름 칸이
   /// 빈 경우에만 시도한다.
@@ -752,6 +756,37 @@ class OcrScannerService {
     '처',
   ];
 
+  /// 흔한 성씨의 **로마자 표기**. 한 성씨를 여러 가지로 쓰기 때문에 목록이다
+  /// (`이` → Lee·Yi·Rhee·Li).
+  ///
+  /// ⚠️ **표준이 없다.** 그래서 이 표만으로 판단하지 않는다 — 같은 줄에 **한글
+  /// 이름 모양 낱말이 있을 때만** 본다. `Go`·`No`·`Won`·`Min`처럼 영어 단어와
+  /// 겹치는 표기가 있어서, 그 조건이 없으면 엉뚱한 줄이 이름이 된다.
+  ///
+  /// ⚠️ **애매한 성씨는 넣지 않는다.** 넣어서 틀리는 것이 안 넣어서 못 얻는
+  /// 것보다 나쁘다 — 이 저장소가 이름 규칙에서 여러 번 확인한 방향이다.
+  static const _surnameRomanizations = <String, List<String>>{
+    '김': ['kim', 'gim'], '이': ['lee', 'yi', 'rhee', 'li'],
+    '박': ['park', 'bak', 'pak'], '최': ['choi', 'choe'],
+    '정': ['jung', 'jeong', 'chung'], '강': ['kang', 'gang'],
+    '조': ['cho', 'jo'], '윤': ['yoon', 'yun'], '장': ['jang', 'chang'],
+    '임': ['lim', 'im'], '한': ['han'], '오': ['oh'],
+    '서': ['seo', 'suh'], '신': ['shin'], '권': ['kwon'], '황': ['hwang'],
+    '안': ['ahn'], '송': ['song'], '류': ['ryu', 'lyu'],
+    '전': ['jeon', 'chun'], '홍': ['hong'], '고': ['ko', 'koh'],
+    '문': ['moon', 'mun'], '양': ['yang'], '손': ['son', 'sohn'],
+    '배': ['bae'], '백': ['baek', 'paek'], '허': ['heo', 'hur', 'huh'],
+    '유': ['yoo', 'yu'], '남': ['nam'], '심': ['shim'], '노': ['noh', 'roh'],
+    '하': ['ha'], '곽': ['kwak'], '성': ['sung', 'seong'], '차': ['cha'],
+    '주': ['joo'], '우': ['woo'], '구': ['koo'], '민': ['min'],
+    '표': ['pyo'], '방': ['bang'], '변': ['byun'], '함': ['ham'],
+    '염': ['yeom'], '추': ['chu', 'choo'], '석': ['seok'], '설': ['seol'],
+    '진': ['jin'], '지': ['jee'], '엄': ['eom'], '채': ['chae'],
+    '현': ['hyun'], '금': ['keum'], '국': ['kook'],
+  };
+
+  static final _latinWordRegExp = RegExp(r"[A-Za-z][A-Za-z'\-]*");
+
   static final _koreanNameRegExp = RegExp(r'^[가-힣]{2,4}$');
   static final _singleHangulRegExp = RegExp(r'^[가-힣]$');
   static final _hangulOnlyRegExp = RegExp(r'^[가-힣]+$');
@@ -1157,6 +1192,40 @@ class OcrScannerService {
     // 법정동·가·리로 끝나는 토큰이 있거나, 건물명 접미사가 있으면 주소로 본다.
     if (RegExp(r'(동|가|리)\d*\s*(,|$)').hasMatch(inner)) return true;
     return _buildingNameRegExp.hasMatch(inner);
+  }
+
+  /// 그 줄의 로마자가 **한글 이름 낱말의 성씨 표기**와 맞으면 그 낱말을
+  /// 돌려준다 (`이선경 Sun-Kyoung Lee` → `이선경`, 추가 429).
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// 실측(96장): 이름을 못 맞힌 20장 중 **낱말 하나로 멀쩡히 서 있는데 못
+  /// 고른 것이 5장**이었고, **다섯 장 전부** 한글 이름 옆에 로마자가 같은 줄에
+  /// 있었다. 그중 넷이 **그 사람 이름의 로마자 표기**다 — 한국 명함에서 아주
+  /// 흔한 모양인데 파서가 그 줄을 이름 줄로 확신하지 못해 다른 줄에 밀렸다.
+  ///
+  /// ## ⚠️ 로고 줄이 저절로 걸러지는 것이 이 신호의 값이다
+  ///
+  /// 나머지 하나는 `Ma soft`(M2SOFT 로고 오독)였는데, **성씨 표기와 안 맞아
+  /// 저절로 빠진다.** 크기·위치로는 못 가르던 것을 글자가 가른다.
+  static String? _nameByRomanizedSurname(String line) {
+    if (!RegExp(r'[A-Za-z]').hasMatch(line)) return null;
+    final latin = _latinWordRegExp
+        .allMatches(line)
+        .map((m) => m.group(0)!.toLowerCase().replaceAll(RegExp(r"[-']"), ''))
+        .toSet();
+    if (latin.isEmpty) return null;
+    for (final tok in line.split(_whitespaceSplitRegExp)) {
+      final t = tok.trim();
+      if (!_koreanNameRegExp.hasMatch(t)) continue;
+      if (_isRejectedName(t) || !_hangulNameLooksReal(t)) continue;
+      final forms = _surnameRomanizations[t[0]];
+      if (forms == null) continue;
+      // ⚠️ **정확히 같을 때만** 인정한다. 부분 일치를 허용하면 `한`(han)이
+      // `Handong`·`Chanho` 같은 말에 걸린다.
+      if (forms.any(latin.contains)) return t;
+    }
+    return null;
   }
 
   static String _collapseCharSpacing(String line) {
@@ -2613,6 +2682,18 @@ class OcrScannerService {
     //
     // ⚠️ 위 수치는 **Vision OCR 기준**이다. 앱은 ML Kit을 쓰므로 줄 나눔이 달라
     // 실제 이득은 다를 수 있다 — 실기기에서 다시 재야 확정이다.
+    // ⭐ **로마자 성씨 신호**를 루프 전에 구해 둔다(추가 429). 이 신호는
+    // "어떤 줄이 한글 2~4자다"보다 **강한 근거**라, 아래 `koreanStripped`가
+    // 다른 줄을 먼저 집어가지 못하게 막는 데 쓴다.
+    String? romanizedNameToken;
+    for (final raw in lines) {
+      final byRoman = _nameByRomanizedSurname(raw);
+      if (byRoman != null) {
+        romanizedNameToken = byRoman;
+        break;
+      }
+    }
+
     String? preferredKoreanNameLine;
     // 이름 후보 중에 **성씨로 시작하는 것이 따로 있는가**(추가 413).
     // 아래 `koreanStripped` 경로의 안전판으로 쓴다 — 자세한 것은 그 자리 주석.
@@ -2759,6 +2840,12 @@ class OcrScannerService {
           // 나쁘다. 그래서 **대안이 있을 때만** 미룬다 — 영문 사람 이름 판정이
           // *"다른 후보가 없으면 그대로 쓴다"*로 스스로를 막아 둔 것과 같다.
           (_startsWithSurname(strippedForName) || !hasSurnameCandidate) &&
+          // ⚠️ **로마자 성씨 신호가 다른 이름을 가리키면 양보한다**(추가 429).
+          // 이 경로는 "한글 2~4자"만 보므로, 명함에 그런 낱말이 둘 이상이면
+          // 먼저 오는 줄이 이긴다 — 실측 96장에서 그 때문에 3장이 엉뚱한 줄을
+          // 이름으로 삼았다. 로마자 표기가 성씨와 맞는 쪽이 더 강한 근거다.
+          (romanizedNameToken == null ||
+              strippedForName == romanizedNameToken) &&
           // 더 큰 후보가 있으면 그 줄이 올 때까지 미룬다(추가 405). 밀린 줄은
           // 예전처럼 leftover로 흘러가 회사명 후보로 계속 쓰인다.
           (preferredKoreanNameLine == null ||
@@ -2958,6 +3045,17 @@ class OcrScannerService {
         hangulTokenLine = rawLine;
         break;
       }
+    }
+
+    // ⭐ **로마자 성씨 신호**(추가 429). 확정 근거가 없거나 약한 근거뿐일 때만
+    // 본다 — 이미 강한 근거로 찾았으면 건드리지 않는다.
+    //
+    // ⚠️ **루프가 끝난 뒤에 본다.** 루프 안에서 `continue`로 끊으면 그 줄이
+    // 다른 칸(회사·직함) 후보에서 빠져 엉뚱한 곳이 빈다 — 추가 425에서
+    // 같은 종류의 손실을 겪었다.
+    if (nameLineStrong == null && romanizedNameToken != null) {
+      nameLineStrong = romanizedNameToken;
+      nameSource = OcrNameSource.romanizedSurname;
     }
 
     // 강이 있으면 강, 없으면 약. 위 `nameLineStrong` 주석 참고.
