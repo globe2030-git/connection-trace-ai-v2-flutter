@@ -27,6 +27,12 @@
 #   스토어 업로드에는 쓰지 않는다. appcheck-debug와 동시에 쓸 필요는
 #   없다 — 둘 중 하나만 준다.
 #   tool/build_app.sh apk debug cleanup
+#
+#   세 번째 인자로 groups를 주면 그룹 기능(추가 427) UI를 켠 채로 빌드한다
+#   (group_model.dart의 kGroupsFeatureEnabled 참고). 방침 v2.3 시행일
+#   (2026-08-30) 전 테스터 빌드는 이 인자 없이(기본 꺼짐) 빌드한다 — 개발·
+#   시행일 확인용으로만 쓴다.
+#   tool/build_app.sh apk debug groups
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -84,8 +90,11 @@ elif [ "${3:-}" = "measure" ]; then
   # 지우고, 보관은 명함데이터/(700) 규칙을 따른다.
   EXTRA_DEFINES="--dart-define=OCR_MEASURE_DUMP=true"
   echo "⚠️  필수 입력 검증이 풀린 정리용 빌드입니다 — 테스터 배포·스토어 업로드에 쓰지 마세요."
+elif [ "${3:-}" = "groups" ]; then
+  EXTRA_DEFINES="--dart-define=GROUPS_FEATURE=true"
+  echo "⚠️  그룹 기능(추가 427) UI를 켠 채로 빌드합니다 — 방침 v2.3 시행일(2026-08-30) 전 테스터 배포에는 쓰지 마세요."
 elif [ -n "${3:-}" ]; then
-  echo "세 번째 인자는 appcheck-debug · cleanup · measure만 쓸 수 있습니다: ${3}" >&2; exit 2
+  echo "세 번째 인자는 appcheck-debug · cleanup · measure · groups만 쓸 수 있습니다: ${3}" >&2; exit 2
 fi
 
 # 지도·좌표 키는 저장소에 안 넣는다(nearby_map_view.dart·address_search_view.dart

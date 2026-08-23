@@ -7,6 +7,7 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/models/group_model.dart' show kGroupsFeatureEnabled;
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
@@ -210,7 +211,10 @@ class _WalletViewState extends State<WalletView> {
         // 그룹 칩(추가 427) — 명함이 하나도 없으면(빈 지갑) 굳이 보여주지
         // 않는다. 태그 칩과 같은 자리(스크롤하면 함께 흘려간다)에 두되,
         // 캔버스 확정안에서 그룹이 더 앞선 개념이라 태그보다 위에 둔다.
-        if (viewModel.contacts.isNotEmpty) ...[
+        // ⚠️ 빌드 스위치(kGroupsFeatureEnabled) — 방침 v2.3 시행일(8/30)
+        // 전에는 통째로 숨긴다(group_model.dart 주석 참고). 데이터는 그대로
+        // 두고 화면만 뺀다.
+        if (kGroupsFeatureEnabled && viewModel.contacts.isNotEmpty) ...[
           const SizedBox(height: 12),
           _buildGroupChips(context, viewModel, groupsVm),
           if (groupsVm.groups.isNotEmpty &&
@@ -889,7 +893,8 @@ class _ContactCard extends StatelessWidget {
                         ),
                         // 그룹 꼬리표(추가 427) — 최대 2개 + "n" 뱃지. 셋 이상을
                         // 다 펼치면 좁은 카드에서 이름·회사가 더 밀려 잘린다.
-                        if (groupNames.isNotEmpty) ...[
+                        // 빌드 스위치는 위 그룹 칩과 동일(group_model.dart 참고).
+                        if (kGroupsFeatureEnabled && groupNames.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           _GroupTagsRow(groupNames: groupNames),
                         ],

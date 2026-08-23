@@ -6,6 +6,7 @@ import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/utils/card_history_note.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../../data/models/group_model.dart' show kGroupsFeatureEnabled;
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/card_image_viewer.dart';
@@ -119,7 +120,9 @@ class ContactDetailView extends StatelessWidget {
                   children: [
                     _header(context, uid),
                     ..._contactRows(context),
-                    ..._groupRows(context),
+                    // 그룹 진입점은 빌드 스위치로 숨긴다(group_model.dart의
+                    // kGroupsFeatureEnabled 참고, 방침 v2.3 시행일 8/30 게이트).
+                    if (kGroupsFeatureEnabled) ..._groupRows(context),
                     ..._historyRows(context),
                   ],
                 ),
