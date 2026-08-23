@@ -59,6 +59,22 @@ void main() {
       expect(counts.values.first, 2);
     });
 
+    test('⭐ 도로명과 지번이 한 주소에 같이 들면 또 다른 형태다 (추가 408)', () {
+      // 실제로 있는 표기다 — 건물 안내에 옛 지번을 같이 적어 둔 명함이 있고,
+      // 추가 406 실기기 표본 98장에도 1장 있었다. 지오코더가 이런 주소를 못
+      // 푸는 이유는 순수 도로명을 못 푸는 것과 다를 수 있어 갈라 센다.
+      final counts = GeoBackfillService.countShapesWithoutGeo([
+        _contact(id: '1', address: '서울 강남구 테헤란로 123'),
+        _contact(id: '2', address: '서울 강남구 역삼동 737 테헤란로 152'),
+      ]);
+      expect(counts.length, 2);
+      final labels = counts.keys
+          .map(GeoBackfillService.describeFailureShape)
+          .toList();
+      expect(labels.toSet().length, 2, reason: '화면에서도 두 줄로 갈려야 한다');
+      expect(labels.any((l) => l.contains('섞임')), isTrue);
+    });
+
     test('형태가 다르면 갈린다 — 도로명과 지번', () {
       final counts = GeoBackfillService.countShapesWithoutGeo([
         _contact(id: '1', address: '서울 강남구 테헤란로 123'),
