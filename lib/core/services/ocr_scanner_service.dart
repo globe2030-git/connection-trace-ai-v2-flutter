@@ -447,11 +447,22 @@ class OcrScannerService {
   /// 규칙을 만들지 여부는 재고 나서 정한다.
   ///
   /// 순서는 위→아래, 같은 높이면 왼→오다. 대조하는 쪽이 행 묶음을 스스로
-  /// 다시 만들 수 있도록 좌표를 같이 남긴다.
+  /// 다시 만들고 **낱말 사이 틈까지 잴 수 있도록** 좌표와 너비를 같이 남긴다.
   @visibleForTesting
-  static List<({String text, double height, double top, double left})>
+  static List<
+    ({String text, double height, double top, double left, double width})
+  >
   measureTokens(RecognizedText recognizedText) {
-    final tokens = <({String text, double height, double top, double left})>[];
+    final tokens =
+        <
+          ({
+            String text,
+            double height,
+            double top,
+            double left,
+            double width,
+          })
+        >[];
     for (final block in recognizedText.blocks) {
       for (final line in block.lines) {
         for (final el in line.elements) {
@@ -462,6 +473,10 @@ class OcrScannerService {
             height: el.boundingBox.height,
             top: el.boundingBox.top.toDouble(),
             left: el.boundingBox.left.toDouble(),
+            // ⚠️ 너비가 있어야 **낱말 사이 틈**을 잴 수 있다(추가 412).
+            // 틈 = 다음 낱말의 왼쪽 − (이 낱말의 왼쪽 + 너비). v2에는 이
+            // 칸이 없어 자간 넓은 이름과 별개 낱말을 못 갈랐다(추가 411).
+            width: el.boundingBox.width,
           ));
         }
       }

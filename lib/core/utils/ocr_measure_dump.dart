@@ -51,7 +51,18 @@ const String kMeasureFieldSep = '';
 /// 있던 지난 판 줄과 새 판 줄이 **한 파일에 섞인다.** 섞여도 앞 네 칸은
 /// 그대로라 읽히기 때문에 **조용히 틀린 대조**가 된다 — 어긋난 것을 사람이
 /// 알아채지 못한다.
-const int kMeasureFormatVersion = 2;
+/// - v2: 낱말 칸 신설(글자·높이·위·왼)
+/// - v3: 낱말 칸에 **너비**를 더했다(추가 412)
+///
+/// ⚠️ **v2에서 너비를 뺀 것이 실제로 막았다.** 추가 411에서 "자간을 넓게
+/// 인쇄한 이름"과 "그냥 붙어 있는 두 낱말"을 가르려다 멈췄다 — 가르려면 낱말
+/// 사이 **틈**이 필요한데, 틈은 `다음 낱말의 왼쪽 − (이 낱말의 왼쪽 + 너비)`
+/// 라서 **너비 없이는 못 구한다.** 너비를 `글자수 × 높이`로 어림잡아 봤더니
+/// 틈이 **음수**로 나왔다 — 어림이 안 맞는다는 뜻이다.
+///
+/// 그때 좌표만 남기면 대조하는 쪽이 알아서 한다고 봤는데, **자리는 좌표가
+/// 알려 주지만 크기는 안 알려 준다.**
+const int kMeasureFormatVersion = 3;
 
 /// 측정 파일 이름. 판마다 다르다(위 경고 참고).
 const String kMeasureFileName = 'ocr_measure_v$kMeasureFormatVersion.tsv';
@@ -73,7 +84,7 @@ const String kMeasureFileName = 'ocr_measure_v$kMeasureFormatVersion.tsv';
 /// **회사까지 이름만큼 큰 것으로 기록된다.** 글자 크기로 이름을 고르는 규칙이
 /// 흔들리는 자리가 여기다.
 ///
-/// 그래서 **합치기 전의 낱말 상자**를 따로 남긴다. 위·왼 좌표를 같이 남기는
+/// 그래서 **합치기 전의 낱말 상자**를 따로 남긴다. 위·왼·너비를 같이 남기는
 /// 것은 대조하는 쪽이 **행 묶음을 스스로 다시 만들 수 있게** 하려는 것이다 —
 /// 앱의 묶는 규칙이 바뀌어도 지난 측정을 다시 해석할 수 있다.
 ///
@@ -87,8 +98,8 @@ String formatMeasureRow({
   required List<({String text, double height})> lines,
   required String nameSource,
   required String parsedName,
-  List<({String text, double height, double top, double left})> tokens =
-      const [],
+  List<({String text, double height, double top, double left, double width})>
+  tokens = const [],
 }) {
   String clean(String s) =>
       s.replaceAll(kMeasureLineSep, ' ').replaceAll(kMeasureFieldSep, ' ');
@@ -100,7 +111,8 @@ String formatMeasureRow({
       .map(
         (t) =>
             '${clean(t.text)}$kMeasureFieldSep${t.height.round()}'
-            '$kMeasureFieldSep${t.top.round()}$kMeasureFieldSep${t.left.round()}',
+            '$kMeasureFieldSep${t.top.round()}$kMeasureFieldSep${t.left.round()}'
+            '$kMeasureFieldSep${t.width.round()}',
       )
       .join(kMeasureLineSep);
   return '${clean(imageName)}\t$payload\t${clean(nameSource)}'
