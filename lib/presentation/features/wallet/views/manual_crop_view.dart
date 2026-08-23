@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/card_quad_geometry.dart';
 import '../../../../core/utils/crop_mode_corners.dart';
+import '../../../../core/utils/crop_rotation_bake_state.dart';
 import '../../../../core/utils/gallery_auto_detect.dart';
 import '../../../../core/utils/gallery_crop_banner.dart';
 import '../../../../core/utils/image_rotation_bake.dart';
@@ -96,11 +97,13 @@ GalleryCropOutcome galleryCropOutcomeFor(Object? popResult) {
 /// 안내뿐**이다 — 세그먼트에 따라 시작 귀퉁이 위치와 안내 문구만 바뀐다.
 ///
 /// ⚠️ **회전과 자르기 좌표를 섞지 않는다**(추가 273, 실기기에서 두 번 헤맨
-/// 자리). [회전]을 누르면 [bakeImageRotation]으로 **새 파일**을 굽는다 —
-/// 이전 좌표를 새로 돌아간 사진 위에 **그대로**(재계산 없이) 쓰지는
-/// 않는다. 다만 방법은 [_rotate] 문서에 적었듯 재검출→초기화에서
-/// **정확한 좌표 변환**([rotateCornersCw90])으로 바뀌었다 — "섞지 않는다"는
-/// 원칙 자체는 그대로고, 지키는 방법만 바뀌었다.
+/// 자리). [회전]/[반시계 회전]을 누르면 [bakeImageRotation]으로 **새 파일**을
+/// 굽는다 — 이전 좌표를 새로 돌아간 사진 위에 **그대로**(재계산 없이) 쓰지는
+/// 않는다. **[_rotateBy] 문서에 적었듯 굽기는 백그라운드에서 돌고 화면은
+/// 즉시 돌아간다**(P2-③ 2차) — 귀퉁이는 클릭 즉시 [rotateCornersCw90]/
+/// [rotateCornersCcw90]으로 정확히 변환하고, 실제 파일이 그 방향을
+/// 따라잡으면 경로만 조용히 바꿔 낀다. "섞지 않는다"는 원칙 자체는
+/// 그대로고, 지키는 방법만 바뀌었다.
 class ManualCropView extends StatefulWidget {
   const ManualCropView({
     super.key,
@@ -179,7 +182,33 @@ class _ManualCropViewState extends State<ManualCropView> {
 
   Size? _imageSize;
   Object? _loadError;
-  bool _isRotating = false;
+
+  // ── 회전 즉시 미리보기 + 배경 굽기(P2-③ 2차, "굽기 ~2초" 실기기 후속) ──
+
+  /// 누적 회전·배경 굽기 진행 상태 — 실제 전이 규칙은 순수 클래스
+  /// [CropRotationBakeState]가 갖고 있다(테스트는 그쪽 파일).
+  CropRotationBakeState _bakeState = const CropRotationBakeState();
+
+  /// 지금 도는 배경 굽기의 Future. [_ensureFullyBaked]가 직접 기다리는
+  /// 데만 쓴다 — 분기 판단은 [_bakeState]가 한다.
+  Future<void>? _activeBakeFuture;
+
+  /// [자르기 확정]을 누른 뒤 밀린 굽기를 기다리는 중인가 — 이때만 화면에
+  /// 로딩을 보여준다("완료 시점에 굽기가 안 끝났으면 그때만 로딩").
+  bool _isFinalizing = false;
+
+  /// [widget.imagePath] 기준으로 지금까지 순누적된 시계 방향 회전 —
+  /// **굽기가 끝나도 리셋되지 않는다**([_bakeState.pendingTurns]와 다른
+  /// 점). [_runAutoDetect]가 [widget.imagePath] 원본을 기준으로 찾은
+  /// 결과를 "지금 화면 방향"으로 보정하는 데만 쓴다([_runAutoDetect] 문서
+  /// 참고) — 검출 도중 회전이 이미 구워져 [_bakeState.pendingTurns]가
+  /// 0으로 돌아온 뒤에도 보정이 필요할 수 있어서 따로 둔다.
+  int _totalTurnsCwSinceOpen = 0;
+
+  /// [rotateCornersCw90]/[rotateCornersCcw90] 호출에서 크기가 계산에 안 쓰이는
+  /// 자리(실패 되돌리기·검출 보정)에 넘기는 더미 값 — 두 함수 모두 계산에는
+  /// 크기를 쓰지 않고 양수인지만 assert로 확인한다(각 함수 문서 참고).
+  static const _dummyRotationSize = Size(1, 1);
 
   // ── 정지 이미지 자동 검출(결함 399, [widget.autoDetectEnabled]일 때만) ──
 
@@ -272,6 +301,36 @@ class _ManualCropViewState extends State<ManualCropView> {
     }
   }
 
+  /// 지금 화면에 **보이는** 방향 기준 이미지 크기.
+  ///
+  /// ⚠️ 실제 파일([_imageSize])은 배경 굽기가 끝나야 바뀐다 — 그 전까지는
+  /// [RotatedBox]로 화면만 돌려 보여주므로, 오버레이·제스처가 참고할
+  /// "지금 보이는" 크기가 따로 필요하다. 밀린 회전이 홀수 번이면 가로·
+  /// 세로가 바뀐다.
+  Size? get _visualImageSize {
+    final size = _imageSize;
+    if (size == null) return null;
+    return _bakeState.pendingTurns.isOdd ? Size(size.height, size.width) : size;
+  }
+
+  /// [corners]에 90도 [times]번을 적용한다 — 실패 되돌리기·검출 보정처럼
+  /// "지금 화면에 보이는 크기"가 없거나 의미가 없는 자리에서만 쓴다(더미
+  /// 크기로 충분한 이유는 [_dummyRotationSize] 문서 참고). 클릭 한 번에
+  /// 대응하는 실시간 변환은 [_rotateBy]가 실제 시각 크기로 직접 한다.
+  List<Offset> _rotateNTimes(
+    List<Offset> corners, {
+    required int times,
+    required bool clockwise,
+  }) {
+    var result = corners;
+    for (var i = 0; i < times; i++) {
+      result = clockwise
+          ? rotateCornersCw90(result, _dummyRotationSize)
+          : rotateCornersCcw90(result, _dummyRotationSize);
+    }
+    return result;
+  }
+
   /// 세그먼트를 바꾸면 그 모드의 시작 귀퉁이로 되돌린다 — 두 모드가 같은
   /// 좌표를 공유하면 "자동에서 다듬은 것"과 "직접 새로 잡은 것"이 섞인다.
   void _selectMode(CropAdjustMode mode) {
@@ -300,83 +359,162 @@ class _ManualCropViewState extends State<ManualCropView> {
     setState(() => _corners = _startCornersFor(_mode));
   }
 
-  /// [회전] — 90도씩 시계 방향. 사진을 실제로 다시 굽는다.
+  /// [회전]/[반시계 회전] — 화면부터 즉시 돌리고, 실제 파일 굽기는
+  /// 백그라운드로 미룬다(P2-③ 2차, 실기기 피드백: "굽는 동안 2초 멈춘다").
   ///
-  /// ⚠️ **예전에는 귀퉁이를 통째로 버리고 재검출했다**(결함 399 당시 결정).
-  /// 이제는 **버리는 대신 정확히 변환한다** — "회전과 자르기 좌표를 섞지
-  /// 않는다"는 원칙(추가 273)은 그대로 지키되, 지키는 방법이 바뀌었다.
-  /// 재검출도 좌표계가 섞이지 않는 안전한 방법이었지만, 두 가지 대가가
-  /// 있었다: (1) 검출을 다시 도는 동안 화면이 멈춘 것처럼 보였고, (2)
-  /// **사용자가 이미 손으로 맞춘 조정이 회전 한 번에 날아갔다.**
-  /// [rotateCornersCw90](`crop_mode_corners.dart`, 순수 함수 + 테스트)이
-  /// 수학적으로 정확한 변환이라는 게 보장되므로, 재검출 없이도 좌표계가
-  /// 섞일 위험이 없다.
+  /// ## 왜 예전처럼 굽기를 기다리지 않나
   ///
-  /// **재검출은 [_detectedCorners]가 없을 때만** 예전처럼 그대로 돈다 —
-  /// 찾은 적도 사용자가 손댄 적도 없는 "빈" 상태에서는 변환할 것 자체가
-  /// 없기 때문이다.
-  Future<void> _rotate() async {
-    if (_isRotating) return;
-    setState(() => _isRotating = true);
-    try {
-      final baked = await bakeImageRotation(XFile(_imagePath), 90);
-      if (!mounted) return;
+  /// 1차 개선(추가 446)까지는 `bakeImageRotation` 자체는 `compute()`로
+  /// isolate를 옮겨 메인 스레드를 막지 않게 했지만, `_rotate`가 여전히 그
+  /// 결과를 **await한 뒤에야** 화면을 갱신했다 — 무거운 디코드+인코딩이
+  /// 끝날 때까지 사용자가 기다리는 체감은 그대로였다. 이번에는 파일을
+  /// 굽기 **전에** 먼저 화면과 귀퉁이 좌표를 돌려 보여준다
+  /// ([RotatedBox](build 참고))ㅡ실제 굽기는 [_kickBakeIfNeeded]가 뒤에서
+  /// 돌리고, 끝나면 화면 흔들림 없이 파일 경로만 조용히 바꿔 낀다([_runBake]
+  /// 참고, [_bakeState]가 `pendingTurns→0`이 되면서 [RotatedBox]의
+  /// `quarterTurns`도 함께 0으로 돌아가므로 시각 결과는 그대로다).
+  ///
+  /// ## 귀퉁이는 클릭마다 즉시 변환한다
+  ///
+  /// [rotateCornersCw90]/[rotateCornersCcw90](`crop_mode_corners.dart`,
+  /// 순수 함수 + 왕복 테스트)로 **클릭하는 순간** [_corners]·
+  /// [_detectedCorners]를 옮긴다 — 굽기가 끝나길 기다리지 않는다. 이 값들이
+  /// 항상 "지금 화면에 보이는 방향" 기준이라서, 실제 굽기가 나중에 그
+  /// 방향을 따라잡으면([_runBake]) 좌표를 다시 계산할 게 없다(파일만
+  /// 바꿔 끼우면 그대로 맞는다).
+  ///
+  /// ## 연타
+  ///
+  /// 굽는 도중 또 누르면 [_bakeState.pendingTurns]만 더 누적된다 — 클릭마다
+  /// 새 굽기를 쌓지 않는다. 도는 굽기가 끝났을 때 그 목표가 이미 낡았으면
+  /// (더 눌렸으면) 결과를 버리고 **그 순간의 누적분을 한 번에** 다시 굽는다
+  /// (`bakeImageRotation`에 `pendingTurns*90`을 통째로 넘긴다 — 90을 여러
+  /// 번 나눠 굽지 않는다). [CropRotationBakeState] 문서·테스트 참고.
+  void _rotateBy({required bool clockwise}) {
+    final oldVisualSize = _visualImageSize;
+    if (oldVisualSize == null) return; // 이미지 크기를 아직 모르면 손대지 않는다.
+    setState(() {
+      _bakeState = clockwise ? _bakeState.rotatedCw() : _bakeState.rotatedCcw();
+      _totalTurnsCwSinceOpen = (_totalTurnsCwSinceOpen + (clockwise ? 1 : 3)) % 4;
+      _corners = clockwise
+          ? rotateCornersCw90(_corners, oldVisualSize)
+          : rotateCornersCcw90(_corners, oldVisualSize);
+      final detected = _detectedCorners;
+      if (detected != null) {
+        _detectedCorners = clockwise
+            ? rotateCornersCw90(detected, oldVisualSize)
+            : rotateCornersCcw90(detected, oldVisualSize);
+      }
+    });
+    _kickBakeIfNeeded();
+  }
+
+  /// 지금 밀려 있는 회전을 배경에서 굽는다. 이미 굽는 중이면 아무것도
+  /// 안 한다 — [_runBake]가 끝나면 스스로 다시 이 함수를 불러 낡지 않았는지
+  /// 확인한다(연타 처리, [_rotateBy] 문서 참고).
+  void _kickBakeIfNeeded() {
+    if (_bakeState.isBaking) return;
+    final started = _bakeState.startBakeIfNeeded();
+    if (!started.isBaking) return; // 밀린 회전이 없다(상쇄됐거나 이미 정착).
+    setState(() => _bakeState = started);
+    _activeBakeFuture = _runBake(started.bakingTarget!);
+  }
+
+  /// [target]을 실제로 굽는다 — `_imagePath`가 아직 반영하지 않은 만큼
+  /// (90도 단위)을 `bakeImageRotation`에 한 번에 넘긴다.
+  Future<void> _runBake(int target) async {
+    final sourcePath = _imagePath;
+    final baked = await bakeImageRotation(XFile(sourcePath), target * 90);
+    if (!mounted) {
+      // 화면이 이미 닫혔다 — 아무도 못 쓰는 파일이니 지운다.
+      if (baked.path != sourcePath) await deleteQuietly(baked.path);
+      _activeBakeFuture = null;
+      return;
+    }
+    final stillCurrent = _bakeState.pendingTurns == target;
+    if (stillCurrent && baked.path != sourcePath) {
+      // 성공 — 파일을 바꿔 끼운다. 귀퉁이는 클릭마다 이미 [_rotateBy]가
+      // 변환해 뒀으니 다시 계산할 게 없다.
       final previous = _bakedPathToCleanUp;
       final previousIsOriginal = _imagePath == widget.imagePath;
-      final oldImageSize = _imageSize;
-      // 변환으로 대신할 수 있는 조건: 검출 결과나 사용자 조정 중 무엇이든
-      // 보존할 값이 있고, 변환에 필요한 회전 전 이미지 크기를 알고 있을 때.
-      final canPreserve =
-          widget.autoDetectEnabled &&
-          oldImageSize != null &&
-          (_userInteracted || _detectedCorners != null);
       setState(() {
         _imagePath = baked.path;
         _bakedPathToCleanUp = baked.path == widget.imagePath ? null : baked.path;
-        _imageSize = null;
-        if (widget.autoDetectEnabled) {
-          if (canPreserve) {
-            final detected = _detectedCorners;
-            if (detected != null) {
-              _detectedCorners = rotateCornersCw90(detected, oldImageSize);
-            }
-            // 지금 화면에 보이는 값(검출 결과 그대로든, 사용자가 끌어
-            // 맞춘 값이든) 그대로 변환한다 — 재검출로 덮어쓰지 않는다.
-            _corners = rotateCornersCw90(_corners, oldImageSize);
-          } else {
-            // 검출도 없었고 사용자도 손대지 않은 "빈" 상태만 예전처럼
-            // 수동 시작 자리로 되돌린 뒤 새로 찾는다.
-            _detectedCorners = null;
-            _userInteracted = false;
-            _mode = CropAdjustMode.manual;
-            _corners = _startCornersFor(_mode);
-          }
-        } else {
-          _corners = _startCornersFor(_mode);
-        }
+        _bakeState = _bakeState.bakeCompleted();
       });
-      // 직전에 이 화면 안에서 구운 회전본이 있었다면(=원본이 아니었다면)
-      // 더는 쓰이지 않으니 지운다 — 안 지우면 회전을 누를 때마다 평문
-      // 사본이 쌓인다.
+      await _loadImageSize();
       if (previous != null && !previousIsOriginal) {
         await deleteQuietly(previous);
       }
-      await _loadImageSize();
-      if (widget.autoDetectEnabled && !canPreserve) {
-        unawaited(_runAutoDetect());
-      }
-    } finally {
-      if (mounted) setState(() => _isRotating = false);
+    } else if (stillCurrent) {
+      // ⚠️ 굽기 실패 — `bakeImageRotation`은 실패하면 원본 경로를 그대로
+      // 돌려준다(`image_rotation_bake.dart` 문서 참고). 화면과 실물이
+      // 어긋나지 않도록(이 작업의 인수 기준 1번) **화면 회전도 함께
+      // 되돌린다** — 재시도를 기다리며 [자르기 확정]이 영영 안 끝나는
+      // 것보다, 방향은 못 바꿨어도 저장물이 화면과 일치하는 편이 낫다.
+      setState(() {
+        _corners = _rotateNTimes(_corners, times: target, clockwise: false);
+        final detected = _detectedCorners;
+        if (detected != null) {
+          _detectedCorners = _rotateNTimes(detected, times: target, clockwise: false);
+        }
+        _bakeState = _bakeState.bakeCompleted();
+      });
+    } else {
+      // 굽는 동안 더 눌려 목표가 낡았다 — 결과를 버린다. 아래에서 최신
+      // 값으로 다시 건다.
+      if (baked.path != sourcePath) await deleteQuietly(baked.path);
+      setState(() => _bakeState = _bakeState.bakeCompleted());
     }
+    _activeBakeFuture = null;
+    if (mounted) _kickBakeIfNeeded();
+  }
+
+  /// [자르기 확정]을 누른 시점에 밀린 굽기가 있으면 끝날 때까지 기다린다.
+  /// 저장물이 화면에 보이는 방향과 달라지는 일이 없게 하려는 것이다(이
+  /// 작업의 인수 기준 1번).
+  Future<void> _ensureFullyBaked() async {
+    while (!_bakeState.isSettled) {
+      _kickBakeIfNeeded();
+      final active = _activeBakeFuture;
+      if (active == null) break; // 이론상 오지 않는다 — 안전장치.
+      await active;
+    }
+  }
+
+  /// [이대로 자르기] — 밀린 굽기가 있으면 그때만 로딩을 보여주고 기다린 뒤
+  /// 넘긴다.
+  Future<void> _confirm() async {
+    if (_isFinalizing || !_isUsable) return;
+    if (!_bakeState.isSettled) {
+      setState(() => _isFinalizing = true);
+      await _ensureFullyBaked();
+      if (!mounted) return;
+      setState(() => _isFinalizing = false);
+    }
+    if (!mounted) return;
+    // ⚠️ **여기서 넘긴다** — 지금 이 순간의 [_imagePath]가 [_corners]의
+    // 기준이다(위 대기 덕분에 항상 정착된 상태). 넘긴 뒤에는 dispose()가
+    // 이 파일을 지우면 안 된다(클래스 문서 참고).
+    _handedOverImagePath = true;
+    Navigator.of(context).pop(
+      ManualCropResult(
+        imagePath: _imagePath,
+        corners: _corners,
+        imageSize: _imageSize!,
+      ),
+    );
   }
 
   /// [_corners]가 처음 놓일 자리. 세그먼트 전환·[다시 찾기]가 이 함수
   /// 하나로 정해야 서로 어긋나지 않는다.
   ///
-  /// ⚠️ **[회전]은 보존할 값이 있으면 이 함수를 거치지 않는다** — 대신
-  /// [rotateCornersCw90]으로 지금 좌표를 변환한다([_rotate] 문서 참고).
-  /// 검출도 사용자 조정도 없는 "빈" 상태에서 회전했을 때만 이 함수로
-  /// 되돌아간다.
+  /// ⚠️ [회전]은 이 함수를 거치지 않는다 — [rotateCornersCw90]/
+  /// [rotateCornersCcw90]으로 지금 좌표를 직접 변환한다([_rotateBy] 문서
+  /// 참고). 이 함수가 돌려주는 시작 사각형은 세로·가로 대칭이라 회전에
+  /// 영향을 안 받는다(kAutoModeStartCorners/kManualModeStartCorners는 중심
+  /// 대칭 정사각형) — 그래서 세그먼트 전환·[다시 찾기]는 지금 회전 상태를
+  /// 몰라도 그대로 안전하다.
   ///
   /// 실제 판정은 [cropStartCornersForDetection](순수 함수,
   /// `crop_mode_corners.dart`)이 한다 — 화면 없이 검사할 수 있는 부분은
@@ -408,9 +546,22 @@ class _ManualCropViewState extends State<ManualCropView> {
       _autoDetecting = false;
       final flat = result.cornersFlat;
       if (result.success && flat != null && flat.length == 8) {
-        final corners = <Offset>[
+        var corners = <Offset>[
           for (var i = 0; i < 8; i += 2) Offset(flat[i], flat[i + 1]),
         ];
+        // ⚠️ 검출은 이 함수가 불릴 때(=initState, [widget.imagePath] 기준)
+        // 시작했다. 그사이 [회전]을 눌렀으면(검출은 ~5ms 수준이라 극히
+        // 드물다, 386 측정) 결과가 그만큼 낡은 방향이다 — [_bakeState
+        // .pendingTurns]는 굽기가 끝나면 0으로 돌아가 이 보정에 못 쓰므로,
+        // 굽기 완료와 무관하게 계속 누적되는 [_totalTurnsCwSinceOpen]으로
+        // "지금 화면 방향" 기준으로 맞춘다.
+        if (_totalTurnsCwSinceOpen != 0) {
+          corners = _rotateNTimes(
+            corners,
+            times: _totalTurnsCwSinceOpen,
+            clockwise: true,
+          );
+        }
         _detectedCorners = corners;
         // 사용자가 이미 손을 댔으면 지금 보고 있는 것을 조용히 덮지 않는다
         // — 다시 [자동 인식] 탭으로 가면 그때 이 값을 쓴다.
@@ -430,7 +581,11 @@ class _ManualCropViewState extends State<ManualCropView> {
   /// ⚠️ 아무리 멀어도 잡히면 사진을 톡 눌렀을 뿐인데 귀퉁이가 날아온다.
   /// 손가락 굵기 정도(48논리픽셀) 안에 있을 때만 잡는다.
   int? _nearestCorner(Offset point, Size box) {
-    final image = _imageSize;
+    // ⚠️ **[_visualImageSize]를 쓴다**([_imageSize]가 아니다) — 회전을 눌러
+    // 밀린 회전이 있는 동안은 화면([RotatedBox])만 돌아가 있고 실제 파일은
+    // 아직 그대로다. 여기서 파일 크기를 쓰면 홀수 번 밀린 상태에서 손잡이가
+    // 엉뚱한 자리에 잡힌다.
+    final image = _visualImageSize;
     if (image == null) return null;
     var best = -1;
     var bestDistance = double.infinity;
@@ -446,7 +601,7 @@ class _ManualCropViewState extends State<ManualCropView> {
   }
 
   void _moveCorner(Offset point, Size box) {
-    final image = _imageSize;
+    final image = _visualImageSize; // 이유는 [_nearestCorner] 주석 참고.
     final index = _dragging;
     if (image == null || index == null) return;
     setState(() {
@@ -497,7 +652,7 @@ class _ManualCropViewState extends State<ManualCropView> {
                     // 398: 갤러리 경로에서만 켠다 — 클래스 문서(allowSkip) 참고.
                     if (widget.allowSkip)
                       TextButton(
-                        onPressed: _isRotating ? null : _skip,
+                        onPressed: _isFinalizing ? null : _skip,
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white70,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -527,7 +682,10 @@ class _ManualCropViewState extends State<ManualCropView> {
                         style: TextStyle(color: Colors.white70),
                       ),
                     )
-                  : (_imageSize == null || _isRotating)
+                  // ⚠️ **[_isFinalizing]일 때만 막는다** — 회전은 백그라운드
+                  // 굽기라 화면을 가릴 이유가 없다([_rotateBy] 문서 참고).
+                  // 밀린 굽기를 기다리는 건 [자르기 확정]을 누른 뒤뿐이다.
+                  : (_imageSize == null || _isFinalizing)
                   ? const Center(child: CircularProgressIndicator())
                   : LayoutBuilder(
                       builder: (context, constraints) {
@@ -550,15 +708,30 @@ class _ManualCropViewState extends State<ManualCropView> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: [
-                              Image.file(
-                                File(_imagePath),
-                                fit: BoxFit.contain,
+                              // ⚠️ **화면만 즉시 돌린다** — 실제 파일
+                              // ([_imagePath])은 아직 그대로일 수 있다
+                              // ([_rotateBy] 문서 참고). [_bakeState
+                              // .pendingTurns]가 0으로 돌아오는 순간
+                              // `quarterTurns`도 0이 되므로, 그 시점엔
+                              // 파일 자체가 이미 그 방향으로 구워져 있어
+                              // 시각 결과가 그대로 이어진다(흔들림 없음).
+                              RotatedBox(
+                                quarterTurns: _bakeState.pendingTurns,
+                                child: Image.file(
+                                  File(_imagePath),
+                                  fit: BoxFit.contain,
+                                ),
                               ),
                               // 모서리 핸들 — 상시 노출(자동/직접 조정 공통).
+                              // ⚠️ [RotatedBox] 밖에 그대로 둔다 —
+                              // [_corners]가 이미 "지금 보이는 방향" 기준
+                              // (visual frame)이라 [_visualImageSize]로
+                              // 매핑하면 화면과 그대로 맞는다. 여기를
+                              // [RotatedBox] 안에 넣으면 이중으로 돌아간다.
                               CustomPaint(
                                 painter: _CropPainter(
                                   corners: _corners,
-                                  imageSize: _imageSize!,
+                                  imageSize: _visualImageSize!,
                                   active: _dragging,
                                 ),
                               ),
@@ -572,10 +745,28 @@ class _ManualCropViewState extends State<ManualCropView> {
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
               child: Row(
                 children: [
-                  // F-03: 자동이 잘못 잘랐을 때 실제로 돌려 볼 수 있어야
-                  // 한다. 좌표는 섞지 않는다 — [_rotate] 문서 참고.
+                  // 반시계 — 실기기 피드백("반시계 회전이 안 된다") 대응.
                   OutlinedButton(
-                    onPressed: _isRotating ? null : _rotate,
+                    onPressed: _isFinalizing
+                        ? null
+                        : () => _rotateBy(clockwise: false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white54),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
+                    ),
+                    child: const Icon(Icons.rotate_left, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  // F-03: 자동이 잘못 잘랐을 때 실제로 돌려 볼 수 있어야
+                  // 한다. 좌표는 섞지 않는다 — [_rotateBy] 문서 참고.
+                  OutlinedButton(
+                    onPressed: _isFinalizing
+                        ? null
+                        : () => _rotateBy(clockwise: true),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white54),
@@ -588,7 +779,7 @@ class _ManualCropViewState extends State<ManualCropView> {
                   ),
                   const SizedBox(width: 10),
                   OutlinedButton(
-                    onPressed: _isRotating ? null : _resetCorners,
+                    onPressed: _isFinalizing ? null : _resetCorners,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.white,
                       side: const BorderSide(color: Colors.white54),
@@ -602,28 +793,13 @@ class _ManualCropViewState extends State<ManualCropView> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: (_isUsable && !_isRotating)
-                          ? () {
-                              // ⚠️ **여기서 넘긴다** — 지금 이 순간의
-                              // [_imagePath]가 [_corners]의 기준이다. 넘긴
-                              // 뒤에는 dispose()가 이 파일을 지우면 안
-                              // 된다(클래스 문서 참고).
-                              _handedOverImagePath = true;
-                              Navigator.of(context).pop(
-                                ManualCropResult(
-                                  imagePath: _imagePath,
-                                  corners: _corners,
-                                  imageSize: _imageSize!,
-                                ),
-                              );
-                            }
-                          : null,
+                      onPressed: (_isUsable && !_isFinalizing) ? _confirm : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                       ),
-                      child: const Text('이대로 자르기'),
+                      child: Text(_isFinalizing ? '처리 중…' : '이대로 자르기'),
                     ),
                   ),
                 ],
