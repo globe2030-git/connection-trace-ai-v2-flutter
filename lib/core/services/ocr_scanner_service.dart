@@ -2496,6 +2496,9 @@ class OcrScannerService {
     // ⚠️ 위 수치는 **Vision OCR 기준**이다. 앱은 ML Kit을 쓰므로 줄 나눔이 달라
     // 실제 이득은 다를 수 있다 — 실기기에서 다시 재야 확정이다.
     String? preferredKoreanNameLine;
+    // 이름 후보 중에 **성씨로 시작하는 것이 따로 있는가**(추가 413).
+    // 아래 `koreanStripped` 경로의 안전판으로 쓴다 — 자세한 것은 그 자리 주석.
+    var hasSurnameCandidate = false;
     {
       final candidates = <String>[];
       for (final line in remaining) {
@@ -2503,6 +2506,7 @@ class OcrScannerService {
         if (_koreanNameRegExp.hasMatch(stripped) &&
             !_isRejectedName(stripped)) {
           candidates.add(line);
+          if (_startsWithSurname(stripped)) hasSurnameCandidate = true;
         }
       }
       if (candidates.length >= 2) {
@@ -2625,6 +2629,18 @@ class OcrScannerService {
       if (nameLineStrong == null &&
           _koreanNameRegExp.hasMatch(strippedForName) &&
           !_isRejectedName(strippedForName) &&
+          // ⚠️ **성씨로 시작하는 다른 후보가 있을 때만** 이 줄을 미룬다
+          // (추가 413). `통일부`처럼 기관명이 한글 2~4자라 이름 규칙을 그대로
+          // 통과하고, 하필 진짜 이름보다 위에 인쇄돼 있으면 이름 자리를
+          // 차지한다. 그러면 밀려난 진짜 이름이 **회사 칸으로 들어간다** —
+          // 테스터 B가 본 증상이 이것이다(96장 실측에서 이름 2·회사 1을 얻고
+          // 깨진 것은 0이었다).
+          //
+          // ⚠️ **성씨 목록에 없으면 무조건 버리는 것이 아니다.** 성씨 목록은
+          // 79개라 드문 성을 놓칠 수 있고, 그때 이름이 통째로 사라지면 훨씬
+          // 나쁘다. 그래서 **대안이 있을 때만** 미룬다 — 영문 사람 이름 판정이
+          // *"다른 후보가 없으면 그대로 쓴다"*로 스스로를 막아 둔 것과 같다.
+          (_startsWithSurname(strippedForName) || !hasSurnameCandidate) &&
           // 더 큰 후보가 있으면 그 줄이 올 때까지 미룬다(추가 405). 밀린 줄은
           // 예전처럼 leftover로 흘러가 회사명 후보로 계속 쓰인다.
           (preferredKoreanNameLine == null ||
