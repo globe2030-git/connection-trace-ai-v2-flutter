@@ -484,8 +484,15 @@ class _ManualCropViewState extends State<ManualCropView> {
 
   /// [이대로 자르기] — 밀린 굽기가 있으면 그때만 로딩을 보여주고 기다린 뒤
   /// 넘긴다.
+  ///
+  /// ⚠️ **[_imageSize]가 아직 null이면 손대지 않는다**(추가 407 ②). 버튼
+  /// 행은 이미지 로딩 스피너와 무관하게 처음부터 그려지므로([build] 참고),
+  /// 로드가 끝나기 전에 눌리면 아래 [ManualCropResult]의 `_imageSize!`가
+  /// 크래시한다 — 버튼 비활성화([build]의 `onPressed`)가 1차 방어선이고,
+  /// 이건 그 방어선이 뚫려도(예: 위젯 트리 재구성 경합) 조용히 잘못된
+  /// 좌표로 저장되지 않게 하는 2차 방어선이다.
   Future<void> _confirm() async {
-    if (_isFinalizing || !_isUsable) return;
+    if (_isFinalizing || !_isUsable || _imageSize == null) return;
     if (!_bakeState.isSettled) {
       setState(() => _isFinalizing = true);
       await _ensureFullyBaked();
@@ -615,6 +622,10 @@ class _ManualCropViewState extends State<ManualCropView> {
   ///
   /// ⚠️ 귀퉁이를 한곳에 모아 놓고 자르면 1px짜리 그림이 나온다. 막지 않으면
   /// 사용자는 "자르기를 눌렀는데 아무것도 안 보인다"를 겪는다.
+  /// 이미지 실제 크기를 아직 모르는가 — 회전·확정 버튼이 기준으로 삼는
+  /// 값이라 로딩 전에는 손대면 안 된다(추가 407 ②).
+  bool get _isImageSizeUnknown => _imageSize == null;
+
   bool get _isUsable {
     final xs = _corners.map((c) => c.dx);
     final ys = _corners.map((c) => c.dy);
@@ -746,8 +757,13 @@ class _ManualCropViewState extends State<ManualCropView> {
               child: Row(
                 children: [
                   // 반시계 — 실기기 피드백("반시계 회전이 안 된다") 대응.
+                  //
+                  // ⚠️ [_isImageSizeUnknown]일 때도 비활성화한다(추가 407
+                  // ②) — [_rotateBy]가 내부에서 이미 null 가드를 하므로
+                  // 크래시는 안 나지만, 눌러도 아무 반응이 없는 죽은 버튼을
+                  // 보여주는 것 자체가 혼동이다.
                   OutlinedButton(
-                    onPressed: _isFinalizing
+                    onPressed: (_isFinalizing || _isImageSizeUnknown)
                         ? null
                         : () => _rotateBy(clockwise: false),
                     style: OutlinedButton.styleFrom(
@@ -764,7 +780,7 @@ class _ManualCropViewState extends State<ManualCropView> {
                   // F-03: 자동이 잘못 잘랐을 때 실제로 돌려 볼 수 있어야
                   // 한다. 좌표는 섞지 않는다 — [_rotateBy] 문서 참고.
                   OutlinedButton(
-                    onPressed: _isFinalizing
+                    onPressed: (_isFinalizing || _isImageSizeUnknown)
                         ? null
                         : () => _rotateBy(clockwise: true),
                     style: OutlinedButton.styleFrom(
@@ -778,22 +794,41 @@ class _ManualCropViewState extends State<ManualCropView> {
                     child: const Icon(Icons.rotate_right, size: 20),
                   ),
                   const SizedBox(width: 10),
-                  OutlinedButton(
-                    onPressed: _isFinalizing ? null : _resetCorners,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white54),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
+                  // [다시 찾기] — 귀퉁이를 지금 모드의 시작 자리로 되돌린다.
+                  //
+                  // ⚠️ 예전엔 Icons.replay(원형 화살표)라 옆의 회전 버튼
+                  // 둘(마찬가지로 원형 화살표)과 혼동됐다 — 실기기에서
+                  // 사용자가 "되돌리기 버튼인가?"라고 물었다(추가 407 ①).
+                  // Icons.undo는 회전류 아이콘과 모양이 뚜렷이 다르고,
+                  // "되돌리기"라는 사용자의 심성 모델과도 맞아 이걸로
+                  // 바꿨다. Tooltip·Semantics로 역할도 함께 읽히게 한다.
+                  Tooltip(
+                    message: '귀퉁이 되돌리기',
+                    child: Semantics(
+                      label: '귀퉁이 되돌리기',
+                      hint: '귀퉁이를 지금 모드의 시작 위치로 되돌립니다',
+                      button: true,
+                      child: OutlinedButton(
+                        onPressed: _isFinalizing ? null : _resetCorners,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white54),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
+                        ),
+                        child: const Icon(Icons.undo, size: 20),
                       ),
                     ),
-                    child: const Icon(Icons.replay, size: 20),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: (_isUsable && !_isFinalizing) ? _confirm : null,
+                      onPressed:
+                          (_isUsable && !_isFinalizing && !_isImageSizeUnknown)
+                          ? _confirm
+                          : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.accent,
                         foregroundColor: Colors.white,
