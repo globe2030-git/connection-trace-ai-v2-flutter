@@ -1065,6 +1065,84 @@ class OcrScannerService {
   /// `NELSONSPORTS,INC.`가 되고 `David Kim`도 붙는다. 그래서 **1글자 토큰이
   /// 3개 이상 잇달아 나오는 구간만** 붙인다 — `커넥션 센스`(2글자 이상)나
   /// 문장 속에 낀 한 글자(`및`)는 건드리지 않는다.
+  /// 한 줄에 **한글명과 영문명이 나란히 인쇄된 것**에서 뒤에 붙은 영문을 뗀다
+  /// (`케이스랩 K.ACE LAB` → `케이스랩`, 추가 424·425).
+  ///
+  /// ## 왜 파싱 **맨 앞**인가
+  ///
+  /// 고른 뒤에 값에서 떼는 방법도 재 봤는데 **+1장뿐이었다.** 파서가 그 줄을
+  /// **애초에 안 고르기** 때문이다 — `케이스랩 K.ACE LAB`은 회사명 모양으로
+  /// 안 보여 다른 줄에 밀린다. 영문을 먼저 떼어 `케이스랩`으로 만들면 그제야
+  /// 골라진다. 같은 규칙을 여기 두면 **+4장**이다.
+  ///
+  /// ## ⚠️ 손대지 않는 줄이 규칙의 절반이다
+  ///
+  /// 실측(96장 전 필드 전후 대조)에서 **직함 줄을 안 빼면 4장이 깨졌다** —
+  /// `Business Development` 같은 영문 직함이 한글과 한 줄에 있을 때 같이
+  /// 떨어져 나간다. 직함 키워드가 걸린 줄을 건너뛰자 **깨짐 0**이 됐다.
+  ///
+  /// ⚠️ **괄호는 안에 한글이 없을 때만 뗀다.** 이 조건이 없으면
+  /// `(주)컴플러스`가 `컴플러스`가 된다 — 추가 424에서 정답지를 고칠 때
+  /// 실제로 낸 버그이고, 적용 직전에 잡았다.
+  ///
+  /// ⚠️ **정답지를 가른 규칙과 같아야 한다.** 다르면 채점기와 파서가 서로
+  /// 다른 답을 옳다고 본다.
+  static String _stripLatinParallel(String line) {
+    var s = line.trim();
+    if (s.isEmpty || !_hasHangul(s)) return line; // 영문 전용 회사명 보존
+    // 연락처·주소·주소류가 든 줄은 건드리지 않는다.
+    if (s.contains('@') || RegExp(r'\d{3,}').hasMatch(s)) return line;
+    if (RegExp(r'(https?://|www\.)', caseSensitive: false).hasMatch(s)) {
+      return line;
+    }
+    // ⚠️ 직함 줄 제외 — 위 주석 참고. 이 한 줄이 깨짐 4를 0으로 만든다.
+    if (_titleKeywords.any((k) => _containsCi(s, k))) return line;
+
+    String prev = '';
+    while (prev != s) {
+      prev = s;
+      final paren = RegExp(r'[\(（]([^\)）]*)[\)）]\s*$').firstMatch(s);
+      if (paren != null && !_hasHangul(paren.group(1)!)) {
+        s = s.substring(0, paren.start).trim();
+        continue;
+      }
+      final tail = RegExp(
+        r"(?:^|\s)([A-Za-z][A-Za-z0-9.,&'\-]*(?:\s+[A-Za-z][A-Za-z0-9.,&'\-]*)*)\s*$",
+      ).firstMatch(s);
+      if (tail != null && !_hasHangul(tail.group(1)!)) {
+        final cut = s.lastIndexOf(tail.group(1)!);
+        s = (cut > 0 ? s.substring(0, cut) : '').trim();
+        continue;
+      }
+    }
+    // 다 떼고 나면 남는 게 없는 경우 — 원문을 그대로 둔다.
+    if (s.isEmpty) return line;
+    // ⚠️ **남은 한글이 사람 이름 모양이면 병기가 아니었다.**
+    // `이정현 DA Sovargen`은 한글명+영문명이 아니라 **이름과 회사가 한 줄로
+    // 뭉친 것**이고, 여기서 영문을 떼면 **회사를 통째로 잃는다.**
+    // 자동 테스트 3건(card_64·card_108·Sovargen)이 이것을 잡았다 — 96장
+    // 명함 대조에서는 깨짐이 0이었는데도 그랬다. **표본에 없는 모양이었다.**
+    if (_looksLikeKoreanPersonNameShape(s)) return line;
+    return s;
+  }
+
+  /// 남은 한글에 **사람 이름 모양의 낱말이 있는가** — 영문 병기 떼기를
+  /// 멈출지 판단하는 데만 쓴다(추가 430). 이름 판정 자체는
+  /// `_hangulNameLooksReal`이 한다.
+  ///
+  /// ⚠️ **줄 전체가 아니라 낱말 단위로 본다.** `장 장동일 (Daniel)`에서
+  /// `(Daniel)`은 회사 병기가 아니라 **그 사람의 영문 이름**이고, 떼면 이름
+  /// 판정이 흔들린다(card_64). 줄 전체만 보면 `장 장동일`이 공백 때문에
+  /// 이름 모양을 벗어나 이 함정을 못 잡는다.
+  static bool _looksLikeKoreanPersonNameShape(String s) {
+    for (final tok in s.trim().split(_whitespaceSplitRegExp)) {
+      if (_koreanNameRegExp.hasMatch(tok) && _startsWithSurname(tok)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static String _collapseCharSpacing(String line) {
     // 전각 공백(U+3000)도 명함에서 쓰인다 — 같은 공백으로 취급한다.
     final tokens = line.split(RegExp(r'[ \u3000]+'));
@@ -1864,7 +1942,9 @@ class OcrScannerService {
     lineData = [
       for (final l in lineData)
         (
-          text: _restoreBrokenPhones(_collapseCharSpacing(l.text)),
+          text: _restoreBrokenPhones(
+            _collapseCharSpacing(_stripLatinParallel(l.text)),
+          ),
           height: l.height,
           top: l.top,
           left: l.left,
