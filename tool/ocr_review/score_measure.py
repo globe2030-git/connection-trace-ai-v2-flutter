@@ -114,6 +114,22 @@ def match_truth(rec, by_email, by_phone):
     return None
 
 
+# 이름처럼 생긴 후보만 남기는 눈금. 파서의 규칙을 옮긴 것이 아니라,
+# **크기 신호를 잴 때 말이 되는 후보 안에서 재기 위한** 최소한의 체다.
+# 명함에서 가장 큰 글자는 대개 회사 로고라, 아무거나 큰 것을 집으면 크기
+# 신호가 실제보다 약해 보인다.
+_NOT_NAME = ('주식회사', '(주)', '㈜', '대표', '이사', '부장', '차장', '과장',
+             '팀장', '실장', '사원', '주임', '대리', '센터', '연구', '지점')
+
+
+def name_shaped(text):
+    """한글 2~5자이고 숫자·직함어·회사어가 안 섞인 것."""
+    h = hangul_only(text)
+    if not (2 <= len(h) <= 5) or len(h) != len(text.replace(' ', '')):
+        return False
+    return not any(k in text for k in _NOT_NAME)
+
+
 def rows_of(tokens):
     """낱말을 행으로 묶는다 — **앱과 같은 규칙**(평균 높이의 60% 이내)."""
     if not tokens:
@@ -140,6 +156,7 @@ def main():
     src_right = Counter()
     line_pick = token_pick = both = neither = 0
     comparable = 0
+    line_pick_n = token_pick_n = comparable_n = 0
 
     with open(measure_path, encoding='utf-8') as f:
         for row in f:
@@ -189,6 +206,20 @@ def main():
             both += a and b
             neither += (not a) and (not b)
 
+            # 이름처럼 생긴 후보 안에서만 다시 잰다(위 주석 참고).
+            cand_rows = [g for g in groups
+                         if name_shaped(''.join(t[0] for t in g))]
+            cand_toks = [t for t in rec['tokens'] if name_shaped(t[0])]
+            if not cand_rows and not cand_toks:
+                continue
+            comparable_n += 1
+            if cand_rows:
+                best = max(cand_rows, key=lambda g: max(t[1] for t in g))
+                line_pick_n += hangul_only(''.join(t[0] for t in best)) == want
+            if cand_toks:
+                best = max(cand_toks, key=lambda t: t[1])
+                token_pick_n += hangul_only(best[0]) == want
+
     print('측정 %d장 · 정답지와 맞춘 것 %d장\n' % (total, matched))
     print('[이름 채점]')
     for k in ('맞음', '틀림', '빈 값', '이름이 임의값이라 채점 제외',
@@ -213,6 +244,11 @@ def main():
           % (token_pick, 100 * token_pick / max(comparable, 1)))
     print('  둘 다 맞음 %d · 둘 다 틀림 %d · 낱말만 맞음 %d · 행만 맞음 %d'
           % (both, neither, token_pick - both, line_pick - both))
+    print('\n  [후보를 이름처럼 생긴 것으로 좁히면] %d장' % comparable_n)
+    print('    행 높이로 골랐다면   맞음 %3d (%.0f%%)'
+          % (line_pick_n, 100 * line_pick_n / max(comparable_n, 1)))
+    print('    낱말 높이로 골랐다면 맞음 %3d (%.0f%%)'
+          % (token_pick_n, 100 * token_pick_n / max(comparable_n, 1)))
     print('\n  ⚠️ 이것은 "그 하나만 보고 골랐다면"의 수치다. 실제 파서는 규칙을')
     print('     먼저 보고 확신이 없을 때만 크기를 쓴다 — 위 숫자를 파서 정확도로')
     print('     읽으면 안 된다. 크기 신호가 얼마나 실한지를 보는 눈금이다.')
