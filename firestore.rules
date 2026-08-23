@@ -506,6 +506,16 @@ service cloud.firestore {
         'updatedAt',
         'photoImprovementConsent',
         'photoImprovementConsentAt',
+        // 명함 그룹 목록(추가 427) — GroupsRepository가 이 필드에 암호화해
+        // 쓴다. 빠뜨리면 클라이언트 쓰기가 여기서 거부된다(법무 검토 질문 3).
+        'groups',
+        // ⚠️ 427 작업 중 발견: DataBackupService.recordAccountSwitch도 이
+        // 앱(클라이언트 SDK, FirebaseFirestore.instance)에서 이 문서에
+        // accountSwitches 필드를 쓰는데 이 목록에 없었다 — 즉 계정 전환
+        // 기록이 조용히 실패하고 있었을 수 있다(호출부가 실패를 삼키고
+        // debugPrint만 남기는 구조라 화면에 드러나지 않는다). 그룹 필드를
+        // 손보는 김에 함께 추가한다.
+        'accountSwitches',
       ];
     }
 

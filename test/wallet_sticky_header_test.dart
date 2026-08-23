@@ -1,5 +1,7 @@
 import 'package:connection_trace_ai_flutter/data/models/contact_model.dart';
 import 'package:connection_trace_ai_flutter/data/repositories/contacts_repository.dart';
+import 'package:connection_trace_ai_flutter/data/repositories/groups_repository.dart';
+import 'package:connection_trace_ai_flutter/presentation/features/wallet/view_models/groups_view_model.dart';
 import 'package:connection_trace_ai_flutter/presentation/features/wallet/view_models/wallet_view_model.dart';
 import 'package:connection_trace_ai_flutter/presentation/features/wallet/views/wallet_view.dart';
 import 'package:flutter/material.dart';
@@ -37,7 +39,10 @@ void main() {
   /// 아직 한 번도 안 부른 시점이라 그 가짜 시계조차 안 움직인다) — 실제로
   /// 겪은 무한 대기(2026-08-21), `wallet_search_test.dart`는 `testWidgets`가
   /// 아니라 `test`라 같은 코드가 문제없이 동작했던 것이었다.
-  Future<WalletViewModel> viewModelWith(
+  // WalletView가 이제 GroupsViewModel도 본다(추가 427 — 상단 그룹 칩).
+  // WalletViewModel과 같은 ContactsRepository 인스턴스를 공유해야
+  // 명함 목록이 어긋나지 않는다.
+  Future<({WalletViewModel wallet, GroupsViewModel groups})> viewModelWith(
     WidgetTester tester,
     List<ContactModel> contacts,
   ) async {
@@ -56,20 +61,32 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'saved_contacts_v2': '[${entries.join(',')}]',
     });
-    late WalletViewModel vm;
+    late WalletViewModel wallet;
+    late GroupsViewModel groups;
     await tester.runAsync(() async {
       final repo = ContactsRepository();
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      vm = WalletViewModel(contactsRepository: repo);
+      wallet = WalletViewModel(contactsRepository: repo);
+      groups = GroupsViewModel(
+        groupsRepository: GroupsRepository(),
+        contactsRepository: repo,
+      );
     });
-    return vm;
+    return (wallet: wallet, groups: groups);
   }
 
-  Future<void> pumpWallet(WidgetTester tester, WalletViewModel vm) async {
+  Future<void> pumpWallet(
+    WidgetTester tester,
+    WalletViewModel vm,
+    GroupsViewModel groupsVm,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: ChangeNotifierProvider<WalletViewModel>.value(
-          value: vm,
+        home: MultiProvider(
+          providers: [
+            ChangeNotifierProvider<WalletViewModel>.value(value: vm),
+            ChangeNotifierProvider<GroupsViewModel>.value(value: groupsVm),
+          ],
           child: const WalletView(),
         ),
       ),
@@ -90,12 +107,18 @@ void main() {
     // `scrollable_positioned_list`는 `ListView`가 아니라 자체
     // `Scrollable`을 그린다(패키지 소스 확인) — `ListView`로 찾을 수 없다.
     // 검색창(`TextField`)도 내부에 자기 `Scrollable`(가로 텍스트 스크롤)을
-    // 갖고 있어 `find.byType(Scrollable)`만으로는 어느 게 목록인지 모른다.
-    // `EditableText` 조상이 없는 쪽 — 즉 검색창이 아닌 쪽 — 을 목록으로
-    // 판정한다.
-    final listElement = find.byType(Scrollable).evaluate().firstWhere(
-      (e) => e.findAncestorWidgetOfExactType<EditableText>() == null,
-    );
+    // 갖고 있고, 추가 427부터는 그룹 칩 줄도 가로 `ListView`(Scrollable)다
+    // — `EditableText` 조상 유무만으로는 더는 목록을 구분할 수 없다(그룹
+    // 칩도 조상에 EditableText가 없다). **세로축**인 것으로 한 번 더
+    // 좁힌다 — 목록만 세로로 스크롤한다.
+    final listElement = find.byType(Scrollable).evaluate().firstWhere((e) {
+      if (e.findAncestorWidgetOfExactType<EditableText>() != null) {
+        return false;
+      }
+      final widget = e.widget as Scrollable;
+      return widget.axisDirection == AxisDirection.down ||
+          widget.axisDirection == AxisDirection.up;
+    });
     final scrollable = (listElement as StatefulElement).state as ScrollableState;
     scrollable.position.jumpTo(300);
     await tester.pump();
@@ -103,8 +126,8 @@ void main() {
   }
 
   testWidgets('⭐ 맨 위에서는 큰 제목이 보이고, 내리면 축약형으로 접힌다', (tester) async {
-    final vm = await viewModelWith(tester, List.generate(40, contact));
-    await pumpWallet(tester, vm);
+    final vms = await viewModelWith(tester, List.generate(40, contact));
+    await pumpWallet(tester, vms.wallet, vms.groups);
 
     // 맨 위 — 큰 제목 그대로.
     expect(
@@ -131,8 +154,8 @@ void main() {
   });
 
   testWidgets('⭐ 접혀도 검색창과 정렬 칩은 계속 쓸 수 있다', (tester) async {
-    final vm = await viewModelWith(tester, List.generate(40, contact));
-    await pumpWallet(tester, vm);
+    final vms = await viewModelWith(tester, List.generate(40, contact));
+    await pumpWallet(tester, vms.wallet, vms.groups);
 
     await scrollDown(tester);
 
@@ -153,8 +176,8 @@ void main() {
   testWidgets('⭐ 선택 모드(F-06)에서 접으면 선택 개수·전체선택 버튼이 축약 줄에 남는다', (
     tester,
   ) async {
-    final vm = await viewModelWith(tester, List.generate(40, contact));
-    await pumpWallet(tester, vm);
+    final vms = await viewModelWith(tester, List.generate(40, contact));
+    await pumpWallet(tester, vms.wallet, vms.groups);
 
     await tester.tap(find.byTooltip('선택 삭제'));
     await tester.pump();
@@ -175,8 +198,8 @@ void main() {
   });
 
   testWidgets('목록이 검색으로 다 걸러지면 접힌 채로 남지 않는다', (tester) async {
-    final vm = await viewModelWith(tester, List.generate(40, contact));
-    await pumpWallet(tester, vm);
+    final vms = await viewModelWith(tester, List.generate(40, contact));
+    await pumpWallet(tester, vms.wallet, vms.groups);
 
     await scrollDown(tester);
     expect(find.text('40명의 인맥'), findsNothing, reason: '접힘 확인');

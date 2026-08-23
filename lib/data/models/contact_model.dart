@@ -73,6 +73,16 @@ class ContactModel {
   final String? avatarUrl;
   final GeoPosition? geo;
   final List<String> tags;
+  // 소속 그룹 id 목록(추가 427). 한 명함이 여러 그룹에 속할 수 있다(다중
+  // 선택). **그룹 "이름"이 아니라 id를 저장한다** — 그룹 이름이 바뀌어도
+  // 이 참조는 그대로 유효해야 하고(태그와 달리 이름 자체가 아니라 그룹이라는
+  // 실체를 가리킴), 어느 그룹이 삭제되면 그 id 참조만 걷어낸다
+  // (`GroupsViewModel.deleteGroup`). 그룹 목록(이름·생성일) 자체는 여기 없고
+  // `GroupsRepository`가 `users/{uid}` 문서 필드로 따로 관리한다 — 법무
+  // 검토(2026-08-23, group-feature-legal-note) 결론: 명함별 참조는 태그와
+  // 같은 취급(이 필드), 그룹 "목록"은 명함과 독립적으로 존재하는 값이라
+  // 별도 저장.
+  final List<String> groupIds;
   // 관심사 — AI 대화 브리핑이 상대방과 자연스럽게 안부를 나눌 때 참고하는
   // 항목(취미/관심 분야 등). tags와 별개 필드로 둔 이유: tags는 "이 사람을
   // 어떤 카테고리로 분류할지"(예: AI, C-Level)이고 interests는 "이 사람과
@@ -142,6 +152,7 @@ class ContactModel {
     this.avatarUrl,
     this.geo,
     required this.tags,
+    this.groupIds = const [],
     this.interests = const [],
     required this.talkingPoints,
     this.commLogs = const [],
@@ -192,6 +203,9 @@ class ContactModel {
       if (includeGeo) 'lat': geo?.lat,
       if (includeGeo) 'lng': geo?.lng,
       'tags': tags,
+      // 태그와 동일하게 취급한다(법무 검토 결론) — 좌표·명함이미지 경로처럼
+      // includeGeo로 가리지 않고 서버 백업에도 그대로 실린다.
+      'groupIds': groupIds,
       'interests': interests,
       'talkingPoints': talkingPoints,
       'commLogs': commLogs.map((l) => l.toJson()).toList(),
@@ -243,6 +257,9 @@ class ContactModel {
             )
           : null,
       tags: List<String>.from(json['tags'] ?? []),
+      // ⚠️ 2026-08-23 이전 저장분에는 이 키가 없다 — 빈 목록으로 안전하게
+      // 폴백한다(마이그레이션 불필요, department와 같은 패턴).
+      groupIds: List<String>.from(json['groupIds'] ?? []),
       interests: List<String>.from(json['interests'] ?? []),
       talkingPoints: List<String>.from(json['talkingPoints'] ?? []),
       commLogs:
@@ -293,6 +310,7 @@ class ContactModel {
     String? avatarUrl,
     GeoPosition? geo,
     List<String>? tags,
+    List<String>? groupIds,
     List<String>? interests,
     List<String>? talkingPoints,
     List<CommunicationLogModel>? commLogs,
@@ -330,6 +348,7 @@ class ContactModel {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       geo: geo ?? this.geo,
       tags: tags ?? this.tags,
+      groupIds: groupIds ?? this.groupIds,
       interests: interests ?? this.interests,
       talkingPoints: talkingPoints ?? this.talkingPoints,
       commLogs: commLogs ?? this.commLogs,

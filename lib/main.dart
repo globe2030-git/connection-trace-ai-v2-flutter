@@ -18,11 +18,13 @@ import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'data/repositories/auth_repository.dart';
 import 'data/repositories/contacts_repository.dart';
+import 'data/repositories/groups_repository.dart';
 import 'data/repositories/my_profile_repository.dart';
 import 'presentation/common/auth_gate.dart';
 import 'presentation/common/splash_gate.dart';
 import 'presentation/common/version_gate.dart';
 import 'presentation/features/radar/view_models/radar_view_model.dart';
+import 'presentation/features/wallet/view_models/groups_view_model.dart';
 import 'presentation/features/wallet/view_models/wallet_view_model.dart';
 import 'presentation/navigation/main_tab_screen.dart';
 
@@ -160,6 +162,10 @@ class ConnectionTraceApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => ContactsRepository()),
         ChangeNotifierProvider(create: (_) => MyProfileRepository()),
+        // 명함 그룹(추가 427) — 그룹 목록 자체는 ContactsRepository와 별개
+        // 저장소다(users/{uid} 문서의 다른 필드). AuthGate가 로그인 시점에
+        // 프로필과 같은 방식으로 uid를 알리고 서버와 동기화한다.
+        ChangeNotifierProvider(create: (_) => GroupsRepository()),
         ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProxyProvider<ContactsRepository, RadarViewModel>(
           create: (ctx) => RadarViewModel(
@@ -174,6 +180,22 @@ class ConnectionTraceApp extends StatelessWidget {
           ),
           update: (ctx, repo, prev) =>
               prev ?? WalletViewModel(contactsRepository: repo),
+        ),
+        ChangeNotifierProxyProvider2<
+          ContactsRepository,
+          GroupsRepository,
+          GroupsViewModel
+        >(
+          create: (ctx) => GroupsViewModel(
+            groupsRepository: ctx.read<GroupsRepository>(),
+            contactsRepository: ctx.read<ContactsRepository>(),
+          ),
+          update: (ctx, contactsRepo, groupsRepo, prev) =>
+              prev ??
+              GroupsViewModel(
+                groupsRepository: groupsRepo,
+                contactsRepository: contactsRepo,
+              ),
         ),
       ],
       child: MaterialApp(

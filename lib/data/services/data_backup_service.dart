@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/services/data_crypto_service.dart';
 import '../../core/services/encryption_key_service.dart';
 import '../models/contact_model.dart';
+import '../models/group_model.dart';
 import '../models/my_profile_model.dart';
 
 /// 명함/프로필 데이터를 Cloud Firestore에 백업·복원한다.
@@ -155,6 +156,59 @@ class DataBackupService {
       }, SetOptions(merge: true));
     } catch (e) {
       debugPrint('프로필 서버 백업 실패: $e');
+    }
+  }
+
+  /// 그룹 목록(id·이름·생성일)을 암호화해서 `users/{uid}` 문서의 `groups`
+  /// 필드에 저장한다(추가 427).
+  ///
+  /// ⚠️ **하위 컬렉션이 아니라 문서 필드**로 두는 것이 법무 검토의 핵심
+  /// 결론이다(`docs/planning/group-feature-legal-note-2026-08-23.md` 질문 3).
+  /// `deleteAllUserData`가 `users/{uid}` 문서를 통째로 지우므로, 여기 두면
+  /// 탈퇴 파기 경로에 **별도 코드 없이 자연히 포함**된다 — 하위 컬렉션으로
+  /// 두면 `deletedContacts`가 이미 겪은 함정(문서를 지워도 하위 컬렉션은
+  /// 남는다)이 그대로 재발한다.
+  ///
+  /// 그룹명이 제3자를 특정할 수 있는 자유 입력값이라 프로필과 동일하게
+  /// `{'encrypted': ..., 'schemaVersion': 1}` 형태로 암호화해 넣는다(평문
+  /// Map으로 넣지 않는다).
+  static Future<void> backupGroups(String uid, List<GroupModel> groups) async {
+    try {
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final encrypted = await DataCryptoService.encryptJson({
+        'groups': groups.map((g) => g.toJson()).toList(),
+      }, key);
+      await _userDoc(uid).set({
+        'groups': {'encrypted': encrypted, 'schemaVersion': 1},
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('그룹 서버 백업 실패: $e');
+    }
+  }
+
+  /// 그룹 목록을 서버에서 내려받는다. 필드가 없거나(신규 계정) 복호화에
+  /// 실패하면 `null`을 돌려준다 — 호출자가 "받은 게 없다"와 "빈 목록"을
+  /// 구분해 로컬을 함부로 덮어쓰지 않게 하기 위함([restoreProfile]과 동일한
+  /// 계약).
+  static Future<List<GroupModel>?> restoreGroups(String uid) async {
+    try {
+      final doc = await _userDoc(uid).get();
+      final field = doc.data()?['groups'];
+      if (field is! Map<String, dynamic>) return null;
+      final encrypted = field['encrypted'] as String?;
+      // 그룹 기능은 암호화 도입 이후에 생겼으므로 레거시 평문 문서가 있을
+      // 수 없다 — 없으면 그냥 복원할 것이 없는 것으로 본다.
+      if (encrypted == null) return null;
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final decoded = await DataCryptoService.decryptJson(encrypted, key);
+      final list = decoded['groups'] as List<dynamic>? ?? const [];
+      return list
+          .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('그룹 서버 복원 실패: $e');
+      return null;
     }
   }
 

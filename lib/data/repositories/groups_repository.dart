@@ -1,0 +1,219 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/services/data_crypto_service.dart';
+import '../../core/services/encryption_key_service.dart';
+import '../models/group_model.dart';
+import '../services/data_backup_service.dart';
+
+/// 명함 그룹 목록(id·이름·생성일)을 관리한다(추가 427).
+///
+/// **명함별로 어느 그룹에 속하는지는 여기서 모른다** — 그건
+/// `ContactModel.groupIds`에 있다(태그와 같은 취급, 명함 백업 경로에 자연히
+/// 실린다). 이 저장소는 "그룹이라는 실체가 무엇인지"(이름·생성일)만 책임진다.
+///
+/// 저장·암호화·복원 패턴은 [MyProfileRepository]를 그대로 따른다 — 그룹명이
+/// 제3자를 특정할 수 있는 자유 입력값이라 프로필과 같은 취급을 받는다(법무
+/// 스팟 확인, `docs/planning/group-feature-legal-note-2026-08-23.md` 질문 2).
+///
+/// ⚠️ 서버 저장 위치는 `users/{uid}` 문서의 암호화 필드다(하위 컬렉션이
+/// 아니다) — 같은 문서의 `deleteAllUserData`가 탈퇴 시 통째로 지우므로
+/// 별도 파기 코드 없이 자연히 사라진다(법무 검토 질문 3, `deletedContacts`가
+/// 이미 겪은 하위 컬렉션 함정을 반복하지 않기 위함).
+class GroupsRepository extends ChangeNotifier {
+  static const String _storageKey = 'saved_groups_v1';
+
+  List<GroupModel> _groups = [];
+  String? _uid;
+
+  final EncryptionKeyService _encryptionKeyService;
+
+  // ContactsRepository/MyProfileRepository와 동일한 지연 로드/마이그레이션
+  // 플래그. 로그인 전(uid 없음)에는 암호화 키를 만들 수 없어 평문으로 두고,
+  // 로그인 시점에 재로드/재암호화한다.
+  bool _pendingEncryptedLoad = false;
+  bool _pendingPlaintextMigration = false;
+
+  GroupsRepository({EncryptionKeyService? encryptionKeyService})
+    : _encryptionKeyService = encryptionKeyService ?? EncryptionKeyService() {
+    _loadFromDisk();
+  }
+
+  List<GroupModel> get groups => List.unmodifiable(_groups);
+
+  Future<void> setCurrentUid(String? uid) async {
+    _uid = uid;
+    if (uid == null) return;
+    if (_pendingEncryptedLoad) {
+      _pendingEncryptedLoad = false;
+      await _loadFromDisk();
+    } else if (_pendingPlaintextMigration) {
+      _pendingPlaintextMigration = false;
+      await _saveToDisk();
+    }
+  }
+
+  /// 새 기기(또는 재설치)에서 로그인한 뒤, 로컬 그룹이 아직 없을 때만 서버
+  /// 백업분을 내려받는다([ContactsRepository.restoreFromServerIfEmpty]와
+  /// 같은 규칙 — 이미 로컬에 데이터가 있으면 덮어쓰지 않는다).
+  Future<void> restoreFromServerIfEmpty(String uid) async {
+    if (_groups.isNotEmpty) return;
+    final restored = await DataBackupService.restoreGroups(uid);
+    if (restored == null || restored.isEmpty) return;
+    _groups = restored;
+    notifyListeners();
+    await _saveToDisk();
+  }
+
+  /// 계정 전환 안전장치(backlog #50)에서 "현재 계정 데이터로 교체"를 선택했을
+  /// 때 쓰는 강제 복원 — 로컬에 그룹이 있어도 무시하고 서버 백업분으로
+  /// 덮어쓴다(서버에 없으면 빈 목록).
+  Future<void> forceRestoreFromServer(String uid) async {
+    final restored = await DataBackupService.restoreGroups(uid);
+    _groups = restored ?? [];
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_groups.isNotEmpty) {
+        await _saveToDisk();
+      } else {
+        await prefs.remove(_storageKey);
+      }
+    } catch (e) {
+      debugPrint('강제 복원된 그룹 로컬 저장 실패: $e');
+    }
+  }
+
+  /// 계정 삭제 또는 계정 전환 시 로컬 그룹 목록을 비운다. 서버 데이터는
+  /// 건드리지 않는다(호출자가 필요하면 별도로 처리).
+  Future<void> clearLocal() async {
+    _groups = [];
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_storageKey);
+    } catch (e) {
+      debugPrint('Error clearing groups: $e');
+    }
+  }
+
+  Future<void> _loadFromDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_storageKey);
+      if (raw == null || raw.isEmpty) return;
+
+      // 1) 평문 저장분(게스트 상태에서 만든 그룹)인지 먼저 시도한다.
+      List<dynamic>? legacyList;
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is List) legacyList = decoded;
+      } catch (_) {
+        legacyList = null;
+      }
+
+      if (legacyList != null) {
+        _groups = legacyList
+            .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
+            .toList();
+        notifyListeners();
+        if (_uid != null) {
+          await _saveToDisk();
+        } else {
+          _pendingPlaintextMigration = true;
+        }
+        return;
+      }
+
+      // 2) 평문 JSON이 아니면 암호화된 payload로 간주한다.
+      final uid = _uid;
+      if (uid == null) {
+        _pendingEncryptedLoad = true;
+        return;
+      }
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final decoded = await DataCryptoService.decryptJson(raw, key);
+      final jsonList = decoded['groups'] as List<dynamic>? ?? const [];
+      _groups = jsonList
+          .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
+          .toList();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error loading groups: $e');
+    }
+  }
+
+  Future<void> _saveToDisk() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _groups.map((g) => g.toJson()).toList();
+      final uid = _uid;
+      if (uid == null) {
+        await prefs.setString(_storageKey, jsonEncode(jsonList));
+        return;
+      }
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final encoded = await DataCryptoService.encryptJson({
+        'groups': jsonList,
+      }, key);
+      await prefs.setString(_storageKey, encoded);
+    } catch (e) {
+      debugPrint('Error saving groups: $e');
+    }
+  }
+
+  /// 새 그룹을 만든다. 같은 이름(대소문자·앞뒤공백 무시)이 이미 있으면 새로
+  /// 만들지 않고 기존 그룹을 그대로 돌려준다 — 검색창이 "새 그룹 만들기"를
+  /// 겸하는 UI에서 같은 이름 그룹이 중복 생성되는 것을 막는다.
+  GroupModel createGroup(String name) {
+    final trimmed = name.trim();
+    final matches = _groups.where(
+      (g) => g.name.trim().toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (matches.isNotEmpty) return matches.first;
+    final group = GroupModel(
+      id: _generateId(),
+      name: trimmed,
+      createdAt: DateTime.now(),
+    );
+    _groups = [..._groups, group];
+    notifyListeners();
+    _persist();
+    return group;
+  }
+
+  void renameGroup(String id, String newName) {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return;
+    _groups = _groups
+        .map((g) => g.id == id ? g.copyWith(name: trimmed) : g)
+        .toList();
+    notifyListeners();
+    _persist();
+  }
+
+  /// 그룹 자체를 지운다. **명함별 참조를 걷어내는 것은 이 저장소의 일이
+  /// 아니다** — 여기는 ContactsRepository를 모른다. 참조 정리는
+  /// `GroupsViewModel.deleteGroup`이 두 저장소를 함께 보며 처리한다.
+  void deleteGroup(String id) {
+    _groups = _groups.where((g) => g.id != id).toList();
+    notifyListeners();
+    _persist();
+  }
+
+  void _persist() {
+    unawaited(_saveToDisk());
+    final uid = _uid;
+    if (uid != null) DataBackupService.backupGroups(uid, _groups);
+  }
+
+  int _idSeq = 0;
+
+  /// 그룹 id — UUID 라이브러리 없이도 충돌 없는 고유 값이면 충분하다(법무
+  /// 검토가 요구하는 것은 "이름이 아니라 불투명한 id"이지 RFC4122 형식이
+  /// 아니다). 같은 밀리초에 여러 그룹이 만들어질 일은 거의 없지만, 시퀀스를
+  /// 덧붙여 그 경우도 안전하게 한다.
+  String _generateId() =>
+      'g_${DateTime.now().microsecondsSinceEpoch}_${_idSeq++}';
+}

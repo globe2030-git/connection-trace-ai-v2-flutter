@@ -10,6 +10,7 @@ import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
+import '../view_models/groups_view_model.dart';
 import '../view_models/wallet_view_model.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
 import 'add_card_modal_view.dart';
@@ -86,6 +87,17 @@ class _WalletViewState extends State<WalletView> {
   @override
   Widget build(BuildContext context) {
     final viewModel = context.watch<WalletViewModel>();
+    final groupsVm = context.watch<GroupsViewModel>();
+    // 선택돼 있던 그룹이 삭제되면(다른 곳에서, 또는 관리 시트에서) 그
+    // id가 더는 존재하지 않는다 — 그대로 두면 모든 명함의 groupIds가 그
+    // id를 안 가지므로 목록이 조용히 텅 비어 버린다("검색 결과 없음"과
+    // 구분이 안 감). 다음 프레임에 "전체"로 되돌린다.
+    if (viewModel.selectedGroupId != null &&
+        !groupsVm.groups.any((g) => g.id == viewModel.selectedGroupId)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) viewModel.setSelectedGroup(null);
+      });
+    }
     final contacts = viewModel.filteredContacts;
     _maybeRefreshGivenUp(viewModel.contacts);
 
@@ -109,7 +121,7 @@ class _WalletViewState extends State<WalletView> {
               // 위로 되돌아가지 않게 하려는 것이다.
               CollapsingListHeader(
                 collapsed: headerCollapsed,
-                expandedTop: _buildExpandedTop(viewModel, contacts),
+                expandedTop: _buildExpandedTop(viewModel, groupsVm, contacts),
                 collapsedTop: _buildCollapsedTop(viewModel, contacts),
                 pinnedTools: _buildPinnedTools(viewModel),
               ),
@@ -130,7 +142,12 @@ class _WalletViewState extends State<WalletView> {
                           }
                           return false;
                         },
-                        child: _buildContactList(context, viewModel, contacts),
+                        child: _buildContactList(
+                          context,
+                          viewModel,
+                          groupsVm,
+                          contacts,
+                        ),
                       ),
               ),
               if (_selectionMode) _buildDeleteBar(context, viewModel),
@@ -148,6 +165,7 @@ class _WalletViewState extends State<WalletView> {
   /// 손해가 적다.
   Widget _buildExpandedTop(
     WalletViewModel viewModel,
+    GroupsViewModel groupsVm,
     List<ContactModel> contacts,
   ) {
     return Column(
@@ -189,12 +207,100 @@ class _WalletViewState extends State<WalletView> {
             _buildHeaderTrailingActions(viewModel, contacts),
           ],
         ),
+        // 그룹 칩(추가 427) — 명함이 하나도 없으면(빈 지갑) 굳이 보여주지
+        // 않는다. 태그 칩과 같은 자리(스크롤하면 함께 흘려간다)에 두되,
+        // 캔버스 확정안에서 그룹이 더 앞선 개념이라 태그보다 위에 둔다.
+        if (viewModel.contacts.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _buildGroupChips(context, viewModel, groupsVm),
+          if (groupsVm.groups.isNotEmpty &&
+              groupsVm.contactsWithoutGroupCount > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '그룹이 없는 명함은 "전체"에서만 보여요.',
+              style: const TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+            ),
+          ],
+        ],
         if (viewModel.allTags.isNotEmpty) ...[
           const SizedBox(height: 12),
           _buildTagChips(viewModel),
         ],
       ],
     );
+  }
+
+  /// 그룹(필터) 칩 가로 목록 — [전체][그룹A n][그룹B n]…[+ 그룹].
+  Widget _buildGroupChips(
+    BuildContext context,
+    WalletViewModel viewModel,
+    GroupsViewModel groupsVm,
+  ) {
+    final groups = groupsVm.groups;
+    return SizedBox(
+      height: 34,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          _GroupFilterChip(
+            label: '전체',
+            selected: viewModel.selectedGroupId == null,
+            onTap: () => viewModel.setSelectedGroup(null),
+          ),
+          for (final g in groups) ...[
+            const SizedBox(width: 8),
+            _GroupFilterChip(
+              label: '${g.name} ${groupsVm.memberCountOf(g.id)}',
+              selected: viewModel.selectedGroupId == g.id,
+              onTap: () => viewModel.setSelectedGroup(g.id),
+            ),
+          ],
+          const SizedBox(width: 8),
+          _GroupFilterChip(
+            label: '+ 그룹',
+            selected: false,
+            icon: Icons.add,
+            onTap: () => _promptCreateGroup(context, groupsVm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "+ 그룹" 칩 — 특정 명함이 아니라 그룹 자체를 새로 만든다(빈 이름은
+  /// [GroupsRepository.createGroup] 쪽에서 무시하지 않으므로 여기서 미리
+  /// 막는다).
+  Future<void> _promptCreateGroup(
+    BuildContext context,
+    GroupsViewModel groupsVm,
+  ) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('새 그룹 만들기'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '예: 삼성전자, 보험설계사'),
+          onSubmitted: (v) => Navigator.of(dialogCtx).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(controller.text),
+            child: const Text('만들기'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return;
+    groupsVm.createGroup(trimmed);
   }
 
   /// 접혔을 때만 보이는 축약 제목 줄 — "명함 지갑"+개수 배지(선택 모드면
@@ -347,6 +453,17 @@ class _WalletViewState extends State<WalletView> {
         // 정렬 칩은 검색 아래에 둔다(기존 배치 유지, 2026-08-11 결정).
         const SizedBox(height: 10),
         _buildSortSelector(viewModel),
+        // 거리순을 골랐는데 위치 기준이 없으면(동의 전/측위 실패) 최근등록순
+        // 으로 대신 보여주고 있다는 것을 알린다 — 안 알리면 "거리순을
+        // 눌렀는데 왜 거리순이 아니지"로 보인다.
+        if (viewModel.distanceSortFallbackActive) ...[
+          const SizedBox(height: 6),
+          const Text(
+            '위치 정보가 없어 최근 등록순으로 보여줘요. 주변 탭에서 위치 이용에 '
+            '동의하면 거리순으로 정렬돼요.',
+            style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+          ),
+        ],
       ],
     );
   }
@@ -382,15 +499,21 @@ class _WalletViewState extends State<WalletView> {
     );
   }
 
+  // ⚠️ 2026-08-23 사용자 확정: 추가 427에서 캔버스 확정안(넷)에 맞춰
+  // "소통일순"을 지웠다가, "기존 기능과 상충하면 갈아엎지 않고 공존시킨다"
+  // (2026-08-20 원칙)에 따라 되살렸다 — 지금은 다섯 개다.
   static const _sortLabels = {
     ContactSort.recent: '최근등록순',
     ContactSort.name: '이름순',
     ContactSort.company: '회사명순',
     ContactSort.lastComm: '소통일순',
+    ContactSort.distance: '가까운 거리순',
   };
 
-  /// 정렬 기준 선택 칩. 네 개를 한 화면에 균등 분할로 모두 보여준다(가로
-  /// 스크롤을 없애 "소통일순"이 잘려 보이던 문제 해결).
+  /// 정렬 기준 선택 칩. 다섯 개를 한 화면에 균등 분할로 모두 보여준다.
+  /// ⚠️ 다섯 번째(거리순)가 추가되며 칸이 좁아졌다 — 각 칩 내부가
+  /// FittedBox로 줄어들게 돼 있어(_SortChip) 잘리지는 않지만, 실기기에서
+  /// 라벨이 너무 빽빽해 보이면 UI 담당에게 넘길 것.
   Widget _buildSortSelector(WalletViewModel viewModel) {
     final entries = _sortLabels.entries.toList();
     return Row(
@@ -413,16 +536,20 @@ class _WalletViewState extends State<WalletView> {
   Widget _buildContactList(
     BuildContext context,
     WalletViewModel viewModel,
+    GroupsViewModel groupsVm,
     List<ContactModel> contacts,
   ) {
     // 인덱스 바에 실제로 존재하는 그룹만 순서대로 모은다. 그룹 점프가 의미
-    // 없는 시간 기준 정렬(최근등록·소통일)이나 항목이 적으면 바를 숨긴다.
+    // 없는 정렬(최근등록·거리)이나 항목이 적으면 바를 숨긴다.
     final groups = <String>[];
     for (final c in contacts) {
       final g = viewModel.sortGroupOf(c);
       if (g.isNotEmpty && !groups.contains(g)) groups.add(g);
     }
     final showIndexBar = groups.length >= 2 && contacts.length >= 10;
+
+    // id → 그룹 이름. 카드마다 groupsVm.groups를 순회하지 않도록 한 번만 만든다.
+    final groupNameById = {for (final g in groupsVm.groups) g.id: g.name};
 
     final list = ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
@@ -432,6 +559,10 @@ class _WalletViewState extends State<WalletView> {
       itemBuilder: (context, index) {
         final contact = contacts[index];
         final cardDate = viewModel.cardDateFor(contact);
+        final groupNames = contact.groupIds
+            .map((id) => groupNameById[id])
+            .whereType<String>()
+            .toList();
         // .separated 대신 .builder를 쓰고 구분선을 항목 안에 넣는다 —
         // 인덱스 점프(scrollTo)의 index가 구분선 없이 항목과 1:1로 맞아야
         // 원하는 위치로 정확히 이동한다.
@@ -440,6 +571,7 @@ class _WalletViewState extends State<WalletView> {
           children: [
             _ContactCard(
               contact: contact,
+              groupNames: groupNames,
               geoNotFound: _givenUpGeoIds.contains(contact.id),
               cardDate: cardDate.date,
               cardDateLabel: cardDate.label,
@@ -604,6 +736,9 @@ class _WalletViewState extends State<WalletView> {
 
 class _ContactCard extends StatelessWidget {
   final ContactModel contact;
+  // 소속 그룹 이름들(추가 427) — 이미 삭제된 그룹 id는 조회 단계에서
+  // 걸러져 여기 들어오지 않는다(wallet_view.dart의 groupNameById 조회).
+  final List<String> groupNames;
   // 주소는 있는데 지오코딩을 포기해 좌표가 없는 상태(= "위치값 없음").
   final bool geoNotFound;
   // 카드에 표시할 날짜와 라벨 — 정렬 기준에 맞춘다(등록일/마지막 소통일).
@@ -621,6 +756,7 @@ class _ContactCard extends StatelessWidget {
 
   const _ContactCard({
     required this.contact,
+    required this.groupNames,
     required this.geoNotFound,
     required this.cardDate,
     required this.cardDateLabel,
@@ -751,6 +887,12 @@ class _ContactCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        // 그룹 꼬리표(추가 427) — 최대 2개 + "n" 뱃지. 셋 이상을
+                        // 다 펼치면 좁은 카드에서 이름·회사가 더 밀려 잘린다.
+                        if (groupNames.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          _GroupTagsRow(groupNames: groupNames),
+                        ],
                       ],
                     ),
                   ),
@@ -1020,6 +1162,106 @@ class _CompactAction extends StatelessWidget {
 }
 
 /// 정렬 기준 선택 칩. 선택된 것만 강조한다.
+/// 명함 카드에 붙는 그룹 꼬리표(추가 427) — 최대 2개까지 이름을 보여주고,
+/// 그 이상은 "+n"으로 뭉친다(브리프 인수 기준 "최대 2+n").
+class _GroupTagsRow extends StatelessWidget {
+  final List<String> groupNames;
+
+  const _GroupTagsRow({required this.groupNames});
+
+  @override
+  Widget build(BuildContext context) {
+    const maxShown = 2;
+    final shown = groupNames.take(maxShown).toList();
+    final overflow = groupNames.length - shown.length;
+    return Wrap(
+      spacing: 4,
+      runSpacing: 4,
+      children: [
+        for (final name in shown) _tag(name),
+        if (overflow > 0) _tag('+$overflow'),
+      ],
+    );
+  }
+
+  Widget _tag(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: AppColors.accentSoft,
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w600,
+        color: AppColors.accentText,
+      ),
+    ),
+  );
+}
+
+/// 그룹 필터 칩(추가 427) — "전체"/각 그룹/"+ 그룹" 공용. [_SortChip]과
+/// 비슷하지만 가로 스크롤 목록 안에서 내용에 맞게 폭이 늘어나야 해서
+/// (`Expanded` 균등분할이 아니라) 별도 위젯으로 둔다.
+class _GroupFilterChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final IconData? icon;
+  final VoidCallback onTap;
+
+  const _GroupFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        alignment: Alignment.center,
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accentSoft : AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: selected ? AppColors.accent : AppColors.borderSubtle,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(
+                icon,
+                size: 15,
+                color: selected ? AppColors.accentText : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppColors.accentText : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SortChip extends StatelessWidget {
   final String label;
   final bool selected;

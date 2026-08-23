@@ -9,6 +9,7 @@ import '../../data/repositories/auth_repository.dart';
 import '../../core/utils/account_switch_policy.dart';
 import '../../data/services/data_backup_service.dart';
 import '../../data/repositories/contacts_repository.dart';
+import '../../data/repositories/groups_repository.dart';
 import '../../data/repositories/my_profile_repository.dart';
 import '../features/auth/views/login_view.dart';
 
@@ -49,11 +50,18 @@ class _AuthGateState extends State<AuthGate> {
     _lastHandledUid = uid;
     final contactsRepo = context.read<ContactsRepository>();
     final profileRepo = context.read<MyProfileRepository>();
+    // 그룹(추가 427) — 프로필과 같은 방식(users/{uid} 문서 필드)으로 우선
+    // 복호화 재로드가 필요하다. 명함처럼 경합 방지를 위해 기다릴 필요는
+    // 없다 — 그룹 목록은 명함 목록과 달리 "비었다"고 오판해도 통째로
+    // 덮어쓰는 위험이 없는 별도 필드라(restoreFromServerIfEmpty가 그룹
+    // 쪽만 본다), profileRepo와 동일한 수준으로 다룬다.
+    final groupsRepo = context.read<GroupsRepository>();
     // 복호화 재로드가 시작되도록 uid를 알리고, 그 완료(Future)를 붙잡는다.
     // 아래 동기화 전에 이 로드를 기다려야 로컬을 "비었다"고 오판하지 않는다
     // (2026-08-09 실기기에서 확인된 경합 — 추가 120, P1-39 A안).
     final contactsLoaded = contactsRepo.setCurrentUid(uid);
     profileRepo.setCurrentUid(uid);
+    groupsRepo.setCurrentUid(uid);
     if (uid == null) return;
     // 계정 전환 다이얼로그를 띄울 수도 있으므로, 이번 프레임의 build가
     // 끝난 뒤(Navigator가 안전하게 쓸 수 있는 시점)로 미룬다.
@@ -62,7 +70,7 @@ class _AuthGateState extends State<AuthGate> {
       // 복호화 로드가 끝난 뒤에 동기화한다(경합 수정).
       await contactsLoaded;
       if (!context.mounted) return;
-      _handleAccountSync(context, uid, contactsRepo, profileRepo);
+      _handleAccountSync(context, uid, contactsRepo, profileRepo, groupsRepo);
     });
   }
 
@@ -71,6 +79,7 @@ class _AuthGateState extends State<AuthGate> {
     String uid,
     ContactsRepository contactsRepo,
     MyProfileRepository profileRepo,
+    GroupsRepository groupsRepo,
   ) async {
     // 로그인마다(uid 변경마다, 이 메서드는 `_syncUidAndRestore`의
     // `_lastHandledUid` 가드로 uid당 한 번만 호출됨) 서버 부트스트랩을
@@ -91,6 +100,7 @@ class _AuthGateState extends State<AuthGate> {
       // 마이그레이션을 건너뛴다. 다음 로그인에 다시 기회가 온다.
       await contactsRepo.restoreFromServerIfEmpty(uid);
       await profileRepo.restoreFromServerIfEmpty(uid);
+      await groupsRepo.restoreFromServerIfEmpty(uid);
       await contactsRepo.runPostSyncMaintenance(
         skipServerMigration: !mayMigrateToServer(
           lastUidKnown: false,
@@ -101,8 +111,15 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
     final lastUid = prefs.getString(kLastSignedInUidPrefsKey);
+    // 그룹(추가 427)도 여기 넣는다 — 안 넣으면 명함·프로필은 비어 있고
+    // 그룹만 남은 상태로 계정을 바꿨을 때 전환 확인 없이 새 계정 문맥으로
+    // 넘어가, 이전 계정의 그룹명(제3자를 특정할 수 있는 값일 수 있음)이
+    // 새 계정 쪽에 그대로 남는 교차 오염이 생긴다 — 명함/프로필에서 이미
+    // 겪은 것과 같은 유형의 사고(위 조건이 원래 이걸 막으려고 있다).
     final hasLocalData =
-        contactsRepo.contacts.isNotEmpty || profileRepo.hasCustomProfile;
+        contactsRepo.contacts.isNotEmpty ||
+        profileRepo.hasCustomProfile ||
+        groupsRepo.groups.isNotEmpty;
 
     if (lastUid != null && lastUid != uid && hasLocalData) {
       if (!context.mounted) return;
@@ -117,8 +134,10 @@ class _AuthGateState extends State<AuthGate> {
         // 사진 서버 백업을 켤 때 이 판단을 다시 봐야 한다.
         await contactsRepo.clearLocal();
         await profileRepo.clearLocal();
+        await groupsRepo.clearLocal();
         await contactsRepo.forceRestoreFromServer(uid);
         await profileRepo.forceRestoreFromServer(uid);
+        await groupsRepo.forceRestoreFromServer(uid);
       }
       // ⚠️ **여기서 처음으로 서버 쓰기가 허용된다.** 선택이 끝났기 때문이다.
       //
@@ -156,6 +175,7 @@ class _AuthGateState extends State<AuthGate> {
     // — 다른 계정 데이터가 섞일 수 있어서다. 여기는 같은 계정(또는 최초)만 도달.
     await contactsRepo.syncWithServer(uid);
     await profileRepo.restoreFromServerIfEmpty(uid);
+    await groupsRepo.restoreFromServerIfEmpty(uid);
     // 같은 계정(또는 최초 로그인)이라 올려도 자기 데이터다.
     await contactsRepo.runPostSyncMaintenance(
       skipServerMigration: !mayMigrateToServer(

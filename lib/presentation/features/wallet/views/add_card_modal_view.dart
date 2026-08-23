@@ -34,7 +34,9 @@ import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/address_search_view.dart';
 import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
+import '../view_models/groups_view_model.dart';
 import '../view_models/wallet_view_model.dart';
+import 'group_assign_sheet.dart';
 import 'scan_field_conflict_sheet.dart';
 import 'camera_scan_modal_view.dart';
 import 'file_picker_modal_view.dart';
@@ -247,6 +249,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   // 굳이 물어볼 필요가 없어서, 값이 하나라도 바뀐 경우에만 확인창을 띄운다.
   late final Map<String, String> _initialValues;
   late final String? _initialAvatarUrl;
+  // 그룹 선택도 같은 목적으로 스냅샷을 뜬다 — _groupIds는 컨트롤러가 없는
+  // 상태값이라 위 맵 비교로는 못 잡는다(추가 427).
+  late final List<String> _initialGroupIds;
 
   bool get _isEditing => widget.contactToEdit != null;
 
@@ -299,6 +304,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   /// 다시찍기 → 여기서완료 → 사진찍기 → 뒷면찍기가 없어짐"(2026-08-14).
   bool _scanSessionClosed = false;
   bool _useCardAsAvatar = false;
+  // 소속 그룹(추가 427). 새 명함 등록 중에는 아직 ContactsRepository에
+  // 없는 명함이라 GroupAssignSheet가 바로 커밋하지 못한다 — 그래서 여기
+  // 로컬 상태로 들고 있다가 저장 시점에 ContactModel.groupIds로 함께
+  // 실어 보낸다(편집 중일 때도 동일하게, "저장"을 눌러야 확정된다).
+  List<String> _groupIds = [];
 
   /// 스캔 임시 파일을 **버릴 때** 지운다(추가 253).
   ///
@@ -389,6 +399,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _selectedAvatarUrl = c?.avatarUrl;
     _cardImagePath = c?.cardImagePath;
     _useCardAsAvatar = c?.useCardAsAvatar ?? false;
+    _groupIds = [...?c?.groupIds];
     // 서버 복원을 거친 명함은 cardImagePath가 유실될 수 있다(백업 JSON에
     // 로컬 경로를 넣지 않으므로). 기기에 암호문 파일이 남아 있으면 다시
     // 이어준다 — 이게 없으면 수정 화면에서 명함 이미지와 "대표 이미지로
@@ -512,6 +523,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
 
     _initialAvatarUrl = _selectedAvatarUrl;
+    _initialGroupIds = [..._groupIds];
     _initialValues = {
       'name': _nameController.text,
       'company': _companyController.text,
@@ -2748,6 +2760,68 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
+  /// 그룹 칸(추가 427) — 텍스트 입력이 아니라 [GroupAssignSheet]를 여는
+  /// 버튼. 태그와 달리 그룹은 미리 만들어 둔 것 중에서 **고르는** 개념이라
+  /// (또는 그 자리에서 새로 만들거나) 자유 텍스트 칸이 맞지 않는다.
+  Widget _buildGroupField() {
+    final groupsVm = context.watch<GroupsViewModel>();
+    final myGroupNames = groupsVm.groups
+        .where((g) => _groupIds.contains(g.id))
+        .map((g) => g.name)
+        .toList();
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () async {
+        final result = await GroupAssignSheet.show(
+          context,
+          initialSelectedGroupIds: _groupIds.toSet(),
+        );
+        if (result == null || !mounted) return;
+        setState(() => _groupIds = result.toList());
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.cardSurface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.borderSubtle),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.folder_outlined,
+              size: 18,
+              color: AppColors.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: myGroupNames.isEmpty
+                  ? const Text(
+                      '그룹 (선택)',
+                      style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+                    )
+                  : Text(
+                      myGroupNames.join(', '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: AppColors.textMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 이 칸이 **아직 자동 인식 값 그대로인가**(F-09).
   ///
   /// 판정 규칙 자체는 [isStillOcrValue]에 있다 — 화면에서 떼어내 테스트로
@@ -2914,6 +2988,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           : _websiteController.text.trim(),
       avatarUrl: _selectedAvatarUrl,
       tags: tags.isEmpty ? ['신규'] : tags,
+      groupIds: _groupIds,
       interests: interests,
       // 주소를 실제 좌표로 확인하지 못했다면 가짜 좌표를 넣지 않는다.
       // geo가 null인 명함은 주변 거리 계산 대상에서 자동으로 제외된다.
@@ -3207,6 +3282,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
   bool _hasUnsavedChanges() {
     if (_selectedAvatarUrl != _initialAvatarUrl) return true;
+    if (!setEquals(_groupIds.toSet(), _initialGroupIds.toSet())) return true;
     return _initialValues.entries.any((entry) {
       final controller = switch (entry.key) {
         'name' => _nameController,
@@ -4002,6 +4078,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     label: '태그 키워드 (쉼표 구분)',
                     hint: '예: AI, 바이오, C-Level',
                   ),
+                  const SizedBox(height: 10),
+
+                  // 8-2. 그룹(추가 427) — 태그와 달리 다중 선택 시트로 고른다.
+                  _buildGroupField(),
                   const SizedBox(height: 10),
 
                   // 8-1. 관심사 — AI 대화 브리핑이 안부 인사 소재로 참고한다.
