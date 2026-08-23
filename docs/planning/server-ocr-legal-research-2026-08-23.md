@@ -5,7 +5,8 @@
 인식 처리하고, 처리 후 사진을 보관하지 않는 구성
 작성: `legal-researcher` 조사 에이전트
 함께 볼 것: [1차 회신](legal-review-reply-2026-08-15.md) · [2차·3차 회신](legal-review-reply-2026-08-21.md) ·
-[`docs/legal/privacy-policy.html`](../legal/privacy-policy.html)
+[`docs/legal/privacy-policy.html`](../legal/privacy-policy.html) ·
+**성능 실측은 [추가 415](backlog.md)** — 같은 96장으로 앱 77.6% / 로컬 43.5% / 서버 100%(이름)
 
 > 이 메모는 조문·감독기관 해설·동종 서비스 실무를 근거로 정리한 것입니다.
 > **국내 변호사 자격에 기한 법률의견서가 아니며**, 방침 게시·기능 배포 전
