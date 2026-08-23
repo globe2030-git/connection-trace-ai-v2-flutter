@@ -3051,7 +3051,7 @@ class OcrScannerService {
     // 본다 — 이미 강한 근거로 찾았으면 건드리지 않는다.
     //
     // ⚠️ **루프가 끝난 뒤에 본다.** 루프 안에서 `continue`로 끊으면 그 줄이
-    // 다른 칸(회사·직함) 후보에서 빠져 엉뚱한 곳이 빈다 — 추가 425에서
+    // 다른 칸(회사·직함) 후보에서 빠져 엉뚱한 곳이 빈다 — 추가 430에서
     // 같은 종류의 손실을 겪었다.
     if (nameLineStrong == null && romanizedNameToken != null) {
       nameLineStrong = romanizedNameToken;
