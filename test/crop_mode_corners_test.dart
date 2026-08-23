@@ -188,4 +188,85 @@ void main() {
       );
     });
   });
+
+  // 반시계 회전(P2-③ 2차, 실기기 피드백: "반시계 회전이 안 된다").
+  // ⚠️ rotateCornersCw90과 마찬가지로 이 화면의 좌표계 함정(추가 273·397)을
+  // 피하려고 순수 함수 + 왕복 테스트로 고정한다.
+  group('rotateCornersCcw90', () {
+    const quad = [
+      Offset(0.12, 0.20),
+      Offset(0.80, 0.18),
+      Offset(0.82, 0.75),
+      Offset(0.10, 0.77),
+    ];
+    const size1 = Size(4032, 3024);
+    const size2 = Size(3024, 4032);
+
+    test('rotateCornersCw90의 역함수다 — ccw(cw(p)) == p', () {
+      final roundTrip = rotateCornersCcw90(rotateCornersCw90(quad, size1), size2);
+      for (var i = 0; i < quad.length; i++) {
+        expect(roundTrip[i].dx, closeTo(quad[i].dx, 1e-9));
+        expect(roundTrip[i].dy, closeTo(quad[i].dy, 1e-9));
+      }
+    });
+
+    test('역방향으로도 성립한다 — cw(ccw(p)) == p', () {
+      final roundTrip = rotateCornersCw90(rotateCornersCcw90(quad, size1), size2);
+      for (var i = 0; i < quad.length; i++) {
+        expect(roundTrip[i].dx, closeTo(quad[i].dx, 1e-9));
+        expect(roundTrip[i].dy, closeTo(quad[i].dy, 1e-9));
+      }
+    });
+
+    test('반시계 90도 네 번 = 항등', () {
+      var corners = quad;
+      var imageSize = size1;
+      for (var i = 0; i < 4; i++) {
+        corners = rotateCornersCcw90(corners, imageSize);
+        imageSize = Size(imageSize.height, imageSize.width);
+      }
+      expect(imageSize, size1);
+      for (var i = 0; i < quad.length; i++) {
+        expect(corners[i].dx, closeTo(quad[i].dx, 1e-9));
+        expect(corners[i].dy, closeTo(quad[i].dy, 1e-9));
+      }
+    });
+
+    test('좌상단(TL)이 회전 뒤 새 이미지의 좌하단(BL) 자리로 옮겨간다 — 순서 보존', () {
+      const square = [
+        Offset(0.0, 0.0), // TL
+        Offset(1.0, 0.0), // TR
+        Offset(1.0, 1.0), // BR
+        Offset(0.0, 1.0), // BL
+      ];
+      final rotated = rotateCornersCcw90(square, const Size(100, 100));
+      // 반시계로 90도 돌면 TL→BL, TR→TL, BR→TR, BL→BR — 인덱스는 그대로
+      // 유지된 채 값만 옮겨가야 한다(CW와 정반대 방향).
+      expect(rotated[0], const Offset(0.0, 1.0)); // 옛 TL → 새 BL
+      expect(rotated[1], const Offset(0.0, 0.0)); // 옛 TR → 새 TL
+      expect(rotated[2], const Offset(1.0, 0.0)); // 옛 BR → 새 TR
+      expect(rotated[3], const Offset(1.0, 1.0)); // 옛 BL → 새 BR
+    });
+
+    test('CW 세 번 = CCW 한 번(같은 순누적 회전은 방향과 무관하게 같은 결과)', () {
+      var viaCw = quad;
+      var sizeA = size1;
+      for (var i = 0; i < 3; i++) {
+        viaCw = rotateCornersCw90(viaCw, sizeA);
+        sizeA = Size(sizeA.height, sizeA.width);
+      }
+      final viaCcw = rotateCornersCcw90(quad, size1);
+      for (var i = 0; i < quad.length; i++) {
+        expect(viaCw[i].dx, closeTo(viaCcw[i].dx, 1e-9));
+        expect(viaCw[i].dy, closeTo(viaCcw[i].dy, 1e-9));
+      }
+    });
+
+    test('⚠️ 회전 전 이미지 크기가 0 이하면 assert로 즉시 드러난다', () {
+      expect(
+        () => rotateCornersCcw90(quad, Size.zero),
+        throwsA(isA<AssertionError>()),
+      );
+    });
+  });
 }

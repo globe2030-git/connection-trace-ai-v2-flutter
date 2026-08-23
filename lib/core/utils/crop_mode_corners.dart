@@ -109,3 +109,21 @@ List<Offset> rotateCornersCw90(List<Offset> corners, Size oldImageSize) {
   );
   return [for (final c in corners) Offset(1 - c.dy, c.dx)];
 }
+
+/// [rotateCornersCw90]의 **역함수** — 반시계 90도(P2-③ 2차, "반시계 회전이
+/// 안 된다" 실기기 피드백).
+///
+/// [rotateCornersCw90]이 (x,y)→(1−y,x)이므로, 그 역은 (x,y)→(y,1−x)다.
+/// `ccw(cw(p)) == p`, `cw(ccw(p)) == p`가 항상 성립한다(테스트로 고정) —
+/// 두 함수가 서로 다른 공식으로 각자 구현돼 있으면 언젠가 하나만 고쳐져
+/// 어긋난다는 걱정을 덜기 위해 이 관계 자체를 테스트로 못박아 둔다.
+///
+/// 매개변수·계약은 [rotateCornersCw90]과 동일 — [oldImageSize]는 계산에
+/// 쓰이지 않고 assert로 잘못된 호출만 드러낸다.
+List<Offset> rotateCornersCcw90(List<Offset> corners, Size oldImageSize) {
+  assert(
+    oldImageSize.width > 0 && oldImageSize.height > 0,
+    'rotateCornersCcw90: 회전 전 이미지 크기가 있어야 한다',
+  );
+  return [for (final c in corners) Offset(c.dy, 1 - c.dx)];
+}
