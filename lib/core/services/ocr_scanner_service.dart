@@ -1066,7 +1066,7 @@ class OcrScannerService {
   /// 3개 이상 잇달아 나오는 구간만** 붙인다 — `커넥션 센스`(2글자 이상)나
   /// 문장 속에 낀 한 글자(`및`)는 건드리지 않는다.
   /// 한 줄에 **한글명과 영문명이 나란히 인쇄된 것**에서 뒤에 붙은 영문을 뗀다
-  /// (`케이스랩 K.ACE LAB` → `케이스랩`, 추가 424·425).
+  /// (`케이스랩 K.ACE LAB` → `케이스랩`, 추가 424·430).
   ///
   /// ## 왜 파싱 **맨 앞**인가
   ///
@@ -1141,6 +1141,22 @@ class OcrScannerService {
       }
     }
     return false;
+  }
+
+  /// 줄 전체가 괄호 하나이고, 그 안이 **주소 조각**인가 (추가 428).
+  ///
+  /// 법정동(`역삼동`·`성수동2가`)이나 건물명 접미사가 들어 있을 때만 참이다.
+  /// ⚠️ `(Daniel)`·`(Marketing Company)` 같은 괄호를 상세주소에 붙이지 않기
+  /// 위한 조건이다 — 괄호라고 다 주소가 아니다.
+  static bool _looksLikeAddressParenLine(String line) {
+    final t = line.trim();
+    final m = RegExp(r'^[\(（]([^\)）]+)[\)）]$').firstMatch(t);
+    if (m == null) return false;
+    final inner = m.group(1)!;
+    if (!_hasHangul(inner)) return false;
+    // 법정동·가·리로 끝나는 토큰이 있거나, 건물명 접미사가 있으면 주소로 본다.
+    if (RegExp(r'(동|가|리)\d*\s*(,|$)').hasMatch(inner)) return true;
+    return _buildingNameRegExp.hasMatch(inner);
   }
 
   static String _collapseCharSpacing(String line) {
@@ -2514,6 +2530,28 @@ class OcrScannerService {
           lineIndex == addressLineIndex + 1 &&
           _buildingNameRegExp.hasMatch(line.trim())) {
         addressDetail = line.trim();
+        continue;
+      }
+      // **괄호만으로 이루어진 줄**은 상세주소에 이어 붙인다(추가 428).
+      //
+      // 명함은 법정동·건물명을 `(역삼동, 어반벤치빌딩)`처럼 **따로 한 줄로**
+      // 인쇄하는 일이 흔하다. 위 폴백들은 전부 `addressDetail == null`일 때만
+      // 도는데, 그 줄이 오기 전에 이미 `2층`이 상세주소로 잡혀 있으면 이
+      // 줄은 어디에도 못 붙고 **통째로 버려졌다.**
+      //
+      // 실측(96장): 정답 주소·상세에 괄호가 있는 35장 중 이 모양으로 잃던
+      // 것이 3장이다(추가 422·428).
+      //
+      // ⚠️ **괄호 안이 주소 조각일 때만** 붙인다. 괄호는 명함에서 영문 병기·
+      // 직함 부연에도 쓰여서(`(Daniel)`·`(Marketing Company)`), 아무 괄호나
+      // 붙이면 상세주소가 엉뚱한 말로 오염된다.
+      if (addressDetail != null &&
+          addressDetail.isNotEmpty &&
+          _looksLikeAddressParenLine(line)) {
+        final add = line.trim();
+        if (!addressDetail.contains(add)) {
+          addressDetail = '$addressDetail $add';
+        }
         continue;
       }
       remaining.add(line);
