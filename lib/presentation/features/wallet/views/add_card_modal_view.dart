@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/card_face_label.dart';
 import '../../../../core/utils/card_form_validation.dart' as form_validation;
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -2030,24 +2031,41 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     setState(() => _selectedAvatarUrl = null);
   }
 
+  /// 새로 스캔한(이번 세션) 면들을 뷰어용 [CardFaceImage] 목록으로 바꾼다.
+  /// 앞/뒷면처럼 2장이면 좌하단 세그먼트가, 3장 이상이면 세그먼트에도
+  /// 순번을 붙여 뜬다("3번째 면"). 파일은 여전히 평문 임시 파일이라
+  /// `FileImage`로만 읽고 새로 만들지 않는다.
+  List<CardFaceImage> _freshScanFaces() => List.generate(
+    _scannedCardImages.length,
+    (i) => CardFaceImage(
+      image: FileImage(File(_scannedCardImages[i].path)),
+      label: cardFaceLabel(i),
+    ),
+  );
+
   /// 스캔한 명함 이미지 미리보기 + "대표 이미지로 사용" 토글(추가 133, C안).
-  /// 방금 스캔한 원본(임시 파일)은 평문이라 Image.file로, 이미 저장된 이미지는
-  /// 암호문이라 복호화([ContactImageService])해 Image.memory로 그린다.
+  /// 방금 스캔한 원본(임시 파일)은 평문이라 FileImage로, 이미 저장된 이미지는
+  /// 암호문이라 복호화([ContactImageService])해 MemoryImage로 그린다.
+  ///
+  /// 미리보기 자체([CardPhotoPreview])는 편집·상세가 공유하는 공용 위젯이다
+  /// (추가 426) — 누르면 [showCardImageViewer]로 크게 열리고, 앞/뒷면처럼
+  /// 이번 세션에 2장 이상 스캔했으면 좌하단 세그먼트로 오갈 수 있다.
   Widget _buildCardImageSection() {
-    final hasFresh = _scannedCardImageSourcePath != null;
+    final hasFresh = _scannedCardImages.isNotEmpty;
     final hasSaved = _cardImagePath != null;
     if (!hasFresh && !hasSaved) return const SizedBox.shrink();
 
-    final uid = context.read<AuthRepository>().firebaseUid;
-
-    // 누르면 전체 화면으로 크게 열린다 — 미리보기 높이(180px)로는 눕혀 찍은
-    // 명함의 글자를 읽을 수 없다(사용자 제보, 2026-08-14).
     Widget preview;
     if (hasFresh) {
-      preview = ZoomableCardImage(
-        image: FileImage(File(_scannedCardImageSourcePath!)),
+      final faces = _freshScanFaces();
+      preview = CardPhotoPreview(
+        faces: faces,
+        selectedIndex: _selectedScanIndex,
+        onSelectFace: (i) => setState(() => _selectedScanIndex = i),
       );
-    } else if (uid != null) {
+    } else {
+      final uid = context.read<AuthRepository>().firebaseUid;
+      if (uid == null) return const SizedBox.shrink();
       preview = FutureBuilder<Uint8List?>(
         future: ContactImageService().loadDecryptedCardImage(
           uid: uid,
@@ -2062,11 +2080,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           }
           final bytes = snap.data;
           if (bytes == null) return const SizedBox.shrink();
-          return ZoomableCardImage(image: MemoryImage(bytes));
+          return CardPhotoPreview(
+            faces: [CardFaceImage(image: MemoryImage(bytes), label: '명함 사진')],
+            selectedIndex: 0,
+          );
         },
       );
-    } else {
-      return const SizedBox.shrink();
     }
 
     return Column(
@@ -2091,30 +2110,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           ],
         ),
         const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: AppColors.borderSubtle.withValues(alpha: 0.8),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(13),
-            child: Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxHeight: 180),
-              color: AppColors.bgBase,
-              child: preview,
-            ),
-          ),
-        ),
+        preview,
         // 앞/뒷면처럼 여러 장을 스캔한 경우 — 어느 면을 대표로 저장할지
         // 고를 수 있게 썸네일을 보여준다. 기본은 이름이 읽힌 면.
         if (_scannedCardImages.length > 1) ...[
@@ -3397,6 +3393,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                   _buildInlineNotice(),
 
+                  // 📇 명함 사진 크게 보기(추가 426, 사용자 확정) — 편집 화면
+                  // **상단**에 둔다. 신규 등록에서 아직 스캔 전이면(_cardImagePath도
+                  // 없음) 이 위젯 자체가 아무것도 그리지 않으니(SizedBox.shrink),
+                  // 화면 첫인상에는 영향이 없다 — 기존 명함을 열었을 때만 바로
+                  // 보인다.
+                  _buildCardImageSection(),
+
                   // 내 디지털 명함 수정 화면과 같은 스타일(박스·"OCR" 라벨
                   // 없이 아웃라인 버튼 2개만)로 통일 — 사용자 피드백.
                   Row(
@@ -3558,9 +3561,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
 
                   const SizedBox(height: 12),
-
-                  // 📇 스캔한 명함 이미지 미리보기 + "대표 이미지로 사용" 토글(추가 133)
-                  _buildCardImageSection(),
 
                   // Collapsible RAW Scanned Text Card
                   if (_scannedRawText != null) ...[
