@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../utils/ocr_measure_dump.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
@@ -324,6 +323,10 @@ class OcrScannerService {
           .processImage(inputImage)
           .timeout(const Duration(seconds: 20));
       var orderedLines = _extractOrderedLines(recognizedText);
+      // 토큰 측정은 **줄을 뽑은 그 인식 결과**에서 나와야 한다. 아래 2차 풀
+      // 스캔으로 갈아타면 이것도 같이 갈아탄다 — 안 그러면 줄과 토큰이 서로
+      // 다른 스캔에서 온 값이 되어 대조가 조용히 어긋난다.
+      var sourceText = recognizedText;
 
       // Dual-Pass OCR: 마진 크롭으로 텍스트가 극히 일부만 읽혔거나 잘린 경우
       // (인식된 총 길이 < 8), 원본 이미지 전체로 2차 풀 스캔을 시도한다.
@@ -341,6 +344,7 @@ class OcrScannerService {
         if (rawOrdered.fold<int>(0, (sum, l) => sum + l.text.length) >
             totalLen) {
           orderedLines = rawOrdered;
+          sourceText = rawRecognized;
         }
       }
 
@@ -350,13 +354,7 @@ class OcrScannerService {
       // 통째로 죽는다 — 릴리스에 영향이 없다.
       if (ocrMeasureDumpEnabled) {
         await appendMeasureRow(
-          // ⚠️ **앱 전용 외부 저장소**에 쓴다. 내부 폴더에 쓰면 릴리스
-          // 빌드에서 `adb run-as`가 막혀 **꺼낼 수가 없다**(2026-08-22 실기기
-          // 에서 101장을 다 돌리고도 못 꺼냈다). 외부가 없으면 내부로
-          // 되돌아간다 — 안 쓰는 것보다는 낫다.
-          directory:
-              await getExternalStorageDirectory() ??
-              await getApplicationSupportDirectory(),
+          directory: await measureDumpDirectory(),
           row: formatMeasureRow(
             imageName: imageFile.name,
             lines: [
@@ -364,6 +362,7 @@ class OcrScannerService {
             ],
             nameSource: result.parseShape?.nameSource.name ?? '없음',
             parsedName: result.name.trim(),
+            tokens: measureTokens(sourceText),
           ),
         );
       }
@@ -437,6 +436,43 @@ class OcrScannerService {
   /// 순서가 뒤섞이기 쉽다(왼쪽 단 중간 줄 다음에 오른쪽 단 줄이 끼어드는 식).
   /// 각 줄의 실제 화면 좌표(boundingBox)를 기준으로 위→아래, 같은 줄 안에서는
   /// 왼→오 순으로 다시 정렬해 실제 명함을 읽는 순서에 가깝게 재구성한다.
+  /// **합치기 전의 낱말 상자**를 그대로 모은다 — 측정 전용(추가 409).
+  ///
+  /// `_extractOrderedLines`는 좌우로 나란한 줄을 한 행으로 합치고 **높이를
+  /// 그중 가장 큰 것으로** 잡는다. 이름과 회사가 나란히 인쇄된 명함에서는
+  /// 회사까지 이름만큼 큰 것으로 기록되므로, 글자 크기로 이름을 고르려면
+  /// **합치기 전 값**이 있어야 한다.
+  ///
+  /// ⚠️ **파싱에는 쓰지 않는다.** 이 함수가 만든 값은 측정 파일로만 나간다.
+  /// 규칙을 만들지 여부는 재고 나서 정한다.
+  ///
+  /// 순서는 위→아래, 같은 높이면 왼→오다. 대조하는 쪽이 행 묶음을 스스로
+  /// 다시 만들 수 있도록 좌표를 같이 남긴다.
+  @visibleForTesting
+  static List<({String text, double height, double top, double left})>
+  measureTokens(RecognizedText recognizedText) {
+    final tokens = <({String text, double height, double top, double left})>[];
+    for (final block in recognizedText.blocks) {
+      for (final line in block.lines) {
+        for (final el in line.elements) {
+          final text = el.text.trim();
+          if (text.isEmpty) continue;
+          tokens.add((
+            text: text,
+            height: el.boundingBox.height,
+            top: el.boundingBox.top.toDouble(),
+            left: el.boundingBox.left.toDouble(),
+          ));
+        }
+      }
+    }
+    tokens.sort((a, b) {
+      final byTop = a.top.compareTo(b.top);
+      return byTop != 0 ? byTop : a.left.compareTo(b.left);
+    });
+    return tokens;
+  }
+
   static List<OcrLineBox> _extractOrderedLines(RecognizedText recognizedText) {
     final allLines = <TextLine>[];
     for (final block in recognizedText.blocks) {
