@@ -7,9 +7,12 @@ import '../../../../core/utils/card_history_note.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../../data/repositories/contacts_repository.dart';
 import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
+import '../view_models/groups_view_model.dart';
 import 'add_card_modal_view.dart';
+import 'group_assign_sheet.dart';
 
 /// 명함 **상세 보기** — 읽는 화면이다(2026-08-19 사용자 확정, 추가 330).
 ///
@@ -116,6 +119,7 @@ class ContactDetailView extends StatelessWidget {
                   children: [
                     _header(context, uid),
                     ..._contactRows(context),
+                    ..._groupRows(context),
                     ..._historyRows(context),
                   ],
                 ),
@@ -264,6 +268,27 @@ class ContactDetailView extends StatelessWidget {
       ),
     ),
   ]);
+
+  /// **그룹** 섹션(추가 427) — 항상 보인다(값이 없어도 진입 버튼 자체가
+  /// 동작이라 다른 빈 칸들과 달리 숨기지 않는다).
+  ///
+  /// ⚠️ [contact] 필드를 직접 쓰지 않고 [_GroupsSection]이 ContactsRepository
+  /// 에서 **매 빌드마다 다시 조회**한다 — 이 화면은 StatelessWidget이라
+  /// [contact]는 열릴 때의 스냅샷이고, 시트에서 그룹을 바꾼 뒤에도 이 화면이
+  /// 다시 그려지려면 최신 값을 봐야 한다.
+  List<Widget> _groupRows(BuildContext context) => [
+    const SizedBox(height: 18),
+    const Text(
+      '그룹',
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        color: AppColors.accentText,
+      ),
+    ),
+    const SizedBox(height: 8),
+    _GroupsSection(contactId: contact.id),
+  ];
 
   /// [contactRowActionKinds]가 정한 종류대로 아이콘 위젯을 만든다.
   ///
@@ -524,6 +549,79 @@ class ContactActionIcon extends StatelessWidget {
         ),
         child: Icon(icon, size: 20, color: AppColors.accentText),
       ),
+    );
+  }
+}
+
+/// 상세 화면의 "그룹" 줄(추가 427) — 현재 지정된 그룹 칩 + 편집 버튼.
+///
+/// [ContactsRepository]에서 [contactId]로 매번 다시 찾는다 — 명함이 이미
+/// 삭제됐으면(드물지만 방어적으로) 조용히 아무것도 그리지 않는다.
+class _GroupsSection extends StatelessWidget {
+  const _GroupsSection({required this.contactId});
+
+  final String contactId;
+
+  @override
+  Widget build(BuildContext context) {
+    final contactsRepo = context.watch<ContactsRepository>();
+    final groupsVm = context.watch<GroupsViewModel>();
+    final matches = contactsRepo.contacts.where((c) => c.id == contactId);
+    if (matches.isEmpty) return const SizedBox.shrink();
+    final current = matches.first;
+    final myGroupNames = groupsVm.groups
+        .where((g) => current.groupIds.contains(g.id))
+        .map((g) => g.name)
+        .toList();
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: myGroupNames.isEmpty
+              ? const Text(
+                  '지정된 그룹 없음',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                )
+              : Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final name in myGroupNames)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentSoft,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.accentText,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        TextButton.icon(
+          onPressed: () async {
+            final result = await GroupAssignSheet.show(
+              context,
+              initialSelectedGroupIds: current.groupIds.toSet(),
+            );
+            if (result == null || !context.mounted) return;
+            groupsVm.setContactGroups(current.id, result);
+          },
+          icon: const Icon(Icons.folder_outlined, size: 16),
+          label: const Text('편집'),
+        ),
+      ],
     );
   }
 }
