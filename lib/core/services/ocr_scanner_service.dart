@@ -66,6 +66,10 @@ enum OcrNameSource {
   /// 개선 경로 — 명함에서 이름이 대개 가장 큰 글자라는 점을 이용한다.
   fontSizePreferred,
 
+  /// 같은 줄의 **로마자가 그 한글 성씨의 표기**와 맞아 확정한 경우
+  /// (`이선경 Sun-Kyoung Lee`, 추가 429).
+  romanizedSurname,
+
   /// **빈자리 재검증**에서 건짐 — 주소와 한 줄로 뭉쳐 나온 이름
   /// ("박병훈 서울특별시 은평구 통일로 65길 26, 7층"). 1차 배정에서 이름 칸이
   /// 빈 경우에만 시도한다.
@@ -752,6 +756,37 @@ class OcrScannerService {
     '처',
   ];
 
+  /// 흔한 성씨의 **로마자 표기**. 한 성씨를 여러 가지로 쓰기 때문에 목록이다
+  /// (`이` → Lee·Yi·Rhee·Li).
+  ///
+  /// ⚠️ **표준이 없다.** 그래서 이 표만으로 판단하지 않는다 — 같은 줄에 **한글
+  /// 이름 모양 낱말이 있을 때만** 본다. `Go`·`No`·`Won`·`Min`처럼 영어 단어와
+  /// 겹치는 표기가 있어서, 그 조건이 없으면 엉뚱한 줄이 이름이 된다.
+  ///
+  /// ⚠️ **애매한 성씨는 넣지 않는다.** 넣어서 틀리는 것이 안 넣어서 못 얻는
+  /// 것보다 나쁘다 — 이 저장소가 이름 규칙에서 여러 번 확인한 방향이다.
+  static const _surnameRomanizations = <String, List<String>>{
+    '김': ['kim', 'gim'], '이': ['lee', 'yi', 'rhee', 'li'],
+    '박': ['park', 'bak', 'pak'], '최': ['choi', 'choe'],
+    '정': ['jung', 'jeong', 'chung'], '강': ['kang', 'gang'],
+    '조': ['cho', 'jo'], '윤': ['yoon', 'yun'], '장': ['jang', 'chang'],
+    '임': ['lim', 'im'], '한': ['han'], '오': ['oh'],
+    '서': ['seo', 'suh'], '신': ['shin'], '권': ['kwon'], '황': ['hwang'],
+    '안': ['ahn'], '송': ['song'], '류': ['ryu', 'lyu'],
+    '전': ['jeon', 'chun'], '홍': ['hong'], '고': ['ko', 'koh'],
+    '문': ['moon', 'mun'], '양': ['yang'], '손': ['son', 'sohn'],
+    '배': ['bae'], '백': ['baek', 'paek'], '허': ['heo', 'hur', 'huh'],
+    '유': ['yoo', 'yu'], '남': ['nam'], '심': ['shim'], '노': ['noh', 'roh'],
+    '하': ['ha'], '곽': ['kwak'], '성': ['sung', 'seong'], '차': ['cha'],
+    '주': ['joo'], '우': ['woo'], '구': ['koo'], '민': ['min'],
+    '표': ['pyo'], '방': ['bang'], '변': ['byun'], '함': ['ham'],
+    '염': ['yeom'], '추': ['chu', 'choo'], '석': ['seok'], '설': ['seol'],
+    '진': ['jin'], '지': ['jee'], '엄': ['eom'], '채': ['chae'],
+    '현': ['hyun'], '금': ['keum'], '국': ['kook'],
+  };
+
+  static final _latinWordRegExp = RegExp(r"[A-Za-z][A-Za-z'\-]*");
+
   static final _koreanNameRegExp = RegExp(r'^[가-힣]{2,4}$');
   static final _singleHangulRegExp = RegExp(r'^[가-힣]$');
   static final _hangulOnlyRegExp = RegExp(r'^[가-힣]+$');
@@ -1065,6 +1100,134 @@ class OcrScannerService {
   /// `NELSONSPORTS,INC.`가 되고 `David Kim`도 붙는다. 그래서 **1글자 토큰이
   /// 3개 이상 잇달아 나오는 구간만** 붙인다 — `커넥션 센스`(2글자 이상)나
   /// 문장 속에 낀 한 글자(`및`)는 건드리지 않는다.
+  /// 한 줄에 **한글명과 영문명이 나란히 인쇄된 것**에서 뒤에 붙은 영문을 뗀다
+  /// (`케이스랩 K.ACE LAB` → `케이스랩`, 추가 424·430).
+  ///
+  /// ## 왜 파싱 **맨 앞**인가
+  ///
+  /// 고른 뒤에 값에서 떼는 방법도 재 봤는데 **+1장뿐이었다.** 파서가 그 줄을
+  /// **애초에 안 고르기** 때문이다 — `케이스랩 K.ACE LAB`은 회사명 모양으로
+  /// 안 보여 다른 줄에 밀린다. 영문을 먼저 떼어 `케이스랩`으로 만들면 그제야
+  /// 골라진다. 같은 규칙을 여기 두면 **+4장**이다.
+  ///
+  /// ## ⚠️ 손대지 않는 줄이 규칙의 절반이다
+  ///
+  /// 실측(96장 전 필드 전후 대조)에서 **직함 줄을 안 빼면 4장이 깨졌다** —
+  /// `Business Development` 같은 영문 직함이 한글과 한 줄에 있을 때 같이
+  /// 떨어져 나간다. 직함 키워드가 걸린 줄을 건너뛰자 **깨짐 0**이 됐다.
+  ///
+  /// ⚠️ **괄호는 안에 한글이 없을 때만 뗀다.** 이 조건이 없으면
+  /// `(주)컴플러스`가 `컴플러스`가 된다 — 추가 424에서 정답지를 고칠 때
+  /// 실제로 낸 버그이고, 적용 직전에 잡았다.
+  ///
+  /// ⚠️ **정답지를 가른 규칙과 같아야 한다.** 다르면 채점기와 파서가 서로
+  /// 다른 답을 옳다고 본다.
+  static String _stripLatinParallel(String line) {
+    var s = line.trim();
+    if (s.isEmpty || !_hasHangul(s)) return line; // 영문 전용 회사명 보존
+    // 연락처·주소·주소류가 든 줄은 건드리지 않는다.
+    if (s.contains('@') || RegExp(r'\d{3,}').hasMatch(s)) return line;
+    if (RegExp(r'(https?://|www\.)', caseSensitive: false).hasMatch(s)) {
+      return line;
+    }
+    // ⚠️ 직함 줄 제외 — 위 주석 참고. 이 한 줄이 깨짐 4를 0으로 만든다.
+    if (_titleKeywords.any((k) => _containsCi(s, k))) return line;
+
+    String prev = '';
+    while (prev != s) {
+      prev = s;
+      final paren = RegExp(r'[\(（]([^\)）]*)[\)）]\s*$').firstMatch(s);
+      if (paren != null && !_hasHangul(paren.group(1)!)) {
+        s = s.substring(0, paren.start).trim();
+        continue;
+      }
+      final tail = RegExp(
+        r"(?:^|\s)([A-Za-z][A-Za-z0-9.,&'\-]*(?:\s+[A-Za-z][A-Za-z0-9.,&'\-]*)*)\s*$",
+      ).firstMatch(s);
+      if (tail != null && !_hasHangul(tail.group(1)!)) {
+        final cut = s.lastIndexOf(tail.group(1)!);
+        s = (cut > 0 ? s.substring(0, cut) : '').trim();
+        continue;
+      }
+    }
+    // 다 떼고 나면 남는 게 없는 경우 — 원문을 그대로 둔다.
+    if (s.isEmpty) return line;
+    // ⚠️ **남은 한글이 사람 이름 모양이면 병기가 아니었다.**
+    // `이정현 DA Sovargen`은 한글명+영문명이 아니라 **이름과 회사가 한 줄로
+    // 뭉친 것**이고, 여기서 영문을 떼면 **회사를 통째로 잃는다.**
+    // 자동 테스트 3건(card_64·card_108·Sovargen)이 이것을 잡았다 — 96장
+    // 명함 대조에서는 깨짐이 0이었는데도 그랬다. **표본에 없는 모양이었다.**
+    if (_looksLikeKoreanPersonNameShape(s)) return line;
+    return s;
+  }
+
+  /// 남은 한글에 **사람 이름 모양의 낱말이 있는가** — 영문 병기 떼기를
+  /// 멈출지 판단하는 데만 쓴다(추가 430). 이름 판정 자체는
+  /// `_hangulNameLooksReal`이 한다.
+  ///
+  /// ⚠️ **줄 전체가 아니라 낱말 단위로 본다.** `장 장동일 (Daniel)`에서
+  /// `(Daniel)`은 회사 병기가 아니라 **그 사람의 영문 이름**이고, 떼면 이름
+  /// 판정이 흔들린다(card_64). 줄 전체만 보면 `장 장동일`이 공백 때문에
+  /// 이름 모양을 벗어나 이 함정을 못 잡는다.
+  static bool _looksLikeKoreanPersonNameShape(String s) {
+    for (final tok in s.trim().split(_whitespaceSplitRegExp)) {
+      if (_koreanNameRegExp.hasMatch(tok) && _startsWithSurname(tok)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 줄 전체가 괄호 하나이고, 그 안이 **주소 조각**인가 (추가 428).
+  ///
+  /// 법정동(`역삼동`·`성수동2가`)이나 건물명 접미사가 들어 있을 때만 참이다.
+  /// ⚠️ `(Daniel)`·`(Marketing Company)` 같은 괄호를 상세주소에 붙이지 않기
+  /// 위한 조건이다 — 괄호라고 다 주소가 아니다.
+  static bool _looksLikeAddressParenLine(String line) {
+    final t = line.trim();
+    final m = RegExp(r'^[\(（]([^\)）]+)[\)）]$').firstMatch(t);
+    if (m == null) return false;
+    final inner = m.group(1)!;
+    if (!_hasHangul(inner)) return false;
+    // 법정동·가·리로 끝나는 토큰이 있거나, 건물명 접미사가 있으면 주소로 본다.
+    if (RegExp(r'(동|가|리)\d*\s*(,|$)').hasMatch(inner)) return true;
+    return _buildingNameRegExp.hasMatch(inner);
+  }
+
+  /// 그 줄의 로마자가 **한글 이름 낱말의 성씨 표기**와 맞으면 그 낱말을
+  /// 돌려준다 (`이선경 Sun-Kyoung Lee` → `이선경`, 추가 429).
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// 실측(96장): 이름을 못 맞힌 20장 중 **낱말 하나로 멀쩡히 서 있는데 못
+  /// 고른 것이 5장**이었고, **다섯 장 전부** 한글 이름 옆에 로마자가 같은 줄에
+  /// 있었다. 그중 넷이 **그 사람 이름의 로마자 표기**다 — 한국 명함에서 아주
+  /// 흔한 모양인데 파서가 그 줄을 이름 줄로 확신하지 못해 다른 줄에 밀렸다.
+  ///
+  /// ## ⚠️ 로고 줄이 저절로 걸러지는 것이 이 신호의 값이다
+  ///
+  /// 나머지 하나는 `Ma soft`(M2SOFT 로고 오독)였는데, **성씨 표기와 안 맞아
+  /// 저절로 빠진다.** 크기·위치로는 못 가르던 것을 글자가 가른다.
+  static String? _nameByRomanizedSurname(String line) {
+    if (!RegExp(r'[A-Za-z]').hasMatch(line)) return null;
+    final latin = _latinWordRegExp
+        .allMatches(line)
+        .map((m) => m.group(0)!.toLowerCase().replaceAll(RegExp(r"[-']"), ''))
+        .toSet();
+    if (latin.isEmpty) return null;
+    for (final tok in line.split(_whitespaceSplitRegExp)) {
+      final t = tok.trim();
+      if (!_koreanNameRegExp.hasMatch(t)) continue;
+      if (_isRejectedName(t) || !_hangulNameLooksReal(t)) continue;
+      final forms = _surnameRomanizations[t[0]];
+      if (forms == null) continue;
+      // ⚠️ **정확히 같을 때만** 인정한다. 부분 일치를 허용하면 `한`(han)이
+      // `Handong`·`Chanho` 같은 말에 걸린다.
+      if (forms.any(latin.contains)) return t;
+    }
+    return null;
+  }
+
   static String _collapseCharSpacing(String line) {
     // 전각 공백(U+3000)도 명함에서 쓰인다 — 같은 공백으로 취급한다.
     final tokens = line.split(RegExp(r'[ \u3000]+'));
@@ -1864,7 +2027,9 @@ class OcrScannerService {
     lineData = [
       for (final l in lineData)
         (
-          text: _restoreBrokenPhones(_collapseCharSpacing(l.text)),
+          text: _restoreBrokenPhones(
+            _collapseCharSpacing(_stripLatinParallel(l.text)),
+          ),
           height: l.height,
           top: l.top,
           left: l.left,
@@ -2436,6 +2601,28 @@ class OcrScannerService {
         addressDetail = line.trim();
         continue;
       }
+      // **괄호만으로 이루어진 줄**은 상세주소에 이어 붙인다(추가 428).
+      //
+      // 명함은 법정동·건물명을 `(역삼동, 어반벤치빌딩)`처럼 **따로 한 줄로**
+      // 인쇄하는 일이 흔하다. 위 폴백들은 전부 `addressDetail == null`일 때만
+      // 도는데, 그 줄이 오기 전에 이미 `2층`이 상세주소로 잡혀 있으면 이
+      // 줄은 어디에도 못 붙고 **통째로 버려졌다.**
+      //
+      // 실측(96장): 정답 주소·상세에 괄호가 있는 35장 중 이 모양으로 잃던
+      // 것이 3장이다(추가 422·428).
+      //
+      // ⚠️ **괄호 안이 주소 조각일 때만** 붙인다. 괄호는 명함에서 영문 병기·
+      // 직함 부연에도 쓰여서(`(Daniel)`·`(Marketing Company)`), 아무 괄호나
+      // 붙이면 상세주소가 엉뚱한 말로 오염된다.
+      if (addressDetail != null &&
+          addressDetail.isNotEmpty &&
+          _looksLikeAddressParenLine(line)) {
+        final add = line.trim();
+        if (!addressDetail.contains(add)) {
+          addressDetail = '$addressDetail $add';
+        }
+        continue;
+      }
       remaining.add(line);
     }
 
@@ -2495,6 +2682,18 @@ class OcrScannerService {
     //
     // ⚠️ 위 수치는 **Vision OCR 기준**이다. 앱은 ML Kit을 쓰므로 줄 나눔이 달라
     // 실제 이득은 다를 수 있다 — 실기기에서 다시 재야 확정이다.
+    // ⭐ **로마자 성씨 신호**를 루프 전에 구해 둔다(추가 429). 이 신호는
+    // "어떤 줄이 한글 2~4자다"보다 **강한 근거**라, 아래 `koreanStripped`가
+    // 다른 줄을 먼저 집어가지 못하게 막는 데 쓴다.
+    String? romanizedNameToken;
+    for (final raw in lines) {
+      final byRoman = _nameByRomanizedSurname(raw);
+      if (byRoman != null) {
+        romanizedNameToken = byRoman;
+        break;
+      }
+    }
+
     String? preferredKoreanNameLine;
     // 이름 후보 중에 **성씨로 시작하는 것이 따로 있는가**(추가 413).
     // 아래 `koreanStripped` 경로의 안전판으로 쓴다 — 자세한 것은 그 자리 주석.
@@ -2641,6 +2840,12 @@ class OcrScannerService {
           // 나쁘다. 그래서 **대안이 있을 때만** 미룬다 — 영문 사람 이름 판정이
           // *"다른 후보가 없으면 그대로 쓴다"*로 스스로를 막아 둔 것과 같다.
           (_startsWithSurname(strippedForName) || !hasSurnameCandidate) &&
+          // ⚠️ **로마자 성씨 신호가 다른 이름을 가리키면 양보한다**(추가 429).
+          // 이 경로는 "한글 2~4자"만 보므로, 명함에 그런 낱말이 둘 이상이면
+          // 먼저 오는 줄이 이긴다 — 실측 96장에서 그 때문에 3장이 엉뚱한 줄을
+          // 이름으로 삼았다. 로마자 표기가 성씨와 맞는 쪽이 더 강한 근거다.
+          (romanizedNameToken == null ||
+              strippedForName == romanizedNameToken) &&
           // 더 큰 후보가 있으면 그 줄이 올 때까지 미룬다(추가 405). 밀린 줄은
           // 예전처럼 leftover로 흘러가 회사명 후보로 계속 쓰인다.
           (preferredKoreanNameLine == null ||
@@ -2840,6 +3045,17 @@ class OcrScannerService {
         hangulTokenLine = rawLine;
         break;
       }
+    }
+
+    // ⭐ **로마자 성씨 신호**(추가 429). 확정 근거가 없거나 약한 근거뿐일 때만
+    // 본다 — 이미 강한 근거로 찾았으면 건드리지 않는다.
+    //
+    // ⚠️ **루프가 끝난 뒤에 본다.** 루프 안에서 `continue`로 끊으면 그 줄이
+    // 다른 칸(회사·직함) 후보에서 빠져 엉뚱한 곳이 빈다 — 추가 430에서
+    // 같은 종류의 손실을 겪었다.
+    if (nameLineStrong == null && romanizedNameToken != null) {
+      nameLineStrong = romanizedNameToken;
+      nameSource = OcrNameSource.romanizedSurname;
     }
 
     // 강이 있으면 강, 없으면 약. 위 `nameLineStrong` 주석 참고.
