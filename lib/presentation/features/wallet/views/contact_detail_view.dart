@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/utils/card_history_note.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/auth_repository.dart';
+import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import 'add_card_modal_view.dart';
 
@@ -181,15 +183,22 @@ class ContactDetailView extends StatelessWidget {
       contact.company.trim(),
     ].where((v) => v.isNotEmpty).join(' · ');
 
+    // 이 화면의 유일한 이미지 영역 — 명함을 대표 이미지로 쓰기로 했을 때만
+    // 아바타가 실제 명함 사진을 보여준다(그 외엔 프로필 사진/이니셜). 그
+    // 경우에만 눌러서 크게 볼 수 있게 한다(추가 426) — 이니셜·프로필 사진을
+    // 눌러 "명함 뷰어"를 여는 것은 뜻이 안 맞는다.
+    final showsCardImage =
+        contact.useCardAsAvatar && contact.cardImagePath != null && uid != null;
+
     return Row(
       children: [
-        ContactAvatar(
-          photoPath: contact.avatarUrl,
-          name: contact.name,
-          radius: 30,
-          cardImagePath: contact.useCardAsAvatar ? contact.cardImagePath : null,
-          uid: contact.useCardAsAvatar ? uid : null,
-        ),
+        showsCardImage
+            ? _ZoomableCardAvatar(contact: contact, uid: uid)
+            : ContactAvatar(
+                photoPath: contact.avatarUrl,
+                name: contact.name,
+                radius: 30,
+              ),
         const SizedBox(width: 14),
         Expanded(
           child: Column(
@@ -514,6 +523,67 @@ class ContactActionIcon extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(icon, size: 20, color: AppColors.accentText),
+      ),
+    );
+  }
+}
+
+/// 상세 화면의 아바타가 **명함 사진**일 때만 쓰는 래퍼(추가 426) — 누르면
+/// [showCardImageViewer]로 크게 연다.
+///
+/// 화면 자체는 여전히 [ContactAvatar]가 그린다(복호화 캐시 재사용 — 여기서
+/// 다시 읽어도 [ContactImageService]가 메모리에 캐시해 둔 값을 그대로 돌려줄
+/// 뿐, 새 평문 파일을 만들지 않는다). 이 위젯은 그 위에 "누를 수 있다"는
+/// 표시(작은 돋보기 배지)와 탭 핸들러만 얹는다.
+class _ZoomableCardAvatar extends StatelessWidget {
+  const _ZoomableCardAvatar({required this.contact, required this.uid});
+
+  final ContactModel contact;
+  final String uid;
+
+  Future<void> _open(BuildContext context) async {
+    final bytes = await ContactImageService().loadDecryptedCardImage(
+      uid: uid,
+      path: contact.cardImagePath!,
+    );
+    if (bytes == null || !context.mounted) return;
+    await showCardImageViewer(
+      context,
+      faces: [CardFaceImage(image: MemoryImage(bytes), label: '명함 사진')],
+      title: '${contact.name} 님의 명함',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _open(context),
+      child: Semantics(
+        button: true,
+        label: '명함 사진 크게 보기',
+        child: Stack(
+          alignment: Alignment.bottomRight,
+          children: [
+            ContactAvatar(
+              photoPath: contact.avatarUrl,
+              name: contact.name,
+              radius: 30,
+              cardImagePath: contact.cardImagePath,
+              uid: uid,
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.55),
+                shape: BoxShape.circle,
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(3),
+                child: Icon(Icons.zoom_in, size: 12, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
