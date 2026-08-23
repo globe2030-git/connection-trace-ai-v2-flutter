@@ -9,8 +9,13 @@ import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 
-/// 명함지갑 정렬 기준(추가 427 — 캔버스 확정안 ③: 최근등록순·이름순·
-/// 회사명순·가까운 거리순 넷).
+/// 명함지갑 정렬 기준.
+///
+/// ⚠️ 2026-08-23 사용자 확정(기존 기능과 상충하면 갈아엎지 않고 공존시킨다,
+/// 2026-08-20 원칙): 추가 427 착수 때 "소통일순"을 캔버스 확정안(최근등록·
+/// 이름·회사명·거리순 넷)에 맞춰 지웠는데, 그건 기존 기능 축소라 원칙에
+/// 안 맞는다는 지적을 받고 되살렸다. 지금은 **다섯 종**이다 — 캔버스 넷 +
+/// 기존 소통일순.
 enum ContactSort {
   /// 최근 등록순(기본) — id에 심긴 등록 시각 내림차순.
   recent,
@@ -20,6 +25,10 @@ enum ContactSort {
 
   /// 회사명 가나다순(같은 회사는 이름순).
   company,
+
+  /// 마지막 소통일 최신순 — 소통 기록(commLogs)의 가장 최근 시각 내림차순.
+  /// 기록이 없는 인맥은 뒤로 보낸다.
+  lastComm,
 
   /// 가까운 거리순(추가 427) — 내 현재 위치에서 가까운 순. [WalletViewModel.
   /// distanceSortAvailable]가 false면(위치 동의가 없거나 아직 측위 전) 최근
@@ -188,6 +197,9 @@ class WalletViewModel extends ChangeNotifier {
           final byCompany = _compareByGroup(a.company, b.company);
           return byCompany != 0 ? byCompany : _compareByName(a, b);
         });
+      case ContactSort.lastComm:
+        // 마지막 소통이 최근일수록 위로. 기록 없는 인맥(0)은 자연히 맨 뒤.
+        list.sort((a, b) => _lastCommAt(b).compareTo(_lastCommAt(a)));
       case ContactSort.distance:
         final origin = _distanceOrigin;
         if (origin == null) {
@@ -207,10 +219,11 @@ class WalletViewModel extends ChangeNotifier {
   }
 
   /// 현재 정렬 기준에서 이 명함이 속한 초성 그룹(ㄱ/ㄴ/…/#). 인덱스 점프에
-  /// 쓴다. 그룹 점프가 의미 없는 정렬(최근등록·거리)에서는 빈 문자열.
+  /// 쓴다. 그룹 점프가 의미 없는 정렬(최근등록·소통일·거리)에서는 빈 문자열.
   String sortGroupOf(ContactModel c) {
     switch (_sort) {
       case ContactSort.recent:
+      case ContactSort.lastComm:
       case ContactSort.distance:
         return '';
       case ContactSort.name:
@@ -254,11 +267,19 @@ class WalletViewModel extends ChangeNotifier {
   }
 
   /// 카드에 표시할 날짜와 그 의미 — **정렬 기준에 맞춘다**(사용자 요청).
-  /// 등록일 기준이 아닌 정렬(거리순)에서도 어차피 표시할 다른 날짜가 없어
-  /// 등록일을 그대로 보여준다. 값이 없으면 date=null → 카드에서 날짜를
-  /// 숨긴다. 등록일은 id에 심긴 등록 시각(millisecondsSinceEpoch)에서
-  /// 얻는다 — 모델에 별도 등록일 필드가 없다.
+  /// - 소통일순 → 마지막 소통일(라벨 "마지막 소통")
+  /// - 그 외(최근등록순·이름순·회사명순·거리순) → 등록일(라벨 "등록") —
+  ///   거리순도 어차피 표시할 다른 날짜가 없어 등록일을 그대로 보여준다.
+  /// 값이 없으면 date=null → 카드에서 날짜를 숨긴다. 등록일은 id에 심긴 등록
+  /// 시각(millisecondsSinceEpoch)에서 얻는다 — 모델에 별도 등록일 필드가 없다.
   ({DateTime? date, String label}) cardDateFor(ContactModel c) {
+    if (_sort == ContactSort.lastComm) {
+      final ms = _lastCommAt(c);
+      return (
+        date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
+        label: '마지막 소통',
+      );
+    }
     final ms = _registeredAt(c);
     return (
       date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
@@ -268,6 +289,17 @@ class WalletViewModel extends ChangeNotifier {
 
   static int _registeredAt(ContactModel c) =>
       int.tryParse(c.id) ?? c.updatedAt?.millisecondsSinceEpoch ?? 0;
+
+  /// 이 명함의 마지막 소통 시각(ms). 소통 기록이 없으면 0이라 소통일순에서
+  /// 자연히 맨 뒤로 간다.
+  static int _lastCommAt(ContactModel c) {
+    var latest = 0;
+    for (final log in c.commLogs) {
+      final ms = log.timestamp.millisecondsSinceEpoch;
+      if (ms > latest) latest = ms;
+    }
+    return latest;
+  }
 
   int _compareByName(ContactModel a, ContactModel b) =>
       _compareByGroup(a.name, b.name);

@@ -82,6 +82,7 @@ void main() {
     String name = '',
     List<String> groupIds = const [],
     GeoPosition? geo,
+    List<CommunicationLogModel> commLogs = const [],
   }) => ContactModel(
     id: id,
     name: name.isEmpty ? '인맥$id' : name,
@@ -93,6 +94,7 @@ void main() {
     talkingPoints: const [],
     groupIds: groupIds,
     geo: geo,
+    commLogs: commLogs,
   );
 
   Future<WalletViewModel> vmWith(
@@ -249,6 +251,57 @@ void main() {
       vm.setSort(ContactSort.distance);
       vm.setSelectedGroup('gA');
       await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(vm.filteredContacts.map((c) => c.id).toList(), ['2', '1']);
+    });
+  });
+
+  // ⚠️ 2026-08-23 사용자 확정 — "기존 기능과 상충하면 갈아엎지 않고
+  // 공존시킨다"(2026-08-20 원칙)에 따라 소통일순을 되살렸다. 정렬은 이제
+  // 다섯 종(최근등록·이름·회사명·소통일·거리순)이고, 이 그룹은 소통일순이
+  // 살아있는지 + 그룹 필터와도 조합되는지를 고정한다.
+  group('소통일순 (복원, 2026-08-23)', () {
+    CommunicationLogModel logAt(DateTime at) => CommunicationLogModel(
+      type: 'call',
+      summary: '',
+      timestamp: at,
+    );
+
+    test('⭐ 다섯 종 정렬이 모두 존재한다', () {
+      expect(ContactSort.values, hasLength(5));
+      expect(
+        ContactSort.values,
+        containsAll(const [
+          ContactSort.recent,
+          ContactSort.name,
+          ContactSort.company,
+          ContactSort.lastComm,
+          ContactSort.distance,
+        ]),
+      );
+    });
+
+    test('마지막 소통이 최근인 명함이 위로 온다', () async {
+      final vm = await vmWith([
+        contact('1', commLogs: [logAt(DateTime(2026, 1, 1))]),
+        contact('2', commLogs: [logAt(DateTime(2026, 8, 1))]),
+        contact('3'), // 소통 기록 없음 — 맨 뒤로.
+      ]);
+
+      vm.setSort(ContactSort.lastComm);
+
+      expect(vm.filteredContacts.map((c) => c.id).toList(), ['2', '1', '3']);
+    });
+
+    test('소통일순도 그룹 필터와 함께 동작한다', () async {
+      final vm = await vmWith([
+        contact('1', groupIds: ['gA'], commLogs: [logAt(DateTime(2026, 1, 1))]),
+        contact('2', groupIds: ['gA'], commLogs: [logAt(DateTime(2026, 8, 1))]),
+        contact('3', groupIds: ['gB'], commLogs: [logAt(DateTime(2026, 9, 1))]),
+      ]);
+
+      vm.setSort(ContactSort.lastComm);
+      vm.setSelectedGroup('gA');
 
       expect(vm.filteredContacts.map((c) => c.id).toList(), ['2', '1']);
     });

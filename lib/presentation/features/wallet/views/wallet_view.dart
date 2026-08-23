@@ -499,16 +499,21 @@ class _WalletViewState extends State<WalletView> {
     );
   }
 
+  // ⚠️ 2026-08-23 사용자 확정: 추가 427에서 캔버스 확정안(넷)에 맞춰
+  // "소통일순"을 지웠다가, "기존 기능과 상충하면 갈아엎지 않고 공존시킨다"
+  // (2026-08-20 원칙)에 따라 되살렸다 — 지금은 다섯 개다.
   static const _sortLabels = {
     ContactSort.recent: '최근등록순',
     ContactSort.name: '이름순',
     ContactSort.company: '회사명순',
-    // 추가 427(캔버스 확정안 ③) — 소통일순을 대신해 가까운 거리순으로.
+    ContactSort.lastComm: '소통일순',
     ContactSort.distance: '가까운 거리순',
   };
 
-  /// 정렬 기준 선택 칩. 네 개를 한 화면에 균등 분할로 모두 보여준다(가로
-  /// 스크롤을 없애 "소통일순"이 잘려 보이던 문제 해결).
+  /// 정렬 기준 선택 칩. 다섯 개를 한 화면에 균등 분할로 모두 보여준다.
+  /// ⚠️ 다섯 번째(거리순)가 추가되며 칸이 좁아졌다 — 각 칩 내부가
+  /// FittedBox로 줄어들게 돼 있어(_SortChip) 잘리지는 않지만, 실기기에서
+  /// 라벨이 너무 빽빽해 보이면 UI 담당에게 넘길 것.
   Widget _buildSortSelector(WalletViewModel viewModel) {
     final entries = _sortLabels.entries.toList();
     return Row(
