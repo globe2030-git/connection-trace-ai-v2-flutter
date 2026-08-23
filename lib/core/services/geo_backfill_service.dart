@@ -340,8 +340,11 @@ class GeoBackfillService {
     }
     if (m.isEmpty) return shape;
     return <String>[
+      // ⚠️ 도로명이 있어도 **지번을 감추지 않는다.** 예전에는 road=1이면
+      // jibun을 안 보여 줘, 서로 다른 두 코드가 똑같이 "도로명"으로 풀렸다
+      // (추가 406에서 "도로명·보통"이 52장·1장 두 줄로 갈라져 보인 원인).
       if (m['road'] == '1')
-        '도로명'
+        m['jibun'] == '1' ? '도로명+지번 섞임' : '도로명'
       else if (m['jibun'] == '1')
         '지번'
       else
