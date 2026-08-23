@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/services/location_consent_service.dart';
+import '../../../../core/services/location_service.dart';
+import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 
-/// 명함지갑 정렬 기준.
+/// 명함지갑 정렬 기준(추가 427 — 캔버스 확정안 ③: 최근등록순·이름순·
+/// 회사명순·가까운 거리순 넷).
 enum ContactSort {
   /// 최근 등록순(기본) — id에 심긴 등록 시각 내림차순.
   recent,
@@ -17,24 +21,50 @@ enum ContactSort {
   /// 회사명 가나다순(같은 회사는 이름순).
   company,
 
-  /// 마지막 소통일 최신순 — 소통 기록(commLogs)의 가장 최근 시각 내림차순.
-  /// 기록이 없는 인맥은 뒤로 보낸다.
-  lastComm,
+  /// 가까운 거리순(추가 427) — 내 현재 위치에서 가까운 순. [WalletViewModel.
+  /// distanceSortAvailable]가 false면(위치 동의가 없거나 아직 측위 전) 최근
+  /// 등록순으로 대신 정렬한다([distanceSortFallbackActive]로 화면에 알린다).
+  distance,
 }
 
 class WalletViewModel extends ChangeNotifier {
   final ContactsRepository _contactsRepository;
+  final LocationGateway _locationService;
+  final LocationConsentStore _locationConsentService;
   String _searchTerm = '';
   List<String> _selectedTags = [];
+  // 그룹 필터(추가 427) — null이면 "전체". [ContactModel.groupIds]에 이
+  // id가 있는 명함만 남긴다.
+  String? _selectedGroupId;
   ContactSort _sort = ContactSort.recent;
   bool _isDisposed = false;
 
-  static const String _sortPrefKey = 'wallet_sort_v1';
+  // "가까운 거리순" 정렬의 기준 위치. 주변 탭([RadarViewModel])과 달리 여기서는
+  // **새로 위치 동의·권한을 요청하지 않는다** — 이미 동의·권한이 있을 때만
+  // 조용히 읽어 쓴다. 명함지갑에서 처음 위치 동의 팝업을 띄우면 그 화면의
+  // 맥락(주변 인맥 감지)과 다른 곳에서 낯선 팝업이 뜨는 셈이라, 동의가 아직
+  // 없으면 [distanceSortFallbackActive]로 대체 정렬(최근등록순) 중임을
+  // 알리기만 한다.
+  GeoPosition? _distanceOrigin;
+  bool _distanceOriginLoading = false;
 
-  WalletViewModel({required ContactsRepository contactsRepository})
-    : _contactsRepository = contactsRepository {
+  static const String _sortPrefKey = 'wallet_sort_v1';
+  // ⚠️ 그룹 "이름"이 아니라 id만 저장한다(법무 검토 결론) — 그룹명은
+  // 제3자를 특정할 수 있는 값이라 암호화 안 되는 일반 shared_preferences
+  // 키에 원문을 넣지 않는다(CLAUDE.md 4절).
+  static const String _groupFilterPrefKey = 'wallet_group_filter_v1';
+
+  WalletViewModel({
+    required ContactsRepository contactsRepository,
+    LocationGateway? locationService,
+    LocationConsentStore? locationConsentService,
+  }) : _contactsRepository = contactsRepository,
+       _locationService = locationService ?? LocationService(),
+       _locationConsentService =
+           locationConsentService ?? LocationConsentService() {
     _contactsRepository.addListener(_onContactsChanged);
     _loadSort();
+    _loadGroupFilter();
   }
 
   /// 저장해 둔 정렬 기준을 불러온다(앱 재실행에도 기억). 비동기라 로드가
@@ -48,6 +78,7 @@ class WalletViewModel extends ChangeNotifier {
       if (match.isNotEmpty && match.first != _sort) {
         _sort = match.first;
         _safeNotify();
+        if (_sort == ContactSort.distance) unawaited(_maybeLoadDistanceOrigin());
       }
     } catch (_) {
       // 저장소 접근 실패는 기본 정렬(최근등록순)로 두면 되므로 무시한다.
@@ -58,6 +89,30 @@ class WalletViewModel extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_sortPrefKey, _sort.name);
+    } catch (_) {}
+  }
+
+  Future<void> _loadGroupFilter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_groupFilterPrefKey);
+      if (saved == null || saved.isEmpty) return;
+      _selectedGroupId = saved;
+      _safeNotify();
+    } catch (_) {
+      // 저장소 접근 실패는 "전체"로 두면 되므로 무시한다.
+    }
+  }
+
+  Future<void> _saveGroupFilter() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = _selectedGroupId;
+      if (id == null) {
+        await prefs.remove(_groupFilterPrefKey);
+      } else {
+        await prefs.setString(_groupFilterPrefKey, id);
+      }
     } catch (_) {}
   }
 
@@ -77,8 +132,19 @@ class WalletViewModel extends ChangeNotifier {
   String get searchTerm => _searchTerm;
   ContactSort get sort => _sort;
   List<String> get selectedTags => List.unmodifiable(_selectedTags);
-  // 검색/태그 필터와 무관한 전체 목록 — 중복 인맥(휴대폰 번호 일치) 검사처럼
-  // 필터링된 filteredContacts로는 놓칠 수 있는 조회에 쓴다.
+  String? get selectedGroupId => _selectedGroupId;
+
+  /// "가까운 거리순"을 실제로 쓸 수 있는지(위치 동의·권한·측위가 이미 돼
+  /// 있는지). false면 화면에서 최근등록순으로 대신 보여주고 있다는 뜻이다.
+  bool get distanceSortAvailable => _distanceOrigin != null;
+
+  /// 지금 "가까운 거리순"을 골랐지만 위치 기준이 없어 최근등록순으로 대신
+  /// 보여주는 중인지 — 화면의 안내 한 줄에 쓴다.
+  bool get distanceSortFallbackActive =>
+      _sort == ContactSort.distance && _distanceOrigin == null;
+
+  // 검색/태그/그룹 필터와 무관한 전체 목록 — 중복 인맥(휴대폰 번호 일치)
+  // 검사처럼 필터링된 filteredContacts로는 놓칠 수 있는 조회에 쓴다.
   List<ContactModel> get contacts => _contactsRepository.contacts;
 
   List<String> get allTags {
@@ -91,6 +157,7 @@ class WalletViewModel extends ChangeNotifier {
 
   List<ContactModel> get filteredContacts {
     final query = _searchTerm.trim().toLowerCase();
+    final groupId = _selectedGroupId;
     final list = _contactsRepository.contacts.where((c) {
       final matchesSearch =
           query.isEmpty ||
@@ -104,7 +171,9 @@ class WalletViewModel extends ChangeNotifier {
           _selectedTags.isEmpty ||
           _selectedTags.any((tag) => c.tags.contains(tag));
 
-      return matchesSearch && matchesTags;
+      final matchesGroup = groupId == null || c.groupIds.contains(groupId);
+
+      return matchesSearch && matchesTags && matchesGroup;
     }).toList();
 
     switch (_sort) {
@@ -119,20 +188,30 @@ class WalletViewModel extends ChangeNotifier {
           final byCompany = _compareByGroup(a.company, b.company);
           return byCompany != 0 ? byCompany : _compareByName(a, b);
         });
-      case ContactSort.lastComm:
-        // 마지막 소통이 최근일수록 위로. 기록 없는 인맥(0)은 자연히 맨 뒤.
-        list.sort((a, b) => _lastCommAt(b).compareTo(_lastCommAt(a)));
+      case ContactSort.distance:
+        final origin = _distanceOrigin;
+        if (origin == null) {
+          // 위치 기준이 없으면 최근등록순으로 대신 보여준다
+          // (distanceSortFallbackActive가 true인 동안).
+          list.sort((a, b) => _registeredAt(b).compareTo(_registeredAt(a)));
+        } else {
+          list.sort((a, b) {
+            final dA = GeoUtils.getDistanceMeters(origin, a.geo);
+            final dB = GeoUtils.getDistanceMeters(origin, b.geo);
+            final cmp = dA.compareTo(dB);
+            return cmp != 0 ? cmp : _compareByName(a, b);
+          });
+        }
     }
     return list;
   }
 
   /// 현재 정렬 기준에서 이 명함이 속한 초성 그룹(ㄱ/ㄴ/…/#). 인덱스 점프에
-  /// 쓴다. 그룹 점프가 의미 없는 시간 기준 정렬(최근등록·소통일)에서는 빈
-  /// 문자열.
+  /// 쓴다. 그룹 점프가 의미 없는 정렬(최근등록·거리)에서는 빈 문자열.
   String sortGroupOf(ContactModel c) {
     switch (_sort) {
       case ContactSort.recent:
-      case ContactSort.lastComm:
+      case ContactSort.distance:
         return '';
       case ContactSort.name:
         return KoreanInitial.of(c.name);
@@ -142,25 +221,44 @@ class WalletViewModel extends ChangeNotifier {
   }
 
   void setSort(ContactSort sort) {
-    if (_sort == sort) return;
+    if (_sort == sort) {
+      if (sort == ContactSort.distance) unawaited(_maybeLoadDistanceOrigin());
+      return;
+    }
     _sort = sort;
     _safeNotify();
     unawaited(_saveSort());
+    if (sort == ContactSort.distance) unawaited(_maybeLoadDistanceOrigin());
+  }
+
+  /// 위치 동의·권한이 **이미 있을 때만** 조용히 현재 위치를 읽는다. 새로
+  /// 동의를 구하거나 OS 권한 팝업을 띄우지 않는다(주변 탭의 몫) — 명함지갑은
+  /// 그 흐름을 대신하지 않는다.
+  Future<void> _maybeLoadDistanceOrigin() async {
+    if (_distanceOrigin != null || _distanceOriginLoading) return;
+    _distanceOriginLoading = true;
+    try {
+      final consent = await _locationConsentService.loadRecord();
+      if (consent.decision != LocationConsentDecision.accepted) return;
+      final access = await _locationService.checkAccess();
+      if (access != DeviceLocationAccess.granted) return;
+      final position = await _locationService.getCurrentPosition();
+      if (position == null) return;
+      _distanceOrigin = position;
+      _safeNotify();
+    } catch (_) {
+      // 실패해도 거리 정렬은 최근등록순 대체로 계속 동작한다.
+    } finally {
+      _distanceOriginLoading = false;
+    }
   }
 
   /// 카드에 표시할 날짜와 그 의미 — **정렬 기준에 맞춘다**(사용자 요청).
-  /// - 소통일순 → 마지막 소통일(라벨 "마지막 소통")
-  /// - 그 외(최근등록순·이름순·회사명순) → 등록일(라벨 "등록")
-  /// 값이 없으면 date=null → 카드에서 날짜를 숨긴다. 등록일은 id에 심긴 등록
-  /// 시각(millisecondsSinceEpoch)에서 얻는다 — 모델에 별도 등록일 필드가 없다.
+  /// 등록일 기준이 아닌 정렬(거리순)에서도 어차피 표시할 다른 날짜가 없어
+  /// 등록일을 그대로 보여준다. 값이 없으면 date=null → 카드에서 날짜를
+  /// 숨긴다. 등록일은 id에 심긴 등록 시각(millisecondsSinceEpoch)에서
+  /// 얻는다 — 모델에 별도 등록일 필드가 없다.
   ({DateTime? date, String label}) cardDateFor(ContactModel c) {
-    if (_sort == ContactSort.lastComm) {
-      final ms = _lastCommAt(c);
-      return (
-        date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
-        label: '마지막 소통',
-      );
-    }
     final ms = _registeredAt(c);
     return (
       date: ms > 0 ? DateTime.fromMillisecondsSinceEpoch(ms) : null,
@@ -170,17 +268,6 @@ class WalletViewModel extends ChangeNotifier {
 
   static int _registeredAt(ContactModel c) =>
       int.tryParse(c.id) ?? c.updatedAt?.millisecondsSinceEpoch ?? 0;
-
-  /// 이 명함의 마지막 소통 시각(ms). 소통 기록이 없으면 0이라 소통일순에서
-  /// 자연히 맨 뒤로 간다.
-  static int _lastCommAt(ContactModel c) {
-    var latest = 0;
-    for (final log in c.commLogs) {
-      final ms = log.timestamp.millisecondsSinceEpoch;
-      if (ms > latest) latest = ms;
-    }
-    return latest;
-  }
 
   int _compareByName(ContactModel a, ContactModel b) =>
       _compareByGroup(a.name, b.name);
@@ -206,6 +293,14 @@ class WalletViewModel extends ChangeNotifier {
       _selectedTags.add(tag);
     }
     _safeNotify();
+  }
+
+  /// 그룹 칩 필터를 바꾼다(추가 427). `null`이면 "전체".
+  void setSelectedGroup(String? groupId) {
+    if (_selectedGroupId == groupId) return;
+    _selectedGroupId = groupId;
+    _safeNotify();
+    unawaited(_saveGroupFilter());
   }
 
   /// 같은 전화번호로 이미 등록된 명함(있으면). 저장 전 중복 경고에 쓴다(P1-40).
