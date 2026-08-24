@@ -215,7 +215,7 @@ class ContactsRepository extends ChangeNotifier {
       final l = localById[id];
       final s = serverById[id];
 
-      final ContactModel candidate;
+      ContactModel candidate;
       final bool fromLocal;
       if (l != null && s != null) {
         if (_updatedAtOf(l).isAfter(_updatedAtOf(s))) {
@@ -237,6 +237,26 @@ class ContactsRepository extends ChangeNotifier {
       if (tomb != null && tomb.isAfter(_updatedAtOf(candidate))) {
         // 다른 기기의 삭제가 이 후보보다 최신 → 제거(로컬·서버 어디에도 안 남김).
         continue;
+      }
+
+      // ⚠️ 좌표는 LWW 판단에서 뺀다(추가 435). 서버 백업엔 좌표가 애초에
+      // 없다(toBackupJson이 뺀다, 추가 76) — 그래서 `candidate`가 서버 것으로
+      // 뽑히면 항상 geo가 null이다. 문제는 **좌표만 갱신됐을 때**(백필
+      // 성공)도 생긴다: `GeoBackfillService.backfill`의 `onResolved`는
+      // `copyWith(geo:)`만 하고 `updatedAt`은 건드리지 않는다(좌표는 파생값이라
+      // "편집"이 아니라는 의도). 그 결과 local.updatedAt == server.updatedAt
+      // 동률이 되고, 동률은 서버 쪽을 채택하므로(위 `isAfter` 분기) **방금
+      // 백필로 채운 좌표가 다음 로그인(콜드 스타트)의 syncWithServer에서
+      // 즉시 지워졌다.** 실기기 증상: 백필 진행 배너는 30/30으로 완주하는데
+      // 좌표 없는 명함 수가 여러 회차(콜드 실행)를 거쳐도 한 장도 안 줄고,
+      // 그러니 3회 실패 "포기"도 전혀 쌓이지 않았다(성공은 실패가 아니므로) —
+      // 콜드 스타트마다 이전 회차의 성공분이 병합 시점에 조용히 사라지고,
+      // 다음 백필이 같은 명함을 또 성공시키는 것을 반복했을 뿐이었다.
+      // 좌표는 이 함수의 판단 기준(내용 최신성)과 무관한 기기 로컬 파생값이니
+      // 병합 결과가 어느 쪽 내용을 택하든 로컬에 있으면 항상 붙여 둔다.
+      final localGeo = l?.geo;
+      if (localGeo != null && candidate.geo == null) {
+        candidate = candidate.copyWith(geo: localGeo);
       }
 
       merged.add(candidate);

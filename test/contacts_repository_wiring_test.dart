@@ -302,6 +302,76 @@ void main() {
       );
       expect(r.merged.single.company, '편집됨');
     });
+
+    test(
+      '⭐⚠️ 추가 435 회귀 방지 — updatedAt이 같으면(백필만 한 경우) 서버가 이겨도 '
+      '로컬 좌표는 지워지지 않는다',
+      () {
+        // 왜 필요한가: GeoBackfillService.backfill의 onResolved는 geo만
+        // copyWith하고 updatedAt은 건드리지 않는다(의도적 — 좌표는 파생값이라
+        // "편집"이 아니다). 그런데 그 결과 local.updatedAt == server.updatedAt
+        // "동률"이 되고, mergeSync는 동률이면 서버 쪽(candidate = s)을
+        // 채택한다 — 서버 백업엔 좌표가 애초에 없으므로(toBackupJson) 방금
+        // 백필로 채운 좌표가 그대로 사라진다. 실기기에서 "포기 0 + 좌표 없음
+        // 70장이 4회차 내내 안 줄어든" 원인 — 매 콜드 스타트마다
+        // syncWithServer가 직전 백필 성공분을 지웠다(추가 435).
+        final geo = const GeoPosition(lat: 37.5, lng: 127.0);
+        final r = ContactsRepository.mergeSync(
+          local: [
+            ContactModel(
+              id: '1',
+              name: '이름1',
+              company: '회사',
+              title: '직함',
+              phone: '010-0000-0000',
+              email: 'a@b.c',
+              tags: const [],
+              talkingPoints: const [],
+              updatedAt: t1,
+              geo: geo,
+            ),
+          ],
+          server: [c('1', updatedAt: t1)],
+          tombstones: {},
+        );
+
+        expect(
+          r.merged.single.geo,
+          geo,
+          reason: '서버 필드가 채택돼도 로컬에만 있는 좌표는 보존돼야 한다',
+        );
+      },
+    );
+
+    test(
+      '⚠️ 서버가 진짜로 최신 편집을 갖고 있어도 로컬 좌표는 보존된다',
+      () {
+        // 회사명은 서버가 최신이라 서버 것을 채택하지만, 좌표는 여전히
+        // 로컬에만 존재하는 파생값이므로 함께 붙어 있어야 한다.
+        final geo = const GeoPosition(lat: 1, lng: 2);
+        final r = ContactsRepository.mergeSync(
+          local: [
+            ContactModel(
+              id: '1',
+              name: '이름1',
+              company: '옛회사',
+              title: '직함',
+              phone: '010-0000-0000',
+              email: 'a@b.c',
+              tags: const [],
+              talkingPoints: const [],
+              updatedAt: t1,
+              geo: geo,
+            ),
+          ],
+          server: [c('1', updatedAt: t2, company: '새회사')],
+          tombstones: {},
+        );
+
+        expect(r.merged.single.company, '새회사');
+        expect(r.merged.single.geo, geo);
+      },
+    );
   });
 
   group('서버 백업 페이로드', () {
