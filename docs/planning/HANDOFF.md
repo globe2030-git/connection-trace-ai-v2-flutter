@@ -241,6 +241,34 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
 성능**이었고, 세 번 재고서야 **82.2%(74/90)** 가 나왔다. 기기 지오코더
 32.3% 는 그대로이므로 **32.3% → 82.2%, 2.5배**가 맞는 서술이다.
 
+### ✅ 빌드 1.0.0+9 — **테스터 배포 완료**(2026-08-24, 사용자가 직접 실행)
+
+```
+빌드      1.0.0+9 · 커밋 7ad3039 · release · 업로드 키 서명
+탑재 키   행안부 검색·좌표 · 카카오 REST · 네이버 Client ID  (4개 전부 실측 확인)
+그룹 기능 꺼짐 — 방침 v2.3 시행일(2026-08-30) 게이트
+대상      Firebase App Distribution 등록 테스터 5명
+안내문    docs/planning/tester-guide.md (이번 판으로 갱신됨)
+```
+
+📌 **이 줄은 "예정"이 아니라 "실행됨"이다.** 빌드 8 때 *"오늘 11시 배포 예정"*만
+적히고 결과가 없어 며칠 뒤 *"배포됐나?"*를 아무도 답하지 못했다(그때 교훈:
+**예정을 적었으면 그 자리에 결과도 적는다**).
+
+⚠️ **첫 빌드에는 카카오·네이버 키가 빠져 있었다** — 그 키들은 `~/keys/`가 아니라
+**Firebase 비밀값**에 있어서 따로 꺼내 넣어야 한다. 키가 없으면 로그인 화면에
+그 버튼이 **아예 안 보인다**(의도된 설계). 다음에 빌드할 때는 이렇게 한다.
+
+```
+export KAKAO_REST_KEY="$(firebase functions:secrets:access KAKAO_REST_KEY)"
+export NAVER_CLIENT_ID="$(firebase functions:secrets:access NAVER_CLIENT_ID)"
+source ~/keys/connection-sense.env
+tool/build_app.sh apk release
+```
+
+**확인 방법**: APK를 풀어 `strings lib/arm64-v8a/libapp.so | grep -cF "<키값>"` —
+서명·버전만 보고 넘어가면 이 결함은 안 잡힌다(실제로 이번에 그렇게 잡았다).
+
 ### ⚠️ 남은 일 — 막힌 것
 
 ```
