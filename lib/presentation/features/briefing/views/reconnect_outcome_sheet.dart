@@ -170,7 +170,7 @@ class _ReconnectOutcomeSheetState extends State<ReconnectOutcomeSheet> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: _OutcomeButton(
-                        label: '없음',
+                        label: '아쉬움',
                         onTap: () => _choose(ReconnectOutcome.none),
                       ),
                     ),
