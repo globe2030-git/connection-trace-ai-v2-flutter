@@ -20,6 +20,21 @@ enum GeoFailureReason {
   communicationError,
 }
 
+/// 이 시도가 **어느 공급자로 끝났는지**(추가 435 계측). [GeoFailureReason]이
+/// "왜 실패했나"라면 이건 "누가 처리했나"에 가깝다 — 진단 화면이 회차별로
+/// "행안부 검색 실패 N · 행안부 좌표 실패 N · 행안부 성공 N · OS 폴백 성공 N ·
+/// 둘 다 실패 N"을 보여줄 근거가 이 값이다.
+///
+/// 다섯 값은 **서로 배타적인 하나의 결과 태그**다 — 판정 순서:
+/// 1. 행안부가 좌표까지 얻었으면 [jusoSuccess].
+/// 2. 아니면 OS 지오코더가 얻었으면 [osFallbackSuccess](행안부가 왜 안 됐는지는
+///    안 가린다 — "OS로 살아남았다"가 더 실용적인 신호라서).
+/// 3. 둘 다 실패했는데 행안부가 **키가 있어 시도라도 했다면** 그 단계를
+///    남긴다([jusoSearchFailed]/[jusoCoordFailed]) — 원인 자리를 좁힐 수 있다.
+/// 4. 행안부를 아예 시도 못 했으면(키 없음) [bothFailed] — "키 탑재 여부"는
+///    화면에 별도로 뜨므로 여기서 더 쪼개지 않는다.
+enum GeoStage { jusoSearchFailed, jusoCoordFailed, jusoSuccess, osFallbackSuccess, bothFailed }
+
 class AddressValidationResult {
   final bool isValid;
   final String originalAddress;
@@ -33,6 +48,12 @@ class AddressValidationResult {
   /// 한다(안전한 쪽으로: 회차를 함부로 중단하지 않는다).
   final GeoFailureReason? failureReason;
 
+  /// 이 시도가 어느 공급자로 끝났는지(추가 435 계측). 이 클래스를 직접 만드는
+  /// 옛 호출부·테스트가 많아 **nullable + 기본값 없음**으로 둔다 — 값이 없으면
+  /// [GeoBackfillService]가 그 시도는 집계에서 빼고 지나간다(계측 공백이지
+  /// 오류는 아니다).
+  final GeoStage? stage;
+
   const AddressValidationResult({
     required this.isValid,
     required this.originalAddress,
@@ -40,6 +61,7 @@ class AddressValidationResult {
     this.geoPosition,
     this.message,
     this.failureReason,
+    this.stage,
   });
 }
 
@@ -111,17 +133,21 @@ class AddressGeocodingService {
     String address, {
     String? fallbackAddress,
   }) async {
-    final juso = await _tryJuso(address, fallbackAddress: fallbackAddress);
-    if (juso != null) return juso;
+    final jusoAttempt = await _tryJuso(address, fallbackAddress: fallbackAddress);
+    if (jusoAttempt.result != null) return jusoAttempt.result!;
 
     final first = await _lookup(address);
-    if (first.isValid) return first;
+    if (first.isValid) return _withStage(first, GeoStage.osFallbackSuccess);
 
     final fallback = (fallbackAddress ?? '').trim();
-    if (fallback.isEmpty || fallback == address.trim()) return first;
+    if (fallback.isEmpty || fallback == address.trim()) {
+      return _withStage(first, _finalFailureStage(jusoAttempt.attemptedStage));
+    }
 
     final second = await _lookup(fallback);
-    if (!second.isValid) return first;
+    if (!second.isValid) {
+      return _withStage(first, _finalFailureStage(jusoAttempt.attemptedStage));
+    }
 
     // 좌표는 지번으로 얻었지만 주소는 1차(도로명) 것을 유지한다.
     return AddressValidationResult(
@@ -130,46 +156,83 @@ class AddressGeocodingService {
       roadNameAddress: second.roadNameAddress,
       geoPosition: second.geoPosition,
       message: second.message,
+      stage: GeoStage.osFallbackSuccess,
     );
   }
 
-  /// 행안부로 먼저 시도한다. 키가 없거나 실패하면 `null` — 호출부가 OS
-  /// 지오코더 경로로 넘어간다.
+  /// 행안부·OS 둘 다 실패했을 때 붙일 최종 단계(추가 435 계측). 행안부를
+  /// 시도조차 못 했으면(키 없음) [GeoStage.bothFailed] — "어느 단계에서
+  /// 죽었나"를 더 좁힐 근거 자체가 없다.
+  static GeoStage _finalFailureStage(JusoStage? attemptedStage) {
+    if (attemptedStage == JusoStage.searchFailed) return GeoStage.jusoSearchFailed;
+    if (attemptedStage == JusoStage.coordFailed) return GeoStage.jusoCoordFailed;
+    return GeoStage.bothFailed;
+  }
+
+  static AddressValidationResult _withStage(
+    AddressValidationResult r,
+    GeoStage stage,
+  ) => AddressValidationResult(
+    isValid: r.isValid,
+    originalAddress: r.originalAddress,
+    roadNameAddress: r.roadNameAddress,
+    geoPosition: r.geoPosition,
+    message: r.message,
+    failureReason: r.failureReason,
+    stage: stage,
+  );
+
+  /// 행안부로 먼저 시도한다. 키가 없거나 실패하면 `result: null` — 호출부가
+  /// OS 지오코더 경로로 넘어간다. [attemptedStage]는 실패했을 때(추가 435
+  /// 계측) 어느 단계에서 죽었는지를 함께 알려준다 — 아예 시도하지 못했으면
+  /// (키 없음·빈 주소) `null`.
   ///
   /// ⚠️ 도로명 주소 변환 제안(`roadNameAddress`)은 여기서 만들지 않는다.
   /// 행안부 검색 응답에 `roadAddr`가 있긴 하지만, 그걸 "제안"으로 띄우려면
   /// 원본과 비교하는 규칙이 따로 필요하고 이번 작업 범위 밖이다 — OS
   /// 지오코더 경로로 폴백했을 때만 지금처럼 제안이 뜬다(한계로 남긴다).
-  static Future<AddressValidationResult?> _tryJuso(
-    String address, {
-    String? fallbackAddress,
-  }) async {
-    if (!jusoService.isConfigured) return null;
+  static Future<({AddressValidationResult? result, JusoStage? attemptedStage})>
+  _tryJuso(String address, {String? fallbackAddress}) async {
+    if (!jusoService.isConfigured) {
+      return (result: null, attemptedStage: null);
+    }
     final trimmed = address.trim();
-    if (trimmed.isEmpty) return null;
+    if (trimmed.isEmpty) return (result: null, attemptedStage: null);
 
     final query = stripReferenceText(trimmed);
-    final geo = await jusoService.geocode(query);
-    if (geo != null) {
-      return AddressValidationResult(
-        isValid: true,
-        originalAddress: trimmed,
-        geoPosition: geo,
-        message: '주소 위치를 확인했습니다.',
+    final outcome = await jusoService.geocodeStaged(query);
+    if (outcome.position != null) {
+      return (
+        result: AddressValidationResult(
+          isValid: true,
+          originalAddress: trimmed,
+          geoPosition: outcome.position,
+          message: '주소 위치를 확인했습니다.',
+          stage: GeoStage.jusoSuccess,
+        ),
+        attemptedStage: JusoStage.success,
       );
     }
 
     final fallback = (fallbackAddress ?? '').trim();
-    if (fallback.isEmpty || fallback == trimmed) return null;
-    final fallbackGeo = await jusoService.geocode(
+    if (fallback.isEmpty || fallback == trimmed) {
+      return (result: null, attemptedStage: outcome.stage);
+    }
+    final fallbackOutcome = await jusoService.geocodeStaged(
       stripReferenceText(fallback),
     );
-    if (fallbackGeo == null) return null;
-    return AddressValidationResult(
-      isValid: true,
-      originalAddress: trimmed,
-      geoPosition: fallbackGeo,
-      message: '주소 위치를 확인했습니다.',
+    if (fallbackOutcome.position == null) {
+      return (result: null, attemptedStage: fallbackOutcome.stage);
+    }
+    return (
+      result: AddressValidationResult(
+        isValid: true,
+        originalAddress: trimmed,
+        geoPosition: fallbackOutcome.position,
+        message: '주소 위치를 확인했습니다.',
+        stage: GeoStage.jusoSuccess,
+      ),
+      attemptedStage: JusoStage.success,
     );
   }
 

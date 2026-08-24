@@ -64,6 +64,9 @@ void main() {
       '서울특별시 강남구 테헤란로 1',
     );
     expect(result.isValid, isFalse);
+    // 추가 435 계측: 행안부를 시도조차 못 했으니(키 없음) "행안부 검색/좌표
+    // 실패"로 좁혀 말할 근거가 없다 — bothFailed로 뭉뚱그린다.
+    expect(result.stage, GeoStage.bothFailed);
   });
 
   test('행안부 키가 있고 성공하면 그 좌표를 쓰고 OS 지오코더를 부르지 않는다', () async {
@@ -94,6 +97,7 @@ void main() {
     expect(result.geoPosition, isNotNull);
     expect(result.geoPosition!.lat, closeTo(37.5, 0.5));
     expect(result.originalAddress, '서울특별시 강남구 테헤란로 1');
+    expect(result.stage, GeoStage.jusoSuccess);
   });
 
   test('행안부 1차 주소 실패 시 fallbackAddress로 재시도한다', () async {
@@ -142,5 +146,35 @@ void main() {
     // OS 지오코더도 테스트 환경에서는 실패하지만, 예외 없이 최종 실패
     // 결과가 오는 것으로 "폴백이 실행됐다"를 확인한다.
     expect(result.isValid, isFalse);
+    // 추가 435 계측: 검색 단계(addrLinkApi)에서 후보가 없었으므로 —
+    // 좌표 단계까지 못 갔다는 것을 화면이 구분해서 보여줘야 한다.
+    expect(result.stage, GeoStage.jusoSearchFailed);
   });
+
+  test(
+    '⭐ 추가 435 계측 — 검색은 되는데 좌표 조회가 실패하면 coordFailed로 남는다',
+    () async {
+      AddressGeocodingService.jusoService = JusoGeocodingService(
+        searchKey: 's',
+        coordKey: 'c',
+        get: (uri) async {
+          if (uri.path.contains('addrLinkApi')) {
+            return _jsonResponse(
+              searchBody(errorCode: '0', juso: [item('서울특별시 강남구 테헤란로 1')]),
+              200,
+            );
+          }
+          // 0,0은 "못 찾음"으로 처리된다(juso_geocoding.dart).
+          return _jsonResponse(coordBody('0', '0'), 200);
+        },
+      );
+
+      final result = await AddressGeocodingService.validateAndConvert(
+        '서울특별시 강남구 테헤란로 1',
+      );
+
+      expect(result.isValid, isFalse);
+      expect(result.stage, GeoStage.jusoCoordFailed);
+    },
+  );
 }

@@ -35,6 +35,31 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   int _givenUpCount = 0;
   bool _retrying = false;
 
+  /// 행안부 검색·좌표 키가 둘 다 빌드에 실렸는지(추가 435). 키 원문은 절대
+  /// 담지 않는다 — 예/아니오만.
+  bool _jusoConfigured = false;
+
+  /// 마지막 백필 회차의 단계별 집계(추가 435). `{GeoStage.name: 건수}`.
+  Map<String, int> _stageStats = const {};
+
+  static const _stageLabels = {
+    'jusoSearchFailed': '행안부 검색 실패',
+    'jusoCoordFailed': '행안부 좌표 실패',
+    'jusoSuccess': '행안부 성공',
+    'osFallbackSuccess': 'OS 폴백 성공',
+    'bothFailed': '둘 다 실패',
+  };
+
+  // 화면에는 늘 같은 순서로 보여준다(집계 맵 순서는 삽입 순서라 회차마다
+  // 달라질 수 있다).
+  static const _stageOrder = [
+    'jusoSuccess',
+    'jusoSearchFailed',
+    'jusoCoordFailed',
+    'osFallbackSuccess',
+    'bothFailed',
+  ];
+
   static const _fieldLabels = {
     'name': '이름',
     'company': '회사명',
@@ -76,11 +101,15 @@ class _OcrStatsViewState extends State<OcrStatsView> {
     final summary = await _service.readSummary();
     final geoFail = await GeoBackfillService.readFailureShapeStats();
     final givenUp = await GeoBackfillService().resolveGivenUpIds(contacts);
+    final jusoConfigured = GeoBackfillService.isJusoConfigured();
+    final stageStats = await GeoBackfillService.readStageStats();
     if (!mounted) return;
     setState(() {
       _summary = summary;
       _geoFail = geoFail;
       _givenUpCount = givenUp.length;
+      _jusoConfigured = jusoConfigured;
+      _stageStats = stageStats;
       _loading = false;
     });
   }
@@ -312,6 +341,10 @@ class _OcrStatsViewState extends State<OcrStatsView> {
       ..sort((a, b) => b.value.compareTo(a.value));
     return [
       _card('주소 → 좌표 변환', [
+        // ⚠️ 키 원문은 안 보인다 — 탑재 여부만(추가 435). 기기에서 백필이
+        // 하나도 안 붙을 때 "빌드에 키가 실은 안 실렸다"인지 아닌지를 이
+        // 화면만으로 바로 가릴 수 있어야 한다.
+        _statRow('행안부 키 탑재', _jusoConfigured ? '탑재됨' : '탑재 안 됨'),
         _statRow('주소가 있는 명함', '${cov.withAddress}장'),
         _statRow(
           '그중 좌표가 없음',
@@ -362,6 +395,16 @@ class _OcrStatsViewState extends State<OcrStatsView> {
               GeoBackfillService.describeFailureShape(e.key),
               '${e.value}건',
             ),
+        ]),
+        const SizedBox(height: 16),
+      ],
+      // ⚠️ "누가 처리했나"의 회차별 스냅샷(추가 435) — 위 형태 집계와는
+      // 다른 축이다. 이건 **마지막 회차 한 번**만 담고 덮어쓴다.
+      if (_stageStats.isNotEmpty) ...[
+        _card('마지막 백필 회차 · 단계별 결과', [
+          for (final key in _stageOrder)
+            if (_stageStats[key] != null)
+              _statRow(_stageLabels[key] ?? key, '${_stageStats[key]}건'),
         ]),
         const SizedBox(height: 16),
       ],
