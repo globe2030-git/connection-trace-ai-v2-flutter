@@ -6,11 +6,13 @@ import 'package:latlong2/latlong.dart' hide Path;
 import 'package:provider/provider.dart';
 
 import '../../../../core/icons/app_icons.dart';
+import '../../../../core/services/address_geocoding_service.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../data/models/contact_model.dart';
+import '../../../common/address_search_view.dart';
 import '../utils/nearby_map_camera.dart';
 import '../utils/nearby_map_clusters.dart';
 import '../view_models/radar_view_model.dart';
@@ -60,6 +62,22 @@ class _NearbyMapViewState extends State<NearbyMapView> {
   /// 확인할 수 있도록 배율을 다시 맞추려고 들고 있는다.
   double? _lastRadius;
 
+  /// 사용자가 손으로(제스처로) 지도를 옮긴 뒤의 중심점(추가 445, "이 위치에서
+  /// 다시 찾기"). `null`이면 아직 손으로 옮긴 적이 없다는 뜻 — 그때는 버튼을
+  /// 보여줄 이유가 없다.
+  ///
+  /// ⚠️ **프로그램이 지도를 옮긴 경우(반경 변경 시 자동 맞춤, 기준점 이동)는
+  /// 여기 담지 않는다.** `MapOptions.onPositionChanged`의 `hasGesture`로
+  /// 걸러낸다 — 안 걸러내면 기준점을 바꿔서 지도가 움직인 것도 "사용자가
+  /// 끌어서 옮긴 것"으로 오인해, 방금 고른 기준점 위에 다시 찾기 버튼이 뜬다.
+  LatLng? _gestureCenter;
+
+  /// 검색 중 안내를 인라인으로 보여줄지. 이 화면은 바텀시트가 아니라
+  /// 자체 `Scaffold`가 있는 전체 화면 라우트라 `ScaffoldMessenger`
+  /// 스낵바를 써도 가려지지 않는다(바텀시트 안 스낵바 금지 규칙은 여기
+  /// 해당 없음).
+  bool _isSearchingAnchor = false;
+
   /// 브이월드(국토교통부 공간정보 오픈플랫폼) 인증키. 빌드할 때
   /// `--dart-define=VWORLD_KEY=...`로 넣는다. 키를 저장소에 커밋하지 않기
   /// 위해서다.
@@ -94,6 +112,54 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     if (radiusMeters <= 1000) return 14;
     if (radiusMeters <= 3000) return 13;
     return 12;
+  }
+
+  /// 기준 위치를 주소 검색으로 바꾼다(추가 445, ①). 이미 앱에 있는 주소 검색
+  /// 화면(`address_search_view.dart`)을 그대로 재사용한다 — 새 검색 UI를
+  /// 만들지 않는다는 지시대로다.
+  ///
+  /// 카카오가 그 자리에서 좌표를 못 주면(키 없음·도메인 불일치·검색 실패 등,
+  /// `AddressSearchResult.geo`의 정상 실패 경로) `add_card_modal_view.dart`와
+  /// 같은 순서로 OS/행안부 지오코더에 다시 물어본다 — 이 화면만 특별 취급하지
+  /// 않고 앱 전체가 쓰는 지오코딩 경로를 그대로 탄다.
+  Future<void> _openAddressSearch() async {
+    final viewModel = context.read<RadarViewModel>();
+    final result = await Navigator.of(context).push<AddressSearchResult>(
+      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() => _isSearchingAnchor = true);
+    var geo = result.geo;
+    if (geo == null) {
+      final geocoded = await AddressGeocodingService.validateAndConvert(
+        result.address,
+        fallbackAddress: result.geocodeFallback,
+      );
+      geo = geocoded.isValid ? geocoded.geoPosition : null;
+    }
+    if (!mounted) return;
+    setState(() => _isSearchingAnchor = false);
+
+    if (geo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('이 주소의 좌표를 찾지 못했어요. 다른 주소로 다시 시도해 주세요.')),
+      );
+      return;
+    }
+
+    viewModel.setAnchor(geo, label: result.address.trim());
+    // 새 기준점으로 카메라를 옮긴다. 아직 한 번도 손으로 지도를 안 옮긴
+    // 상태와 같게 취급 — 방금 고른 기준점 위에 "다시 찾기" 버튼이 뜨면 안 된다.
+    setState(() => _gestureCenter = null);
+    try {
+      _mapController.move(
+        LatLng(geo.lat, geo.lng),
+        _initialZoom(viewModel.settings.radiusMeters),
+      );
+    } catch (_) {
+      // 지도가 아직 준비되지 않았으면 다음 빌드의 반경 재맞춤에서 잡힌다.
+    }
   }
 
   @override
@@ -190,6 +256,20 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     }
     _lastRadius = radius;
 
+    // "이 위치에서 다시 찾기"(추가 445, ③) — 사용자가 손으로 지도를 옮긴
+    // 거리가 문턱을 넘었을 때만 버튼을 보여준다. 아직 안 옮겼으면(`null`)
+    // 0으로 쳐서 버튼을 감춘다.
+    final gestureCenterGeo = _gestureCenter == null
+        ? null
+        : GeoPosition(
+            lat: _gestureCenter!.latitude,
+            lng: _gestureCenter!.longitude,
+          );
+    final movedFromOriginMeters = gestureCenterGeo == null
+        ? 0.0
+        : GeoUtils.getDistanceMeters(origin, gestureCenterGeo);
+    final showRefindButton = shouldShowRefindHereButton(movedFromOriginMeters);
+
     return Scaffold(
       backgroundColor: AppColors.bgBase,
       appBar: _appBar(context),
@@ -218,6 +298,14 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               onTap: (_, point) => viewModel.setAnchor(
                 GeoPosition(lat: point.latitude, lng: point.longitude),
               ),
+              // "이 위치에서 다시 찾기"(추가 445, ③)에 쓸 위치 추적. `hasGesture`로
+              // 손으로 옮긴 것만 골라낸다 — 반경 변경 시 자동 맞춤이나 기준점
+              // 이동으로 지도가 프로그램에 의해 움직인 것까지 잡으면, 기준점을
+              // 방금 옮겨 놓고도 "다시 찾기" 버튼이 뜨는 오작동이 난다.
+              onPositionChanged: (camera, hasGesture) {
+                if (!hasGesture) return;
+                setState(() => _gestureCenter = camera.center);
+              },
             ),
             children: [
               TileLayer(
@@ -266,10 +354,11 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                   for (final marker in computeMapMarkerGroups(plottable))
                     Marker(
                       point: LatLng(marker.point.lat, marker.point.lng),
-                      // 묶음 마커는 "같은 주소 N명" 글자띠가 원 위에 붙어
-                      // 낱개 핀보다 폭이 넓다. 두 자리 인원수("같은 주소
-                      // 12명")까지 잘리지 않게 넉넉히 잡는다.
-                      width: marker.isGrouped ? 132 : 40,
+                      // 묶음 마커는 대표 회사명(또는 "같은 주소 N명") 글자띠가
+                      // 원 위에 붙어 낱개 핀보다 폭이 넓다. 회사명 라벨은
+                      // 최대 148(`_GroupPin`)까지 쓰므로 그보다 넉넉히 잡는다
+                      // — 폭이 라벨보다 좁으면 옆 마커와 겹쳐 보인다.
+                      width: marker.isGrouped ? 160 : 40,
                       height: marker.isGrouped ? 66 : 46,
                       alignment: Alignment.topCenter,
                       child: marker.isGrouped
@@ -295,6 +384,42 @@ class _NearbyMapViewState extends State<NearbyMapView> {
               ),
             ],
           ),
+          // 기준 위치 바(추가 445, ①) — 지금 무엇을 기준으로 지도를 보고
+          // 있는지 상단에 항상 밝히고, 눌러서 주소 검색으로 바꿀 수 있게
+          // 한다. "내 위치로 돌아가기"는 이 바가 아니라 오른쪽 아래
+          // 버튼(`_MapButton`)이 맡는다 — 탭으로 찍었든 주소로 골랐든
+          // `anchor != null`이면 같은 버튼이 같은 동작을 하므로 되돌릴
+          // 수단을 두 번 만들 필요가 없다.
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: _AnchorBar(
+              label: _basisLabel(viewModel),
+              isCustom: anchor != null,
+              isBusy: _isSearchingAnchor,
+              onTap: _isSearchingAnchor ? null : _openAddressSearch,
+            ),
+          ),
+          // "이 위치에서 다시 찾기"(추가 445, ③) — 지도를 일정 거리 이상 끌어
+          // 옮겼을 때만 뜬다. 기준 위치 바 바로 아래에 둔다.
+          if (showRefindButton)
+            Positioned(
+              top: 68,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _RefindHereButton(
+                  onTap: () {
+                    final g = _gestureCenter!;
+                    viewModel.setAnchor(
+                      GeoPosition(lat: g.latitude, lng: g.longitude),
+                    );
+                    setState(() => _gestureCenter = null);
+                  },
+                ),
+              ),
+            ),
           // 버튼과 아래 바를 **한 세로 묶음**으로 둔다. 예전에는 버튼이
           // `Positioned(bottom: 96)`으로 화면 밑에서 띄운 고정값이었는데,
           // 바에 안내 줄이 한 줄 늘자 바가 높아져 **버튼이 바 뒤로 숨었다**
@@ -318,6 +443,7 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                     icon: Icons.my_location,
                     onTap: () {
                       viewModel.clearAnchor();
+                      setState(() => _gestureCenter = null);
                       _mapController.move(myPoint, _initialZoom(radius));
                     },
                   ),
@@ -502,6 +628,19 @@ class _NearbyMapViewState extends State<NearbyMapView> {
     if (meters < 1000) return '${meters.round()}m';
     return '${(meters / 1000).toStringAsFixed(1)}km';
   }
+
+  /// 기준 위치 바에 보여줄 문구(추가 445, ①).
+  ///
+  /// - 기준점이 없으면 "내 위치".
+  /// - 주소 검색으로 골랐으면 그 주소 문장(뷰모델의 [RadarViewModel.anchorLabel]).
+  /// - 지도를 탭하거나 "이 위치에서 다시 찾기"로 옮겼으면(라벨 없음) 일반화된
+  ///   문구로 대신한다 — 좌표만 있고 사람이 읽을 이름은 없는 게 정상이다.
+  static String _basisLabel(RadarViewModel viewModel) {
+    if (viewModel.anchorPosition == null) return '내 위치';
+    final label = viewModel.anchorLabel?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    return '지도에서 지정한 위치';
+  }
 }
 
 class _MyLocationDot extends StatelessWidget {
@@ -603,12 +742,14 @@ class _ContactPin extends StatelessWidget {
 }
 
 /// 같은 도로명 주소에 여러 명이 있을 때 낱개 핀 대신 그리는 숫자 묶음
-/// 마커(P2-①). 원 안에는 인원수, 위에는 "같은 주소 N명" 라벨을 붙여 —
-/// 그냥 숫자만 있으면 "왜 숫자가 커졌지"가 지도만 보고는 안 읽힌다.
+/// 마커(P2-①). 원 안에는 인원수, 위에는 **대표 회사명**(또는 회사명이 없으면
+/// "같은 주소 N명") 라벨을 붙인다(추가 445, ②) — 그냥 숫자만 있으면 "왜
+/// 숫자가 커졌지"와 "어느 건물이지"가 눌러 보기 전에는 안 읽힌다. 대표 회사를
+/// 정하는 규칙은 [groupCompanyLabel] 참고.
 ///
-/// 접근성 라벨은 도로명까지 포함한다("OO로 NN, 같은 주소 N명") — 스크린
-/// 리더 사용자는 원 안의 숫자를 볼 수 없으므로, 어느 주소의 묶음인지까지
-/// 말해 줘야 낱개 핀들과 구분된다.
+/// 접근성 라벨은 도로명까지 포함한다("크림하우스 외 9, OO로 NN, 같은 주소
+/// N명") — 스크린 리더 사용자는 원 안의 숫자나 라벨의 말줄임을 볼 수 없으므로,
+/// 어느 주소·회사의 묶음인지까지 말해 줘야 낱개 핀들과 구분된다.
 class _GroupPin extends StatelessWidget {
   final AddressGroup group;
   final VoidCallback onTap;
@@ -618,22 +759,31 @@ class _GroupPin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final count = group.contacts.length;
+    // 대표 회사명 라벨(추가 445, ②) — 누르기 전에 어느 건물인지 알 수 있게
+    // 한다. 회사명이 하나도 없는 묶음이면(가짜 이름을 지어내지 않는다는
+    // 원칙에 따라) [groupCompanyLabel]이 null을 주고, 그때는 예전 그대로
+    // "같은 주소 N명"으로 보여준다.
+    final companyLabel = groupCompanyLabel(group);
+    final pillText = companyLabel ?? '같은 주소 $count명';
     return Semantics(
       button: true,
-      label: '${group.address}, 같은 주소 $count명',
+      label: companyLabel != null
+          ? '$companyLabel, ${group.address}, 같은 주소 $count명'
+          : '${group.address}, 같은 주소 $count명',
       child: GestureDetector(
         onTap: onTap,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // "같은 주소 N명" 라벨 — 낱개 핀과 한눈에 구분되도록 원 위에
-            // 알약 모양으로 얹는다.
+            // 대표 회사명(또는 "같은 주소 N명") 라벨 — 낱개 핀과 한눈에
+            // 구분되도록 원 위에 알약 모양으로 얹는다.
+            //
+            // ⚠️ 회사명이 길면 지도를 가린다 — 최대 폭을 두고 한 줄로
+            // 자른다(말줄임).
             ExcludeSemantics(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
+                constraints: const BoxConstraints(maxWidth: 148),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppColors.cardSurface,
                   borderRadius: BorderRadius.circular(999),
@@ -643,7 +793,9 @@ class _GroupPin extends StatelessWidget {
                   ],
                 ),
                 child: Text(
-                  '같은 주소 $count명',
+                  pillText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
@@ -728,6 +880,140 @@ class _MapButton extends StatelessWidget {
         tooltip: tooltip,
         onPressed: onTap,
         icon: Icon(icon, color: AppColors.accentText),
+      ),
+    );
+  }
+}
+
+/// 지도 상단의 기준 위치 바(추가 445, ①). 지금 무엇을 기준으로 거리를 재고
+/// 있는지 보여주고, 누르면 주소 검색으로 바꿀 수 있다.
+class _AnchorBar extends StatelessWidget {
+  final String label;
+
+  /// 기준점이 내 위치가 아닌지 — 강조 색을 쓸지 정하는 데만 쓴다(지도 위의
+  /// 다른 기준점 표시들과 같은 규칙).
+  final bool isCustom;
+
+  /// 주소를 고른 뒤 좌표를 구하는 동안(카카오가 못 주면 지오코더 재시도까지
+  /// 걸리는 시간) 다시 누르지 못하게 막는다.
+  final bool isBusy;
+
+  final VoidCallback? onTap;
+
+  const _AnchorBar({
+    required this.label,
+    required this.isCustom,
+    required this.isBusy,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '기준 위치: $label. 눌러서 주소로 바꾸기',
+      child: Material(
+        color: AppColors.cardSurface,
+        borderRadius: BorderRadius.circular(14),
+        elevation: 3,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  isCustom ? Icons.center_focus_strong : Icons.my_location,
+                  size: 16,
+                  color: AppColors.accentText,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '기준 위치',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (isBusy)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.accentText,
+                    ),
+                  )
+                else
+                  const Icon(
+                    Icons.search,
+                    size: 18,
+                    color: AppColors.accentText,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "이 위치에서 다시 찾기" 버튼(추가 445, ③). 지도를 일정 거리 이상 끌어
+/// 옮겼을 때만 뜬다 — 노출 조건은 [shouldShowRefindHereButton]에서 정한다.
+class _RefindHereButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _RefindHereButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.accent,
+      borderRadius: BorderRadius.circular(999),
+      elevation: 3,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh, size: 16, color: Colors.white),
+              SizedBox(width: 6),
+              Text(
+                '이 위치에서 다시 찾기',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -13,8 +13,26 @@ final gwangju = LatLng(35.1595, 126.8526); // 광주 — 230.3km
 /// 꼬리가 38.3 · 38.3 · 45.8이고 그다음이 230.3으로 크게 뛴다 — 여기가
 /// 이상값을 가르는 자리다.
 const observedKm = <double>[
-  6.7, 12.0, 20.4, 25.3, 28.3, 28.8, 29.1, 29.3, 32.2, 33.4,
-  34.7, 35.3, 37.1, 37.4, 37.4, 37.9, 38.3, 38.3, 45.8, 230.3,
+  6.7,
+  12.0,
+  20.4,
+  25.3,
+  28.3,
+  28.8,
+  29.1,
+  29.3,
+  32.2,
+  33.4,
+  34.7,
+  35.3,
+  37.1,
+  37.4,
+  37.4,
+  37.9,
+  38.3,
+  38.3,
+  45.8,
+  230.3,
 ];
 
 List<({LatLng point, double distanceMeters})> contactsFrom(
@@ -74,9 +92,9 @@ void main() {
     });
 
     test('45.8km가 잘리지 않는 것이 핵심이다 — 문턱이 그보다 커야 한다', () {
-      final threshold = bulkThresholdMeters(
-        [for (final km in observedKm) km * 1000],
-      );
+      final threshold = bulkThresholdMeters([
+        for (final km in observedKm) km * 1000,
+      ]);
       expect(threshold, greaterThan(45.8 * 1000));
       expect(threshold, lessThan(230.3 * 1000));
     });
@@ -135,6 +153,30 @@ void main() {
         contactsNearestFirst: contactsFrom(const [10.0]),
       );
       expect(plan.coordinates, containsAll(<LatLng>[anchor, me]));
+    });
+  });
+
+  group('shouldShowRefindHereButton — "이 위치에서 다시 찾기" 노출 조건(추가 445, ③)', () {
+    test('문턱을 안 넘으면 뜨지 않는다 — 손 떨림·확대 제스처 잡음 방지', () {
+      expect(shouldShowRefindHereButton(0), isFalse);
+      expect(
+        shouldShowRefindHereButton(kMapRefindThresholdMeters),
+        isFalse, // 경계값은 "넘은" 것이 아니다(초과만 인정).
+      );
+      expect(
+        shouldShowRefindHereButton(kMapRefindThresholdMeters - 1),
+        isFalse,
+      );
+    });
+
+    test('⭐ 문턱을 넘으면 뜬다', () {
+      expect(shouldShowRefindHereButton(kMapRefindThresholdMeters + 1), isTrue);
+      expect(shouldShowRefindHereButton(5000), isTrue);
+    });
+
+    test('무한대·NaN처럼 잴 수 없는 값은 뜨지 않는다', () {
+      expect(shouldShowRefindHereButton(double.infinity), isFalse);
+      expect(shouldShowRefindHereButton(double.nan), isFalse);
     });
   });
 }

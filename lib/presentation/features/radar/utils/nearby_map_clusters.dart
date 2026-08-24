@@ -70,6 +70,56 @@ class GroupSheetRow {
   final String subtitle;
 }
 
+/// 묶음 마커에 붙일 대표 회사명 라벨을 만든다(추가 445).
+///
+/// ## 왜 필요한가
+///
+/// 예전에는 묶음 마커가 "같은 주소 N명"이라는 숫자만 보여줘서, 눌러 보기
+/// 전에는 어느 건물인지 알 수 없었다. 경쟁 앱(리멤버)은 "크림하우스 외 9"처럼
+/// 대표 회사명을 미리 보여준다 — 이 함수가 그 대표 이름을 정한다.
+///
+/// ## 대표를 정하는 규칙
+///
+/// **가장 많은 명함이 속한 회사**를 대표로 삼는다. 회사명별로 등장 횟수를 세고,
+/// 가장 큰 것을 고른다. **동률이면 먼저 나온(=[group.contacts] 순서상 앞선)
+/// 회사가 이긴다** — 그 회사가 곧 "첫 명함의 회사"이기도 하므로, 지시된 두
+/// 규칙("가장 많은 회사" 또는 "첫 명함의 회사")이 이 하나의 구현으로 동시에
+/// 만족된다.
+///
+/// 대표 회사에 속하지 않는 나머지 인원이 있으면 `"$대표 외 $나머지수"`로,
+/// 전원이 같은 회사면 나머지 없이 회사명만 돌려준다.
+///
+/// ## 빈 값 처리
+///
+/// 묶음 안 전원의 회사명이 비어 있으면(가짜 이름을 지어내지 않는다는 이 저장소
+/// 원칙에 따라) **`null`을 돌려준다** — 호출부는 이때 예전처럼 "같은 주소 N명"
+/// 문구로 대신한다. 회사명이 없는 인맥은 집계에서 건너뛰므로, 일부만 비어 있는
+/// 묶음에서는 회사명이 있는 사람들끼리만 비교한다.
+String? groupCompanyLabel(AddressGroup group) {
+  final counts = <String, int>{};
+  final firstSeenOrder = <String>[];
+  for (final contact in group.contacts) {
+    final company = contact.company.trim();
+    if (company.isEmpty) continue;
+    if (!counts.containsKey(company)) firstSeenOrder.add(company);
+    counts[company] = (counts[company] ?? 0) + 1;
+  }
+  if (firstSeenOrder.isEmpty) return null;
+
+  var best = firstSeenOrder.first;
+  var bestCount = counts[best]!;
+  for (final company in firstSeenOrder) {
+    final count = counts[company]!;
+    if (count > bestCount) {
+      best = company;
+      bestCount = count;
+    }
+  }
+
+  final others = group.contacts.length - bestCount;
+  return others > 0 ? '$best 외 $others' : best;
+}
+
 /// 같은 주소 묶음 [group]의 인맥들을 바텀시트에 뿌릴 행 목록으로 바꾼다.
 ///
 /// 순서는 [group.contacts]가 넘어온 순서(=거리순, F-15와 동일)를 그대로

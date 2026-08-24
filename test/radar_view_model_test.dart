@@ -81,17 +81,18 @@ const _seoulCityHall = GeoPosition(lat: 37.5665, lng: 126.9780);
 /// 강남역 — 시청에서 약 8km. "내일 갈 동네" 역할.
 const _gangnamStation = GeoPosition(lat: 37.4979, lng: 127.0276);
 
-ContactModel _contactAt(String id, String name, GeoPosition geo) => ContactModel(
-  id: id,
-  name: name,
-  company: '',
-  title: '',
-  phone: '',
-  email: '',
-  tags: const [],
-  talkingPoints: const [],
-  geo: geo,
-);
+ContactModel _contactAt(String id, String name, GeoPosition geo) =>
+    ContactModel(
+      id: id,
+      name: name,
+      company: '',
+      title: '',
+      phone: '',
+      email: '',
+      tags: const [],
+      talkingPoints: const [],
+      geo: geo,
+    );
 
 /// 좌표는 없고 **주소만** 있는 명함. 실제로 이런 명함이 30/93 건이었다.
 ContactModel _contactWithAddressOnly(String id, String name, String address) =>
@@ -247,6 +248,49 @@ void main() {
       expect(restarted.referencePosition, same(_seoulCityHall));
       expect(restarted.filteredContacts.map((c) => c.id), ['near-me']);
       restarted.dispose();
+    });
+
+    test('주소 검색으로 기준점을 고르면 그 주소가 라벨로 남는다(추가 445, ①)', () async {
+      final model = await readyModel();
+
+      expect(model.anchorLabel, isNull);
+      model.setAnchor(_gangnamStation, label: '서울 강남구 테헤란로 152');
+
+      expect(model.anchorLabel, '서울 강남구 테헤란로 152');
+      expect(model.referencePosition, same(_gangnamStation));
+      expect(model.filteredContacts.map((c) => c.id), ['near-anchor']);
+      model.dispose();
+    });
+
+    test('지도를 탭해서 고르면 라벨이 없다 — 주소로 고른 것과 구분된다', () async {
+      final model = await readyModel();
+
+      model.setAnchor(_gangnamStation); // label 생략 = 지도 탭과 같은 경로.
+
+      expect(model.anchorLabel, isNull);
+      expect(model.isUsingCustomAnchor, isTrue);
+      model.dispose();
+    });
+
+    test('기준점을 풀면 라벨도 함께 지워진다', () async {
+      final model = await readyModel();
+      model.setAnchor(_gangnamStation, label: '서울 강남구 테헤란로 152');
+
+      model.clearAnchor();
+
+      expect(model.anchorLabel, isNull);
+      expect(model.anchorPosition, isNull);
+      model.dispose();
+    });
+
+    test('새 기준점을 고르면 이전 라벨이 남지 않는다', () async {
+      final model = await readyModel();
+      model.setAnchor(_gangnamStation, label: '서울 강남구 테헤란로 152');
+
+      model.setAnchor(_gangnamStation); // 이번엔 지도 탭(라벨 없음).
+
+      expect(model.anchorLabel, isNull);
+      model.dispose();
     });
 
     test('위치 접근을 잃으면 기준점도 함께 풀린다', () async {

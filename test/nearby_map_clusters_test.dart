@@ -228,4 +228,78 @@ void main() {
       expect(buildGroupSheetRows(group: group, origin: origin), isEmpty);
     });
   });
+
+  group('groupCompanyLabel — 묶음 마커의 대표 회사명(추가 445, ②)', () {
+    test('⭐ 가장 많은 명함이 속한 회사가 대표가 되고 나머지 수를 붙인다', () {
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [
+          contactAt('a', '가', company: '크림하우스'),
+          contactAt('b', '나', company: '크림하우스'),
+          contactAt('c', '다', company: '다른회사'),
+        ],
+      );
+
+      expect(groupCompanyLabel(group), '크림하우스 외 1');
+    });
+
+    test('전원이 같은 회사면 "외 N" 없이 회사명만 준다', () {
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [
+          contactAt('a', '가', company: '크림하우스'),
+          contactAt('b', '나', company: '크림하우스'),
+        ],
+      );
+
+      expect(groupCompanyLabel(group), '크림하우스');
+    });
+
+    test('회사명이 모두 다르면(동률) 먼저 나온 회사가 대표가 된다', () {
+      // 지시된 두 규칙("가장 많은 회사" 또는 "첫 명함의 회사")이 동률
+      // 상황에서는 같은 답을 내야 한다 — 먼저 나온 회사가 곧 첫 명함의
+      // 회사이기도 하다.
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [
+          contactAt('a', '가', company: '먼저회사'),
+          contactAt('b', '나', company: '나중회사'),
+        ],
+      );
+
+      expect(groupCompanyLabel(group), '먼저회사 외 1');
+    });
+
+    test('회사명이 모두 비어 있으면 null — 호출부가 "같은 주소 N명"으로 대신한다', () {
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [contactAt('a', '가'), contactAt('b', '나')],
+      );
+
+      expect(groupCompanyLabel(group), isNull);
+    });
+
+    test('일부만 회사명이 있으면 회사명이 있는 사람들끼리만 비교한다', () {
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [
+          contactAt('a', '가'), // 회사명 없음 — 집계에서 제외
+          contactAt('b', '나', company: '크림하우스'),
+          contactAt('c', '다', company: '크림하우스'),
+        ],
+      );
+
+      // 전체 3명 중 대표 회사(크림하우스)는 2명 → 나머지 1명("외 1").
+      expect(groupCompanyLabel(group), '크림하우스 외 1');
+    });
+
+    test('낱개(1명)여도 회사명이 있으면 그대로 준다', () {
+      final group = AddressGroup(
+        address: '테헤란로 123',
+        contacts: [contactAt('a', '가', company: '크림하우스')],
+      );
+
+      expect(groupCompanyLabel(group), '크림하우스');
+    });
+  });
 }
