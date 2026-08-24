@@ -254,8 +254,18 @@ class ContactsRepository extends ChangeNotifier {
       // 다음 백필이 같은 명함을 또 성공시키는 것을 반복했을 뿐이었다.
       // 좌표는 이 함수의 판단 기준(내용 최신성)과 무관한 기기 로컬 파생값이니
       // 병합 결과가 어느 쪽 내용을 택하든 로컬에 있으면 항상 붙여 둔다.
+      //
+      // ⚠️ 단, **주소가 같을 때만** 이식한다(PM 검토, 추가 435 보강). 서버
+      // 후보가 채택됐는데 그 주소가 로컬과 다르면(다른 기기에서 주소를
+      // 고친 경우) 로컬 좌표는 **옛 주소**로 계산된 값이다 — 새 주소에는
+      // 안 맞는 좌표인데, geo가 채워져 있으면 `GeoBackfillService`가
+      // "이미 있음"으로 보고 재계산을 안 한다(`_needsGeo`). 그러면 틀린
+      // 좌표가 지도에 영구히 남는다. 주소가 다르면 이식하지 않고 새
+      // 주소의 재계산(백필)에 맡긴다.
       final localGeo = l?.geo;
-      if (localGeo != null && candidate.geo == null) {
+      if (localGeo != null &&
+          candidate.geo == null &&
+          l!.address?.trim() == candidate.address?.trim()) {
         candidate = candidate.copyWith(geo: localGeo);
       }
 
