@@ -302,4 +302,71 @@ void main() {
       expect(groupCompanyLabel(group), '크림하우스');
     });
   });
+
+  group('bucketContactsByCompany — 겹친 마커 클러스터 시트의 회사 목록(추가 452)', () {
+    test('⭐ 회사별로 나누고 인원 많은 회사가 앞선다', () {
+      final contacts = [
+        contactAt('a', '가', company: '크림하우스'),
+        contactAt('b', '나', company: '다른회사'),
+        contactAt('c', '다', company: '크림하우스'),
+      ];
+
+      final buckets = bucketContactsByCompany(contacts);
+
+      expect(buckets.map((b) => b.label).toList(), ['크림하우스', '다른회사']);
+      expect(buckets.first.contacts.map((c) => c.id).toList(), ['a', 'c']);
+    });
+
+    test('회사명이 없는 인맥은 "회사 정보 없음"으로 모으고, 인원이 많아도 맨 뒤로 보낸다', () {
+      final contacts = [
+        contactAt('a', '가'), // 회사 없음
+        contactAt('b', '나'), // 회사 없음
+        contactAt('c', '다'), // 회사 없음
+        contactAt('d', '라', company: '작은회사'), // 1명뿐
+      ];
+
+      final buckets = bucketContactsByCompany(contacts);
+
+      expect(buckets.last.label, kNoCompanyLabel);
+      expect(buckets.last.contacts, hasLength(3));
+      expect(buckets.first.label, '작은회사');
+    });
+
+    test('회사가 하나뿐이면 묶음도 하나뿐', () {
+      final contacts = [
+        contactAt('a', '가', company: '크림하우스'),
+        contactAt('b', '나', company: '크림하우스'),
+      ];
+
+      final buckets = bucketContactsByCompany(contacts);
+
+      expect(buckets, hasLength(1));
+      expect(buckets.single.contacts, hasLength(2));
+    });
+
+    test('빈 목록은 빈 결과', () {
+      expect(bucketContactsByCompany(const []), isEmpty);
+    });
+  });
+
+  group('buildContactRows — buildGroupSheetRows와 같은 규칙을 공유한다', () {
+    const origin = GeoPosition(lat: 0, lng: 0);
+
+    test('여러 묶음을 합친 인맥 목록도 같은 방식으로 행이 된다', () {
+      final contacts = [
+        contactAt(
+          'a',
+          '가',
+          title: '팀장',
+          company: '크림하우스',
+          geo: const GeoPosition(lat: 0, lng: 0.001),
+        ),
+      ];
+
+      final rows = buildContactRows(contacts, origin);
+
+      expect(rows.single.subtitle, '팀장 · 크림하우스');
+      expect(rows.single.distanceMeters, isNonNegative);
+    });
+  });
 }

@@ -86,7 +86,7 @@ class _GroupSheetBody extends StatelessWidget {
                 separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, index) {
                   final row = rows[index];
-                  return _GroupSheetContactRow(
+                  return GroupSheetContactRow(
                     row: row,
                     uid: uid,
                     onTap: () => onOpenContact(row.contact),
@@ -110,7 +110,10 @@ class _GroupSheetBody extends StatelessWidget {
                 Expanded(
                   child: Text(
                     '묶음 기준은 목록 화면(같은 도로명 주소)과 동일합니다',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ),
               ],
@@ -122,8 +125,12 @@ class _GroupSheetBody extends StatelessWidget {
   }
 }
 
-class _GroupSheetContactRow extends StatelessWidget {
-  const _GroupSheetContactRow({
+/// 같은 주소 묶음(F-15)·겹친 마커 클러스터(추가 452) 시트가 함께 쓰는 인맥
+/// 행 하나. **한 곳에서만 정의해 재사용한다** — 시트마다 따로 그리면 같은
+/// 인맥이 시트에 따라 다르게 보일 수 있다(사용자 지시, 추가 452).
+class GroupSheetContactRow extends StatelessWidget {
+  const GroupSheetContactRow({
+    super.key,
     required this.row,
     required this.uid,
     required this.onTap,
@@ -207,11 +214,7 @@ class _GroupSheetContactRow extends StatelessWidget {
             ),
           ],
           const SizedBox(width: 2),
-          const Icon(
-            Icons.chevron_right,
-            size: 20,
-            color: AppColors.textMuted,
-          ),
+          const Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
         ],
       ),
     );

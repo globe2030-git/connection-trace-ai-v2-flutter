@@ -128,9 +128,22 @@ String? groupCompanyLabel(AddressGroup group) {
 List<GroupSheetRow> buildGroupSheetRows({
   required AddressGroup group,
   required GeoPosition origin,
-}) {
+}) => buildContactRows(group.contacts, origin);
+
+/// [contacts]를 [origin] 기준 바텀시트 행으로 바꾼다. [buildGroupSheetRows]가
+/// 쓰는 것과 같은 규칙이다 — 겹친 마커 클러스터 시트(추가 452,
+/// `nearby_map_cluster_sheet.dart`)는 하나의 주소 묶음이 아니라 **여러 묶음을
+/// 합친** 인맥 목록을 받으므로, [AddressGroup] 하나를 요구하는
+/// [buildGroupSheetRows]로는 못 쓴다. 그래서 인맥 목록을 직접 받는 이 함수로
+/// 뽑아 두고, 두 함수가 같은 결과를 내도록 [buildGroupSheetRows]가 이 함수를
+/// 감싸는 형태로 정리했다 — 규칙이 갈라지면 같은 인맥이 시트마다 다르게
+/// 보인다.
+List<GroupSheetRow> buildContactRows(
+  List<ContactModel> contacts,
+  GeoPosition origin,
+) {
   return [
-    for (final contact in group.contacts)
+    for (final contact in contacts)
       GroupSheetRow(
         contact: contact,
         distanceMeters: GeoUtils.getDistanceMeters(origin, contact.geo),
@@ -140,4 +153,58 @@ List<GroupSheetRow> buildGroupSheetRows({
         ].where((s) => s.trim().isNotEmpty).join(' · '),
       ),
   ];
+}
+
+/// 회사별로 묶은 인맥 무리 하나 — 겹친 마커 클러스터 시트의 1단계(회사
+/// 목록)에 쓴다(추가 452, 사용자 지시: "그 회사 사람들만 볼 수 있도록").
+class CompanyBucket {
+  const CompanyBucket({required this.label, required this.contacts});
+
+  /// 회사명, 또는 회사 정보가 없는 사람들을 모은 자리라면
+  /// [kNoCompanyLabel] — 이 앱의 다른 화면(`wallet_view.dart`,
+  /// `radar_view.dart`)이 이미 쓰는 문구와 같다. 가짜 회사명을 지어내지
+  /// 않는다는 원칙에 따른다.
+  final String label;
+
+  final List<ContactModel> contacts;
+}
+
+/// 회사 정보가 없는 인맥을 모으는 자리의 이름. `wallet_view.dart`·
+/// `radar_view.dart`가 이미 같은 문구를 쓰고 있어 그대로 맞췄다 — 같은 개념이
+/// 화면마다 다른 말로 불리면 안 된다.
+const String kNoCompanyLabel = '회사 정보 없음';
+
+/// [contacts]를 회사별로 나눈다.
+///
+/// - 인원이 많은 회사가 앞선다 — [groupCompanyLabel]의 대표 규칙과 같은
+///   근거다("그 자리에 사람이 많이 몰린 회사가 더 중요한 정보").
+/// - [kNoCompanyLabel] 자리는 **인원수와 무관하게 항상 맨 뒤**로 보낸다 —
+///   실제 회사가 아니라 "모르는 자리"이므로, 회사 목록에서 실제 회사들보다
+///   먼저 나오면 실제 회사인 것처럼 오인될 수 있다.
+List<CompanyBucket> bucketContactsByCompany(List<ContactModel> contacts) {
+  final order = <String>[];
+  final byCompany = <String, List<ContactModel>>{};
+  for (final contact in contacts) {
+    final company = contact.company.trim();
+    final key = company.isEmpty ? kNoCompanyLabel : company;
+    if (!byCompany.containsKey(key)) order.add(key);
+    (byCompany[key] ??= []).add(contact);
+  }
+
+  final buckets = [
+    for (final key in order)
+      CompanyBucket(label: key, contacts: byCompany[key]!),
+  ];
+  // `List.sort`는 안정 정렬을 보장하지 않는다 — 인원수가 같은 회사끼리도
+  // 결과가 실행마다 흔들리지 않도록 먼저 나온 순서(원래 [order])를
+  // 동률 처리 기준으로 명시한다.
+  final firstSeenIndex = {for (var i = 0; i < order.length; i++) order[i]: i};
+  buckets.sort((a, b) {
+    if (a.label == kNoCompanyLabel) return 1;
+    if (b.label == kNoCompanyLabel) return -1;
+    final byCount = b.contacts.length.compareTo(a.contacts.length);
+    if (byCount != 0) return byCount;
+    return firstSeenIndex[a.label]!.compareTo(firstSeenIndex[b.label]!);
+  });
+  return buckets;
 }
