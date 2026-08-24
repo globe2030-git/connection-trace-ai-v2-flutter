@@ -110,6 +110,22 @@ MapFitPlan resolveMapFit({
   return MapFitPlan(coordinates: points, outsideCount: outside);
 }
 
+/// "이 위치에서 다시 찾기" 버튼을 보여줄지 정한다(추가 445, 배달·부동산 앱에
+/// 흔한 패턴).
+///
+/// 지도를 아주 살짝만 옮겼는데 버튼이 뜨면 잡음이다 — 확대하려고 두 손가락을
+/// 살짝 눌러도, 손이 떨려도 지도 중심은 미세하게 움직인다. 그래서 일정 거리
+/// 이상 벗어났을 때만 보여준다.
+///
+/// ⚠️ **이 문턱은 잰 값이 아니라 고른 값이다.** 실사용 이동 거리 분포를 재서
+/// 정한 것이 아니라 "동네를 벗어났다고 느낄 만한 거리"로 어림잡았다. 실사용에서
+/// "버튼이 너무 자주(또는 안) 뜬다"는 제보가 오면 재검토 대상.
+const double kMapRefindThresholdMeters = 300;
+
+/// [movedMeters]만큼 지도 중심이 원래 기준점에서 벗어났으면 `true`.
+bool shouldShowRefindHereButton(double movedMeters) =>
+    movedMeters.isFinite && movedMeters > kMapRefindThresholdMeters;
+
 /// 무리로 볼 거리의 상한. 가까운 순으로 정렬된 [distancesNearestFirst]에서
 /// [kMapFitBulkPercentile]번째 백분위수(최근접 순위)를 잡고 여유를 곱한다.
 ///

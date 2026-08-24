@@ -40,6 +40,12 @@ class RadarViewModel extends ChangeNotifier {
   /// 켰는데 엉뚱한 동네가 기준으로 남아 있으면 "왜 내 위치가 아니지"가 된다.
   /// 저장을 넣으면 검증 등급도 부분 테스트에서 전체 테스트로 올라간다.
   GeoPosition? _anchorPosition;
+
+  /// 기준점을 무엇으로 부를지(추가 445) — 주소 검색으로 골랐으면 그 주소
+  /// 문장을 담고, 지도를 직접 찍었으면 `null`(화면에서는 "지도에서 지정한
+  /// 위치"처럼 일반화된 문구로 대신 보여준다). 기준점 자체와 함께 지워진다 —
+  /// 라벨만 따로 남으면 가리키는 좌표 없이 옛 주소만 남는 모순이 생긴다.
+  String? _anchorLabel;
   LocationConsentRecord _locationConsent = LocationConsentRecord.unknown;
   LocationAccessState _locationAccessState = LocationAccessState.loading;
   bool _isRefreshingLocation = false;
@@ -96,6 +102,10 @@ class RadarViewModel extends ChangeNotifier {
   /// 지도에서 지정한 기준점. 지정하지 않았으면 `null`.
   GeoPosition? get anchorPosition => _anchorPosition;
 
+  /// 기준점의 표시용 이름(추가 445) — 주소 검색으로 골랐을 때만 있다. 지도를
+  /// 탭해서 찍었으면 `null`이고, 그때는 화면에서 일반화된 문구를 대신 쓴다.
+  String? get anchorLabel => _anchorLabel;
+
   /// 지금 거리 기준이 내 위치가 아닌지. 화면에 "지금 기준이 어디인가"를
   /// 밝히는 데 쓴다 — 이걸 숨기면 거리가 달라진 이유를 알 수 없다.
   bool get isUsingCustomAnchor => _anchorPosition != null;
@@ -133,6 +143,7 @@ class RadarViewModel extends ChangeNotifier {
       radiusMeters: _settings.radiusMeters,
     );
   }
+
   // 좌표는 서버에 백업하지 않으므로(backlog 추가 75, C안) 새 기기에서 복원한
   // 직후에는 명함에 좌표가 없어 거리 계산이 안 된다. 주소로 좌표를 다시
   // 계산하는 동안 화면이 "주변에 아무도 없음"으로 보이면 오해를 사므로,
@@ -174,6 +185,7 @@ class RadarViewModel extends ChangeNotifier {
     _locationConsent = await _locationConsentService.decline();
     _currentPosition = null;
     _anchorPosition = null;
+    _anchorLabel = null;
     _locationAccessState = LocationAccessState.consentDeclined;
     _safeNotify();
   }
@@ -230,6 +242,7 @@ class RadarViewModel extends ChangeNotifier {
     if (!hasLocationConsent) {
       _currentPosition = null;
       _anchorPosition = null;
+      _anchorLabel = null;
       _locationAccessState =
           _locationConsent.decision == LocationConsentDecision.declined
           ? LocationAccessState.consentDeclined
@@ -284,7 +297,10 @@ class RadarViewModel extends ChangeNotifier {
     // 위치를 잃으면 지도에서 찍어 둔 기준점도 함께 푼다. 내 위치가 없으면
     // 지도 화면 자체가 열리지 않아 기준점을 되돌릴 방법이 없는데, 목록 거리만
     // 지정한 지점 기준으로 남으면 사용자가 손쓸 수 없는 상태가 된다.
-    if (_currentPosition == null) _anchorPosition = null;
+    if (_currentPosition == null) {
+      _anchorPosition = null;
+      _anchorLabel = null;
+    }
 
     _isRefreshingLocation = false;
     _safeNotify();
@@ -426,12 +442,18 @@ class RadarViewModel extends ChangeNotifier {
     _proximitySettingsService.saveRadius(newRadiusMeters);
   }
 
-  /// 지도에서 찍은 지점을 거리 기준으로 삼는다(F-13).
+  /// 지도에서 찍거나 주소 검색으로 고른 지점을 거리 기준으로 삼는다(F-13,
+  /// 추가 445에서 주소 검색 경로 추가).
+  ///
+  /// [label]은 화면에 보여줄 이름이다 — 주소 검색으로 골랐으면 그 주소를
+  /// 넘기고, 지도를 탭하거나 "이 위치에서 다시 찾기"로 옮겼으면 비워 둔다
+  /// (좌표만 있고 사람이 읽을 이름은 없는 게 정상이다).
   ///
   /// 좌표는 화면에 그리고 거리 계산에만 쓴다 — **로그로 남기지 않는다.**
   /// 위치는 개인정보라 디버그 출력에도 위경도를 찍지 않는다.
-  void setAnchor(GeoPosition position) {
+  void setAnchor(GeoPosition position, {String? label}) {
     _anchorPosition = position;
+    _anchorLabel = label;
     _safeNotify();
   }
 
@@ -439,6 +461,7 @@ class RadarViewModel extends ChangeNotifier {
   void clearAnchor() {
     if (_anchorPosition == null) return;
     _anchorPosition = null;
+    _anchorLabel = null;
     _safeNotify();
   }
 
