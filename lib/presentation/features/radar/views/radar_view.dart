@@ -522,10 +522,23 @@ class _RadarViewState extends State<RadarView> {
         ),
 
         // Full Screen 30-Second AI Briefing Overlay
+        //
+        // 이 오버레이는 별도 Route가 아니라 주변 화면과 같은 Route 위에
+        // Stack으로 얹힌 것이라, 뒤로가기를 여기서 막지 않으면 같은 Route에
+        // 있는 MainTabScreen의 루트 뒤로가기 처리(추가 437)가 같이 반응해
+        // 오버레이가 닫히면서 동시에 탭 전환/종료 안내까지 겹쳐 뜬다.
+        // PopScope로 여기서 먼저 막고 오버레이만 닫는다.
         if (viewModel.selectedContactForBriefing != null)
-          BriefingOverlayView(
-            contact: viewModel.selectedContactForBriefing!,
-            onClose: viewModel.closeBriefing,
+          PopScope(
+            canPop: false,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) return;
+              viewModel.closeBriefing();
+            },
+            child: BriefingOverlayView(
+              contact: viewModel.selectedContactForBriefing!,
+              onClose: viewModel.closeBriefing,
+            ),
           ),
       ],
     );
