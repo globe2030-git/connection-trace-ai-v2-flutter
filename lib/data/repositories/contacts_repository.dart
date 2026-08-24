@@ -294,6 +294,13 @@ class ContactsRepository extends ChangeNotifier {
   /// 실패한 건은 다음 호출에서 다시 시도되며, 반복 실패하면
   /// [GeoBackfillService]가 알아서 포기한다. 호출자는 결과를 기다릴 필요가
   /// 없다(진행 상황은 [isBackfillingGeo]로 관찰).
+  ///
+  /// ⚠️ **회차 끝이 아니라 한 건 풀릴 때마다 즉시 저장한다**(추가 434). 예전엔
+  /// [GeoBackfillService.backfill]이 완전히 반환한 뒤에야 결과를 한꺼번에
+  /// 적용·저장했다 — 실기기 실측(QA가 `am force-stop`으로 두 번 재현)에서
+  /// 회차 도중 앱이 죽으면 그 회차의 성공분이 통째로 사라지는 것이 확인됐다.
+  /// 지금은 [GeoBackfillService.backfill]의 `onResolved` 콜백으로 한 건씩
+  /// 반영·저장하므로 "도중에 죽어도 이미 성공한 것은 남는다."
   Future<void> backfillMissingGeo() async {
     if (_isBackfillingGeo) return;
 
@@ -306,24 +313,21 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final resolved = await _geoBackfillService.backfill(
+      await _geoBackfillService.backfill(
         pending,
         onProgress: (done, total) {
           _geoBackfillDone = done;
           _geoBackfillTotal = total;
           notifyListeners();
         },
+        onResolved: (contactId, geo) async {
+          final idx = _contacts.indexWhere((c) => c.id == contactId);
+          if (idx == -1) return; // 그 사이 명함이 삭제됐을 수 있다.
+          _contacts[idx] = _contacts[idx].copyWith(geo: geo);
+          notifyListeners();
+          await _saveToDisk();
+        },
       );
-      if (resolved.isNotEmpty) {
-        _contacts = _contacts
-            .map(
-              (c) => resolved.containsKey(c.id)
-                  ? c.copyWith(geo: resolved[c.id])
-                  : c,
-            )
-            .toList();
-        await _saveToDisk();
-      }
     } catch (e) {
       debugPrint('좌표 재계산 중 오류: $e');
     } finally {

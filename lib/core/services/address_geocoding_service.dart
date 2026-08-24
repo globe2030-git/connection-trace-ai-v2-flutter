@@ -3,6 +3,23 @@ import 'package:geocoding/geocoding.dart';
 import '../utils/geo_utils.dart';
 import 'juso_geocoding_service.dart';
 
+/// 지오코딩이 **왜** 실패했는지(추가 434).
+///
+/// 백필 장치(`GeoBackfillService`)의 연속 실패 중단 규칙이 이 값을 근거로
+/// 삼는다 — "네트워크가 없다"와 "이 주소는 정말 안 풀린다"는 뒤에 남은
+/// 명함들에 대해 전혀 다른 함의를 갖는다. 앞쪽 몇 장이 안 풀리는 주소일
+/// 뿐인데 회차 전체가 죽어서는 안 된다(실기기 실측: 4~6/30에서 매번 멈춤).
+enum GeoFailureReason {
+  /// 질의(검색·역지오코딩)는 끝까지 다녀왔지만 일치하는 위치가 없었다 —
+  /// 주소 자체의 문제. 이 명함 하나가 안 풀릴 뿐, 뒤에 있는 다른 명함이
+  /// 풀릴 가능성과는 무관하다.
+  noResult,
+
+  /// 타임아웃·예외 등 통신이 끝까지 가지 못했다 — 네트워크나 서버 쪽 문제라
+  /// 뒤에 있는 명함도 같은 이유로 실패할 가능성이 높다.
+  communicationError,
+}
+
 class AddressValidationResult {
   final bool isValid;
   final String originalAddress;
@@ -10,12 +27,19 @@ class AddressValidationResult {
   final GeoPosition? geoPosition;
   final String? message;
 
+  /// 실패했을 때만 의미가 있다. 성공(`isValid == true`)이면 항상 null.
+  /// 실패인데 null이면 "구분 안 됨"(구버전 호출부·주소 공백 등 드문 경로)
+  /// 이라는 뜻 — 호출부는 이 경우 "통신 문제로 확신할 수 없다"로 취급해야
+  /// 한다(안전한 쪽으로: 회차를 함부로 중단하지 않는다).
+  final GeoFailureReason? failureReason;
+
   const AddressValidationResult({
     required this.isValid,
     required this.originalAddress,
     this.roadNameAddress,
     this.geoPosition,
     this.message,
+    this.failureReason,
   });
 }
 
@@ -177,6 +201,7 @@ class AddressGeocodingService {
         return AddressValidationResult(
           isValid: false,
           originalAddress: trimmed,
+          failureReason: GeoFailureReason.noResult,
           message: '위치를 찾을 수 없는 주소입니다. 건물명이나 도로명 주소를 확인해 주세요.',
         );
       }
@@ -199,6 +224,7 @@ class AddressGeocodingService {
       return AddressValidationResult(
         isValid: false,
         originalAddress: trimmed,
+        failureReason: GeoFailureReason.communicationError,
         message: '위치를 찾을 수 없는 주소입니다. 건물명이나 도로명 주소를 확인해 주세요.',
       );
     }

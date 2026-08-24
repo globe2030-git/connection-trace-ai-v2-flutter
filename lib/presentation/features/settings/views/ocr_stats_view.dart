@@ -29,6 +29,12 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   Map<String, int> _geoFail = const {};
   bool _loading = true;
 
+  /// 3회 실패해 좌표 재시도를 포기한 명함 수(추가 434). 주소를 고치기 전까지
+  /// 영구 제외되는데 이 수가 안 보이면 "재시도 대상이 얼마나 남았는지" 알
+  /// 방법이 없었다.
+  int _givenUpCount = 0;
+  bool _retrying = false;
+
   static const _fieldLabels = {
     'name': '이름',
     'company': '회사명',
@@ -64,14 +70,45 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   }
 
   Future<void> _load() async {
+    // await 전에 미리 잡아둔다 — 이 화면이 닫히는 사이 context가 무효화될 수
+    // 있는 지점(await) 뒤에서 context.read를 새로 부르지 않기 위함이다.
+    final contacts = context.read<ContactsRepository>().contacts;
     final summary = await _service.readSummary();
     final geoFail = await GeoBackfillService.readFailureShapeStats();
+    final givenUp = await GeoBackfillService().resolveGivenUpIds(contacts);
     if (!mounted) return;
     setState(() {
       _summary = summary;
       _geoFail = geoFail;
+      _givenUpCount = givenUp.length;
       _loading = false;
     });
+  }
+
+  /// "좌표 다시 시도"(추가 434) — 포기(3회 실패)된 명함의 시도 기록을 지우고
+  /// 백필을 한 회차 돌린다.
+  ///
+  /// ## 왜 필요한가
+  ///
+  /// 3회 실패한 명함은 주소를 고치기 전까지 영구 제외된다. 공급자를
+  /// (OS 지오코더 → 행안부로) 바꿔도 과거 실패분은 재시도되지 않아 **개선
+  /// 효과를 잴 방법 자체가 없었다** — 이 버튼이 그 재측정 경로다.
+  Future<void> _retryGivenUp() async {
+    final repo = context.read<ContactsRepository>();
+    final service = GeoBackfillService();
+    final givenUp = await service.resolveGivenUpIds(repo.contacts);
+    if (givenUp.isEmpty) return;
+
+    setState(() => _retrying = true);
+    await service.resetAttempts(givenUp);
+    await repo.backfillMissingGeo();
+    if (!mounted) return;
+    setState(() => _retrying = false);
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('포기했던 명함의 좌표를 다시 계산했습니다.')),
+    );
   }
 
   Future<void> _confirmReset() async {
@@ -281,6 +318,27 @@ class _OcrStatsViewState extends State<OcrStatsView> {
           '${cov.missingGeo}장'
               '${cov.withAddress > 0 ? ' (${_pct(cov.missingGeo, cov.withAddress)})' : ''}',
         ),
+        // ⚠️ 3회 실패해 포기된 명함(추가 434) — 주소를 고치기 전까지 재시도
+        // 대상에서 빠져 있다. 아래 "좌표 다시 시도"로 기록을 지우고 한 번
+        // 더 시도할 수 있다.
+        _statRow('그중 재시도를 포기함(3회 실패)', '$_givenUpCount장'),
+        if (_givenUpCount > 0) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _retrying ? null : _retryGivenUp,
+              child: Text(_retrying ? '다시 시도하는 중…' : '좌표 다시 시도'),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              '한 번에 최대 30장까지 다시 시도합니다. 인터넷 연결이 필요합니다.',
+              style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+            ),
+          ),
+        ],
       ]),
       const SizedBox(height: 16),
       // ⚠️ 두 묶음을 **갈라 둔다.** 위는 "지금 좌표가 없는 주소의 형태"이고
