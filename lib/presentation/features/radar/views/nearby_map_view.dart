@@ -15,7 +15,10 @@ import '../../../../data/models/contact_model.dart';
 import '../../../common/address_search_view.dart';
 import '../utils/nearby_map_camera.dart';
 import '../utils/nearby_map_clusters.dart';
+import '../utils/nearby_map_label_collision.dart';
+import '../utils/nearby_map_label_metrics.dart';
 import '../view_models/radar_view_model.dart';
+import 'nearby_map_cluster_sheet.dart';
 import 'nearby_map_group_sheet.dart';
 // 반경 선택 칩은 주변 화면과 공유한다 — 옵션·라벨·선택 시트가 갈라지면
 // 두 화면이 서로 다른 반경 목록을 보여주게 된다.
@@ -347,40 +350,31 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                       height: 30,
                       child: const _AnchorMark(),
                     ),
-                  // 같은 도로명 주소는 낱개 핀 여러 개 대신 숫자 묶음
-                  // 마커 하나로 합친다(P2-①, 2026-08-22 확정). 판정 규칙은
-                  // 목록 화면(F-15)과 같은 [groupContactsByAddress] —
-                  // 새로 만들지 않고 그대로 재사용한다.
-                  for (final marker in computeMapMarkerGroups(plottable))
-                    Marker(
-                      point: LatLng(marker.point.lat, marker.point.lng),
-                      // 묶음 마커는 대표 회사명(또는 "같은 주소 N명") 글자띠가
-                      // 원 위에 붙어 낱개 핀보다 폭이 넓다. 회사명 라벨은
-                      // 최대 148(`_GroupPin`)까지 쓰므로 그보다 넉넉히 잡는다
-                      // — 폭이 라벨보다 좁으면 옆 마커와 겹쳐 보인다.
-                      width: marker.isGrouped ? 160 : 40,
-                      height: marker.isGrouped ? 66 : 46,
-                      alignment: Alignment.topCenter,
-                      child: marker.isGrouped
-                          ? _GroupPin(
-                              group: marker.group,
-                              onTap: () => showNearbyMapGroupSheet(
-                                context,
-                                group: marker.group,
-                                origin: origin,
-                              ),
-                            )
-                          : _ContactPin(
-                              contact: marker.representative,
-                              onTap: () => _showContactSheet(
-                                context,
-                                marker.representative,
-                                origin,
-                                isCustomAnchor: anchor != null,
-                              ),
-                            ),
-                    ),
                 ],
+              ),
+              // 인맥 마커는 별도 위젯으로 뺐다(추가 452) — 화면 좌표 기준으로
+              // 라벨 충돌을 판정하려면 `MapCamera.of(context)`가 필요한데,
+              // 그건 `FlutterMap.children` 목록 안(=`MapInheritedModel`
+              // 아래)에서만 쓸 수 있다. 이 State의 `build()`는 `FlutterMap`
+              // 바깥이라 여기서는 못 쓴다.
+              _ContactMarkersLayer(
+                markers: computeMapMarkerGroups(plottable),
+                onTapContact: (contact) => _showContactSheet(
+                  context,
+                  contact,
+                  origin,
+                  isCustomAnchor: anchor != null,
+                ),
+                onTapGroup: (group) => showNearbyMapGroupSheet(
+                  context,
+                  group: group,
+                  origin: origin,
+                ),
+                onTapCluster: (contacts) => showNearbyMapClusterSheet(
+                  context,
+                  contacts: contacts,
+                  origin: origin,
+                ),
               ),
             ],
           ),
@@ -741,6 +735,128 @@ class _ContactPin extends StatelessWidget {
   }
 }
 
+/// 인맥 마커(묶음 + 낱개) 전체를 그리는 계층(추가 452로 신설).
+///
+/// `MapCamera.of(context)`로 **현재 화면 좌표**를 얻어 묶음 마커의 라벨끼리
+/// 겹치는지 판정한다(`nearby_map_label_collision.dart`) — 이 계산은
+/// `FlutterMap.children` 목록 안에서 빌드되는 위젯이어야만 `MapCamera`에
+/// 접근할 수 있어 별도 위젯으로 뺐다. 지도를 옮기거나 확대할 때마다 이
+/// `build()`가 다시 불리지만(카메라가 바뀌므로), **라벨 글자 폭은 다시 재지
+/// 않는다** — 그 값은 `plottable`이 바뀔 때(=인맥 데이터가 바뀔 때)만
+/// 재는 [measureGroupLabelWidth]에서 미리 받아 온다.
+class _ContactMarkersLayer extends StatelessWidget {
+  final List<MapMarkerGroup> markers;
+  final ValueChanged<ContactModel> onTapContact;
+  final ValueChanged<AddressGroup> onTapGroup;
+  final ValueChanged<List<ContactModel>> onTapCluster;
+
+  const _ContactMarkersLayer({
+    required this.markers,
+    required this.onTapContact,
+    required this.onTapGroup,
+    required this.onTapCluster,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final camera = MapCamera.of(context);
+
+    // 라벨이 있는 마커(=묶음, 2명 이상)만 충돌 판정 대상이다. 낱개 마커
+    // (`_ContactPin`)는 애초에 라벨이 없어 겹칠 것도 없다 — 이 결함(추가
+    // 452)은 추가 445가 묶음 마커에 붙인 회사명 라벨 때문에 생겼다.
+    final groupById = <String, MapMarkerGroup>{};
+    final candidates = <LabelCandidate>[];
+    var order = 0;
+    for (final marker in markers) {
+      if (!marker.isGrouped) continue;
+      final id = marker.representative.id;
+      groupById[id] = marker;
+      final offset = camera.latLngToScreenOffset(
+        LatLng(marker.point.lat, marker.point.lng),
+      );
+      final text = groupCompanyLabel(marker.group) ?? '같은 주소 ${marker.count}명';
+      candidates.add(
+        LabelCandidate(
+          id: id,
+          x: offset.dx,
+          y: offset.dy,
+          labelWidth: measureGroupLabelWidth(text),
+          // 우선순위 규칙(nearby_map_label_collision.dart 문서 참고):
+          // 인원 많은 쪽 → order(=거리) 앞선 쪽. `markers`는 이미
+          // `computeMapMarkerGroups(plottable)`가 거리순으로 넘겨주므로
+          // 리스트 인덱스를 그대로 order로 쓴다.
+          priority: marker.count,
+          order: order,
+        ),
+      );
+      order++;
+    }
+    final clusters = computeLabelClusters(candidates);
+    final clusterById = <String, LabelCluster>{};
+    for (final cluster in clusters) {
+      for (final id in cluster.memberIds) {
+        clusterById[id] = cluster;
+      }
+    }
+
+    return MarkerLayer(
+      markers: [
+        for (final marker in markers)
+          Marker(
+            point: LatLng(marker.point.lat, marker.point.lng),
+            // 묶음 마커는 대표 회사명(또는 "같은 주소 N명") 글자띠가
+            // 원 위에 붙어 낱개 핀보다 폭이 넓다. 회사명 라벨은
+            // 최대 [kGroupLabelMaxWidth]까지 쓰므로 그보다 넉넉히 잡는다
+            // — 폭이 라벨보다 좁으면 옆 마커와 겹쳐 보인다.
+            width: marker.isGrouped ? 160 : 40,
+            height: marker.isGrouped ? 66 : 46,
+            alignment: Alignment.topCenter,
+            child: marker.isGrouped
+                ? _buildGroupPin(
+                    marker,
+                    clusterById[marker.representative.id],
+                    groupById,
+                  )
+                : _ContactPin(
+                    contact: marker.representative,
+                    onTap: () => onTapContact(marker.representative),
+                  ),
+          ),
+      ],
+    );
+  }
+
+  /// 묶음 마커 하나를 만든다 — [cluster]는 이 마커가 화면에서 다른 묶음
+  /// 마커와 겹쳐 있으면 그 무리, 안 겹쳤으면 `null`이다.
+  Widget _buildGroupPin(
+    MapMarkerGroup marker,
+    LabelCluster? cluster,
+    Map<String, MapMarkerGroup> groupById,
+  ) {
+    return _GroupPin(
+      group: marker.group,
+      // 겹쳐서 하나의 클러스터로 묶였으면 대표(우선순위 최고)만 라벨을
+      // 보여준다. 안 겹쳤으면(cluster==null) 예전처럼 항상 보인다.
+      showLabel:
+          cluster == null || cluster.visibleId == marker.representative.id,
+      onTap: () {
+        // 겹친 마커는 **아무거나 눌러도 같은 결과**를 보여준다(사용자 지시,
+        // 추가 452) — 화면에서 겹쳐 있으면 손가락으로 어느 것을 정확히
+        // 짚었는지 사용자도 구분할 수 없기 때문이다. 안 겹쳤으면 예전
+        // 그대로 그 묶음의 단일 시트를 연다.
+        if (cluster != null && cluster.isCollision) {
+          onTapCluster([
+            for (final id in cluster.memberIds)
+              ...groupById[id]!.group.contacts,
+          ]);
+        } else {
+          onTapGroup(marker.group);
+        }
+      },
+    );
+  }
+}
+
 /// 같은 도로명 주소에 여러 명이 있을 때 낱개 핀 대신 그리는 숫자 묶음
 /// 마커(P2-①). 원 안에는 인원수, 위에는 **대표 회사명**(또는 회사명이 없으면
 /// "같은 주소 N명") 라벨을 붙인다(추가 445, ②) — 그냥 숫자만 있으면 "왜
@@ -749,12 +865,25 @@ class _ContactPin extends StatelessWidget {
 ///
 /// 접근성 라벨은 도로명까지 포함한다("크림하우스 외 9, OO로 NN, 같은 주소
 /// N명") — 스크린 리더 사용자는 원 안의 숫자나 라벨의 말줄임을 볼 수 없으므로,
-/// 어느 주소·회사의 묶음인지까지 말해 줘야 낱개 핀들과 구분된다.
+/// 어느 주소·회사의 묶음인지까지 말해 줘야 낱개 핀들과 구분된다. **이 라벨은
+/// [showLabel]이 `false`여도(화면 겹침으로 숨겨도) 항상 읽힌다** — 화면에서만
+/// 숨기는 것이지 정보 자체를 잃는 게 아니다(추가 452).
 class _GroupPin extends StatelessWidget {
   final AddressGroup group;
   final VoidCallback onTap;
 
-  const _GroupPin({required this.group, required this.onTap});
+  /// 화면 겹침 판정 결과 이 마커의 라벨을 보여줄지(`nearby_map_view.dart`
+  /// `_ContactMarkersLayer`가 정한다). `false`면 자리만 비우고 원·꼬리는
+  /// 그대로 그린다 — 마커 자체가 사라지면 안 된다(정보를 잃으면 안
+  /// 된다는 지시, 추가 452). 대신 겹친 자리를 누르면
+  /// [showNearbyMapClusterSheet]가 떠서 가려진 회사를 고를 수 있다.
+  final bool showLabel;
+
+  const _GroupPin({
+    required this.group,
+    required this.onTap,
+    this.showLabel = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -780,30 +909,42 @@ class _GroupPin extends StatelessWidget {
             //
             // ⚠️ 회사명이 길면 지도를 가린다 — 최대 폭을 두고 한 줄로
             // 자른다(말줄임).
-            ExcludeSemantics(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 148),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.cardSurface,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.accent, width: 1.2),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x33000000), blurRadius: 4),
-                  ],
-                ),
-                child: Text(
-                  pillText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.accentText,
+            //
+            // [showLabel]이 false면(화면에서 다른 라벨과 겹침) 같은 높이의
+            // 빈 자리로 대신한다 — 라벨 유무에 따라 원·꼬리 위치가 오르내리면
+            // 지도를 쓰는 도중 마커가 흔들려 보인다.
+            if (showLabel)
+              ExcludeSemantics(
+                child: Container(
+                  constraints: const BoxConstraints(
+                    maxWidth: kGroupLabelMaxWidth,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.cardSurface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: AppColors.accent, width: 1.2),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x33000000), blurRadius: 4),
+                    ],
+                  ),
+                  child: Text(
+                    pillText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: kGroupLabelFontSize,
+                      fontWeight: kGroupLabelFontWeight,
+                      color: AppColors.accentText,
+                    ),
                   ),
                 ),
-              ),
-            ),
+              )
+            else
+              const SizedBox(height: kLabelHeight),
             const SizedBox(height: 2),
             ExcludeSemantics(
               child: Container(
