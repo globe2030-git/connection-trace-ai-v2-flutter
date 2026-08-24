@@ -251,6 +251,28 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
 안내문    docs/planning/tester-guide.md (이번 판으로 갱신됨)
 ```
 
+**iOS(TestFlight)도 같은 날 배포됐다** — 1.0.0(9), 업로드 2026-08-24 17:19,
+**내부 테스팅** 그룹(심사 없이 바로 받는다). 안드로이드와 **같은 커밋
+7ad3039**로 맞췄다.
+
+⚠️ **iOS에서 걸린 함정 둘**(다음 사람이 같은 자리에서 헤매지 않도록):
+
+```
+① flutter build ipa 로 만든 아카이브는 Xcode Organizer 목록에 안 뜬다
+   Organizer는 ~/Library/Developer/Xcode/Archives/ 만 본다
+   Flutter는 build/ios/archive/ 에 만든다
+   → Organizer에 띄우려면 그 폴더로 복사하거나 .xcarchive를 직접 연다
+
+② 배포 인증서가 없으면 exportArchive 가 실패한다(IPA만 실패, 아카이브는 정상)
+   "No signing certificate iOS Distribution found" / "No Accounts"
+   → Xcode의 Distribute App 으로 하면 Xcode가 알아서 재서명한다
+```
+
+⚠️ **iOS 빌드는 반드시 `flutter build ipa`에 `--dart-define`으로 키를 넣어야
+한다.** Xcode에서 Product → Archive 로 직접 만들면 **키가 하나도 안 들어간다**
+(그러면 카카오·네이버 버튼이 안 보이고 좌표도 안 붙는다). 안드로이드에서 겪은
+것과 같은 함정이다.
+
 📌 **이 줄은 "예정"이 아니라 "실행됨"이다.** 빌드 8 때 *"오늘 11시 배포 예정"*만
 적히고 결과가 없어 며칠 뒤 *"배포됐나?"*를 아무도 답하지 못했다(그때 교훈:
 **예정을 적었으면 그 자리에 결과도 적는다**).
