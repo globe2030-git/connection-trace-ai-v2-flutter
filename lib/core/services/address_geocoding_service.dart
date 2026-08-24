@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import '../utils/geo_utils.dart';
+import 'juso_geocoding_service.dart';
 
 class AddressValidationResult {
   final bool isValid;
@@ -33,14 +35,45 @@ class AddressGeocodingService {
   // Geocoding 인스턴스 메서드로 API가 바뀜(4.x대 breaking change).
   static final Geocoding _geocoder = Geocoding();
 
-  /// 입력한 주소를 실제 지오코딩(iOS: CLGeocoder / Android: 네이티브 Geocoder)으로
-  /// 검증하고 위경도 좌표를 얻는다. 좌표를 다시 역지오코딩해서 얻은 행정구역/도로명
-  /// 구성요소로 정돈된 주소 문자열도 함께 만들어 "도로명 주소 변환 제안"에 쓴다.
-  /// 웹처럼 geocoding 플랫폼 구현체가 없거나, 주소를 못 찾거나, 기기에 네트워크가
-  /// 없는 등 실패 상황에서는 예외를 그대로 던지지 않고 실패 결과를 반환해서 호출
-  /// 쪽이 "위치를 찾을 수 없는 주소" 안내를 보여줄 수 있게 한다.
+  /// 행안부 지오코딩 통신 층. 테스트에서 실제 통신 없이 검증할 수 있도록
+  /// 주입 가능하게 열어 둔다 — 기본값은 키가 안 들어 있으면 [JusoGeocodingService.isConfigured]가
+  /// false라 조용히 비켜선다(빌드에 `JUSO_SEARCH_KEY`/`JUSO_COORD_KEY`를
+  /// 안 넣으면 지금 동작과 완전히 같다).
+  @visibleForTesting
+  static JusoGeocodingService jusoService = JusoGeocodingService();
+
+  /// 입력한 주소를 좌표로 바꾼다.
+  ///
+  /// ## 순서 — 행안부 먼저, 안 되면 OS 지오코더
+  ///
+  /// 행안부(business.juso.go.kr)가 좌표 공급자로 확정됐다(카카오·브이월드는
+  /// 결과 저장이 약관 금지). 검색 키·좌표 키가 둘 다 있으면 먼저 시도하고,
+  /// 키가 없거나(`isConfigured == false`) 결과를 못 얻으면 지금까지 쓰던
+  /// OS 지오코더(iOS: CLGeocoder / Android: 네이티브 Geocoder)로 넘어간다.
+  ///
+  /// ⚠️ **키가 없을 때는 지금 동작과 완전히 같다.** 이것이 안전 기본값이다
+  /// (`KAKAO_JS_KEY`와 같은 패턴) — 행안부 코드가 서버·앱에 딸려 들어가도
+  /// 키를 안 넣는 한 아무 것도 안 바뀐다.
+  ///
+  /// 📌 **성능은 아직 이 사슬 전체로는 안 쟀다.** 검색 API 단독 판정
+  /// 규칙(`juso_geocoding.dart`의 `pickBest`)은 90건 대조로 82.2%를 실측했지만,
+  /// 그건 검색 응답을 비교한 것이지 좌표제공 API(`addrCoordApi.do`)까지 통과한
+  /// 최종 좌표 획득률이 아니다. 좌표 키는 2026-08-24에야 승인됐다 — 전체
+  /// 사슬 성능은 키를 넣고 실기기로 재측정해야 한다.
+  ///
+  /// ## [address]에는 상세주소를 붙이지 않는다
+  ///
+  /// ⚠️ 실기기 실측(추가 406, 두 표본 재현): 도로명 주소 뒤에 상세주소(동/호수
+  /// 등)를 이어 붙여 질의하면 검색 결과가 0/25로 떨어진다. 그래서 이 함수는
+  /// **기본 주소만** 받는 것을 전제로 한다 — 실제로 지금 호출부
+  /// (`add_card_modal_view.dart`의 `_addressController`, `geo_backfill_service.dart`의
+  /// `contact.address`)는 이미 `addressDetail`을 분리해서 관리하고 있어 이
+  /// 계약을 그대로 만족한다. 여기서 새로 정제하지 않는다 — 이미 분리돼
+  /// 들어오는 값을 그대로 쓰는 것까지만.
+  ///
   /// [fallbackAddress]는 1차 조회가 실패했을 때 다시 시도할 **같은 위치의 다른
-  /// 표기**다(도로명으로 안 되면 지번으로).
+  /// 표기**다(도로명으로 안 되면 지번으로). 행안부·OS 지오코더 양쪽 다 이
+  /// 순서를 따른다.
   ///
   /// 왜 필요한가: OS 지오코더가 도로명 주소로는 좌표를 못 찾는데 지번으로는
   /// 찾는 경우가 실사용에서 확인됐다(2026-08-14). 좌표가 없으면 그 인맥은
@@ -54,6 +87,9 @@ class AddressGeocodingService {
     String address, {
     String? fallbackAddress,
   }) async {
+    final juso = await _tryJuso(address, fallbackAddress: fallbackAddress);
+    if (juso != null) return juso;
+
     final first = await _lookup(address);
     if (first.isValid) return first;
 
@@ -70,6 +106,46 @@ class AddressGeocodingService {
       roadNameAddress: second.roadNameAddress,
       geoPosition: second.geoPosition,
       message: second.message,
+    );
+  }
+
+  /// 행안부로 먼저 시도한다. 키가 없거나 실패하면 `null` — 호출부가 OS
+  /// 지오코더 경로로 넘어간다.
+  ///
+  /// ⚠️ 도로명 주소 변환 제안(`roadNameAddress`)은 여기서 만들지 않는다.
+  /// 행안부 검색 응답에 `roadAddr`가 있긴 하지만, 그걸 "제안"으로 띄우려면
+  /// 원본과 비교하는 규칙이 따로 필요하고 이번 작업 범위 밖이다 — OS
+  /// 지오코더 경로로 폴백했을 때만 지금처럼 제안이 뜬다(한계로 남긴다).
+  static Future<AddressValidationResult?> _tryJuso(
+    String address, {
+    String? fallbackAddress,
+  }) async {
+    if (!jusoService.isConfigured) return null;
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) return null;
+
+    final query = stripReferenceText(trimmed);
+    final geo = await jusoService.geocode(query);
+    if (geo != null) {
+      return AddressValidationResult(
+        isValid: true,
+        originalAddress: trimmed,
+        geoPosition: geo,
+        message: '주소 위치를 확인했습니다.',
+      );
+    }
+
+    final fallback = (fallbackAddress ?? '').trim();
+    if (fallback.isEmpty || fallback == trimmed) return null;
+    final fallbackGeo = await jusoService.geocode(
+      stripReferenceText(fallback),
+    );
+    if (fallbackGeo == null) return null;
+    return AddressValidationResult(
+      isValid: true,
+      originalAddress: trimmed,
+      geoPosition: fallbackGeo,
+      message: '주소 위치를 확인했습니다.',
     );
   }
 
