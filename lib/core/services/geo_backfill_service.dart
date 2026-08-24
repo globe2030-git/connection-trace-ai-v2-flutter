@@ -50,8 +50,20 @@ class GeoBackfillService {
   /// 지오코딩 호출 사이의 간격.
   static const Duration gapBetweenRequests = Duration(milliseconds: 400);
 
-  /// 이만큼 연속으로 실패하면 네트워크 문제로 보고 이번 회차를 중단한다.
+  /// 이만큼 연속으로 **통신 문제**([GeoFailureReason.communicationError])가
+  /// 나면 네트워크가 없다고 보고 이번 회차를 중단한다.
+  ///
+  /// ⚠️ **"주소가 안 풀림"([GeoFailureReason.noResult])은 여기 안 낀다**(추가
+  /// 434). 예전엔 실패 사유를 안 가리고 다 셌는데, 그러면 목록 앞쪽에 안
+  /// 풀리는 주소가 3장만 몰려 있어도 회차가 거기서 죽어 뒤의 풀 수 있는
+  /// 명함에 영원히 도달하지 못했다(실기기 실측: 진행 배너가 4~6/30에서 매번
+  /// 멈춤).
   static const int consecutiveFailuresToAbort = 3;
+
+  /// 시도 기록을 이만큼 실패할 때마다 도중 저장한다(추가 434). 매 건마다
+  /// 저장하면 I/O가 과해지고, 회차 끝에서만 저장하면 도중에 죽었을 때 전부
+  /// 사라진다 — 그 사이 균형점.
+  static const int _attemptsSaveEvery = 5;
 
   static const String _attemptsKey = 'geo_backfill_attempts_v1';
   static const String _shapeStatsKey = 'geo_backfill_fail_shapes_v1';
@@ -103,6 +115,26 @@ class GeoBackfillService {
     };
   }
 
+  /// [contactIds]의 시도 기록을 지워 다시 시도 대상으로 되돌린다(추가 434 —
+  /// 진단 화면 "좌표 다시 시도"). 포기(3회 실패)된 명함뿐 아니라 아직 포기
+  /// 전인 명함의 기록도 지운다 — 어차피 다음 [backfill] 회차에서 다시
+  /// 시도되므로 해가 없고, "포기분만 골라 지운다"는 조건을 따로 두지 않아도
+  /// 된다.
+  ///
+  /// 이 메서드 자체는 [backfill]을 부르지 않는다 — 호출자가 필요하면 이어서
+  /// 부른다(주소를 외부로 보내는 시점을 호출자가 통제할 수 있어야 한다).
+  Future<void> resetAttempts(Iterable<String> contactIds) async {
+    final ids = contactIds.toSet();
+    if (ids.isEmpty) return;
+    final attempts = await _loadAttempts();
+    final changed = ids.where(attempts.containsKey).isNotEmpty;
+    if (!changed) return;
+    for (final id in ids) {
+      attempts.remove(id);
+    }
+    await _saveAttempts(attempts);
+  }
+
   /// 좌표가 비어 있는 명함들의 좌표를 채운다.
   ///
   /// 반환값은 `명함 id -> 새로 얻은 좌표` 맵이다. 호출자가 이 값으로
@@ -111,9 +143,17 @@ class GeoBackfillService {
   ///
   /// 실패한 건은 결과에 담기지 않고, 다음 실행에서 다시 시도된다
   /// ([maxAttemptsPerContact] 이내인 동안).
+  ///
+  /// [onResolved]는 한 건이 풀릴 **때마다** 즉시 불린다(추가 434). 반환 맵은
+  /// 회차가 끝나야 받을 수 있는데, 도중에 앱이 죽으면(실기기 실측:
+  /// `am force-stop`으로 재현) 그 회차의 성공분이 통째로 사라진다 — 호출자가
+  /// 이 콜백에서 명함을 즉시 갱신·저장하면 "도중에 죽어도 이미 성공한 것은
+  /// 남는다"가 성립한다. 콜백이 끝나기를 기다렸다가 다음 건으로 넘어간다
+  /// (저장이 실제로 끝난 뒤 진행해야 순서가 어긋나지 않는다).
   Future<Map<String, GeoPosition>> backfill(
     List<ContactModel> contacts, {
     void Function(int done, int total)? onProgress,
+    FutureOr<void> Function(String contactId, GeoPosition geo)? onResolved,
   }) async {
     final attempts = await _loadAttempts();
     final targets = contacts
@@ -124,10 +164,12 @@ class GeoBackfillService {
 
     final resolved = <String, GeoPosition>{};
     var consecutiveFailures = 0;
+    var failuresSinceSave = 0;
     var done = 0;
 
     for (final contact in targets) {
       final address = contact.address!.trim();
+      GeoFailureReason? failureReason;
       try {
         final result = await _geocode(address);
         final geo = result.geoPosition;
@@ -135,17 +177,37 @@ class GeoBackfillService {
           resolved[contact.id] = geo;
           attempts.remove(contact.id);
           consecutiveFailures = 0;
+          if (onResolved != null) {
+            await onResolved(contact.id, geo);
+          }
         } else {
+          failureReason = result.failureReason;
           _recordFailure(attempts, contact.id, address);
-          consecutiveFailures++;
+          failuresSinceSave++;
         }
       } catch (e) {
         // validateAndConvert는 자체적으로 예외를 삼키지만, 주입된 구현이
         // 던질 수도 있으니 여기서도 막는다 — 한 건 때문에 회차 전체가
-        // 죽으면 안 된다.
+        // 죽으면 안 된다. 여기서 던졌다는 것 자체가 통신·구현 문제라
+        // 통신 실패로 취급한다.
         debugPrint('좌표 재계산 실패(${contact.id}): $e');
+        failureReason = GeoFailureReason.communicationError;
         _recordFailure(attempts, contact.id, address);
+        failuresSinceSave++;
+      }
+
+      // ⚠️ 실패 사유를 가려서 센다(추가 434) — "주소가 안 풀림"은 이 명함
+      // 하나로 끝나는 문제라 카운터를 되레 초기화한다(질의가 끝까지 갔다
+      // 왔다는 것 자체가 통신은 살아 있다는 증거). "통신 문제"만 쌓는다.
+      if (failureReason == GeoFailureReason.communicationError) {
         consecutiveFailures++;
+      } else if (failureReason != null) {
+        consecutiveFailures = 0;
+      }
+
+      if (failuresSinceSave >= _attemptsSaveEvery) {
+        await _saveAttempts(attempts);
+        failuresSinceSave = 0;
       }
 
       done++;
@@ -154,7 +216,7 @@ class GeoBackfillService {
       if (consecutiveFailures >= consecutiveFailuresToAbort) {
         // 네트워크가 없거나 지오코더가 막힌 상황으로 본다. 남은 건은
         // 다음 실행에서 처리한다.
-        debugPrint('좌표 재계산 중단 — 연속 $consecutiveFailures건 실패');
+        debugPrint('좌표 재계산 중단 — 연속 $consecutiveFailures건 통신 실패');
         break;
       }
 
