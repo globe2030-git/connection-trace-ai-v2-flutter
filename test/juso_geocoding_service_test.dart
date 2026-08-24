@@ -211,4 +211,84 @@ void main() {
       expect(called, isFalse);
     });
   });
+
+  group('geocodeStaged (추가 435 계측)', () {
+    test('성공하면 JusoStage.success', () async {
+      final service = JusoGeocodingService(
+        searchKey: 's',
+        coordKey: 'c',
+        get: (uri) async {
+          if (uri.path.contains('addrLinkApi')) {
+            return _jsonResponse(
+              searchBody(
+                errorCode: '0',
+                juso: [item('서울특별시 강남구 테헤란로 1')],
+              ),
+              200,
+            );
+          }
+          return _jsonResponse(coordBody('958869.634', '1953711.348'), 200);
+        },
+      );
+
+      final outcome = await service.geocodeStaged('서울특별시 강남구 테헤란로 1');
+
+      expect(outcome.stage, JusoStage.success);
+      expect(outcome.position, isNotNull);
+    });
+
+    test('검색 결과가 없으면 JusoStage.searchFailed', () async {
+      final service = JusoGeocodingService(
+        searchKey: 's',
+        coordKey: 'c',
+        get: (uri) async => _jsonResponse(searchBody(errorCode: '0'), 200),
+      );
+
+      final outcome = await service.geocodeStaged('존재하지 않는 주소');
+
+      expect(outcome.stage, JusoStage.searchFailed);
+      expect(outcome.position, isNull);
+    });
+
+    test('검색은 되는데 좌표를 못 얻으면 JusoStage.coordFailed', () async {
+      final service = JusoGeocodingService(
+        searchKey: 's',
+        coordKey: 'c',
+        get: (uri) async {
+          if (uri.path.contains('addrLinkApi')) {
+            return _jsonResponse(
+              searchBody(
+                errorCode: '0',
+                juso: [item('서울특별시 강남구 테헤란로 1')],
+              ),
+              200,
+            );
+          }
+          return _jsonResponse(coordBody('0', '0'), 200);
+        },
+      );
+
+      final outcome = await service.geocodeStaged('서울특별시 강남구 테헤란로 1');
+
+      expect(outcome.stage, JusoStage.coordFailed);
+      expect(outcome.position, isNull);
+    });
+
+    test('키가 없으면 시도조차 안 하고 searchFailed로 돌아온다', () async {
+      var called = false;
+      final service = JusoGeocodingService(
+        searchKey: '',
+        coordKey: '',
+        get: (uri) async {
+          called = true;
+          return http.Response('', 200);
+        },
+      );
+
+      final outcome = await service.geocodeStaged('아무 주소');
+
+      expect(outcome.stage, JusoStage.searchFailed);
+      expect(called, isFalse);
+    });
+  });
 }

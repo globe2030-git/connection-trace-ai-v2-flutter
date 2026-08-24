@@ -77,6 +77,26 @@ void main() {
       expect(json['lng'], 126.89);
     });
 
+    test(
+      '⭐ 추가 435 — copyWith(geo:) → toJson → fromJson 왕복에서 좌표가 보존된다',
+      () {
+        // 추가 435 조사 대상 ①a: "백필이 성공했는데 결과가 사라지는 경로"의
+        // 첫 용의선이 ContactModel의 저장 왕복이었다. 이 테스트는 정상임을
+        // 못박는다 — 실제 원인은 저장 직렬화가 아니라 다기기 병합의 LWW
+        // 동률 처리였다(contacts_repository_wiring_test.dart의 mergeSync
+        // 회귀 테스트가 그쪽을 잠근다).
+        final original = _contact(id: '1', address: '주소');
+        final withGeo = original.copyWith(
+          geo: const GeoPosition(lat: 37.1234, lng: 127.5678),
+        );
+
+        final restored = ContactModel.fromJson(withGeo.toJson());
+
+        expect(restored.geo?.lat, 37.1234);
+        expect(restored.geo?.lng, 127.5678);
+      },
+    );
+
     test('좌표 없이 왕복해도 나머지 필드가 보존된다', () {
       final restored = ContactModel.fromJson(
         _contact(
@@ -312,6 +332,30 @@ void main() {
 
         expect(resolvedInOrder, ['c1', 'c2']);
         expect(resolved.keys, resolvedInOrder, reason: '최종 맵과도 내용이 같아야 한다');
+      },
+    );
+
+    test(
+      '⭐ 추가 435 계측 — 회차의 단계별 집계가 저장되고 다음 회차에 덮어써진다',
+      () async {
+        final service = GeoBackfillService(
+          gapBetweenRequests: Duration.zero,
+          geocode: (address) async => AddressValidationResult(
+            isValid: true,
+            originalAddress: address,
+            geoPosition: const GeoPosition(lat: 1, lng: 1),
+            stage: GeoStage.jusoSuccess,
+          ),
+        );
+        final contacts = [
+          _contact(id: 'c1', address: '주소 1'),
+          _contact(id: 'c2', address: '주소 2'),
+        ];
+
+        await service.backfill(contacts);
+        final stats = await GeoBackfillService.readStageStats();
+
+        expect(stats['jusoSuccess'], 2);
       },
     );
 

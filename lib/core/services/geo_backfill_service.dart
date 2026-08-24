@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/models/contact_model.dart';
 import '../utils/geo_utils.dart';
 import 'address_geocoding_service.dart';
+import 'juso_geocoding_service.dart';
 
 /// 주소는 있는데 좌표(`ContactModel.geo`)가 없는 명함들의 좌표를 주소로부터
 /// 다시 계산해 채워 넣는다.
@@ -67,6 +68,10 @@ class GeoBackfillService {
 
   static const String _attemptsKey = 'geo_backfill_attempts_v1';
   static const String _shapeStatsKey = 'geo_backfill_fail_shapes_v1';
+
+  /// 마지막 백필 회차의 단계별 집계(추가 435 계측) — 값은 항상 **이전 회차를
+  /// 덮어쓴다**("누적"이 아니라 "최근 한 회차"). 개수만 담고 주소는 없다.
+  static const String _stageStatsKey = 'geo_backfill_stage_stats_v1';
 
   /// 테스트에서 실제 지오코더를 타지 않도록 주입할 수 있게 열어 둔다.
   final Future<AddressValidationResult> Function(String address) _geocode;
@@ -163,6 +168,11 @@ class GeoBackfillService {
     if (targets.isEmpty) return const {};
 
     final resolved = <String, GeoPosition>{};
+    // 이번 회차의 단계별 집계(추가 435 계측) — "행안부 검색 실패/좌표 실패/
+    // 성공, OS 폴백 성공, 둘 다 실패"를 개수로만 남긴다. `result.stage`가
+    // null이면(주입된 테스트 더미 등, 계측을 안 채운 경우) 그 시도는 세지
+    // 않는다 — 계측 공백이지 오류로 취급하지 않는다.
+    final stageCounts = <GeoStage, int>{};
     var consecutiveFailures = 0;
     var failuresSinceSave = 0;
     var done = 0;
@@ -172,6 +182,10 @@ class GeoBackfillService {
       GeoFailureReason? failureReason;
       try {
         final result = await _geocode(address);
+        final stage = result.stage;
+        if (stage != null) {
+          stageCounts[stage] = (stageCounts[stage] ?? 0) + 1;
+        }
         final geo = result.geoPosition;
         if (result.isValid && geo != null) {
           resolved[contact.id] = geo;
@@ -226,6 +240,7 @@ class GeoBackfillService {
     }
 
     await _saveAttempts(attempts);
+    await _saveStageStats(stageCounts);
     return resolved;
   }
 
@@ -313,6 +328,46 @@ class GeoBackfillService {
       return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
     } catch (e) {
       debugPrint('실패 형태 집계 로드 실패: $e');
+      return const {};
+    }
+  }
+
+  /// 행안부 검색·좌표 키가 **둘 다** 빌드에 실려 있는지(추가 435 계측).
+  /// 값 자체(키 원문)는 절대 노출하지 않는다 — 탑재 여부만.
+  ///
+  /// ⚠️ 왜 여기 필요한가: 실기기에서 좌표 백필이 하나도 안 붙는 원인이
+  /// "키가 실은 안 실렸다"인지 아닌지를 화면에서 바로 가를 수 있어야 한다.
+  /// APK를 내려받아 `strings`로 뒤지는 것은 QA마다 못 하는 일이라, 앱
+  /// 스스로 답할 수 있게 한다.
+  static bool isJusoConfigured() => JusoGeocodingService().isConfigured;
+
+  /// 이번 회차의 단계별 집계를 저장한다. **덮어쓰기**다 — 누적이 아니라
+  /// "가장 최근 회차" 스냅샷만 남긴다(추가 435).
+  Future<void> _saveStageStats(Map<GeoStage, int> counts) async {
+    if (counts.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _stageStatsKey,
+        jsonEncode({for (final e in counts.entries) e.key.name: e.value}),
+      );
+    } catch (e) {
+      debugPrint('행안부 단계별 집계 저장 실패: $e');
+    }
+  }
+
+  /// 마지막 백필 회차의 단계별 집계를 읽는다(진단 화면용, 추가 435).
+  /// 키는 [GeoStage.name]("jusoSearchFailed" 등), 값은 그 단계로 끝난 시도
+  /// 건수 — 주소 원문은 담지 않는다.
+  static Future<Map<String, int>> readStageStats() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_stageStatsKey);
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = (jsonDecode(raw) as Map).cast<String, dynamic>();
+      return decoded.map((k, v) => MapEntry(k, (v as num).toInt()));
+    } catch (e) {
+      debugPrint('행안부 단계별 집계 로드 실패: $e');
       return const {};
     }
   }

@@ -221,18 +221,23 @@ void main() {
   });
 
   group('다기기 결정적 병합(P1-39 A안 mergeSync)', () {
-    ContactModel c(String id, {DateTime? updatedAt, String company = '회사'}) =>
-        ContactModel(
-          id: id,
-          name: '이름$id',
-          company: company,
-          title: '직함',
-          phone: '010-0000-0000',
-          email: 'a@b.c',
-          tags: const [],
-          talkingPoints: const [],
-          updatedAt: updatedAt,
-        );
+    ContactModel c(
+      String id, {
+      DateTime? updatedAt,
+      String company = '회사',
+      String? address,
+    }) => ContactModel(
+      id: id,
+      name: '이름$id',
+      company: company,
+      title: '직함',
+      phone: '010-0000-0000',
+      email: 'a@b.c',
+      address: address,
+      tags: const [],
+      talkingPoints: const [],
+      updatedAt: updatedAt,
+    );
     final t1 = DateTime(2026, 8, 2);
     final t2 = DateTime(2026, 8, 3);
 
@@ -302,6 +307,117 @@ void main() {
       );
       expect(r.merged.single.company, '편집됨');
     });
+
+    test(
+      '⭐⚠️ 추가 435 회귀 방지 — updatedAt이 같으면(백필만 한 경우) 서버가 이겨도 '
+      '로컬 좌표는 지워지지 않는다',
+      () {
+        // 왜 필요한가: GeoBackfillService.backfill의 onResolved는 geo만
+        // copyWith하고 updatedAt은 건드리지 않는다(의도적 — 좌표는 파생값이라
+        // "편집"이 아니다). 그런데 그 결과 local.updatedAt == server.updatedAt
+        // "동률"이 되고, mergeSync는 동률이면 서버 쪽(candidate = s)을
+        // 채택한다 — 서버 백업엔 좌표가 애초에 없으므로(toBackupJson) 방금
+        // 백필로 채운 좌표가 그대로 사라진다. 실기기에서 "포기 0 + 좌표 없음
+        // 70장이 4회차 내내 안 줄어든" 원인 — 매 콜드 스타트마다
+        // syncWithServer가 직전 백필 성공분을 지웠다(추가 435).
+        final geo = const GeoPosition(lat: 37.5, lng: 127.0);
+        final r = ContactsRepository.mergeSync(
+          local: [
+            ContactModel(
+              id: '1',
+              name: '이름1',
+              company: '회사',
+              title: '직함',
+              phone: '010-0000-0000',
+              email: 'a@b.c',
+              tags: const [],
+              talkingPoints: const [],
+              updatedAt: t1,
+              geo: geo,
+            ),
+          ],
+          server: [c('1', updatedAt: t1)],
+          tombstones: {},
+        );
+
+        expect(
+          r.merged.single.geo,
+          geo,
+          reason: '서버 필드가 채택돼도 로컬에만 있는 좌표는 보존돼야 한다',
+        );
+      },
+    );
+
+    test(
+      '⚠️ 서버가 진짜로 최신 편집을 갖고 있어도 로컬 좌표는 보존된다',
+      () {
+        // 회사명은 서버가 최신이라 서버 것을 채택하지만, 좌표는 여전히
+        // 로컬에만 존재하는 파생값이므로 함께 붙어 있어야 한다.
+        final geo = const GeoPosition(lat: 1, lng: 2);
+        final r = ContactsRepository.mergeSync(
+          local: [
+            ContactModel(
+              id: '1',
+              name: '이름1',
+              company: '옛회사',
+              title: '직함',
+              phone: '010-0000-0000',
+              email: 'a@b.c',
+              tags: const [],
+              talkingPoints: const [],
+              updatedAt: t1,
+              geo: geo,
+            ),
+          ],
+          server: [c('1', updatedAt: t2, company: '새회사')],
+          tombstones: {},
+        );
+
+        expect(r.merged.single.company, '새회사');
+        expect(r.merged.single.geo, geo);
+      },
+    );
+
+    test(
+      '⭐⚠️ 추가 435 보강 — 서버 후보의 주소가 로컬과 다르면 좌표를 이식하지 '
+      '않는다(재계산에 맡긴다)',
+      () {
+        // 왜 필요한가(PM 검토 피드백): 다른 기기에서 주소를 고쳐 서버가
+        // 최신이 됐다면, 서버 후보가 채택되는 것은 맞다. 하지만 로컬 좌표는
+        // **옛 주소**로 계산된 값이라 새 주소에 이식하면 틀린 위치가 된다.
+        // 더 나쁜 건 geo가 채워져 있으면 GeoBackfillService._needsGeo가
+        // "이미 있음"으로 보고 다시는 재계산하지 않는다는 것 — 틀린 좌표가
+        // 지도에 영구히 남는다. 주소가 다르면 이식을 건너뛰고, 새 주소는
+        // 다음 백필 회차가 알아서 새로 계산하게 둔다.
+        final oldGeo = const GeoPosition(lat: 1, lng: 2);
+        final r = ContactsRepository.mergeSync(
+          local: [
+            ContactModel(
+              id: '1',
+              name: '이름1',
+              company: '회사',
+              title: '직함',
+              phone: '010-0000-0000',
+              email: 'a@b.c',
+              address: '옛 주소',
+              tags: const [],
+              talkingPoints: const [],
+              updatedAt: t1,
+              geo: oldGeo,
+            ),
+          ],
+          server: [c('1', updatedAt: t2, address: '새 주소')],
+          tombstones: {},
+        );
+
+        expect(r.merged.single.address, '새 주소');
+        expect(
+          r.merged.single.geo,
+          isNull,
+          reason: '옛 주소로 계산된 좌표를 새 주소에 이식하면 안 된다',
+        );
+      },
+    );
   });
 
   group('서버 백업 페이로드', () {

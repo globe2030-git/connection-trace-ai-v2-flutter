@@ -28,6 +28,31 @@ import 'package:http/http.dart' as http;
 import '../utils/geo_utils.dart';
 import 'juso_geocoding.dart';
 
+/// 행안부 지오코딩이 **어느 단계에서** 갈렸는지(추가 435 계측).
+///
+/// 왜 필요한가: 진단 화면이 "좌표 없음 70장"이라는 결과만 보여줘서 원인이
+/// 검색 단계인지 좌표 단계인지 구분할 수 없었다. 검색 키만 문제라면 검색
+/// 실패가 몰리고, 좌표 키만 문제라면 코드 실패가 몰린다 — 원인 파악의
+/// 첫걸음이라 판정 규칙([pickBest] 등)은 그대로 두고 결과에 단계만 얹는다.
+enum JusoStage {
+  /// 주소 검색(addrLinkApi)에서 쓸 만한 후보를 못 얻었다 — 결과 0건,
+  /// errorCode≠0, 통신 실패(타임아웃·예외) 전부 이쪽으로 묶는다.
+  searchFailed,
+
+  /// 검색은 됐지만 좌표 조회(addrCoordApi)에서 좌표를 못 얻었다.
+  coordFailed,
+
+  /// 좌표까지 얻었다.
+  success,
+}
+
+/// [JusoGeocodingService.geocodeStaged]의 결과 — 좌표와 함께 어느 단계였는지 담는다.
+class JusoGeoOutcome {
+  final GeoPosition? position;
+  final JusoStage stage;
+  const JusoGeoOutcome({required this.position, required this.stage});
+}
+
 class JusoGeocodingService {
   static const _timeout = Duration(seconds: 8);
 
@@ -64,20 +89,41 @@ class JusoGeocodingService {
 
   /// 주소 문자열 → 좌표. 키가 없거나, 검색 결과가 없거나, 좌표를 못 얻으면
   /// `null`(예외를 던지지 않는다 — 위 문서 참고).
-  Future<GeoPosition?> geocode(String address) async {
-    if (!isConfigured) return null;
-    final trimmed = address.trim();
-    if (trimmed.isEmpty) return null;
+  ///
+  /// 어느 단계에서 실패했는지까지 알고 싶으면 [geocodeStaged]를 쓴다.
+  Future<GeoPosition?> geocode(String address) async =>
+      (await geocodeStaged(address)).position;
 
+  /// [geocode]와 동작은 같지만 결과에 [JusoStage]를 함께 담는다(추가 435
+  /// 계측용). 키가 없으면 아예 시도하지 않은 것이므로 검색 실패로 세지
+  /// 않는다 — 호출자([AddressGeocodingService])가 "키 미탑재"는 별도로
+  /// 판별한다.
+  Future<JusoGeoOutcome> geocodeStaged(String address) async {
+    const notFound = JusoGeoOutcome(position: null, stage: JusoStage.searchFailed);
+    if (!isConfigured) return notFound;
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) return notFound;
+
+    List<JusoCandidate> candidates;
     try {
-      final candidates = await _search(trimmed);
-      final best = pickBest(candidates);
-      if (best == null) return null;
-      return await _coord(best);
+      candidates = await _search(trimmed);
     } catch (e) {
       // 개인정보(주소 원문)는 남기지 않는다 — 실패 유형만.
-      debugPrint('행안부 지오코딩 실패: ${e.runtimeType}');
-      return null;
+      debugPrint('행안부 검색 실패: ${e.runtimeType}');
+      return notFound;
+    }
+    final best = pickBest(candidates);
+    if (best == null) return notFound;
+
+    try {
+      final geo = await _coord(best);
+      if (geo == null) {
+        return const JusoGeoOutcome(position: null, stage: JusoStage.coordFailed);
+      }
+      return JusoGeoOutcome(position: geo, stage: JusoStage.success);
+    } catch (e) {
+      debugPrint('행안부 좌표 조회 실패: ${e.runtimeType}');
+      return const JusoGeoOutcome(position: null, stage: JusoStage.coordFailed);
     }
   }
 
