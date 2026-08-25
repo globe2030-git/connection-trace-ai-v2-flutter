@@ -333,6 +333,10 @@ class SettingsView extends StatelessWidget {
                   //
                   // 방침으로 가는 경로는 바로 아래 "약관 및 정책"에 있고,
                   // AI 전송 동의 화면에도 "자세히" 버튼이 있다.
+                  // AI 충전은 "AI 잔여 횟수" 바로 아래에 둔다 — 남은 횟수를
+                  // 보고 곧바로 채우는 것이 한 흐름이다. 예전에는 「지원」에
+                  // 있었는데, 충전은 지원(문의·공지)이 아니라 결제다(추가 455).
+                  const _AiChargeRow(),
                 ],
               ),
               const SizedBox(height: 26),
@@ -411,85 +415,6 @@ class SettingsView extends StatelessWidget {
                     onTap: () =>
                         showLegalDocument(context, LegalDocument.legalIndex),
                   ),
-                  _SettingsRow(
-                    icon: const Icon(
-                      Icons.document_scanner_outlined,
-                      color: AppColors.accentText,
-                      size: 22,
-                    ),
-                    title: '명함 인식 진단',
-                    subtitle: '자동 인식 품질을 값 없이 형태로만 확인',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const OcrStatsView()),
-                    ),
-                  ),
-                  // 관리자 계정에서만 보인다. 조건 없이 두면 일반 사용자에게도
-                  // 메뉴가 보이고, 눌러도 서버 규칙이 막아 권한 오류만 뜬다
-                  // (2026-08-13 실기기 확인, backlog 추가 178).
-                  if (auth.isAdmin)
-                    _SettingsRow(
-                      icon: const Icon(
-                        Icons.admin_panel_settings_outlined,
-                        color: AppColors.accentText,
-                        size: 22,
-                      ),
-                      title: '관리자 1:1 문의 관리',
-                      subtitle: '사용자 이름 및 이메일로 문의 검색·답변',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const AdminInquiryManagementView(),
-                        ),
-                      ),
-                    ),
-                  if (auth.isAdmin)
-                    _SettingsRow(
-                      icon: const Icon(
-                        Icons.grid_view_outlined,
-                        color: AppColors.accentText,
-                        size: 22,
-                      ),
-                      title: '명함 일괄 스캔 (관리자)',
-                      subtitle: '여러 장을 한 번에 스캔해 인식 결과를 표로 확인',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const OcrBatchScanView(),
-                        ),
-                      ),
-                    ),
-                  if (auth.isAdmin)
-                    _SettingsRow(
-                      icon: const Icon(
-                        Icons.cleaning_services_outlined,
-                        color: AppColors.accentText,
-                        size: 22,
-                      ),
-                      title: '잘못 채워진 태그 정리 (관리자)',
-                      subtitle: '기본값 "AI, IT"만 그대로 남은 명함의 태그를 비움',
-                      onTap: () => _confirmSeededTagCleanup(context),
-                    ),
-                  if (auth.isAdmin)
-                    _SettingsRow(
-                      icon: const Icon(
-                        Icons.cleaning_services_outlined,
-                        color: AppColors.accentText,
-                        size: 22,
-                      ),
-                      title: '자동 삽입된 메모 정리 (관리자)',
-                      subtitle: '스캔이 넣던 안내 문구만 그대로 남은 명함의 메모를 비움',
-                      onTap: () => _confirmSeededMemoCleanup(context),
-                    ),
-                  _SettingsRow(
-                    icon: const Icon(
-                      Icons.info_outline,
-                      color: AppColors.accentText,
-                      size: 22,
-                    ),
-                    title: '앱 버전',
-                    subtitle: '커넥션센스',
-                    // 실행 중인 빌드를 그대로 보여준다 — 낡은 빌드를 버그로
-                    // 오인하는 일을 막기 위함(backlog 추가 77).
-                    value: AppVersion.display,
-                  ),
                 ],
               ),
               const SizedBox(height: 18),
@@ -543,9 +468,95 @@ class SettingsView extends StatelessWidget {
                       MaterialPageRoute(builder: (_) => const InquiryView()),
                     ),
                   ),
-                  const _AiChargeRow(),
+                  _SettingsRow(
+                    icon: const Icon(
+                      Icons.document_scanner_outlined,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
+                    title: '명함 인식 진단',
+                    subtitle: '자동 인식 품질을 값 없이 형태로만 확인',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const OcrStatsView()),
+                    ),
+                  ),
+                  _SettingsRow(
+                    icon: const Icon(
+                      Icons.info_outline,
+                      color: AppColors.accentText,
+                      size: 22,
+                    ),
+                    title: '앱 버전',
+                    subtitle: '커넥션센스',
+                    // 실행 중인 빌드를 그대로 보여준다 — 낡은 빌드를 버그로
+                    // 오인하는 일을 막기 위함(backlog 추가 77).
+                    value: AppVersion.display,
+                  ),
                 ],
               ),
+              // 관리자 도구는 「약관 및 정책」에 섞여 있었다. 약관과 아무
+              // 관계가 없고, 그 섹션을 11행짜리 잡동사니 서랍으로 만들고
+              // 있었다(추가 455). 섹션 자체를 관리자에게만 보여 주므로
+              // 줄마다 붙이던 if (auth.isAdmin) 는 여기서 한 번으로 합쳤다.
+              // 조건을 벗기면 일반 사용자에게 메뉴가 보이고, 눌러도 서버
+              // 규칙이 막아 권한 오류만 뜬다(2026-08-13 실기기, 추가 178).
+              if (auth.isAdmin) ...[
+                const SizedBox(height: 26),
+                const _SectionTitle('관리자'),
+                const SizedBox(height: 10),
+                _GroupedCard(
+                  children: [
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.admin_panel_settings_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '관리자 1:1 문의 관리',
+                      subtitle: '사용자 이름 및 이메일로 문의 검색·답변',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AdminInquiryManagementView(),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.grid_view_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '명함 일괄 스캔 (관리자)',
+                      subtitle: '여러 장을 한 번에 스캔해 인식 결과를 표로 확인',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const OcrBatchScanView(),
+                        ),
+                      ),
+                    ),
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '잘못 채워진 태그 정리 (관리자)',
+                      subtitle: '기본값 "AI, IT"만 그대로 남은 명함의 태그를 비움',
+                      onTap: () => _confirmSeededTagCleanup(context),
+                    ),
+                    _SettingsRow(
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        color: AppColors.accentText,
+                        size: 22,
+                      ),
+                      title: '자동 삽입된 메모 정리 (관리자)',
+                      subtitle: '스캔이 넣던 안내 문구만 그대로 남은 명함의 메모를 비움',
+                      onTap: () => _confirmSeededMemoCleanup(context),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -706,7 +717,9 @@ class _AccountRowState extends State<_AccountRow> with WidgetsBindingObserver {
           ? null
           : Icon(
               // ⚠️ 지금 상태가 아니라 **누르면 무엇이 되는지**를 보여준다.
-              _revealed ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              _revealed
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
               color: AppColors.textMuted,
               size: 20,
               semanticLabel: _revealed ? '이메일 가리기' : '이메일 전체 보기',
@@ -911,14 +924,12 @@ class _AiChargeRowState extends State<_AiChargeRow> {
         size: 22,
       ),
       title: 'AI 충전',
-      subtitle: _openable
-          ? '무료 횟수 소진 후 충전 상품 안내'
-          : '충전 상품을 준비하고 있습니다',
+      subtitle: _openable ? '무료 횟수 소진 후 충전 상품 안내' : '충전 상품을 준비하고 있습니다',
       value: _openable ? null : '준비중',
       onTap: _openable
-          ? () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const AiChargeView()),
-            )
+          ? () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const AiChargeView()))
           : null,
     );
   }
@@ -1034,9 +1045,7 @@ class _PhotoImprovementConsentRowState
     });
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'),
-        ),
+        const SnackBar(content: Text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.')),
       );
     }
   }
@@ -1044,9 +1053,7 @@ class _PhotoImprovementConsentRowState
   @override
   Widget build(BuildContext context) {
     final signedIn = widget.uid != null;
-    final subtitle = signedIn
-        ? '끄셔도 모든 기능을 그대로 쓰실 수 있어요'
-        : '로그인하면 설정할 수 있어요';
+    final subtitle = signedIn ? '끄셔도 모든 기능을 그대로 쓰실 수 있어요' : '로그인하면 설정할 수 있어요';
 
     return Semantics(
       toggled: _consented,
@@ -1617,9 +1624,7 @@ Future<void> _confirmSeededTagCleanup(BuildContext context) async {
 
   final messenger = ScaffoldMessenger.of(context);
   if (targets.isEmpty) {
-    messenger.showSnackBar(
-      const SnackBar(content: Text('기본값만 남은 명함이 없습니다.')),
-    );
+    messenger.showSnackBar(const SnackBar(content: Text('기본값만 남은 명함이 없습니다.')));
     return;
   }
 
