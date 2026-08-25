@@ -1,0 +1,249 @@
+/* 커넥션센스 홈페이지(랜딩) 공통 스타일
+   docs/site/ 는 docs/legal/ 과 별도의 Firebase Hosting 타겟이다.
+   두 타겟은 서로 다른 origin 이라 CSS·폰트를 공유할 수 없어, legal.css 의
+   토큰과 @font-face 를 그대로 옮겨 왔다. 색·굵기가 갈라지면 두 사이트가
+   다른 서비스처럼 보이므로 **옮겨 온 값을 바꾸지 말 것** — 고칠 일이 생기면
+   legal.css 와 함께 고친다.
+
+   ⚠️ 다만 **여기서만 쓰는 토큰을 더한 것은 있다**(--btn-*). legal.css 에는
+   주 버튼이 없어서 그쪽에 없는 값이고, 값을 바꾼 것이 아니라 더한 것이다.
+   왜 필요했는지는 그 자리 주석에 적어 두었다. */
+
+/* 폰트는 앱·법적 고지와 동일하게 Pretendard(SIL Open Font License 1.1).
+   ⚠️ CDN 을 쓰지 않는다 — 방문자의 IP 가 제3자에게 넘어가지 않게 하려는
+   것이고, legal.css 가 같은 이유로 같은 선택을 했다. 라이선스 원문은
+   fonts/OFL.txt 에 함께 둔다. */
+@font-face{
+  font-family:'Pretendard'; font-style:normal; font-weight:400;
+  font-display:swap; src:url('fonts/Pretendard-Regular.woff2') format('woff2');
+}
+@font-face{
+  font-family:'Pretendard'; font-style:normal; font-weight:500 600;
+  font-display:swap; src:url('fonts/Pretendard-SemiBold.woff2') format('woff2');
+}
+@font-face{
+  font-family:'Pretendard'; font-style:normal; font-weight:700 900;
+  font-display:swap; src:url('fonts/Pretendard-Bold.woff2') format('woff2');
+}
+
+:root{
+  --bg:#F7F8FA; --paper:#FFFFFF; --paper-2:#F1F3F7;
+  --border:#E8EBF0; --ink:#171A21; --ink-dim:#5F6673; --ink-faint:#7B8391;
+  --brand:#2563EB; --brand-deep:#1D4ED8; --brand-soft:#E8F0FE; --brand-soft-2:#D5E2FC;
+  --warn:#B36B00; --warn-soft:#FBF0DA; --warn-border:#E8C67A;
+  --good:#1B8A5A;
+  --shadow:0 1px 2px rgba(23,26,33,.04), 0 12px 32px -20px rgba(23,26,33,.20);
+  --shadow-lift:0 2px 4px rgba(23,26,33,.05), 0 26px 60px -30px rgba(23,26,33,.35);
+  --font-ui:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  /* 주 버튼은 별도 토큰을 쓴다. --brand 를 그대로 배경에 깔면 어두운 테마에서
+     --brand 가 옅은 파랑(#7DA6F5)이 되어 흰 글자와 2.43:1 밖에 안 나온다(실측).
+     그래서 어두운 테마에서는 배경을 옅게 두되 글자를 어둡게 뒤집는다. */
+  --btn-bg:#2563EB; --btn-bg-hover:#1D4ED8; --btn-fg:#FFFFFF;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151C; --paper:#191D26; --paper-2:#212632;
+    --border:#2C3342; --ink:#E9EDF5; --ink-dim:#A7B0C0; --ink-faint:#78829A;
+    --brand:#7DA6F5; --brand-deep:#A8C5FB; --brand-soft:#17243D; --brand-soft-2:#1E2E4D;
+    --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+    --good:#3FD38C;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+    --shadow-lift:0 2px 4px rgba(0,0,0,.4), 0 26px 60px -30px rgba(0,0,0,.8);
+    --btn-bg:#7DA6F5; --btn-bg-hover:#A8C5FB; --btn-fg:#0B1220;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151C; --paper:#191D26; --paper-2:#212632;
+  --border:#2C3342; --ink:#E9EDF5; --ink-dim:#A7B0C0; --ink-faint:#78829A;
+  --brand:#7DA6F5; --brand-deep:#A8C5FB; --brand-soft:#17243D; --brand-soft-2:#1E2E4D;
+  --warn:#F0B04E; --warn-soft:#3A2E15; --warn-border:#5C4720;
+  --good:#3FD38C;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 12px 32px -20px rgba(0,0,0,.6);
+  --shadow-lift:0 2px 4px rgba(0,0,0,.4), 0 26px 60px -30px rgba(0,0,0,.8);
+  --btn-bg:#7DA6F5; --btn-bg-hover:#A8C5FB; --btn-fg:#0B1220;
+}
+
+*{box-sizing:border-box;}
+/* 머리글이 화면 위에 붙어 있으므로, 위쪽 메뉴로 점프하면 그 높이만큼
+   제목이 가려진다. 그만큼 미리 띄워 준다(머리글 62px + 여유). */
+html{scroll-behavior:smooth; scroll-padding-top:78px;}
+@media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} *{transition:none !important; animation:none !important;} }
+
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--font-ui); font-size:16px; line-height:1.7;
+  -webkit-font-smoothing:antialiased; word-break:keep-all;
+}
+a{color:var(--brand-deep); text-decoration:none;}
+a:hover{text-decoration:underline;}
+:focus-visible{outline:2px solid var(--brand); outline-offset:3px; border-radius:3px;}
+img{max-width:100%;}
+
+.wrap{max-width:1120px; margin:0 auto; padding:0 24px;}
+
+/* ── 건너뛰기 링크 ── */
+.skip{position:absolute; left:-9999px; top:0; background:var(--paper); color:var(--brand-deep);
+  padding:10px 16px; border:1px solid var(--brand); border-radius:0 0 6px 0; z-index:100;}
+.skip:focus{left:0;}
+
+/* ── 머리글 ── */
+/* ⚠️ 반투명(88%)으로 두었더니 **뒤 글자가 비쳐 보였다** — 사파리 실화면에서
+   본문 제목의 윗부분이 머리글 안으로 겹쳐 읽혔다(2026-08-25). 흐림 효과가
+   있어도 한글 굵은 제목은 그대로 드러난다. 그래서 불투명으로 되돌린다.
+   멋보다 읽히는 것이 먼저다. */
+.nav{position:sticky; top:0; z-index:50; background:var(--bg);
+  border-bottom:1px solid var(--border);}
+/* 좁은 화면에서 .navlinks(flex:1)가 숨으면 오른쪽 버튼을 밀어 줄 것이 없어져
+   로고 바로 옆에 달라붙었다(2026-08-25 실화면). 브랜드가 남는 자리를 먹게 한다. */
+.nav .wrap{display:flex; align-items:center; gap:20px; height:62px;}
+.nav .brand{margin-right:auto;}
+.brand{display:flex; align-items:center; gap:9px; font-weight:700; font-size:17px; letter-spacing:-.02em; color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mark{width:26px; height:26px; border-radius:8px;
+  background:linear-gradient(150deg, var(--brand) 0%, var(--brand-deep) 100%); flex:none;}
+.navlinks{display:flex; gap:22px; margin-left:14px; flex:1;}
+.navlinks a{color:var(--ink-dim); font-size:14.5px; font-weight:500;}
+.navlinks a:hover{color:var(--brand-deep); text-decoration:none;}
+
+.btn{display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:11px 20px; border-radius:9px; font-size:15px; font-weight:600;
+  border:1px solid transparent; cursor:pointer; min-height:44px;
+  transition:background .15s, border-color .15s, color .15s;}
+.btn.primary{background:var(--btn-bg); color:var(--btn-fg);}
+.btn.primary:hover{background:var(--btn-bg-hover); text-decoration:none;}
+.btn.line{background:var(--paper); color:var(--ink); border-color:var(--border);}
+.btn.line:hover{border-color:var(--brand); color:var(--brand-deep); text-decoration:none;}
+.btn.sm{padding:8px 15px; font-size:14px; min-height:38px;}
+/* 아직 갈 곳이 없는 버튼. 누를 수 없다는 것이 보여야 한다 — 죽은 링크를
+   진짜처럼 두면 그것 자체가 가짜 동작이다.
+   ⚠️ 여기만 --ink-faint 를 그대로 둔다(3.44:1). 비활성 컨트롤은 대비 기준
+   면제 대상이고, 흐릿한 것이 '지금은 못 누른다'는 신호 자체다. */
+.btn.pending{background:var(--paper-2); color:var(--ink-faint); border-color:var(--border); cursor:default;}
+
+/* ── 히어로 ── */
+.hero{padding:64px 0 76px; border-bottom:1px solid var(--border);}
+.hero .wrap{display:grid; grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr); gap:56px; align-items:center;}
+.eyebrow{display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600;
+  color:var(--brand-deep); background:var(--brand-soft); border:1px solid var(--brand-soft-2);
+  padding:5px 12px; border-radius:999px; margin-bottom:20px;}
+.hero h1{font-size:clamp(32px,4.6vw,50px); line-height:1.22; letter-spacing:-.035em;
+  font-weight:700; margin:0 0 18px; text-wrap:balance;}
+.hero p.lede{font-size:17.5px; color:var(--ink-dim); margin:0 0 28px; max-width:46ch; text-wrap:pretty;}
+.cta{display:flex; flex-wrap:wrap; gap:10px; align-items:center;}
+/* 아래 세 곳은 --ink-faint(밝은 테마에서 배경 대비 3.59:1)를 쓰다가 --ink-dim(5.44:1)
+   으로 바꿨다. 읽으라고 쓴 글자라 기준(4.5:1)을 넘겨야 한다 — 2026-08-25 실측. */
+.cta-note{font-size:13.5px; color:var(--ink-dim); margin:14px 0 0;}
+
+/* ── 히어로 안 폰 목업 ── */
+.phone{width:286px; margin:0 auto; background:var(--paper); border:1px solid var(--border);
+  border-radius:26px; box-shadow:var(--shadow-lift); overflow:hidden;}
+/* 위쪽에 띠를 따로 두었더니 "주변 인맥"이 제목과 두 번 나왔다(사파리 실화면
+   확인, 2026-08-25). 띠를 없애고 제목 줄 오른쪽에 붙였다. */
+.phone .screen{padding:18px 16px; display:flex; flex-direction:column; gap:11px;}
+.phead{display:flex; align-items:baseline; justify-content:space-between; gap:10px;}
+.pcount{font-size:11px; color:var(--ink-dim); font-weight:600; flex:none;}
+.phone h2{font-size:19px; font-weight:700; letter-spacing:-.03em; margin:0;}
+.phone .sub{font-size:12.5px; color:var(--ink-dim); margin:0;}
+.pcard{background:var(--paper); border:1px solid var(--border); border-radius:12px; padding:11px 12px;}
+.pcard.soft{background:var(--brand-soft); border-color:var(--brand-soft-2);}
+.prow{display:flex; align-items:center; gap:10px;}
+.prow + .prow{margin-top:10px; padding-top:10px; border-top:1px solid var(--border);}
+/* ⚠️ 어두운 모드에서 원이 카드면과 거의 같은 색이 되어(1.11:1) **원이 사라지고
+   글자만 떠 보였다**(2026-08-25 실화면). 색을 따로 만들지 않고 테두리를 둘러
+   경계를 만든다 — 카드가 배경과 구분되는 것과 같은 방식이다. */
+.pav{width:34px; height:34px; border-radius:50%; background:var(--paper-2); flex:none;
+  border:1px solid var(--border);
+  display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:var(--ink-dim);}
+.pmeta{flex:1; min-width:0; display:flex; flex-direction:column;}
+.pmeta .n{font-size:13.5px; font-weight:600; letter-spacing:-.01em;}
+.pmeta .d{font-size:11.5px; color:var(--ink-dim);}
+.ptag{font-size:11px; font-weight:600; color:var(--brand-deep); background:var(--brand-soft);
+  border:1px solid var(--brand-soft-2); border-radius:999px; padding:3px 9px; flex:none;}
+.plabel{font-size:11.5px; color:var(--ink-dim); font-weight:600; letter-spacing:.02em;}
+
+/* ── 일반 섹션 ── */
+section{padding:76px 0;}
+section + section{border-top:1px solid var(--border);}
+.sec-eyebrow{font-size:13px; font-weight:600; letter-spacing:.08em; color:var(--brand-deep);
+  text-transform:uppercase; margin:0 0 12px;}
+h2.sec{font-size:clamp(25px,3.2vw,34px); line-height:1.3; letter-spacing:-.03em; font-weight:700;
+  margin:0 0 16px; text-wrap:balance;}
+p.sec-lede{font-size:17px; color:var(--ink-dim); margin:0; max-width:56ch; text-wrap:pretty;}
+
+/* ── 문제 ── */
+.problem{background:var(--paper-2);}
+.problem .wrap{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:48px; align-items:center;}
+.problem blockquote{margin:0; font-size:clamp(21px,2.6vw,27px); line-height:1.5; font-weight:600;
+  letter-spacing:-.025em; text-wrap:balance;}
+.problem blockquote span{color:var(--brand-deep);}
+
+/* ── 해결 3단 ── */
+.steps{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:40px;}
+.step{background:var(--paper); border:1px solid var(--border); border-radius:14px; padding:26px 24px;
+  box-shadow:var(--shadow); display:flex; flex-direction:column; gap:10px;}
+.step .num{font-size:12.5px; font-weight:700; color:var(--brand-deep); letter-spacing:.1em;}
+.step h3{font-size:19px; font-weight:700; letter-spacing:-.025em; margin:0;}
+.step p{margin:0; font-size:15px; color:var(--ink-dim); text-wrap:pretty;}
+.step .icon{width:38px; height:38px; border-radius:11px; background:var(--brand-soft);
+  border:1px solid var(--brand-soft-2); display:flex; align-items:center; justify-content:center; margin-bottom:2px;}
+.step .icon svg{width:20px; height:20px; stroke:var(--brand-deep); fill:none; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round;}
+
+/* ── 이런 분께 ── */
+.who{display:flex; flex-wrap:wrap; gap:10px; margin-top:32px;}
+.who span{background:var(--paper); border:1px solid var(--border); border-radius:999px;
+  padding:9px 18px; font-size:15px; font-weight:500;}
+
+/* ── 신뢰 ── */
+.trust{background:var(--paper-2);}
+.trust-list{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; margin-top:38px;}
+.trust-item{background:var(--paper); border:1px solid var(--border); border-radius:14px; padding:24px;
+  display:flex; flex-direction:column; gap:9px;}
+.trust-item h3{font-size:16.5px; font-weight:700; letter-spacing:-.02em; margin:0;}
+.trust-item p{margin:0; font-size:14.5px; color:var(--ink-dim); text-wrap:pretty;}
+.trust-note{margin-top:26px; font-size:14px; color:var(--ink-dim); max-width:70ch;}
+
+/* ── FAQ ── */
+.faq{margin-top:36px; display:flex; flex-direction:column; gap:10px;}
+details{background:var(--paper); border:1px solid var(--border); border-radius:12px; overflow:hidden;}
+details[open]{border-color:var(--brand-soft-2);}
+summary{padding:18px 22px; cursor:pointer; font-weight:600; font-size:16px; list-style:none;
+  display:flex; align-items:center; justify-content:space-between; gap:14px; min-height:44px;}
+summary::-webkit-details-marker{display:none;}
+summary::after{content:''; width:9px; height:9px; border-right:2px solid var(--ink-faint);
+  border-bottom:2px solid var(--ink-faint); transform:rotate(45deg); flex:none; margin-top:-4px; transition:transform .18s;}
+details[open] summary::after{transform:rotate(-135deg); margin-top:2px;}
+details .a{padding:0 22px 20px; color:var(--ink-dim); font-size:15.5px; text-wrap:pretty;}
+
+/* ── 닫는 말 ── */
+.closing{text-align:center;}
+.closing .cta{justify-content:center;}
+.closing p.sec-lede{margin:0 auto;}
+
+/* ── 꼬리말 ── */
+footer{background:var(--paper); border-top:1px solid var(--border); padding:48px 0 40px; font-size:14px;}
+.foot-top{display:flex; flex-wrap:wrap; gap:32px; justify-content:space-between; align-items:flex-start;}
+.foot-links{display:flex; flex-wrap:wrap; gap:8px 20px;}
+.foot-links a{color:var(--ink-dim); font-weight:500;}
+.biz{margin-top:28px; padding-top:22px; border-top:1px solid var(--border); color:var(--ink-dim); line-height:1.9;}
+.biz b{color:var(--ink-dim); font-weight:600;}
+.biz .row{display:flex; flex-wrap:wrap; gap:4px 18px;}
+
+/* ── 좁은 화면 ── */
+@media (max-width:900px){
+  .hero .wrap{grid-template-columns:1fr; gap:44px;}
+  .problem .wrap{grid-template-columns:1fr; gap:30px;}
+  .steps, .trust-list{grid-template-columns:1fr;}
+  .navlinks{display:none;}
+  section{padding:56px 0;}
+  .hero{padding:44px 0 56px;}
+}
+/* 버튼 셋(출시 알림 · App Store · Google Play)이 한 줄에 약 530px을 먹는다.
+   420px에서야 세로로 바꾸면 그 사이 구간에서 화면 밖으로 밀린다 — 실화면에서
+   576px일 때 이미 꽉 찼다. 그래서 640px부터 세로로 쌓는다(2026-08-25). */
+@media (max-width:640px){
+  .cta{flex-direction:column; align-items:stretch;}
+  .cta .btn{width:100%;}
+  .closing .cta{align-items:center;}
+  .closing .cta .btn{width:auto; min-width:200px;}
+}
