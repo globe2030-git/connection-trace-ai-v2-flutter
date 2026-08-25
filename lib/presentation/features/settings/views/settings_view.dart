@@ -150,8 +150,13 @@ class _SettingsViewState extends State<SettingsView> {
                   // → 11행으로 줄인 자리이고, 설명을 행에 붙이면 다시 늘어난다.
                   // 무슨 일이 일어나는지는 **다이얼로그가 말한다.**
                   _SettingsRow(
+                    // ⚠️ 로그아웃과 **같은 아이콘을 쓰지 않는다.** 처음엔 둘이
+                    // 같은 종류(세션 끊기)라 같은 아이콘이 맞다고 봤는데,
+                    // 실기기에서 보니 **빨간 글씨 두 줄이 나란히 같은 그림**을
+                    // 달고 있어 한눈에 겹쳐 읽혔다(아이폰 실화면, 2026-08-25).
+                    // cancel(원 안 ✕)은 지금 어디에도 안 쓰이고 "끊는다"로 읽힌다.
                     icon: const AppIcon(
-                      AppIconId.logout,
+                      AppIconId.cancelService,
                       size: 22,
                       color: AppColors.accentText,
                     ),
@@ -1220,7 +1225,12 @@ Future<void> _confirmRevokeSessions(
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('다른 기기 모두 로그아웃할까요?'),
+      // ⚠️ 제목을 짧게 유지한다. 처음에 "다른 기기 모두 로그아웃할까요?"(16자)로
+      // 뒀더니 실기기에서 **"로그아 / 웃할까요?"** 로 낱말 가운데가 잘렸다
+      // (아이폰 실화면, 2026-08-25). 이 화면의 다른 확인 문구는 전부 8~10자다
+      // ("로그아웃할까요?" · "계정을 삭제할까요?") — 16자가 혼자 길었던 것이다.
+      // 무엇을 끊는지는 **행 제목과 본문이 이미 말한다.**
+      title: const Text('모두 로그아웃할까요?'),
       content: const Text(
         '이 계정으로 로그인한 모든 기기의 로그인이 끊깁니다.\n\n'
         '지금 쓰고 계신 이 기기도 함께 끊깁니다. 다시 로그인하셔야 합니다.\n\n'
