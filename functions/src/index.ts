@@ -2432,3 +2432,64 @@ export const socialSignIn = onCall(
     return {token, provider: profile.provider};
   },
 );
+
+/**
+ * 원격 로그아웃 — **이 계정으로 로그인한 모든 기기의 세션을 끊는다.**
+ *
+ * ## 왜 필요한가
+ *
+ * 폰을 잃어버렸을 때 이용자가 할 수 있는 일이 **계정 삭제밖에 없었다.**
+ * 그런데 계정 삭제는 명함과 프로필까지 서버에서 지운다 — 되찾으려던 것이
+ * 함께 사라진다. 잃어버린 것은 **기기**인데 **데이터**를 버려야 했던 셈이다.
+ *
+ * ```
+ * 지금까지        ① 계정 삭제(명함도 함께 사라짐)   ② 없음
+ * 이 함수가 생기면  ③ 세션만 끊는다 — 데이터는 그대로
+ * ```
+ *
+ * ## ⚠️ 자기 자신도 끊긴다
+ *
+ * `revokeRefreshTokens`는 **그 uid의 모든 세션**을 무효로 만든다. 지금 이
+ * 함수를 부르고 있는 기기도 예외가 아니다. 그래서 앱은 **누르기 전에 그
+ * 사실을 알려야 한다** — "다른 기기만 끊긴다"고 오해하면, 되찾은 뒤 자기
+ * 폰이 로그아웃돼 있는 것을 결함으로 읽는다.
+ *
+ * ## 이미 있는 감지 로직을 그대로 쓴다
+ *
+ * 세션이 끊긴 기기는 토큰을 갱신할 때 `user-token-expired`를 받는다. 앱의
+ * `AuthRepository.isAccountAlreadyDeleted()`가 **그 코드를 이미 잡고 있다**
+ * (계정 삭제를 감지하려고 만든 것인데 상태가 같다). 새 감지 코드를 만들지
+ * 않는다.
+ *
+ * ## 관리자 함수가 아니다
+ *
+ * `grantSupportCredits`와 달리 **본인이 자기 계정에 대해서만** 부른다.
+ * 다른 uid를 받지 않는다 — 받으면 남의 세션을 끊는 통로가 된다.
+ */
+export const revokeMySessions = onCall(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  async (request): Promise<{revokedAt: string}> => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요해요.");
+    }
+
+    try {
+      await getAuth().revokeRefreshTokens(uid);
+    } catch (e) {
+      // 실패를 조용히 넘기지 않는다 — 이용자는 "끊었다"고 믿고 화면을
+      // 떠나는데 실제로는 안 끊긴 상태가 가장 나쁘다.
+      logger.error("원격 로그아웃 실패", {uid, error: `${e}`});
+      throw new HttpsError(
+        "internal",
+        "세션을 끊지 못했어요. 잠시 후 다시 시도해 주세요.",
+      );
+    }
+
+    // ⚠️ 개인정보를 남기지 않는다 — uid 말고는 아무것도 찍지 않는다.
+    // 이 로그는 "언제 끊었는지"를 나중에 답하기 위한 것이다(분실 신고 대응).
+    const revokedAt = new Date().toISOString();
+    logger.info("원격 로그아웃", {uid, revokedAt});
+    return {revokedAt};
+  },
+);

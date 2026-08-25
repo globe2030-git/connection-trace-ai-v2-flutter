@@ -13,6 +13,7 @@ import '../../../../core/utils/masked_email.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../core/utils/seeded_memo_cleanup.dart';
 import '../../../../core/utils/seeded_tag_cleanup.dart';
+import '../../../../core/services/remote_signout_service.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/card_photo_backup_state.dart';
 import '../../../../core/services/card_photo_quota_service.dart';
@@ -139,6 +140,25 @@ class _SettingsViewState extends State<SettingsView> {
                     subtitle: '이 기기에 저장된 로그인 정보를 지웁니다',
                     titleColor: AppColors.destructive,
                     onTap: () => _confirmSignOut(context, auth),
+                  ),
+                  // 폰을 잃어버렸을 때 쓰는 자리다(추가 471). 지금까지는
+                  // **계정 삭제밖에 없었다** — 잃어버린 것은 기기인데 명함까지
+                  // 버려야 했다. 로그아웃 바로 아래에 두는 것은 둘이 같은
+                  // 종류(세션을 끊는 일)이기 때문이다.
+                  //
+                  // ⚠️ 부제를 길게 달지 않는다. 이 섹션은 2026-08-25에 19행
+                  // → 11행으로 줄인 자리이고, 설명을 행에 붙이면 다시 늘어난다.
+                  // 무슨 일이 일어나는지는 **다이얼로그가 말한다.**
+                  _SettingsRow(
+                    icon: const AppIcon(
+                      AppIconId.logout,
+                      size: 22,
+                      color: AppColors.accentText,
+                    ),
+                    title: '다른 기기 모두 로그아웃',
+                    subtitle: '기기를 잃어버렸을 때',
+                    titleColor: AppColors.destructive,
+                    onTap: () => _confirmRevokeSessions(context, auth),
                   ),
                   _SettingsRow(
                     icon: const AppIcon(
@@ -1185,6 +1205,67 @@ Future<void> _confirmConsentWithdrawal(
 /// 있었다(2026-08-12). `isSignedIn` 값만으로는 이 구간을 못 잡기 때문에, 로그아웃/
 /// 삭제 중임을 직접 표시하는 이 플래그로 재진입을 막는다.
 bool _accountActionInProgress = false;
+
+/// 원격 로그아웃 확인 — **"이 기기도 함께 끊긴다"를 반드시 먼저 말한다.**
+///
+/// 안 말하면 누른 사람이 **자기가 튕겨 나간 것을 고장으로 읽는다.** 그리고
+/// 이 앱에서 "로그아웃"은 명함이 사라지는 것처럼 읽힐 수 있어(S-05 "다른
+/// 계정으로 로그인했습니다"가 다루는 불안과 같은 자리), **명함은 남는다**는
+/// 것도 함께 적는다.
+Future<void> _confirmRevokeSessions(
+  BuildContext context,
+  AuthRepository auth,
+) async {
+  if (!auth.isSignedIn || _accountActionInProgress) return;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('다른 기기 모두 로그아웃할까요?'),
+      content: const Text(
+        '이 계정으로 로그인한 모든 기기의 로그인이 끊깁니다.\n\n'
+        '지금 쓰고 계신 이 기기도 함께 끊깁니다. 다시 로그인하셔야 합니다.\n\n'
+        '명함은 그대로 남아 있습니다.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('취소'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: const Text(
+            '모두 로그아웃',
+            style: TextStyle(color: AppColors.destructive),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  // 다이얼로그가 떠 있는 사이 다른 경로(로그아웃·계정 삭제)가 이미 시작됐을
+  // 수 있다 — _confirmSignOut 과 같은 가드다.
+  if (_accountActionInProgress) return;
+  _accountActionInProgress = true;
+  try {
+    await RemoteSignOutService.revokeAllSessions();
+    // 서버가 세션을 끊었으니 이 기기의 로컬 세션도 정리한다. 안 하면 앱이
+    // 다음 토큰 갱신까지 "로그인된 것처럼" 보이다가 갑자기 튕긴다 — 방금
+    // 다이얼로그로 예고한 것과 화면이 어긋난다.
+    await auth.signOut();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('모든 기기에서 로그아웃했어요.')),
+    );
+  } on RemoteSignOutException catch (e) {
+    // ⚠️ 조용히 넘기지 않는다 — "끊었다"고 믿고 화면을 떠나는 것이 가장 나쁘다.
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(e.message)));
+  } finally {
+    _accountActionInProgress = false;
+  }
+}
 
 Future<void> _confirmSignOut(BuildContext context, AuthRepository auth) async {
   if (!auth.isSignedIn || _accountActionInProgress) return;
