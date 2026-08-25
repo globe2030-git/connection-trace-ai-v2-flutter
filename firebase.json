@@ -111,6 +111,12 @@
       ],
       "headers": [
         {
+          "source": "/",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=300" }
+          ]
+        },
+        {
           "source": "**/*.@(html|css)",
           "headers": [
             { "key": "Cache-Control", "value": "public, max-age=300" }
