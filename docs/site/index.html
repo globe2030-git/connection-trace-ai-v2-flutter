@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>커넥션센스 — 근처에 온 사람을 내 명함첩이 먼저 알려줍니다</title>
+<meta name="description" content="받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.">
+<meta name="theme-color" content="#F7F8FA" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12151C" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="커넥션센스">
+<meta property="og:title" content="커넥션센스 — 근처에 온 사람을 내 명함첩이 먼저 알려줍니다">
+<meta property="og:description" content="받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.">
+<meta property="og:locale" content="ko_KR">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<a class="skip" href="#main">본문 바로가기</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#main"><span class="mark" aria-hidden="true"></span>커넥션센스</a>
+    <nav class="navlinks" aria-label="주요 메뉴">
+      <a href="#how">기능</a>
+      <a href="#trust">안전</a>
+      <a href="#faq">자주 묻는 질문</a>
+    </nav>
+    <a class="btn primary sm" href="mailto:connectionsense@creamhouse.net?subject=%EC%BB%A4%EB%84%A5%EC%85%98%EC%84%BC%EC%8A%A4%20%EC%B6%9C%EC%8B%9C%20%EC%95%8C%EB%A6%BC%20%EC%8B%A0%EC%B2%AD">출시 알림 받기</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ─────────── 히어로 ─────────── -->
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">상대방은 앱을 깔지 않아도 됩니다</p>
+        <h1>근처에 온 사람을<br>내 명함첩이 먼저 알려줍니다</h1>
+        <p class="lede">받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.</p>
+        <div class="cta">
+          <a class="btn primary" href="mailto:connectionsense@creamhouse.net?subject=%EC%BB%A4%EB%84%A5%EC%85%98%EC%84%BC%EC%8A%A4%20%EC%B6%9C%EC%8B%9C%20%EC%95%8C%EB%A6%BC%20%EC%8B%A0%EC%B2%AD">출시 알림 받기</a>
+          <span class="btn pending" aria-disabled="true">App Store 준비 중</span>
+          <span class="btn pending" aria-disabled="true">Google Play 준비 중</span>
+        </div>
+        <p class="cta-note"><strong>가입하면 AI 대화 브리핑 20회 무료</strong> · 신용카드 필요 없음<br>지금은 테스터와 함께 다듬고 있습니다. 스토어에 올라가면 알림을 보내 드립니다.</p>
+      </div>
+
+      <!-- 앱 화면 예시. 등장인물은 모두 가상이며, 실제 명함 화면 캡처가 아닙니다. -->
+      <div class="phone" role="img" aria-label="앱 주변 인맥 화면 예시. 반경 5km 안 12명, 김OO 부장 320m, 이OO 대표 1.1km, 오늘 연락하면 좋은 사람으로 박OO 팀장이 표시된 화면입니다.">
+        <div class="screen" aria-hidden="true">
+          <div class="phead">
+            <h2>주변 인맥</h2>
+            <span class="pcount">반경 5km · 12명</span>
+          </div>
+          <p class="sub">좋은 오후예요!</p>
+          <div class="pcard">
+            <div class="prow">
+              <span class="pav">김</span>
+              <span class="pmeta"><span class="n">김OO 부장</span><span class="d">OO전자 · 320m</span></span>
+              <span class="ptag">대화 준비</span>
+            </div>
+            <div class="prow">
+              <span class="pav">이</span>
+              <span class="pmeta"><span class="n">이OO 대표</span><span class="d">OO컴퍼니 · 1.1km</span></span>
+              <span class="ptag">대화 준비</span>
+            </div>
+          </div>
+          <p class="plabel">오늘 연락하면 좋은 사람</p>
+          <div class="pcard soft">
+            <div class="prow">
+              <span class="pav">박</span>
+              <span class="pmeta"><span class="n">박OO 팀장</span><span class="d">마지막 연락 뒤 3개월</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 문제 ─────────── -->
+  <section class="problem">
+    <div class="wrap">
+      <div>
+        <p class="sec-eyebrow">이런 적 있으신가요</p>
+        <blockquote>명함첩엔 수백 명,<br>실제로 챙기는 건 <span>몇십 명.</span></blockquote>
+      </div>
+      <div>
+        <p class="sec-lede">나머지는 “언젠가 연락해야지” 하다 잊힙니다. 그리고 그게 놓친 기회가 됩니다.</p>
+        <p class="sec-lede" style="margin-top:16px">연락처가 없어서가 아닙니다. <strong>뭐라고 다시 연락할지</strong>가 떠오르지 않아서입니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 해결 ─────────── -->
+  <section id="how">
+    <div class="wrap">
+      <p class="sec-eyebrow">어떻게 도와드리나</p>
+      <h2 class="sec">명함을 찍어 두면, 나머지는 앱이 이어갑니다</h2>
+      <p class="sec-lede">따로 정리하지 않아도 됩니다. 찍어 두기만 하면 필요한 순간에 앱이 먼저 꺼내 옵니다.</p>
+
+      <div class="steps">
+        <article class="step">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.7a1 1 0 0 0 .83-.45l.94-1.4A1 1 0 0 1 9.8 3.7h4.4a1 1 0 0 1 .83.45l.94 1.4a1 1 0 0 0 .83.45h1.7A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/><circle cx="12" cy="12.3" r="3.4"/></svg>
+          </span>
+          <span class="num">01</span>
+          <h3>찍으면 자동으로 정리</h3>
+          <p>명함을 촬영하면 이름·회사·직함·연락처를 읽어 칸에 채웁니다. 앞면과 뒷면을 이어 찍을 수 있고, 잘못 읽은 곳은 그 자리에서 고칩니다.</p>
+        </article>
+
+        <article class="step">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>
+          </span>
+          <span class="num">02</span>
+          <h3>근처에 오면 알려줍니다</h3>
+          <p>명함에 적힌 회사 주소와 지금 내 위치를 견줘 가까운 순으로 보여줍니다. 같은 건물에 여러 명이 있으면 한 덩어리로 묶어 줍니다.</p>
+        </article>
+
+        <article class="step">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M20 12.5a7.5 7.5 0 0 1-10.6 6.8L4 21l1.7-5.4A7.5 7.5 0 1 1 20 12.5z"/><path d="M9 11.8h6M9 14.6h3.6"/></svg>
+          </span>
+          <span class="num">03</span>
+          <h3>무슨 말로 시작할지까지</h3>
+          <p>지난 소통 기록과 명함에 남긴 메모를 바탕으로 AI가 첫 문장을 만들어 드립니다. 그대로 문자·카카오톡에 붙여넣으면 됩니다.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 이런 분께 ─────────── -->
+  <section>
+    <div class="wrap">
+      <p class="sec-eyebrow">이런 분께</p>
+      <h2 class="sec">관계가 곧 실적인 일을 하신다면</h2>
+      <p class="sec-lede">명함을 많이 받는 만큼 많이 잊게 되는 분들을 위해 만들었습니다.</p>
+      <div class="who">
+        <span>보험설계사</span>
+        <span>자동차 영업</span>
+        <span>부동산 중개</span>
+        <span>기업 영업</span>
+        <span>프리랜서 · 1인 사업자</span>
+        <span>명함이 쌓이는 모든 직장인</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 신뢰 ─────────── -->
+  <section id="trust" class="trust">
+    <div class="wrap">
+      <p class="sec-eyebrow">안전</p>
+      <h2 class="sec">남의 정보를 맡아 두는 앱이라, 조심해서 만들었습니다</h2>
+      <p class="sec-lede">명함에 적힌 정보는 명함을 주신 분의 개인정보입니다. 그래서 다루는 방식을 숨기지 않고 그대로 밝힙니다.</p>
+
+      <div class="trust-list">
+        <article class="trust-item">
+          <h3>명함 정보는 암호화해 보관</h3>
+          <p>기기와 서버 모두 암호화해 저장합니다. 기기를 바꾸거나 앱을 다시 깔아도 같은 계정으로 로그인하면 복원됩니다.</p>
+        </article>
+        <article class="trust-item">
+          <h3>위치는 거리 계산에만</h3>
+          <p>현재 위치는 거리를 계산할 때만 쓰고 서버에 저장하지 않습니다. 위치 이력도 남기지 않으며, 백그라운드에서 계속 추적하지 않습니다.</p>
+        </article>
+        <article class="trust-item">
+          <h3>AI로 보낼 내용을 먼저 보여드립니다</h3>
+          <p>대화 문장을 만들 때 어떤 항목이 전송되는지 화면에 그대로 보여드리고, 그때마다 동의를 받습니다. 동의 없이 자동으로 나가는 정보는 없습니다.</p>
+        </article>
+      </div>
+
+      <p class="trust-note">과장하지 않겠습니다. 암호화 키를 서버가 함께 보관하므로 “완전한 종단간 암호화”나 “제로 지식”이라고 말하지 않습니다. 자세한 처리 내용은 <a href="https://connection-sense.web.app/privacy-policy">개인정보처리방침</a>에 적어 두었습니다.</p>
+    </div>
+  </section>
+
+  <!-- ─────────── FAQ ─────────── -->
+  <section id="faq">
+    <div class="wrap">
+      <p class="sec-eyebrow">자주 묻는 질문</p>
+      <h2 class="sec">궁금하실 만한 것</h2>
+
+      <div class="faq">
+        <details>
+          <summary>상대방도 앱을 깔아야 하나요?</summary>
+          <div class="a">아니요. 내가 받은 명함을 내가 정리하는 앱이라 상대방은 아무것도 하지 않아도 됩니다. 상대방이 앱을 쓰는지 여부도 알 수 없습니다.</div>
+        </details>
+        <details>
+          <summary>요금은 어떻게 되나요?</summary>
+          <div class="a">앱 자체는 무료입니다. 명함 등록과 주변 인맥 보기에는 요금이 없습니다. AI가 대화 문장을 만들어 주는 기능만 횟수가 정해져 있는데, <strong>가입하시면 20회를 무료로 드립니다.</strong> 그 뒤로도 이어서 쓰실 수 있게 준비하고 있고, <strong>방법과 가격은 정해지는 대로</strong> 이 페이지에 올리겠습니다.</div>
+        </details>
+        <details>
+          <summary>다른 명함 앱과 뭐가 다른가요?</summary>
+          <div class="a">명함을 읽어 정리하는 것은 기본이고, 저희가 더 하는 일은 두 가지입니다. 하나는 <strong>지금 근처에 있는 인맥을 먼저 꺼내 주는 것</strong>, 다른 하나는 <strong>다시 연락할 첫 문장을 만들어 주는 것</strong>입니다. 정리해 두고도 연락을 못 하던 자리를 메우려고 만들었습니다.</div>
+        </details>
+        <details>
+          <summary>제 통화·문자 내용을 앱이 읽나요?</summary>
+          <div class="a">읽지 않습니다. 통화 기록이나 문자·카카오톡 대화를 앱이 자동으로 가져오는 기능은 없습니다. 남기고 싶은 내용이 있으면 직접 적거나 필요한 부분만 붙여넣으시면 됩니다.</div>
+        </details>
+        <details>
+          <summary>그만 쓰고 싶으면 어떻게 하나요?</summary>
+          <div class="a">앱 안 설정에서 계정을 삭제하면 서버에 백업된 명함·프로필과 기기에 저장된 사진·암호화 키가 함께 지워집니다. 앱을 열 수 없는 상황이라면 <a href="https://connection-sense.web.app/account-deletion">계정 및 데이터 삭제 요청 안내</a>를 참고해 주세요.</div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────── 닫는 말 ─────────── -->
+  <section class="closing">
+    <div class="wrap">
+      <h2 class="sec">받아 둔 명함, 이제 꺼내 쓸 차례입니다</h2>
+      <p class="sec-lede">가입하면 AI 대화 브리핑 20회가 무료입니다. 출시되면 가장 먼저 알려 드리겠습니다.</p>
+      <div class="cta" style="margin-top:28px">
+        <a class="btn primary" href="mailto:connectionsense@creamhouse.net?subject=%EC%BB%A4%EB%84%A5%EC%85%98%EC%84%BC%EC%8A%A4%20%EC%B6%9C%EC%8B%9C%20%EC%95%8C%EB%A6%BC%20%EC%8B%A0%EC%B2%AD">출시 알림 받기</a>
+        <a class="btn line" href="mailto:connectionsense@creamhouse.net?subject=%EC%BB%A4%EB%84%A5%EC%85%98%EC%84%BC%EC%8A%A4%20%EB%AC%B8%EC%9D%98">문의하기</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <a class="brand" href="#main"><span class="mark" aria-hidden="true"></span>커넥션센스</a>
+      <nav class="foot-links" aria-label="법적 고지">
+        <a href="https://connection-sense.web.app/terms-of-service">이용약관</a>
+        <a href="https://connection-sense.web.app/privacy-policy">개인정보처리방침</a>
+        <a href="https://connection-sense.web.app/app-permissions">앱 접근권한 안내</a>
+        <a href="https://connection-sense.web.app/account-deletion">계정·데이터 삭제 안내</a>
+        <a href="mailto:connectionsense@creamhouse.net">문의</a>
+      </nav>
+    </div>
+
+    <div class="biz">
+      <div class="row">
+        <span><b>상호</b> 크림하우스주식회사</span>
+        <span><b>대표자</b> 최우진</span>
+        <span><b>사업자등록번호</b> 220-86-89511</span>
+      </div>
+      <div class="row">
+        <span><b>주소</b> 서울특별시 영등포구 양평로21가길 19, 208·209호(양평동5가)</span>
+      </div>
+      <div class="row">
+        <span><b>개인정보 보호책임자</b> 최우진 (대표이사)</span>
+        <span><b>문의</b> <a href="mailto:connectionsense@creamhouse.net">connectionsense@creamhouse.net</a></span>
+      </div>
+      <div style="margin-top:10px">© 2026 크림하우스주식회사</div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
