@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../data/models/sns_auth_provider.dart';
+
 /// 광고성 정보 수신 동의를 보관한다(추가 472 · 시행 2026-09-15).
 ///
 /// ## 🚨 [PhotoImprovementConsentService]를 그대로 베끼면 안 된다
@@ -277,3 +279,46 @@ class AdConsentState {
   @override
   int get hashCode => Object.hash(email, push, answered);
 }
+
+/// 이 제공자로 로그인한 이용자에게 **이메일 채널을 보여도 되는가.**
+///
+/// ## 🚨 네이버는 안 된다 — 그 이메일은 남의 것일 수 있다
+///
+/// 네이버가 주는 값은 네이버 계정 이메일이 아니라 이용자가 등록한
+/// **"연락처 이메일"**이다. 네이버 콘솔 안내 원문: *"계정별로 고유한 값이
+/// 아니며, 네이버 메일 외 다른 도메인으로도 설정 가능합니다."* 즉 **계정별
+/// 고유가 아니고 소유 확인도 제공되지 않는다.**
+///
+/// 그 주소로 광고를 보내면 둘이 한꺼번에 일어난다(법무 회신 추가 473 Q10-④6).
+///
+/// 1. **동의하지 않은 제3자에게 광고를 전송** — 정보통신망법 §50① 위반
+/// 2. **그 사람에게 이용자의 가입 사실이 전달된다**
+///
+/// 2차 법무 회신(질문 8-④3항)이 이미 *"네이버 연락처 이메일로 메일을 발송하지
+/// 말 것"*을 운영 규칙으로 권고했고, **광고 이메일에서 그 규칙이 처음 현실이
+/// 된다.**
+///
+/// 📌 화면 문구 *"가입하신 이메일 주소로 보내드려요"*는 **네이버 이용자에게
+/// 사실이 아니다.** 그래서 체크박스를 아예 보이지 않게 한다 — 문구만 고치면
+/// *"동의는 받아 두고 못 보내는"* 상태가 남는다.
+///
+/// ## 모르면 보여주지 않는다
+///
+/// 제공자를 알 수 없으면(`null` — 게스트 QA 로그인 등) **보여주지 않는다.**
+/// 보내도 되는지 모르는 상태에서 동의부터 받아 두면, 나중에 판단이 뒤집혔을 때
+/// **이미 받은 동의를 되돌려야 한다.**
+///
+/// ## ⚠️ 애플은 보여주되, 발송 쪽에 숙제가 남는다
+///
+/// 애플 릴레이 주소(`@privaterelay.appleid.com`)는 **법적 문제는 아니다** —
+/// 이용자 본인에게 닿는 주소가 맞다. 다만 발신 도메인을 Apple에 등록하지 않으면
+/// **메일이 전달되지 않아** *"동의했는데 안 온다"*가 된다. 발송 장치를 만들 때
+/// 확인할 항목이지 동의 화면에서 막을 일이 아니다.
+bool adEmailChannelAvailable(SnsAuthProvider? provider) => switch (provider) {
+      SnsAuthProvider.naver => false,
+      null => false,
+      SnsAuthProvider.google ||
+      SnsAuthProvider.apple ||
+      SnsAuthProvider.kakao =>
+        true,
+    };

@@ -1,4 +1,5 @@
 import 'package:connection_trace_ai_flutter/core/services/ad_consent_service.dart';
+import 'package:connection_trace_ai_flutter/data/models/sns_auth_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -103,6 +104,34 @@ void main() {
         const AdConsentState(email: true, push: false, answered: true),
         isNot(const AdConsentState(email: true, push: true, answered: true)),
       );
+    });
+  });
+
+  group('🚨 네이버 계정에는 이메일 채널을 보여주지 않는다', () {
+    test('⭐ 네이버는 false — 그 이메일은 남의 것일 수 있다', () {
+      expect(
+        adEmailChannelAvailable(SnsAuthProvider.naver),
+        isFalse,
+        reason: '네이버가 주는 것은 계정 이메일이 아니라 "연락처 이메일"이라 '
+            '계정별 고유가 아니고 소유 확인도 안 된다. 그 주소로 광고를 보내면 '
+            '동의하지 않은 제3자에게 전송한 것이 되고(망법 §50①), 동시에 '
+            '그 사람에게 이용자의 가입 사실이 전달된다',
+      );
+    });
+
+    test('⭐ 제공자를 모르면 보여주지 않는다', () {
+      expect(
+        adEmailChannelAvailable(null),
+        isFalse,
+        reason: '보내도 되는지 모르는 상태에서 동의부터 받아 두면, 나중에 '
+            '판단이 뒤집혔을 때 이미 받은 동의를 되돌려야 한다',
+      );
+    });
+
+    test('구글·애플·카카오는 보여준다', () {
+      expect(adEmailChannelAvailable(SnsAuthProvider.google), isTrue);
+      expect(adEmailChannelAvailable(SnsAuthProvider.apple), isTrue);
+      expect(adEmailChannelAvailable(SnsAuthProvider.kakao), isTrue);
     });
   });
 }
