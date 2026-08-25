@@ -516,6 +516,18 @@ service cloud.firestore {
         // debugPrint만 남기는 구조라 화면에 드러나지 않는다). 그룹 필드를
         // 손보는 김에 함께 추가한다.
         'accountSwitches',
+        // 광고 수신 동의(추가 472) — AdConsentService 가 이 필드들에 쓴다.
+        // ⚠️ 빠뜨리면 쓰기가 여기서 조용히 거부된다. 위 accountSwitches 가
+        // 바로 그렇게 빠져 있던 사례다.
+        // 🚨 adConsentAt 은 철회해도 지우지 않는다 — 입증자료·2년 재확인
+        //    기산점·통지 증적이 함께 사라지기 때문이다(법률 조사 추가 457).
+        //    photoImprovementConsentAt 은 철회 시 null 로 지우는데, 그것을
+        //    여기 복사하면 안 된다.
+        'adConsentEmail',
+        'adConsentPush',
+        'adConsentAt',
+        'adConsentChangedAt',
+        'adConsentNotifiedAt',
       ];
     }
 
