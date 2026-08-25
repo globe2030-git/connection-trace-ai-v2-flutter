@@ -142,8 +142,105 @@ $("#logoutBtn").addEventListener("click", async () => {
   }
 });
 
+// ── 자동 접속 차단 ────────────────────────────────────────────────
+//
+// 「개인정보의 안전성 확보조치 기준」(고시 제2026-9호) 제6조 제4항이
+// **개인정보취급자**에게 요구하는 조치다. 이 콘솔에 들어오는 사람은
+// 이용자의 개인정보를 다루므로 취급자에 해당한다.
+//
+// ⚠️ 앱(일반 이용자)에는 적용되지 않는다 — 같은 고시 제6조 제2항이
+// 2026-07-01 개정에서 "(다만, 정보주체는 제외한다)"를 명시했다.
+// 앱 쪽 세션을 짧게 만들면 오히려 손해다(추가 456·458 참고).
+//
+// 📌 이미 있던 것과 겹치지 않는다. setPersistence(browserSessionPersistence)는
+// **탭을 닫으면** 끝나게 하는 것이고(ADMIN-VULN-012), 이것은 **탭을 열어 둔 채
+// 자리를 비웠을 때**를 막는다. 후자가 고시가 말하는 상황이다.
+//
+// 시간은 고시가 정하지 않는다("일정 시간"). 30분은 실무 관행이고,
+// 이 콘솔이 조회 위주라 30분 무조작이면 자리를 비운 것으로 본다.
+const IDLE_LIMIT_MS = 30 * 60 * 1000;
+const IDLE_WARN_MS = 60 * 1000; // 끊기기 1분 전에 알린다
+
+let idleDeadline = 0;
+let idleTimer = null;
+let idleBanner = null;
+
+function clearIdleBanner() {
+  if (idleBanner) {
+    idleBanner.remove();
+    idleBanner = null;
+  }
+}
+
+function showIdleBanner(secondsLeft) {
+  if (!idleBanner) {
+    idleBanner = document.createElement("div");
+    idleBanner.setAttribute("role", "alert");
+    idleBanner.style.cssText =
+      "position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:9999;" +
+      "background:#B45309;color:#fff;padding:12px 18px;border-radius:10px;" +
+      "font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.2)";
+    document.body.appendChild(idleBanner);
+  }
+  idleBanner.textContent =
+    `자리를 비우신 것 같아 ${secondsLeft}초 뒤 자동으로 로그아웃됩니다. ` +
+    "화면을 클릭하면 계속 사용하실 수 있습니다.";
+}
+
+async function idleSignOut() {
+  stopIdleWatch();
+  try {
+    await signOut(auth);
+  } finally {
+    // 로그아웃과 같은 이유로 새로고침한다 — 렌더된 DOM과 메모리 상태를
+    // 통째로 버려야 민감 데이터가 안 남는다(ADMIN-VULN-012).
+    location.reload();
+  }
+}
+
+function idleTick() {
+  const left = idleDeadline - Date.now();
+  if (left <= 0) {
+    idleSignOut();
+    return;
+  }
+  if (left <= IDLE_WARN_MS) showIdleBanner(Math.ceil(left / 1000));
+  else clearIdleBanner();
+}
+
+function resetIdleDeadline() {
+  idleDeadline = Date.now() + IDLE_LIMIT_MS;
+  clearIdleBanner();
+}
+
+// ⚠️ passive·capture 로 단다 — 화면 어딘가가 이벤트를 삼켜도 여기까지는 온다.
+const IDLE_EVENTS = ["mousedown", "keydown", "wheel", "touchstart", "focus"];
+
+function startIdleWatch() {
+  if (idleTimer) return;
+  resetIdleDeadline();
+  for (const ev of IDLE_EVENTS) {
+    window.addEventListener(ev, resetIdleDeadline, { capture: true, passive: true });
+  }
+  // 1초마다 남은 시간을 본다. setTimeout 하나로 두면 노트북을 덮었다 열었을 때
+  // 타이머가 밀려 실제보다 늦게 끊긴다 — 시계를 직접 보는 쪽이 정확하다.
+  idleTimer = setInterval(idleTick, 1000);
+}
+
+function stopIdleWatch() {
+  if (idleTimer) {
+    clearInterval(idleTimer);
+    idleTimer = null;
+  }
+  for (const ev of IDLE_EVENTS) {
+    window.removeEventListener(ev, resetIdleDeadline, { capture: true });
+  }
+  clearIdleBanner();
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (!user) {
+    stopIdleWatch();
     loginScreen.style.display = "block";
     dashboard.classList.remove("visible");
     return;
@@ -183,6 +280,7 @@ onAuthStateChanged(auth, async (user) => {
   $("#whoAmI").textContent = user.email ?? "";
   loginScreen.style.display = "none";
   dashboard.classList.add("visible");
+  startIdleWatch();
   initTabs();
   await loadNotices();
   await loadInquiries();
