@@ -20,6 +20,7 @@ library;
 import 'package:flutter/material.dart';
 import '../../core/icons/app_icons.dart';
 import '../../core/services/phone_call_service.dart';
+import '../../core/utils/call_target.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/contact_model.dart';
 import 'glass_card.dart';
@@ -41,17 +42,19 @@ Future<bool> showCallPicker(
   BuildContext context,
   ContactModel contact,
 ) async {
-  final mobile = contact.phone.trim();
-  final office = contact.officePhone?.trim() ?? '';
-  final hasMobile = mobile.isNotEmpty;
-  final hasOfficePhone = office.isNotEmpty;
-
-  if (!hasMobile && !hasOfficePhone) return false;
-  if (!hasOfficePhone) {
-    return PhoneCallService.makeCall(mobile);
-  }
-  if (!hasMobile) {
-    return PhoneCallService.makeCall(office);
+  // 판정은 화면이 아니라 규칙이라 core의 순수 함수가 한다
+  // (`core/utils/call_target.dart` — 왜 뗐는지는 그 파일 머리말 참고).
+  final target = resolveCallTarget(
+    mobile: contact.phone,
+    officePhone: contact.officePhone,
+  );
+  switch (target.kind) {
+    case CallTargetKind.none:
+      return false;
+    case CallTargetKind.single:
+      return PhoneCallService.makeCall(target.number!);
+    case CallTargetKind.choose:
+      break; // 아래에서 시트를 띄운다
   }
 
   // 시트는 "선택된 번호"를 결과로 돌려주고, 실제 걸기는 여기서 한다.
