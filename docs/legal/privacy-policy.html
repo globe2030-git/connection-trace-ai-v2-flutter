@@ -51,12 +51,14 @@
 
      🚨 게시 전에 반드시 닫아야 할 것 넷:
 
-       (a) **7번 국외 이전에 FCM 행이 아직 없다.** 아래 표에 주석으로 자리만 표시해
-           두었다. FCM 은 데이터 처리 위치를 지정할 수 없는 "Global service" 라
-           다른 행처럼 "미국"이라고 쓸 수 없다. 법무 회신 Q11 은 "미국 등"의 "등"을
-           Google 공개 목록 + 기준일 + 출처로 닫으면 된다고 했고, **그 목록을 실제로
-           열어 확인한 뒤** 넣는다(담당: PM 세션).
-           ⚠️ §28조의8① 위반은 과태료가 아니라 **과징금(매출 3% 이하)**이다.
+       (a) ✅ **7번 국외 이전에 FCM 행을 넣었다**(2026-08-26). 다만 **국가를 세어
+           열거하지 못했다.** 법무 회신 Q11 은 "등"을 Google 공개 목록으로 닫으라
+           했는데, 목록을 실제로 열어 보니 두 목록(클라우드 리전 / 자체 데이터센터)이
+           서로 다른 것을 세고 원문은 "any of ... or ..." 로 둘 다 열어 둔다.
+           → **국가를 세지 않고 범위와 출처로 적었다.** 경위는 그 행 위 주석에 있다.
+           🚨 **이 표기가 §28조의8① 고지 요건을 충족하는지는 조사로 판정할 수 없었다.
+           게시 전 선임 변호사 확인이 필요하다.** 같은 조 위반은 과태료가 아니라
+           **과징금(매출 3% 이하)**이다.
 
        (b) **헤더의 공고일·시행일·버전을 아직 안 바꿨다.** 지금 헤더는 2.3
            (공고 8/23 · 시행 8/30)이다. v2.4 는 시행 2026-09-15 이고 **공고일은
@@ -451,16 +453,43 @@
       <table class="field-table wide">
         <thead><tr><th>제공받는 자</th><th>이용 목적</th><th>제공 항목</th><th>보유·이용 기간</th></tr></thead>
         <tbody>
-          <!-- 🚨 v2.4 미완 — 게시 전에 반드시 채울 것 (담당: PM 세션)
-               Firebase Cloud Messaging 행이 여기 들어가야 한다. FCM 은 데이터
-               처리 위치를 지정할 수 없는 "Global service" 라(Firebase 공식
-               개인정보 문서, 2026-08-25 두 세션이 각자 원문 확인) 다른 행처럼
-               "미국"이라고 쓸 수 없다.
-               ⚠️ 법무 회신(추가 473 Q11)은 "미국 등"의 "등"을 Google 공개 목록 +
-               기준일 + 출처로 닫으면 된다고 했다. 그 목록을 실제로 열어 확인한
-               뒤 확정 문구를 넣는다. 짐작으로 채우지 말 것.
-               ⚠️ §28조의8① 위반은 과태료가 아니라 과징금(매출 3% 이하)이다.
-               이 행이 비어 있는 채로 게시하면 안 된다. -->
+          <!-- ⚠️ 이 행의 "이전되는 국가" 칸은 다른 행들과 다르게 쓰여 있다. 지우거나
+               "미국"으로 바꾸지 말 것 — 아래 경위가 있다(2026-08-26 확인).
+
+               FCM 은 데이터 처리 위치를 지정할 수 없는 "Global service" 다.
+               Firebase 공식 개인정보 문서 원문:
+                 "They could process data at any of the Google Cloud Platform
+                  locations or Google data center locations."
+
+               🚨 국가를 세어 열거하는 방식을 시도했다가 접었다. 법무 회신(추가 473
+               Q11)은 '"등"을 Google 공개 목록 + 기준일 + 출처로 닫으면 된다'고
+               했는데, 그 목록을 실제로 열어 보니 닫히지 않는다:
+
+                 cloud.google.com/about/locations   43개 리전이라고만 하고
+                                                    국가를 직접 나열하지 않는다
+                 datacenters.google/locations       "30개 위치·11개 국가"라 적혀 있는데
+                                                    화면에 열거된 지역과 수가 안 맞는다
+
+               두 목록은 서로 다른 것을 센다(클라우드 리전 vs 자체 데이터센터).
+               원문이 "any of ... or ..." 로 둘 다 열어 두므로, 어느 목록을 옮겨
+               적어도 "그 목록이 곧 FCM 의 이전 국가"라고 말할 근거가 없다.
+               → 그래서 국가를 세지 않고 범위와 출처로 적었다.
+
+               ⚠️ 위 Firebase Authentication 행의 "미국"은 다르다. 같은 문서의
+               "US-only services" 절이 "Firebase Authentication processes data
+               exclusively in the United States" 라고 못 박고 있어 확정이다.
+
+               🚨 게시 전 선임 변호사 확인이 필요한 자리다 — 국가를 특정하지 않는
+               이 표기가 §28조의8① 고지 요건을 충족하는지는 조사로 판정할 수 없었다.
+               같은 조 위반은 과태료가 아니라 과징금(매출 3% 이하)이다. -->
+          <tr>
+            <td>Google LLC<br><span class="note">(Firebase Cloud Messaging)</span></td>
+            <td>기기 알림 토큰, 알림 내용</td>
+            <td><b>구글이 데이터센터·클라우드 리전을 운영하는 국가</b>(미국 포함)<br><span class="note">이 서비스는 데이터 처리 위치를 지정할 수 없습니다. 구글이 공개하는 위치는 <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">firebase.google.com/support/privacy</a> · <a href="https://cloud.google.com/about/locations" target="_blank" rel="noopener">cloud.google.com/about/locations</a> · <a href="https://datacenters.google/locations" target="_blank" rel="noopener">datacenters.google/locations</a> 에서 확인하실 수 있습니다(2026년 8월 26일 확인 기준).</span></td>
+            <td>앱 알림 발송 시점에 정보통신망을 통한 전송</td>
+            <td>앱 알림으로 광고성 정보 발송</td>
+            <td>수신 동의를 철회하거나 회원 탈퇴할 때까지</td>
+          </tr>
           <tr>
             <td>OpenMeteo GmbH</td>
             <td>브리핑 참고용 날씨 정보 조회</td>
