@@ -56,35 +56,44 @@ class AdConsentView extends StatefulWidget {
     this.initialPush = false,
     this.submitLabel = '시작하기',
     this.footnote = '하나도 선택하지 않고 시작하셔도 괜찮아요',
-    this.dismissOnSaveFailure = false,
+    this.dismissOnSubmit = false,
   });
 
-  /// 저장에 실패했을 때 **화면을 닫을지.**
+  /// 답을 제출했을 때 **화면을 닫을지.**
   ///
-  /// ## 🚨 왜 이 값이 생겼나
+  /// ## 🚨 왜 이 값이 생겼나 — 두 번에 걸쳐 드러났다
   ///
-  /// 2026-08-26 폴드 실측: `firestore.rules` 가 아직 배포되지 않아 서버가
-  /// 쓰기를 거부하는데(`PERMISSION_DENIED`), **그러면 이 화면을 지나갈 수가
-  /// 없었다.** [submitLabel] 을 눌러도 *"설정을 저장하지 못했어요"* 만 뜨고
-  /// 제자리다. 로그에 세 번 찍혀 있었다 — 사용자가 세 번 눌렀다는 뜻이다.
+  /// **① 저장 실패**(2026-08-26 폴드): `firestore.rules` 가 아직 배포되지 않아
+  /// 서버가 쓰기를 거부하는데(`PERMISSION_DENIED`), **그러면 이 화면을 지나갈
+  /// 수가 없었다.** [submitLabel] 을 눌러도 *"설정을 저장하지 못했어요"* 만
+  /// 뜨고 제자리다.
+  ///
+  /// **② 저장 성공**(같은 날, rules 배포 직후): 실패를 고쳤더니 **성공해도
+  /// 못 나갔다.** `if (ok) return;` 이라 성공 경로에는 **화면을 닫는 코드가
+  /// 아예 없었다.**
+  ///
+  /// 📌 **①이 ②를 가리고 있었다.** 배포 전에는 항상 실패했으니 성공 경로가
+  /// 한 번도 안 돌았고, 그래서 **비어 있다는 것이 안 보였다.** 앞의 결함을
+  /// 고치자마자 뒤의 결함이 같은 증상으로 나타났다 — 화면은 똑같이 안 닫히는데
+  /// 이번에는 로그에 `PERMISSION_DENIED` 조차 없었다.
   ///
   /// ⚠️ **화면은 "받지 않으셔도 모든 기능을 그대로 쓰실 수 있어요" 라고
-  /// 말하는데, 실제로는 앱에 들어갈 수가 없었다.** 문구와 동작이 어긋났다.
-  /// 안드로이드 뒤로가기로만 빠져나올 수 있었고 그런 안내는 어디에도 없다.
+  /// 말하는데 실제로는 앱에 들어갈 수가 없었다.** 안드로이드 뒤로가기가 유일한
+  /// 탈출구였고 그런 안내는 어디에도 없다.
   ///
-  /// 자동 테스트는 전부 통과했다 — *"저장이 실패하면 안내를 띄운다"* 까지는
-  /// 맞게 돌았기 때문이다. **막다른 길이 된다는 것은 화면에서만 보인다.**
+  /// 📌 **자동 테스트는 둘 다 통과하고 있었다** — 화면이 *"안내를 띄운다"* 까지는
+  /// 맞게 돌았기 때문이다. **규칙은 지켰는데 사람이 갇혔다.**
   ///
   /// ## 첫 물음과 설정에서 다르게 다룬다
   ///
-  /// | | 저장 실패했을 때 |
+  /// | | 제출했을 때 |
   /// |---|---|
-  /// | **첫 물음**(`true`) | 알리고 **닫는다** — 앱을 못 쓰게 막으면 안 된다 |
-  /// | **설정**(`false`) | 알리고 **머문다** — 바꾸러 들어온 사람이다 |
+  /// | **첫 물음**(`true`) | 성공이든 실패든 **닫는다** — 앱을 못 쓰게 막으면 안 된다 |
+  /// | **설정**(`false`) | 머문다 — 바꾸러 들어온 사람이고, 결과를 화면에서 본다 |
   ///
-  /// 닫아도 안전하다. 저장이 안 됐으니 **동의하지 않은 상태**로 남고, 그
-  /// 상태에서는 아무것도 보내지 않는다.
-  final bool dismissOnSaveFailure;
+  /// 실패해도 닫는 것이 안전하다. 저장이 안 됐으니 **동의하지 않은 상태**로
+  /// 남고, 그 상태에서는 아무것도 보내지 않는다.
+  final bool dismissOnSubmit;
 
   /// 설정에서 다시 열 때의 현재 값.
   ///
@@ -145,11 +154,16 @@ class _AdConsentViewState extends State<AdConsentView> {
     final ok = await widget.onSubmit(email: email, push: push);
     if (!mounted) return;
     setState(() => _busy = false);
-    if (ok) return;
+    // 🚨 **첫 물음이면 성공해도 닫는다.** 성공 경로에 닫는 코드가 없어서
+    //    `rules` 를 배포한 직후 **저장은 되는데 못 나가는** 상태가 됐다
+    //    (2026-08-26 폴드, [dismissOnSubmit] 주석 참고).
+    if (ok) {
+      if (widget.dismissOnSubmit) Navigator.of(context).pop();
+      return;
+    }
 
-    // 🚨 **첫 물음이면 닫는다.** 여기서 머물면 앱에 들어갈 길이 없다
-    //    ([dismissOnSaveFailure] 주석 참고).
-    if (widget.dismissOnSaveFailure) {
+    // 🚨 **첫 물음이면 실패해도 닫는다.** 여기서 머물면 앱에 들어갈 길이 없다.
+    if (widget.dismissOnSubmit) {
       final navigator = Navigator.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
