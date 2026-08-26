@@ -2,13 +2,24 @@ class MyProfileModel {
   final String name;
   final String title;
   final String company;
+  /// 부서 — 명함에 흔히 있는데 이 화면에는 칸이 없어 **OCR이 읽고도 버리던**
+  /// 값이다(2026-08-26). 남의 명함(`ContactModel.department`)에는 이미 있었다.
+  final String? department;
   final String phone;
+  /// 사무실 전화 — 휴대폰과 별개. 명함에 둘 다 인쇄된 경우가 흔하다.
+  final String? officePhone;
+  /// 팩스 — 지금도 명함에 남아 있는 항목이라 OCR이 읽는다.
+  final String? fax;
   final String email;
+  /// 웹사이트 — 회사 홈페이지. vCard의 `URL`로 나간다.
+  final String? website;
   // 주소1 — 도로명 등 기본 주소(위치 정보의 기준이 되는 부분).
   final String address;
   // 상세주소 — 건물명/동/호수 등. 위치 정보(지오코딩)에는 쓰이지 않고 표시용으로만
   // 별도 보관.
   final String? addressDetail;
+  /// 우편번호 — 지오코딩에는 쓰지 않고 표시·vCard용이다.
+  final String? postalCode;
   // 내 프로필 사진 — 연락처 아바타(프리셋 URL 순환)와 달리 본인의 실제 사진이라
   // 갤러리에서 고른 이미지를 앱 문서 디렉터리에 복사해 둔 로컬 파일 경로를 저장한다.
   final String? avatarPath;
@@ -36,7 +47,12 @@ class MyProfileModel {
     required this.phone,
     required this.email,
     required this.address,
+    this.department,
+    this.officePhone,
+    this.fax,
+    this.website,
     this.addressDetail,
+    this.postalCode,
     this.avatarPath,
     this.birthMonthDay,
   });
@@ -97,7 +113,12 @@ class MyProfileModel {
     'phone': phone,
     'email': email,
     'address': address,
+    'department': department,
+    'officePhone': officePhone,
+    'fax': fax,
+    'website': website,
     'addressDetail': addressDetail,
+    'postalCode': postalCode,
     'avatarPath': avatarPath,
     'birthMonthDay': birthMonthDay,
   };
@@ -109,7 +130,16 @@ class MyProfileModel {
     phone: json['phone'] as String? ?? defaultProfile.phone,
     email: json['email'] as String? ?? defaultProfile.email,
     address: json['address'] as String? ?? defaultProfile.address,
+    // 아래 다섯은 2026-08-26에 생긴 칸이다. 그 전에 저장된 프로필에는 키가
+    // 아예 없어 null로 읽힌다 — birthMonthDay와 같은 이유로 마이그레이션이
+    // 필요 없다. 반대로 낡은 앱이 새 JSON을 읽어도 모르는 키를 무시하므로
+    // 스키마 버전을 올리지 않는다.
+    department: json['department'] as String?,
+    officePhone: json['officePhone'] as String?,
+    fax: json['fax'] as String?,
+    website: json['website'] as String?,
     addressDetail: json['addressDetail'] as String?,
+    postalCode: json['postalCode'] as String?,
     avatarPath: json['avatarPath'] as String?,
     // 이 필드가 없던 시절에 저장된 프로필은 null로 읽힌다 — 마이그레이션 불필요.
     birthMonthDay: json['birthMonthDay'] as String?,
@@ -122,7 +152,12 @@ class MyProfileModel {
     String? phone,
     String? email,
     String? address,
+    String? department,
+    String? officePhone,
+    String? fax,
+    String? website,
     String? addressDetail,
+    String? postalCode,
     // 사진을 지우는 경우까지 표현해야 해서(값 있음/없음/명시적 null) 다른
     // 필드처럼 `?? this.x`로는 부족함 — 항상 이 값 그대로 반영한다는 별도
     // 플래그를 둔다.
@@ -139,7 +174,12 @@ class MyProfileModel {
       phone: phone ?? this.phone,
       email: email ?? this.email,
       address: address ?? this.address,
+      department: department ?? this.department,
+      officePhone: officePhone ?? this.officePhone,
+      fax: fax ?? this.fax,
+      website: website ?? this.website,
       addressDetail: addressDetail ?? this.addressDetail,
+      postalCode: postalCode ?? this.postalCode,
       avatarPath: clearAvatar ? null : (avatarPath ?? this.avatarPath),
       birthMonthDay:
           clearBirthday ? null : (birthMonthDay ?? this.birthMonthDay),

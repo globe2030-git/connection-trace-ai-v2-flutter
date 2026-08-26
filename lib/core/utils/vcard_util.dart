@@ -10,17 +10,34 @@ class VCardUtil {
       ..writeln('VERSION:3.0')
       ..writeln('N:;${profile.name};;;')
       ..writeln('FN:${profile.name}');
-    if (profile.company.isNotEmpty) buffer.writeln('ORG:${profile.company}');
+    // 부서는 vCard 3.0에서 ORG의 두 번째 성분이다(`ORG:회사;부서`).
+    if (profile.company.isNotEmpty) {
+      final dept = profile.department?.trim() ?? '';
+      buffer.writeln(
+        dept.isEmpty
+            ? 'ORG:${profile.company}'
+            : 'ORG:${profile.company};$dept',
+      );
+    }
     if (profile.title.isNotEmpty) buffer.writeln('TITLE:${profile.title}');
     if (profile.phone.isNotEmpty)
       buffer.writeln('TEL;TYPE=CELL:${profile.phone}');
+    final officePhone = profile.officePhone?.trim() ?? '';
+    if (officePhone.isNotEmpty)
+      buffer.writeln('TEL;TYPE=WORK:$officePhone');
+    final fax = profile.fax?.trim() ?? '';
+    if (fax.isNotEmpty) buffer.writeln('TEL;TYPE=FAX:$fax');
     if (profile.email.isNotEmpty) buffer.writeln('EMAIL:${profile.email}');
+    final website = profile.website?.trim() ?? '';
+    if (website.isNotEmpty) buffer.writeln('URL:$website');
     final addressLine = [
       profile.address,
       profile.addressDetail,
     ].where((s) => s != null && s.trim().isNotEmpty).join(' ');
+    // ADR 성분 순서: 사서함;확장;거리;시;도;우편번호;국가 — 우편번호는 여섯째다.
+    final postal = profile.postalCode?.trim() ?? '';
     if (addressLine.isNotEmpty)
-      buffer.writeln('ADR;TYPE=WORK:;;$addressLine;;;;');
+      buffer.writeln('ADR;TYPE=WORK:;;$addressLine;;;$postal;');
     buffer.writeln('END:VCARD');
     return buffer.toString();
   }

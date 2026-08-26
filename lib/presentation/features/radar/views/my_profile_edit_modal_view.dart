@@ -53,6 +53,12 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   late final TextEditingController _emailController;
   late final TextEditingController _addressController;
   late final TextEditingController _addressDetailController;
+  // 아래 다섯은 OCR이 읽어 오면서도 담을 칸이 없어 버려지던 값이다(2026-08-26).
+  late final TextEditingController _departmentController;
+  late final TextEditingController _officePhoneController;
+  late final TextEditingController _faxController;
+  late final TextEditingController _websiteController;
+  late final TextEditingController _postalCodeController;
 
   /// 생일(월·일). 저장은 "MM-DD" 한 문자열이지만 입력은 두 목록으로 받는다.
   int? _birthMonth;
@@ -81,6 +87,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _phoneController = TextEditingController(text: profile.phone);
     _emailController = TextEditingController(text: profile.email);
     _addressController = TextEditingController(text: profile.address);
+    _departmentController = TextEditingController(
+      text: profile.department ?? '',
+    );
+    _officePhoneController = TextEditingController(
+      text: profile.officePhone ?? '',
+    );
+    _faxController = TextEditingController(text: profile.fax ?? '');
+    _websiteController = TextEditingController(text: profile.website ?? '');
+    _postalCodeController = TextEditingController(
+      text: profile.postalCode ?? '',
+    );
     _birthMonth = profile.birthMonth;
     _birthDay = profile.birthDay;
     _addressDetailController = TextEditingController(
@@ -98,13 +115,29 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _emailController.dispose();
     _addressController.dispose();
     _addressDetailController.dispose();
+    _departmentController.dispose();
+    _officePhoneController.dispose();
+    _faxController.dispose();
+    _websiteController.dispose();
+    _postalCodeController.dispose();
     super.dispose();
   }
 
   Future<void> _openAddressSearch() async {
+    // 입력칸에 이미 있는 주소를 검색어로 넘긴다. 안 넘기면 빈 검색창이 떠
+    // 처음부터 다시 타이핑해야 한다 — 명함 등록 화면은 넘기고 있었는데
+    // 이 화면만 빠져 있었다(사용자 제보, 2026-08-26).
+    //
+    // ⚠️ 예전에는 클립보드에 복사해 두는 방식이라 넘기지 않아도 티가 덜
+    // 났는데, 그 방식을 걷어내면서(웹뷰에서 붙여넣기가 안 됐다) 이 화면만
+    // **기존 주소가 검색창으로 가는 경로가 아예 없는** 상태가 됐다.
+    final query = _addressController.text.trim();
     final result = await Navigator.push<AddressSearchResult>(
       context,
-      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+      MaterialPageRoute(
+        builder: (_) =>
+            AddressSearchView(initialQuery: query.isEmpty ? null : query),
+      ),
     );
     if (result == null || !mounted) return;
     setState(() {
@@ -163,20 +196,31 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     if (result == null || !mounted) return;
 
     setState(() {
-      if (result!.name.trim().isNotEmpty)
-        _nameController.text = result.name.trim();
-      if (result.title.trim().isNotEmpty)
-        _titleController.text = result.title.trim();
-      if (result.company.trim().isNotEmpty)
-        _companyController.text = result.company.trim();
-      if (result.phone.trim().isNotEmpty)
-        _phoneController.text = result.phone.trim();
-      if (result.email.trim().isNotEmpty)
-        _emailController.text = result.email.trim();
-      if (result.address.trim().isNotEmpty)
-        _setTextFromStart(_addressController, result.address.trim());
-      if (result.addressDetail.trim().isNotEmpty)
-        _addressDetailController.text = result.addressDetail.trim();
+      final scanned = result!;
+      // 읽힌 값만 덮어쓴다 — 빈 문자열은 "못 읽었다"는 뜻이라, 그걸로 덮으면
+      // 사용자가 손으로 넣어 둔 값이 스캔 한 번에 지워진다.
+      void fill(TextEditingController controller, String value) {
+        final trimmed = value.trim();
+        if (trimmed.isNotEmpty) controller.text = trimmed;
+      }
+
+      fill(_nameController, scanned.name);
+      fill(_titleController, scanned.title);
+      fill(_companyController, scanned.company);
+      fill(_phoneController, scanned.phone);
+      fill(_emailController, scanned.email);
+      final address = scanned.address.trim();
+      // 주소만 다른 함수를 쓴다 — 한 줄짜리 칸이라 커서가 끝으로 가면
+      // 주소 앞부분이 안 보인다(_setTextFromStart 주석 참고).
+      if (address.isNotEmpty) _setTextFromStart(_addressController, address);
+      fill(_addressDetailController, scanned.addressDetail);
+      // 아래 다섯은 OCR이 예전부터 읽고 있었는데 **받을 칸이 없어 버려졌다**
+      // (2026-08-26 사용자 지적). 칸을 만들면서 함께 잇는다.
+      fill(_departmentController, scanned.department);
+      fill(_officePhoneController, scanned.officePhone);
+      fill(_faxController, scanned.fax);
+      fill(_websiteController, scanned.website);
+      fill(_postalCodeController, scanned.postalCode);
     });
 
     // 명함 앞/뒷면에 정보가 나뉜 경우가 흔해서(add_card_modal_view.dart와 동일한
@@ -270,6 +314,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     });
   }
 
+  /// 빈 칸은 `''`가 아니라 null로 저장한다 — 모델의 선택 항목이 전부
+  /// nullable이고, `''`와 null이 섞이면 "값이 있나"를 두 가지로 물어야 한다.
+  static String? _emptyToNull(TextEditingController c) {
+    final v = c.text.trim();
+    return v.isEmpty ? null : v;
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -283,6 +334,11 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
           : _addressDetailController.text.trim(),
+      department: _emptyToNull(_departmentController),
+      officePhone: _emptyToNull(_officePhoneController),
+      fax: _emptyToNull(_faxController),
+      website: _emptyToNull(_websiteController),
+      postalCode: _emptyToNull(_postalCodeController),
       avatarPath: _avatarCleared ? null : _avatarPath,
       // 월만 고르고 일을 안 고른 상태는 저장하지 않는다(formatMonthDay가 null).
       birthMonthDay: MyProfileModel.formatMonthDay(_birthMonth, _birthDay),
@@ -457,11 +513,33 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   ),
                   const SizedBox(height: 12),
                   _buildField(
+                    controller: _departmentController,
+                    label: '부서 (선택)',
+                    hint: '예: 영업본부',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
                     controller: _phoneController,
                     label: '휴대폰 번호 *',
                     hint: '예: 010-1234-5678',
                     keyboardType: TextInputType.phone,
                     required: true,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _officePhoneController,
+                    label: '사무실 전화 (선택)',
+                    hint: '예: 02-1234-5678',
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _faxController,
+                    label: '팩스 (선택)',
+                    hint: '예: 02-1234-5679',
+                    keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
                   ),
                   const SizedBox(height: 12),
@@ -478,6 +556,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                         return '올바른 이메일 형식을 입력해 주세요.';
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _websiteController,
+                    label: '웹사이트 (선택)',
+                    hint: '예: https://example.com',
+                    keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -499,6 +584,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     controller: _addressDetailController,
                     label: '상세주소 (선택)',
                     hint: '예: 5층 501호',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _postalCodeController,
+                    label: '우편번호 (선택)',
+                    hint: '예: 06134',
+                    keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 12),
                   _buildBirthdayField(),

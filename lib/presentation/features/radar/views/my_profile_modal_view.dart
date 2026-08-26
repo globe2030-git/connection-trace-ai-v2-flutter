@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../data/models/my_profile_model.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/glass_card.dart';
 import 'my_profile_edit_modal_view.dart';
@@ -19,6 +20,11 @@ class MyProfileModalView extends StatelessWidget {
             profile.addressDetail!.trim().isNotEmpty)
         ? '${profile.address} ${profile.addressDetail}'
         : profile.address;
+    // 우편번호가 있으면 주소 앞에 괄호로 붙인다(우편물 표기 관례).
+    final postalCode = profile.postalCode?.trim() ?? '';
+    final addressLine = postalCode.isEmpty
+        ? fullAddress
+        : '($postalCode) $fullAddress';
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -183,7 +189,7 @@ class MyProfileModalView extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                '${profile.company} / ${profile.title}',
+                                _companyLine(profile),
                                 style: const TextStyle(
                                   fontSize: 13,
                                   color: AppColors.textSecondary,
@@ -214,6 +220,14 @@ class MyProfileModalView extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if ((profile.officePhone ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _iconLine(Icons.phone_outlined, profile.officePhone!),
+                    ],
+                    if ((profile.fax ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _iconLine(Icons.print_outlined, profile.fax!),
+                    ],
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -232,6 +246,10 @@ class MyProfileModalView extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if ((profile.website ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _iconLine(Icons.language, profile.website!),
+                    ],
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -243,7 +261,7 @@ class MyProfileModalView extends StatelessWidget {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            fullAddress,
+                            addressLine,
                             style: const TextStyle(
                               fontSize: 13,
                               color: AppColors.textPrimary,
@@ -289,6 +307,36 @@ class MyProfileModalView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// 회사 / 직함 줄. 부서가 있으면 회사 옆에 붙인다 — 별도 줄을 만들면
+  /// 이 카드가 세로로 길어지는데, 부서는 회사에 딸린 값이라 같은 줄이 맞다.
+  static String _companyLine(MyProfileModel profile) {
+    final dept = profile.department?.trim() ?? '';
+    final org = dept.isEmpty
+        ? profile.company
+        : '${profile.company} · $dept';
+    return '$org / ${profile.title}';
+  }
+
+  /// 휴대폰·이메일 줄과 같은 모양의 한 줄. 선택 항목(사무실 전화·팩스·
+  /// 웹사이트)은 값이 있을 때만 그려지므로 이 함수로 모아 둔다.
+  static Widget _iconLine(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textPrimary,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
