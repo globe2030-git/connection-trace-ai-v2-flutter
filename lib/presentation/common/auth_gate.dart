@@ -15,6 +15,7 @@ import '../../data/repositories/my_profile_repository.dart';
 import '../features/auth/views/ad_consent_notice_dialog.dart';
 import '../features/auth/views/ad_consent_view.dart';
 import '../features/auth/views/login_view.dart';
+import '../../core/services/card_photo_backup_state.dart';
 
 /// 계정 전환 안전장치(backlog #50)에서 "이 기기에 마지막으로 로그인했던
 /// uid"를 기억해두는 shared_preferences 키. 앱 재시작에도 유지되어야 해서
@@ -138,6 +139,18 @@ class _AuthGateState extends State<AuthGate> {
         await contactsRepo.clearLocal();
         await profileRepo.clearLocal();
         await groupsRepo.clearLocal();
+        // 🚨 사진 백업 장부도 비운다 (추가 518).
+        //
+        // 이 장부는 **앞 계정이 무엇을 백업했는지**를 기록한다. 안 비우면
+        // 새 계정 설정 화면에 **앞 사람 숫자가 그대로 뜬다** —
+        // `CardPhotoBackupStateService.clear()` 주석이 정확히 그 경우를
+        // 위해 만들어졌다고 적고 있는데, **부르는 곳이 0건이었다**(추가 79와
+        // 같은 모양).
+        //
+        // ⚠️ 위 주석대로 **기기의 사진 파일 자체는 여기서 안 지운다.** 그건
+        //    개인정보 최소화와 데이터 보전이 부딪히는 별개 판단이고,
+        //    사진 서버 백업이 켜진 지금 다시 봐야 한다(아래 ⚠️ 참고).
+        await CardPhotoBackupStateService().clear();
         await contactsRepo.forceRestoreFromServer(uid);
         await profileRepo.forceRestoreFromServer(uid);
         await groupsRepo.forceRestoreFromServer(uid);
