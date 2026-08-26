@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show compute;
 
 /// 위변조되었거나(MAC 불일치) 잘못된 키로 복호화를 시도했을 때 던지는 예외.
 ///
@@ -39,14 +40,45 @@ class DataCryptoService {
   /// [json]을 UTF-8 JSON 문자열로 직렬화한 뒤 AES-256-GCM으로 암호화한다.
   /// 반환값은 `nonce + ciphertext + MAC`을 이어붙여 base64 문자열 하나로
   /// 인코딩한 것 — 별도 필드 구조 없이 문자열 하나로 저장/전송하기 위함.
+  /// ## ⚠️ 크기와 무관하게 항상 별도 isolate에서 돈다 (추가 481)
+  ///
+  /// 작은 데이터는 그냥 여기서 하는 게 빠르지 않을까 싶어 **경계값을 두는
+  /// 안을 검토했다가 버렸다.** 재 보니 띄우는 값이 생각보다 작았다.
+  ///
+  /// ```
+  /// 명함 한 장 크기(약 400B)를 500번 암호화   맥 실측, 2026-08-25
+  ///   인라인   13ms
+  ///   isolate  41ms      → 500번에 28ms, 한 번에 0.06ms
+  /// ```
+  ///
+  /// 📌 **`data_backup_service.rebackupAllContacts`가 명함마다 한 번씩
+  /// 부른다**(반복문 안). 그래서 이 경우를 재 봤는데, 28ms는 같은 함수가
+  /// 이어서 하는 Firestore 일괄 쓰기(네트워크) 옆에서 눈에 띄지 않는다.
+  ///
+  /// **경계값을 두면 분기가 하나 늘고 그 분기를 시험해야 한다.** 아끼는 것이
+  /// 28ms뿐이라 사지 않았다.
   static Future<String> encryptJson(
     Map<String, dynamic> json,
     SecretKey key,
   ) async {
-    final plainBytes = utf8.encode(jsonEncode(json));
-    final nonce = _algorithm.newNonce();
-    final secretBox = await _algorithm.encrypt(
-      plainBytes,
+    final plainBytes = Uint8List.fromList(utf8.encode(jsonEncode(json)));
+    final keyBytes = Uint8List.fromList(await key.extractBytes());
+    return compute(_encryptWorker, <Uint8List>[plainBytes, keyBytes]);
+  }
+
+  /// 별도 isolate에서 도는 실제 암호화. `compute()`가 부르므로 **톱레벨/정적
+  /// 함수여야 하고 인자가 하나여야 한다.**
+  ///
+  /// ⚠️ [SecretKey] 객체를 그대로 넘기지 않고 **바이트로 풀어 넘긴 뒤 여기서
+  /// 다시 만든다.** `SecretKey`가 isolate 경계를 넘을 수 있는지에 기대지
+  /// 않기 위함이다 — 넘어가더라도 구현이 바뀌면 조용히 깨질 자리다.
+  /// `Uint8List`는 확실히 넘어간다.
+  static Future<String> _encryptWorker(List<Uint8List> args) async {
+    final algorithm = AesGcm.with256bits();
+    final key = SecretKey(args[1]);
+    final nonce = algorithm.newNonce();
+    final secretBox = await algorithm.encrypt(
+      args[0],
       secretKey: key,
       nonce: nonce,
     );
@@ -126,32 +158,57 @@ class DataCryptoService {
       throw DataDecryptionException('암호문 길이가 너무 짧음');
     }
 
-    final nonce = combined.sublist(0, nonceLength);
-    final mac = combined.sublist(combined.length - macLength);
-    final cipherText = combined.sublist(
-      nonceLength,
-      combined.length - macLength,
+    final keyBytes = Uint8List.fromList(await key.extractBytes());
+    final result = await compute(
+      _decryptWorker,
+      <Uint8List>[combined, keyBytes],
     );
 
-    try {
-      final secretBox = SecretBox(
-        cipherText,
-        nonce: nonce,
-        mac: Mac(mac),
-      );
-      final plainBytes = await _algorithm.decrypt(secretBox, secretKey: key);
-      final decoded = jsonDecode(utf8.decode(plainBytes));
-      if (decoded is! Map<String, dynamic>) {
-        throw DataDecryptionException('복호화 결과가 JSON 객체가 아님');
-      }
-      return decoded;
-    } on DataDecryptionException {
-      rethrow;
-    } catch (e) {
+    // ⚠️ 실패를 **예외가 아니라 값으로** 돌려받는다. isolate 경계 너머로
+    // 던지려면 예외 객체 자체가 넘어갈 수 있어야 하는데, cryptography가
+    // 던지는 SecretBoxAuthenticationError가 그럴 수 있는지에 기댈 수 없다.
+    // 넘어가더라도 패키지 구현이 바뀌면 조용히 깨질 자리다.
+    final errorText = result[1] as String?;
+    if (errorText != null) {
       // cryptography 패키지는 MAC 불일치 시 SecretBoxAuthenticationError를
       // 던진다 — 위변조/잘못된 키 케이스를 모두 이 하나의 예외 타입으로
       // 통일해 호출자가 구분 없이 처리할 수 있게 한다.
-      throw DataDecryptionException('복호화 실패(위변조 또는 잘못된 키)', e);
+      throw DataDecryptionException('복호화 실패(위변조 또는 잘못된 키)', errorText);
+    }
+
+    final decoded = jsonDecode(result[0] as String);
+    if (decoded is! Map<String, dynamic>) {
+      throw DataDecryptionException('복호화 결과가 JSON 객체가 아님');
+    }
+    return decoded;
+  }
+
+  /// 별도 isolate에서 도는 실제 복호화. 성공하면 `[JSON 문자열, null]`,
+  /// 실패하면 `[null, 오류 설명]`을 돌려준다.
+  ///
+  /// ⚠️ **던지지 않고 돌려준다.** 위 [decryptJson] 주석 참고.
+  ///
+  /// 📌 `jsonDecode`는 여기서 하지 않고 부르는 쪽에 남겼다 — 여기서 하면
+  /// 큰 Map을 isolate 경계로 복사해야 하는데, 문자열 하나를 넘기는 편이
+  /// 싸다. 무거운 것(base64 디코딩·AES)은 이미 여기로 넘어와 있다.
+  static Future<List<Object?>> _decryptWorker(List<Uint8List> args) async {
+    const nonceLength = 12;
+    const macLength = 16;
+    final combined = args[0];
+    try {
+      final algorithm = AesGcm.with256bits();
+      final secretBox = SecretBox(
+        combined.sublist(nonceLength, combined.length - macLength),
+        nonce: combined.sublist(0, nonceLength),
+        mac: Mac(combined.sublist(combined.length - macLength)),
+      );
+      final plainBytes = await algorithm.decrypt(
+        secretBox,
+        secretKey: SecretKey(args[1]),
+      );
+      return <Object?>[utf8.decode(plainBytes), null];
+    } catch (e) {
+      return <Object?>[null, '$e'];
     }
   }
 }
