@@ -225,6 +225,11 @@ class _AuthGateState extends State<AuthGate> {
         fullscreenDialog: true,
         builder: (_) => AdConsentView(
           provider: provider,
+          // 🚨 **저장에 실패해도 닫는다.** 여기서 머물면 앱에 들어갈 길이
+          //    없다 — `firestore.rules` 가 배포되기 전에는 서버가 쓰기를
+          //    거부하므로 [submitLabel] 을 몇 번 눌러도 제자리다
+          //    (2026-08-26 폴드 실측, `AdConsentView.dismissOnSaveFailure`).
+          dismissOnSaveFailure: true,
           onSubmit: ({required email, required push}) async {
             final ok = await service.save(
               uid: uid,
