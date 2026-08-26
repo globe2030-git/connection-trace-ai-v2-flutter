@@ -477,6 +477,19 @@ class ContactImageService {
     }
     if (uid != null && contactId != null) {
       await _photoBackup.delete(uid: uid, contactId: contactId);
+      // 🚨 장부에서도 지운다 (추가 518).
+      //
+      // 2026-08-26 이전에는 이 줄이 없었다. 서버 객체는 지워지는데
+      // **장부에는 「백업됨」으로 남아** 설정 화면이 실제보다 많은 수를
+      // 보여줬다(실측: 서버 102건인데 화면은 104장).
+      //
+      // ⚠️ 그리고 지운 명함이 **한도(2,000장)를 계속 차지한다.**
+      //    등록·삭제를 반복하면 실제 저장량보다 훨씬 빨리 한도에 닿는다.
+      //
+      // 📌 `forget()` 은 만들어져 있었는데 **부르는 곳이 0건**이었다.
+      //    추가 79에서 겪은 *"서비스는 정상인데 부르는 쪽이 없다"* 와
+      //    같은 모양이다.
+      await _backupState.forget(contactId);
     }
   }
 
@@ -528,6 +541,9 @@ class ContactImageService {
       debugPrint('명함 이미지 목록 조회 실패: ${e.runtimeType}');
     }
     _decryptedCache.clear();
+    // 🚨 장부도 통째로 비운다 (추가 518). 파일과 서버 객체를 다 지웠는데
+    //    장부만 남으면 다음 계정 화면에 앞 사람 숫자가 뜬다.
+    await _backupState.clear();
     return failed;
   }
 }
