@@ -4,7 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/sns_auth_provider.dart';
 
-/// 광고성 정보 수신 동의를 보관한다(추가 472 · 시행 2026-09-15).
+/// 광고성 정보 수신 동의를 보관한다(추가 472 · 방침 v2.4 시행 후 유효).
+///
+/// ⚠️ **여기에 시행일을 적지 않는다**(2026-08-26 결정). 날짜는 방침 문서
+/// (`docs/legal/privacy-policy.html`) 한 곳에만 둔다.
 ///
 /// ## 🚨 [PhotoImprovementConsentService]를 그대로 베끼면 안 된다
 ///
