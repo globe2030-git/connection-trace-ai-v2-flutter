@@ -45,6 +45,47 @@ case "$MODE" in
   *) echo "빌드 모드는 release / debug / profile 중 하나여야 합니다: $MODE" >&2; exit 2 ;;
 esac
 
+# 릴리스 서명 확인 — 워크트리마다 다르다.
+#
+# android/key.properties 는 .gitignore 대상이라 git 이 워크트리 사이로 옮겨
+# 주지 않는다. 없으면 build.gradle.kts 가 **경고 없이 debug 키로 폴백**한다
+# (android/app/build.gradle.kts 의 buildTypes.release 참고). 그 폴백은
+# `flutter run --release` 가 서명 파일 없는 환경에서도 돌게 하려고 일부러
+# 둔 것이라 빼지 않는다 — 대신 배포용 산출물을 만드는 이 진입점에서 막는다.
+#
+# 2026-08-25 실측: 워크트리 15개 중 key.properties 가 있는 곳은 4개뿐이었다.
+# 즉 아무 워크트리에서나 릴리스를 빌드하면 debug 서명본이 나올 확률이
+# 그때 기준 11/15 였다. 2026-08-16 기록은 "넷 중 하나"였으니 나빠졌다.
+#
+# debug 서명본은 스토어에 올라가지 않고, 업로드 키로 서명한 기존 설치본
+# 위에 덮이지도 않는다. 그런데 빌드는 성공하므로 파일을 손에 쥘 때까지
+# 모른다 — 그래서 "경고"가 아니라 "중단"이다.
+if [ "$MODE" = "release" ] && { [ "$TARGET" = "apk" ] || [ "$TARGET" = "appbundle" ]; }; then
+  if [ ! -f android/key.properties ]; then
+    here="$(pwd)"
+    cat >&2 <<SIGNERR
+🚨 릴리스를 빌드할 수 없습니다 — android/key.properties 가 없습니다.
+
+   이대로 빌드하면 빌드는 성공하지만 debug 키로 서명된 산출물이 나옵니다.
+   스토어에 올라가지 않고, 기존 설치본 위에 덮이지도 않습니다.
+
+   지금 위치: $here
+
+   해결:
+     · 본체 워크트리에서 빌드하거나
+     · 이 워크트리에 android/key.properties 를 두십시오
+       (업로드 키 자체는 ~/keys/connectionsense-upload.jks 에 있습니다)
+
+   ⚠️ 서명 파일을 워크트리마다 복사하면 비밀번호가 담긴 파일이 그만큼
+      늘어납니다. 릴리스는 한 곳에서만 빌드하는 편이 낫습니다.
+
+   debug/profile 빌드는 이 검사를 받지 않습니다.
+SIGNERR
+    exit 3
+  fi
+  echo "✅ 릴리스 서명: android/key.properties 확인됨"
+fi
+
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
   # 커밋되지 않은 변경이 섞여 있으면 해시만으로는 코드를 특정할 수 없다.
