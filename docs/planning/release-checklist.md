@@ -226,6 +226,16 @@ KAKAO_REST_KEY · KAKAO_CLIENT_SECRET · NAVER_CLIENT_ID · NAVER_CLIENT_SECRET
 
 ## 6. 배포
 
+⚠️ **테스터에게 보내는 것과 스토어에 올리는 것은 산출물이 다르다.** 같은 커밋에서
+**서로 다른 파일**을 만든다 — 여기서 헷갈리면 Play가 업로드를 거부한다.
+
+| | 무엇을 만드나 | 어디로 | 이용자가 받는 양 |
+|---|---|---|---|
+| **테스터 배포** | fat APK | Firebase App Distribution | **97.3MiB** (ABI 분할 안 함 — 2026-08-26 사용자 결정) |
+| **스토어 제출** | **AAB** | Play Console | **arm64 31.7MiB** (Play가 기기별로 잘라 보낸다) |
+
+### 6-1. 테스터 배포 (APK)
+
 테스터에게 보낼 안내문은 [`tester-guide.md`](./tester-guide.md)에 있다.
 **매번 새로 쓰지 말고 그 문서를 고쳐 쓸 것** — 새로 쓰면 "지금 안 되는 기능"
 목록이 빠져 정상 동작을 결함으로 제보받는다.
@@ -243,6 +253,83 @@ firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.ap
 - 이번에 고친 것과 **확인해 달라는 것**
 - 지금 동작하지 않는 기능(안 그러면 정상 상태를 결함으로 제보받는다)
 - **테스트 데이터가 실제 서버에 저장되므로 끝나면 설정 → 계정 삭제로 정리**
+
+### 6-2. 스토어 제출 (AAB)
+
+```bash
+tool/build_app.sh appbundle release
+# → build/app/outputs/bundle/release/app-release.aab
+```
+
+📌 **선택이 아니다** — Play는 신규 앱을 **AAB로만** 받는다. APK를 올리려 해도
+거부된다(코드 검토 2026-08-25 §3).
+
+#### ⚠️ 파일 크기와 이용자가 받는 양은 다르다 — 실측 (2026-08-26)
+
+```
+AAB 파일                       85.8 MiB   ← 우리가 올리는 것
+  BUNDLE-METADATA(디버그 심볼)  36.0 MiB   ← Play가 기기로 보내지 않는다
+  base/lib/arm64-v8a           19.8 MiB
+  base/lib/armeabi-v7a         17.9 MiB
+  base/(그 외 공통)             11.9 MiB
+
+arm64 기기가 받는 양            31.7 MiB   ← 지금 fat APK 97.3MiB의 3분의 1
+32비트 기기가 받는 양           29.8 MiB
+```
+
+🚨 **여기서 두 번 틀린 전례가 있다**(추가 483). 처음에는 계산으로 *"약 60MB"*라고
+적었고, 재 볼 때는 `BUNDLE-METADATA` 36.0MiB를 공통분에 넣어 세어 **67.7MiB**가
+나왔다. **같은 파일이 *"별로 안 줄어드네"*와 *"3분의 1이 되네"*라는 정반대 결론을
+만든다.** 세는 명령은 위 표를 다시 만들 수 있게 아래에 둔다.
+
+```bash
+python3 - <<'EOF'
+import zipfile, collections
+z = zipfile.ZipFile("build/app/outputs/bundle/release/app-release.aab")
+g = collections.Counter()
+for i in z.infolist():
+    n = i.filename
+    if n.startswith("BUNDLE-METADATA"):  k = "BUNDLE-METADATA(기기로 안 감)"
+    elif n.startswith("base/lib/"):      k = "base/lib/" + n.split("/")[2]
+    elif n.startswith("base/"):          k = "base/(공통)"
+    else:                                k = n.split("/")[0]
+    g[k] += i.compress_size
+for k, v in sorted(g.items(), key=lambda x: -x[1]):
+    print("%-40s %8.1f MiB" % (k, v / 1048576))
+print("arm64 수령 대략치 %.1f MiB" % ((g["base/(공통)"] + g["base/lib/arm64-v8a"]) / 1048576))
+EOF
+```
+
+#### 서명 확인 — 올리기 전에 지문을 대조한다
+
+`tool/build_app.sh`가 `key.properties` 없이는 멈추지만(추가 478), **멈추지 않았다는
+것이 "올바른 키로 서명됐다"를 뜻하지는 않는다.** 지문을 직접 본다.
+
+```bash
+keytool -J-Duser.language=en -printcert \
+  -jarfile build/app/outputs/bundle/release/app-release.aab | grep SHA256
+```
+
+2026-08-26 실측값 — **업로드 키(`~/keys/connectionsense-upload.jks`의 `upload`
+별칭)와 일치했다**:
+
+```
+SHA256: 7D:B2:82:09:17:B0:87:37:06:CF:07:6A:C9:20:20:BD:57:BA:A5:0F:D0:F3:52:CF:46:E5:82:4C:63:F4:01:B9
+Owner:  CN=지금 CreamHouse, OU=dev, O=CreamHouse Co., L=Seoul, ST=Seoul, C=KR
+알고리즘: SHA384withRSA · 유효기간 2026-08-09 ~ 2053-12-25
+```
+
+📌 **이 지문은 비밀이 아니다**(공개 인증서의 해시). 적어 두는 이유는 **Play Console
+등록 뒤 그쪽이 보여 주는 업로드 인증서와 눈으로 대조하기 위해서**다.
+
+#### ⚠️ 아직 확인하지 못한 것 — 스토어 등록 때 사람이 봐야 한다
+
+- **Play App Signing 등록 여부**: 키 이름이 *"upload"*인 것은 그 방식을 전제로
+  만들었다는 뜻이지만, **앱이 아직 Play에 등록돼 있지 않아 확인할 대상이 없다.**
+  등록 화면에서 실제로 어떻게 잡히는지 보고 이 줄을 고칠 것.
+- **32비트(`armeabi-v7a`) 계속 지원할지**: AAB로 가면 **빼도 이용자가 받는 양은
+  안 줄어든다**(기기마다 자기 ABI만 간다). 줄어드는 것은 AAB 파일 크기뿐이라
+  **용량 문제가 아니라 지원 범위 문제**다 — 사용자 결정(추가 483).
 
 ---
 
