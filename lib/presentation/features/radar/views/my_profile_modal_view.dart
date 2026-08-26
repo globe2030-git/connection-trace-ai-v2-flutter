@@ -211,23 +211,16 @@ class MyProfileModalView extends StatelessWidget {
                     const SizedBox(height: 16),
                     const Divider(color: AppColors.borderSubtle),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.phone_iphone,
-                          size: 16,
-                          color: AppColors.textMuted,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          profile.phone,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
+                    // ⚠️ 휴대폰·이메일·주소는 **비어 있을 수 있다**(2026-08-26,
+                    // 필수 규칙 통일). 종전에는 셋 다 무조건 그려서, 비면
+                    // **아이콘만 있고 글자가 없는 줄**이 남았다 — 사무실
+                    // 전화·팩스·웹사이트는 이미 조건부였는데 이 셋만 아니었다.
+                    //
+                    // 폼이 필수였을 때는 저장한 사람에게 값이 늘 있어서 안
+                    // 드러났다. 규칙을 푸는 변경이 이 줄들을 실제로 도달
+                    // 가능하게 만든다 — 그래서 같은 변경 안에서 함께 고친다.
+                    if (profile.phone.trim().isNotEmpty)
+                      _iconLine(Icons.phone_iphone, profile.phone),
                     if ((profile.officePhone ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 8),
                       _iconLine(Icons.phone_outlined, profile.officePhone!),
@@ -236,48 +229,20 @@ class MyProfileModalView extends StatelessWidget {
                       const SizedBox(height: 8),
                       _iconLine(Icons.print_outlined, profile.fax!),
                     ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.email_outlined,
-                          size: 16,
-                          color: AppColors.textMuted,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          profile.email,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
+                    if (profile.email.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _iconLine(Icons.email_outlined, profile.email),
+                    ],
                     if ((profile.website ?? '').trim().isNotEmpty) ...[
                       const SizedBox(height: 8),
                       _iconLine(Icons.language, profile.website!),
                     ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          size: 16,
-                          color: AppColors.textMuted,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            addressLine,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                    // 우편번호·상세주소는 도로명 주소가 있을 때만 뜻이 있다.
+                    // "(06134)"만 덩그러니 뜨면 주소가 아니라 부스러기다.
+                    if (profile.address.trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _iconLine(Icons.location_on_outlined, addressLine),
+                    ],
                   ],
                 ),
               ),
