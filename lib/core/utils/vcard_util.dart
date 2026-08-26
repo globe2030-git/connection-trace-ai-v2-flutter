@@ -1,5 +1,6 @@
 import '../../data/models/contact_model.dart';
 import '../../data/models/my_profile_model.dart';
+import 'contact_export_name.dart';
 
 /// 디지털 명함 QR 코드에 담을 vCard(VERSION 3.0) 텍스트를 만들고 읽는 유틸.
 /// vCard는 업계 표준 포맷이라 아이폰/안드로이드 기본 카메라 앱으로 스캔해도
@@ -56,12 +57,22 @@ class VCardUtil {
   /// 있다.** 메모가 딸려 나가면 이용자가 의도하지 않은 것이 남에게 간다.
   ///
   /// → **명함에 적혀 있었을 값만 내보낸다.**
-  static String encodeContact(ContactModel c) {
+  /// [nameFormat] 은 **주소록 이름 칸에 무엇을 적을지**다(추가 494).
+  /// 기본은 이름만 — 주소록은 이용자의 것이고 이름을 건드리는 쪽이 더 큰
+  /// 개입이다([ContactExportNameFormat] 참고).
+  static String encodeContact(
+    ContactModel c, {
+    ContactExportNameFormat nameFormat = ContactExportNameFormat.nameOnly,
+  }) {
+    // ⚠️ `FN` 과 `N` **둘 다**에 넣는다. 표시에 어느 쪽을 쓰는지 주소록 앱마다
+    //    달라서, 한쪽만 넣으면 **기기에 따라 형식이 안 보인다.** 이름이 앞에
+    //    오므로 정렬은 그대로다.
+    final displayName = buildExportName(c, nameFormat);
     final buffer = StringBuffer()
       ..writeln('BEGIN:VCARD')
       ..writeln('VERSION:3.0')
-      ..writeln('N:;${_esc(c.name)};;;')
-      ..writeln('FN:${_esc(c.name)}');
+      ..writeln('N:;${_esc(displayName)};;;')
+      ..writeln('FN:${_esc(displayName)}');
     if (c.company.isNotEmpty) {
       final dept = c.department?.trim() ?? '';
       buffer.writeln(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/contact_export_name.dart';
 import '../../../../data/models/contact_model.dart';
 
 /// 명함을 내보내기 전에 **무엇이 나가는지** 보여 주는 확인 창(추가 492).
@@ -17,15 +18,31 @@ import '../../../../data/models/contact_model.dart';
 /// 이메일이 없는 명함에 "이메일"을 적으면 **거짓말**이다. 이 저장소는 화면을
 /// 채우려고 없는 것을 만들지 않는다(CLAUDE.md 4절).
 class ContactExportConfirmDialog extends StatelessWidget {
-  const ContactExportConfirmDialog({super.key, required this.contact});
+  const ContactExportConfirmDialog({
+    super.key,
+    required this.contact,
+    this.nameFormat = ContactExportNameFormat.nameOnly,
+  });
 
   final ContactModel contact;
 
+  /// 주소록 이름 칸 형식(추가 494). 이 창이 **실제로 저장될 이름**을 보여
+  /// 주므로, 내보낼 때 쓰는 것과 같은 값이어야 한다 — 다르면 이 창이
+  /// 거짓말이 된다.
+  final ContactExportNameFormat nameFormat;
+
   /// 계속을 누르면 `true`. 취소하거나 바깥을 누르면 `false`.
-  static Future<bool> show(BuildContext context, ContactModel contact) async {
+  static Future<bool> show(
+    BuildContext context,
+    ContactModel contact, {
+    ContactExportNameFormat nameFormat = ContactExportNameFormat.nameOnly,
+  }) async {
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => ContactExportConfirmDialog(contact: contact),
+      builder: (_) => ContactExportConfirmDialog(
+        contact: contact,
+        nameFormat: nameFormat,
+      ),
     );
     return ok ?? false;
   }
@@ -73,6 +90,35 @@ class ContactExportConfirmDialog extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          // 🚨 **주소록에 실제로 들어갈 이름.** 형식에 따라 직책·회사가 붙는데
+          //    (추가 494), 보여 주지 않으면 저장한 뒤에야 알게 된다.
+          Row(
+            children: [
+              const Icon(
+                Icons.person_outline,
+                size: 15,
+                color: AppColors.textMuted,
+              ),
+              const SizedBox(width: 7),
+              const Text(
+                '주소록에 저장되는 이름',
+                style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  buildExportName(contact, nameFormat),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),

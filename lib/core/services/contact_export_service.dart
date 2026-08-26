@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../data/models/contact_model.dart';
+import '../utils/contact_export_name.dart';
 import '../utils/vcard_util.dart';
 
 /// 명함을 **폰 주소록으로 내보낸다**(추가 492).
@@ -50,10 +51,11 @@ class ContactExportService {
   Future<bool> shareAsVCard(
     ContactModel contact, {
     Rect? sharePositionOrigin,
+    ContactExportNameFormat nameFormat = ContactExportNameFormat.nameOnly,
   }) async {
     File? file;
     try {
-      file = await _writeTempVCard(contact);
+      file = await _writeTempVCard(contact, nameFormat);
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(file.path, mimeType: 'text/vcard')],
@@ -73,10 +75,17 @@ class ContactExportService {
     }
   }
 
-  Future<File> _writeTempVCard(ContactModel contact) async {
+  Future<File> _writeTempVCard(
+    ContactModel contact,
+    ContactExportNameFormat nameFormat,
+  ) async {
     final dir = await getTemporaryDirectory();
+    // ⚠️ 파일 이름은 **형식과 무관하게 순수 이름**이다. 회사명이 든 파일
+    //    이름은 공유 시트에서 길게 잘려 무엇인지 더 안 보인다.
     final file = File('${dir.path}/${vcardFileName(contact.name)}');
-    await file.writeAsString(VCardUtil.encodeContact(contact));
+    await file.writeAsString(
+      VCardUtil.encodeContact(contact, nameFormat: nameFormat),
+    );
     return file;
   }
 

@@ -1,3 +1,4 @@
+import 'package:connection_trace_ai_flutter/core/utils/contact_export_name.dart';
 import 'package:connection_trace_ai_flutter/core/utils/vcard_util.dart';
 import 'package:connection_trace_ai_flutter/data/models/contact_model.dart';
 import 'package:connection_trace_ai_flutter/presentation/features/wallet/views/contact_export_confirm_dialog.dart';
@@ -115,7 +116,11 @@ void main() {
   });
 
   group('화면', () {
-    Future<bool?> open(WidgetTester tester, ContactModel contact) async {
+    Future<bool?> open(
+      WidgetTester tester,
+      ContactModel contact, {
+      ContactExportNameFormat nameFormat = ContactExportNameFormat.nameOnly,
+    }) async {
       bool? result;
       await tester.pumpWidget(
         MaterialApp(
@@ -124,8 +129,11 @@ void main() {
               body: Center(
                 child: ElevatedButton(
                   onPressed: () async {
-                    result =
-                        await ContactExportConfirmDialog.show(context, contact);
+                    result = await ContactExportConfirmDialog.show(
+                      context,
+                      contact,
+                      nameFormat: nameFormat,
+                    );
                   },
                   child: const Text('열기'),
                 ),
@@ -141,7 +149,7 @@ void main() {
 
     testWidgets('이름을 넣어 누구를 저장하는지 보여 준다', (tester) async {
       await open(tester, c());
-      expect(find.textContaining('홍길동'), findsOneWidget);
+      expect(find.text('홍길동님을 연락처에 저장할까요?'), findsOneWidget);
     });
 
     testWidgets('이름이 비어 있어도 문장이 깨지지 않는다', (tester) async {
@@ -158,6 +166,25 @@ void main() {
       );
       // 메모 내용 자체는 절대 보이면 안 된다.
       expect(find.textContaining('골프'), findsNothing);
+    });
+
+    testWidgets('⭐ 주소록에 실제로 저장될 이름을 보여 준다', (tester) async {
+      await open(
+        tester,
+        c(),
+        nameFormat: ContactExportNameFormat.nameTitleCompany,
+      );
+      expect(
+        find.text('홍길동 영업팀장(가상상사)'),
+        findsOneWidget,
+        reason: '형식에 따라 직책·회사가 붙는데, 보여 주지 않으면 저장한 '
+            '뒤에야 알게 된다',
+      );
+    });
+
+    testWidgets('⭐ 형식이 이름만이면 이름만 보여 준다', (tester) async {
+      await open(tester, c());
+      expect(find.text('홍길동'), findsOneWidget);
     });
 
     testWidgets('⭐ 취소하면 false — 공유 시트가 뜨지 않는다', (tester) async {

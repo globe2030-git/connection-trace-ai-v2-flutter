@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/contact_export_service.dart';
+import '../../../../core/services/contact_export_settings_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/utils/card_history_note.dart';
@@ -15,6 +16,7 @@ import '../../../common/contact_avatar.dart';
 import '../view_models/groups_view_model.dart';
 import 'add_card_modal_view.dart';
 import 'contact_export_confirm_dialog.dart';
+import 'contact_export_name_format_sheet.dart';
 import 'group_assign_sheet.dart';
 
 /// 명함 **상세 보기** — 읽는 화면이다(2026-08-19 사용자 확정, 추가 330).
@@ -669,14 +671,50 @@ class _ExportButton extends StatefulWidget {
 
 class _ExportButtonState extends State<_ExportButton> {
   final _service = ContactExportService();
+  final _settings = ContactExportSettingsService();
   bool _busy = false;
 
+  /// 내보내기 한 번의 흐름.
+  ///
+  /// ```
+  /// (첫 내보내기라면) 이름 형식 고르기 → 확인 창 → 공유 시트
+  /// ```
+  ///
+  /// **형식을 먼저 묻는 이유**: 확인 창이 *"이 이름으로 저장됩니다"* 를
+  /// 보여 주는데, 형식을 나중에 물으면 그 창이 거짓이 된다.
+  ///
+  /// 어느 단계에서든 물러나면 **아무 파일도 만들지 않는다.**
   Future<void> _export() async {
     if (_busy) return;
+
+    var format = await _settings.format();
+    if (!mounted) return;
+
+    // 🚨 **한 번만 묻는다.** "아직 안 물었다"와 "물었고 이름만을 골랐다"를
+    //    갈라 두지 않으면, 이름만을 고른 사람에게 매번 다시 묻게 된다.
+    final asked = await _settings.hasAsked();
+    if (!mounted) return;
+    if (!asked) {
+      final picked = await ContactExportNameFormatSheet.show(
+        context,
+        initial: format,
+        firstTime: true,
+      );
+      // 뒤로 갔으면 내보내기 자체를 멈춘다 — 묻지 않은 채로 나가면 안 된다.
+      if (picked == null || !mounted) return;
+      format = picked;
+      await _settings.save(picked);
+      if (!mounted) return;
+    }
+
     // 🚨 공유 시트를 바로 띄우지 않는다. 제3자 개인정보를 앱 밖으로 내보내는
     //    동작이라 **무엇이 나가는지** 먼저 보여 준다
     //    ([ContactExportConfirmDialog] 주석 참고).
-    final go = await ContactExportConfirmDialog.show(context, widget.contact);
+    final go = await ContactExportConfirmDialog.show(
+      context,
+      widget.contact,
+      nameFormat: format,
+    );
     if (!go || !mounted) return;
     setState(() => _busy = true);
     // 아이패드에서 팝오버가 뜰 자리. 없으면 공유 시트가 안 뜬다.
@@ -687,6 +725,7 @@ class _ExportButtonState extends State<_ExportButton> {
     final ok = await _service.shareAsVCard(
       widget.contact,
       sharePositionOrigin: origin,
+      nameFormat: format,
     );
     if (!mounted) return;
     setState(() => _busy = false);
