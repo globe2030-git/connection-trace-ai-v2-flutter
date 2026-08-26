@@ -5,13 +5,68 @@
 // try/catch로 감싸여 있어(data_backup_service.dart) 실패해도 조용히
 // 삼켜진다. `data_encryption_test.dart`의 ContactsRepository 테스트가 이미
 // 같은 전제로 uid를 넣어 테스트하고 있어 같은 패턴을 따른다.
+//
+// ---
+//
+// 🚨 2026-08-26 — 이 파일이 main 을 여섯 시간 빨갛게 세웠다. 두 가지가 겹쳤다.
+//
+// **① 바인딩을 안 켰다.** `main()` 첫 줄에
+// `TestWidgetsFlutterBinding.ensureInitialized()` 가 없었다. 이 파일은
+// `testWidgets` 를 하나도 안 쓰므로 자동으로도 안 켜진다. 그래서 CI 로그에
+// *"Binding has not yet been initialized"* 가 반복해서 찍혔고, 기기 보안
+// 저장소(암호화 키) 접근이 조용히 실패했다.
+//
+// **② 저장이 끝나기를 시간으로 기다렸다.** `await Future.delayed(20~30ms)`.
+// 추가 481(#540)에서 **암호화를 `compute()` 아이솔레이트로 옮기면서**
+// 아이솔레이트를 띄우는 비용이 붙어 저장이 느려졌다. 30ms 로는 모자랐다.
+//
+// 📌 그래서 **개발용 맥에서는 통과하고 CI(ubuntu)에서만 실패**했다. 로컬
+// 전체 1401건은 그동안 내내 초록이었다. 실패한 것이 하필
+// *"그룹명이 평문으로 노출되지 않는다"* 여서 더 나빴다 — 저장 자체가 안 돼
+// `raw` 가 null 이었으므로, **평문인지 아닌지는 확인된 바가 없는 상태**로
+// 여섯 시간이 지났다. 「빨간불」이 아니라 「모르는 상태」였다.
+//
+// ⚠️ **고정 대기는 "얼마나 걸리는지 안다"고 가정한다.** 그 가정이 다른
+// 커밋의 성능 개선으로 깨졌고, 깨진 것이 느린 기계에서만 보였다.
+// → [_waitUntil] 로 **조건이 만족될 때까지** 기다린다.
 import 'dart:convert';
 
 import 'package:connection_trace_ai_flutter/data/repositories/groups_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// [condition] 이 참이 될 때까지 기다린다. 고정 대기를 대신한다.
+///
+/// 시간이 다 되어도 **여기서 실패를 던지지 않는다** — 뒤따르는 `expect` 가
+/// 무엇이 틀렸는지 훨씬 잘 설명하기 때문이다. 여기서 던지면 "시간이 지났다"
+/// 만 남는다.
+Future<void> _waitUntil(
+  Future<bool> Function() condition, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (await condition()) return;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
+/// 로컬에 저장된 원문(암호화됐으면 암호문)을 읽는다.
+Future<String?> _savedRaw() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString('saved_groups_v1');
+}
+
+/// 「그대로 비어 있다」처럼 **조건으로 기다릴 수 없는 자리**에서만 쓴다.
+///
+/// ⚠️ 여유를 크게 둔다. 원래 20ms 였다가 아이솔레이트 도입으로 깨졌다.
+Future<void> _settle() =>
+    Future<void>.delayed(const Duration(milliseconds: 600));
+
 void main() {
+  // 🚨 이 줄이 없어서 main 이 여섯 시간 빨갰다(위 주석). 지우지 말 것.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
@@ -81,15 +136,14 @@ void main() {
     test('게스트(uid 없음)로 만든 그룹은 평문으로 저장되고 새 인스턴스에서 그대로 읽힌다', () async {
       final repo = GroupsRepository();
       repo.createGroup('그룹A');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() async => await _savedRaw() != null);
 
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('saved_groups_v1');
+      final raw = await _savedRaw();
       expect(raw, isNotNull);
       expect(raw, contains('그룹A'));
 
       final reloaded = GroupsRepository();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() async => reloaded.groups.isNotEmpty);
       expect(reloaded.groups.map((g) => g.name), ['그룹A']);
     });
 
@@ -97,10 +151,15 @@ void main() {
       final repo = GroupsRepository();
       await repo.setCurrentUid('owner-uid');
       repo.createGroup('민감한그룹이름');
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      // 저장이 끝나기를 기다린다. 평문으로 한 번 썼다가 암호문으로 덮는
+      // 구현일 수도 있으므로 **평문이 사라질 때까지** 기다린 뒤에 본다.
+      // 끝내 평문이면 시간이 다 되고, 그때 아래 expect 가 제대로 실패한다.
+      await _waitUntil(() async {
+        final v = await _savedRaw();
+        return v != null && !v.contains('민감한그룹이름');
+      });
 
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('saved_groups_v1');
+      final raw = await _savedRaw();
       expect(raw, isNotNull);
       expect(
         raw,
@@ -122,18 +181,19 @@ void main() {
       });
 
       final repo = GroupsRepository();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() async => repo.groups.isNotEmpty);
       expect(repo.groups, hasLength(1));
       expect(repo.groups.first.name, '옛그룹');
 
-      final prefsBefore = await SharedPreferences.getInstance();
-      expect(prefsBefore.getString('saved_groups_v1'), contains('옛그룹'));
+      expect(await _savedRaw(), contains('옛그룹'));
 
       await repo.setCurrentUid('new-uid');
-      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await _waitUntil(() async {
+        final v = await _savedRaw();
+        return v != null && !v.contains('옛그룹');
+      });
 
-      final prefsAfter = await SharedPreferences.getInstance();
-      expect(prefsAfter.getString('saved_groups_v1'), isNot(contains('옛그룹')));
+      expect(await _savedRaw(), isNot(contains('옛그룹')));
       // 메모리 값은 그대로 유지된다.
       expect(repo.groups.first.name, '옛그룹');
     });
@@ -143,11 +203,13 @@ void main() {
         'flutter.saved_groups_v1': 'not-json-not-base64-garbage!!!',
       });
       final repo = GroupsRepository();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // ⚠️ 「그대로 비어 있다」는 조건으로 기다릴 수 없다 — 고정 대기를 쓰되
+      //    여유를 크게 둔다.
+      await _settle();
       expect(repo.groups, isEmpty);
 
       await repo.setCurrentUid('some-uid');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _settle();
       expect(repo.groups, isEmpty);
     });
   });
@@ -155,14 +217,22 @@ void main() {
   group('clearLocal', () {
     test('로컬 그룹 목록을 비운다', () async {
       final repo = GroupsRepository();
+      // ⚠️ 생성자가 띄운 첫 로드가 끝나기를 먼저 기다린다.
+      //
+      // 🚨 안 기다리면 **실제 경합에 걸린다** — `clearLocal()` 이 메모리를
+      //    비운 뒤에 그 로드가 끝나면서 `_groups` 를 디스크 내용으로 다시
+      //    덮어쓴다(`groups_repository.dart` 40행이 띄우고 101행이 덮는다).
+      //    2026-08-26 에 바인딩을 켜면서 로드가 느려지자 드러났다.
+      //    **추가 510 으로 따로 잡는다 — 이 파일에서 고치지 않는다.**
+      await _settle();
+
       repo.createGroup('그룹A');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await _waitUntil(() async => await _savedRaw() != null);
 
       await repo.clearLocal();
 
       expect(repo.groups, isEmpty);
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getString('saved_groups_v1'), isNull);
+      expect(await _savedRaw(), isNull);
     });
   });
 }
