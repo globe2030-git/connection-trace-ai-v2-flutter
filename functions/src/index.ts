@@ -37,7 +37,11 @@ import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
-import {buildPrompt, GenerateBriefingRequest} from "./briefingPrompt";
+import {
+  buildPrompt,
+  resolveFieldLabel,
+  GenerateBriefingRequest,
+} from "./briefingPrompt";
 import {
   SOCIAL_UNLINK_REQUESTS,
   adminKeyMatches,
@@ -755,12 +759,24 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         interests,
         extraNote,
         previousPoints,
+        fieldKey,
       } = request.data;
       if (!contactSummary || !myProfileSummary) {
         throw new HttpsError(
           "invalid-argument",
           "필수 정보가 누락됐어요."
         );
+      }
+
+      // 분야 키가 왔는데 서버 목록(FIELD_LABELS)에 없으면 분야 없이 생성한다.
+      // 통째로 실패시키는 것보다 낫지만 **조용히 넘어가면 안 된다** — 앱과
+      // 서버의 목록이 어긋났을 때 아무도 모르고, 사용자에게는 "분야를 골랐는데
+      // 안 먹는다"가 아니라 "AI가 원래 그런가 보다"로 읽힌다. 이 저장소는
+      // "조용히 좁아지는 것이 상한 없는 것보다 나쁘다"로 같은 판단을 한 적이
+      // 있다(추가 480). 키는 고정 목록의 영문 식별자라 개인정보가 아니므로
+      // 그대로 남겨도 된다.
+      if (fieldKey && !resolveFieldLabel(fieldKey)) {
+        logger.warn("알 수 없는 분야 키 — 분야 없이 생성", {fieldKey});
       }
 
       await incrementAndCheckUsage(uid);
@@ -776,6 +792,7 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         interests,
         extraNote,
         previousPoints,
+        fieldKey,
       }, variationSeed);
       const {text: rawText, usage} = await callGemini(
         prompt,
