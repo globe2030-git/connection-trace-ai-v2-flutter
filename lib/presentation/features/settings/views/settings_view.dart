@@ -37,7 +37,10 @@ import '../../radar/view_models/radar_view_model.dart';
 import '../../radar/views/location_consent_sheet.dart';
 import '../../radar/views/location_access_flow.dart';
 import '../../radar/views/my_profile_edit_modal_view.dart';
+import '../../../../core/services/contact_export_settings_service.dart';
+import '../../../../core/utils/contact_export_name.dart';
 import '../../../../data/repositories/billing_config_repository.dart';
+import '../../wallet/views/contact_export_name_format_sheet.dart';
 import 'ai_charge_view.dart';
 import 'ai_connection_modal_view.dart';
 import 'inquiry_view.dart';
@@ -352,6 +355,11 @@ class _SettingsViewState extends State<SettingsView> {
                     subtitle: '이 기기와 서버에 암호화하여 보관',
                     value: '로컬 + 서버 백업',
                   ),
+                  // 명함을 폰 주소록으로 내보낼 때 **이름 칸에 무엇을 적을지**
+                  // (추가 494). 「명함 데이터」 바로 아래에 둔 이유는, 이것이
+                  // 명함 데이터가 **앱 밖으로 나갈 때의 모양**을 정하기
+                  // 때문이다.
+                  const _ExportNameFormatRow(),
                   // 사진 개선 동의는 **선택**이다 — 꺼도 명함 등록·복원·보정이
                   // 전부 그대로 동작한다. 이 토글이 정하는 것은 "내 사진을
                   // 인식 개선용 표본에 넣어도 되는가" 하나뿐이다(추가 218).
@@ -647,6 +655,68 @@ class _SettingsViewState extends State<SettingsView> {
 ///
 /// §50⑦은 동의만이 아니라 **철회**에도 14일 내 통지를 요구한다. 끄고 나오면
 /// 같은 형식의 통지가 뜬다.
+/// 내보낼 때 쓸 **주소록 이름 형식**(추가 494).
+///
+/// 첫 내보내기 때 한 번 묻고 기억하는데, **바꾸는 자리가 없으면 그 한 번이
+/// 영영 간다.** 그래서 설정에도 둔다 — 고르는 화면은 첫 물음과 **같은 것**을
+/// 쓴다([ContactExportNameFormatSheet]). 두 벌이 되면 어긋난다.
+class _ExportNameFormatRow extends StatefulWidget {
+  const _ExportNameFormatRow();
+
+  @override
+  State<_ExportNameFormatRow> createState() => _ExportNameFormatRowState();
+}
+
+class _ExportNameFormatRowState extends State<_ExportNameFormatRow> {
+  final _settings = ContactExportSettingsService();
+  ContactExportNameFormat _format = ContactExportNameFormat.nameOnly;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final format = await _settings.format();
+    if (mounted) setState(() => _format = format);
+  }
+
+  Future<void> _open() async {
+    final picked = await ContactExportNameFormatSheet.show(
+      context,
+      initial: _format,
+      firstTime: false,
+    );
+    if (picked == null || !mounted) return;
+    final ok = await _settings.save(picked);
+    if (!mounted) return;
+    if (ok) {
+      setState(() => _format = picked);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('설정을 저장하지 못했습니다.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsRow(
+      icon: const Icon(
+        Icons.contacts_outlined,
+        size: 22,
+        color: AppColors.accentText,
+      ),
+      title: '주소록에 저장할 이름',
+      // 미리보기를 부제목에 둔다 — 형식 이름만으로는 무엇인지 모른다.
+      subtitle: '내보낼 때 "${previewOf(_format)}" 형태로 저장돼요',
+      value: _format.label,
+      onTap: _open,
+    );
+  }
+}
+
 class _AdConsentRow extends StatefulWidget {
   const _AdConsentRow({required this.uid});
 
