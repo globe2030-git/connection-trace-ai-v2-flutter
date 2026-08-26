@@ -15,14 +15,14 @@ void main() {
     WidgetTester tester, {
     SnsAuthProvider? provider = SnsAuthProvider.google,
     Future<bool> Function({required bool email, required bool push})? onSubmit,
-    bool dismissOnSaveFailure = false,
+    bool dismissOnSubmit = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AdConsentView(
           provider: provider,
           onSubmit: onSubmit ?? ({required email, required push}) async => true,
-          dismissOnSaveFailure: dismissOnSaveFailure,
+          dismissOnSubmit: dismissOnSubmit,
         ),
       ),
     );
@@ -248,6 +248,50 @@ void main() {
     /// 📌 **이 파일의 다른 테스트는 전부 통과하고 있었다** — *"저장 실패하면
     /// 안내를 띄운다"* 까지는 맞게 돌았기 때문이다. **규칙은 지켰는데 사람이
     /// 갇혔다.**
+    /// 🚨 **이것이 ①을 고친 뒤에 드러났다.** 실패를 고쳤더니 **성공해도 못
+    /// 나갔다** — `if (ok) return;` 이라 성공 경로에는 닫는 코드가 아예 없었다.
+    /// 배포 전에는 항상 실패했으니 성공 경로가 한 번도 안 돌았고, 그래서
+    /// **비어 있다는 것이 안 보였다.**
+    testWidgets('⭐ 저장에 성공하면 화면이 닫힌다', (tester) async {
+      var closed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => AdConsentView(
+                          provider: SnsAuthProvider.google,
+                          dismissOnSubmit: true,
+                          onSubmit: ({required email, required push}) async =>
+                              true,
+                        ),
+                      ),
+                    );
+                    closed = true;
+                  },
+                  child: const Text('열기'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('시작하기'));
+      await tester.pumpAndSettle();
+      expect(
+        closed,
+        isTrue,
+        reason: '저장은 됐는데 화면이 안 닫히면 이용자는 앱에 못 들어간다. '
+            'firestore.rules 배포 직후 실제로 이 상태가 됐다',
+      );
+    });
+
     testWidgets('⭐ 저장에 실패해도 화면이 닫힌다', (tester) async {
       var closed = false;
       await tester.pumpWidget(
@@ -261,7 +305,7 @@ void main() {
                       MaterialPageRoute(
                         builder: (_) => AdConsentView(
                           provider: SnsAuthProvider.google,
-                          dismissOnSaveFailure: true,
+                          dismissOnSubmit: true,
                           onSubmit: ({required email, required push}) async =>
                               false,
                         ),
@@ -294,7 +338,7 @@ void main() {
     testWidgets('⭐ 닫으면서 무슨 일인지 알린다', (tester) async {
       await pump(
         tester,
-        dismissOnSaveFailure: true,
+        dismissOnSubmit: true,
         onSubmit: ({required email, required push}) async => false,
       );
       await tester.tap(find.text('시작하기'));
