@@ -53,6 +53,22 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   late final TextEditingController _emailController;
   late final TextEditingController _addressController;
   late final TextEditingController _addressDetailController;
+  // 아래 다섯은 OCR이 읽어 오면서도 담을 칸이 없어 버려지던 값이다(2026-08-26).
+  late final TextEditingController _departmentController;
+  late final TextEditingController _officePhoneController;
+  late final TextEditingController _faxController;
+  late final TextEditingController _websiteController;
+  late final TextEditingController _postalCodeController;
+
+  /// 이번 편집에서 명함을 몇 면 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대**다(사용자 정의 2026-08-14,
+  /// 등록 화면과 같은 규칙). 이 값으로 카메라에 보낼 면 이름과 안내 문구를
+  /// 정한다.
+  ///
+  /// ⚠️ 등록 화면과 달리 **사진을 보관하지 않으므로 대표 선택·면 빼기는
+  /// 없다.** 여기서 세는 것은 "무엇을 찍는 중인가"뿐이다.
+  int _scanCount = 0;
 
   /// 생일(월·일). 저장은 "MM-DD" 한 문자열이지만 입력은 두 목록으로 받는다.
   int? _birthMonth;
@@ -81,6 +97,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _phoneController = TextEditingController(text: profile.phone);
     _emailController = TextEditingController(text: profile.email);
     _addressController = TextEditingController(text: profile.address);
+    _departmentController = TextEditingController(
+      text: profile.department ?? '',
+    );
+    _officePhoneController = TextEditingController(
+      text: profile.officePhone ?? '',
+    );
+    _faxController = TextEditingController(text: profile.fax ?? '');
+    _websiteController = TextEditingController(text: profile.website ?? '');
+    _postalCodeController = TextEditingController(
+      text: profile.postalCode ?? '',
+    );
     _birthMonth = profile.birthMonth;
     _birthDay = profile.birthDay;
     _addressDetailController = TextEditingController(
@@ -98,13 +125,29 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _emailController.dispose();
     _addressController.dispose();
     _addressDetailController.dispose();
+    _departmentController.dispose();
+    _officePhoneController.dispose();
+    _faxController.dispose();
+    _websiteController.dispose();
+    _postalCodeController.dispose();
     super.dispose();
   }
 
   Future<void> _openAddressSearch() async {
+    // 입력칸에 이미 있는 주소를 검색어로 넘긴다. 안 넘기면 빈 검색창이 떠
+    // 처음부터 다시 타이핑해야 한다 — 명함 등록 화면은 넘기고 있었는데
+    // 이 화면만 빠져 있었다(사용자 제보, 2026-08-26).
+    //
+    // ⚠️ 예전에는 클립보드에 복사해 두는 방식이라 넘기지 않아도 티가 덜
+    // 났는데, 그 방식을 걷어내면서(웹뷰에서 붙여넣기가 안 됐다) 이 화면만
+    // **기존 주소가 검색창으로 가는 경로가 아예 없는** 상태가 됐다.
+    final query = _addressController.text.trim();
     final result = await Navigator.push<AddressSearchResult>(
       context,
-      MaterialPageRoute(builder: (_) => const AddressSearchView()),
+      MaterialPageRoute(
+        builder: (_) =>
+            AddressSearchView(initialQuery: query.isEmpty ? null : query),
+      ),
     );
     if (result == null || !mounted) return;
     setState(() {
@@ -138,19 +181,27 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   /// 채워진 프로필을 고치는" 폼이라 명함 등록 때처럼 빈 칸만 채우는 방식이
   /// 아니라, 스캔으로 실제 읽힌 값만(빈 문자열은 무시) 기존 값 위에 덮어써
   /// "실물 명함으로 프로필을 최신화"하는 의도에 맞춘다.
-  Future<void> _performOcrScan({required bool isFromCamera}) async {
+  Future<void> _performOcrScan({
+    required bool isFromCamera,
+    String sideLabel = '앞면',
+  }) async {
     OcrScanResult? result;
     if (isFromCamera) {
       result = await Navigator.push<OcrScanResult>(
         context,
-        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+        // 지금 어느 면을 찍는 중인지 카메라 화면에 띄운다. 종전에는 이 화면이
+        // 라벨을 안 넘겨 **언제나 "앞면"으로 보였다** — 뒷면을 고르고 들어와도
+        // 알 수 없었다(등록 화면이 2026-08-14에 같은 이유로 고친 자리다).
+        MaterialPageRoute(
+          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+        ),
       );
     } else {
       result = await showModalBottomSheet<OcrScanResult>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const FilePickerModalView(),
+        builder: (_) => FilePickerModalView(sideLabel: sideLabel),
       );
     }
     // 이 화면은 **텍스트만 쓰고 이미지는 저장하지 않는다.** 그래서 스캔이 남긴
@@ -163,49 +214,94 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     if (result == null || !mounted) return;
 
     setState(() {
-      if (result!.name.trim().isNotEmpty)
-        _nameController.text = result.name.trim();
-      if (result.title.trim().isNotEmpty)
-        _titleController.text = result.title.trim();
-      if (result.company.trim().isNotEmpty)
-        _companyController.text = result.company.trim();
-      if (result.phone.trim().isNotEmpty)
-        _phoneController.text = result.phone.trim();
-      if (result.email.trim().isNotEmpty)
-        _emailController.text = result.email.trim();
-      if (result.address.trim().isNotEmpty)
-        _setTextFromStart(_addressController, result.address.trim());
-      if (result.addressDetail.trim().isNotEmpty)
-        _addressDetailController.text = result.addressDetail.trim();
+      // 면 하나를 읽었다. 등록 화면과 달리 사진을 쌓지 않으므로 세기만 한다.
+      if (_scanCount < 2) _scanCount++;
+      final scanned = result!;
+      // 읽힌 값만 덮어쓴다 — 빈 문자열은 "못 읽었다"는 뜻이라, 그걸로 덮으면
+      // 사용자가 손으로 넣어 둔 값이 스캔 한 번에 지워진다.
+      void fill(TextEditingController controller, String value) {
+        final trimmed = value.trim();
+        if (trimmed.isNotEmpty) controller.text = trimmed;
+      }
+
+      fill(_nameController, scanned.name);
+      fill(_titleController, scanned.title);
+      fill(_companyController, scanned.company);
+      fill(_phoneController, scanned.phone);
+      fill(_emailController, scanned.email);
+      final address = scanned.address.trim();
+      // 주소만 다른 함수를 쓴다 — 한 줄짜리 칸이라 커서가 끝으로 가면
+      // 주소 앞부분이 안 보인다(_setTextFromStart 주석 참고).
+      if (address.isNotEmpty) _setTextFromStart(_addressController, address);
+      fill(_addressDetailController, scanned.addressDetail);
+      // 아래 다섯은 OCR이 예전부터 읽고 있었는데 **받을 칸이 없어 버려졌다**
+      // (2026-08-26 사용자 지적). 칸을 만들면서 함께 잇는다.
+      fill(_departmentController, scanned.department);
+      fill(_officePhoneController, scanned.officePhone);
+      fill(_faxController, scanned.fax);
+      fill(_websiteController, scanned.website);
+      fill(_postalCodeController, scanned.postalCode);
     });
 
     // 명함 앞/뒷면에 정보가 나뉜 경우가 흔해서(add_card_modal_view.dart와 동일한
-    // 패턴) 필수 필드가 비어 있으면 "뒷면도 스캔해 보라"는 안내와 재촬영
-    // 버튼을 보여준다 — 이 화면엔 이 기능이 빠져 있어서 스캔 후 빈 칸이 있어도
-    // 다시 찍을 방법이 안내되지 않던 문제가 있었다.
-    final missingFields = <String>[
+    // 패턴) 못 채운 칸이 있으면 "뒷면도 스캔해 보라"고 안내한다.
+    //
+    // ⚠️ **필수와 선택을 갈라서 본다**(2026-08-26). 종전에는 필수 다섯만 보고
+    // 판정해서, 앞면에 그 다섯이 다 있으면 안내가 안 떴다. 그런데 **웹사이트·
+    // 팩스·부서는 뒷면에 있는 경우가 흔하다** — 안내가 안 뜨면 뒷면을 찍을
+    // 버튼도 안 나오고, 그 값들은 영영 안 들어온다(사용자 지적).
+    final missingRequired = <String>[
       if (_nameController.text.trim().isEmpty) '이름',
       if (_companyController.text.trim().isEmpty) '회사명',
       if (_addressController.text.trim().isEmpty) '주소',
       if (_phoneController.text.trim().isEmpty) '휴대폰 번호',
       if (_emailController.text.trim().isEmpty) '이메일',
     ];
+    final missingOptional = <String>[
+      if (_departmentController.text.trim().isEmpty) '부서',
+      if (_officePhoneController.text.trim().isEmpty) '사무실 전화',
+      if (_faxController.text.trim().isEmpty) '팩스',
+      if (_websiteController.text.trim().isEmpty) '웹사이트',
+      if (_postalCodeController.text.trim().isEmpty) '우편번호',
+    ];
 
     if (!mounted) return;
 
-    if (missingFields.isEmpty) {
+    // 뒷면까지 찍었으면 더 권하지 않는다 — 명함은 두 면이 최대다.
+    final canScanBack = _scanCount < 2;
+
+    if (missingRequired.isEmpty && missingOptional.isEmpty) {
       _showInlineNotice(
         '📸 스캔한 명함 정보로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 내용을 확인하고 저장해 주세요.',
         isError: false,
       );
-    } else {
-      _showInlineNotice(
-        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
-        isError: true,
-        actionLabel: '뒷면 스캔',
-        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
-      );
+      return;
     }
+
+    if (missingRequired.isNotEmpty) {
+      _showInlineNotice(
+        '⚠️ ${missingRequired.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요'
+        '${canScanBack ? ' — 뒷면도 스캔해 보세요.' : '. 직접 입력해 주세요.'}',
+        isError: true,
+        actionLabel: canScanBack ? '뒷면 스캔' : null,
+        onAction: canScanBack
+            ? () => _performOcrScan(isFromCamera: isFromCamera, sideLabel: '뒷면')
+            : null,
+      );
+      return;
+    }
+
+    // 여기부터는 선택 항목만 빈 경우다. **없어도 되는 값이므로 경고가 아니다** —
+    // 빨간 문구로 띄우면 "뭔가 잘못됐다"로 읽힌다.
+    _showInlineNotice(
+      '📸 채웠습니다. ${missingOptional.join(', ')}은(는) 못 찾았어요 — 선택 항목이라 비워 두셔도 됩니다'
+      '${canScanBack ? '. 명함 뒷면에 있다면 뒷면도 스캔해 보세요.' : '.'}',
+      isError: false,
+      actionLabel: canScanBack ? '뒷면 스캔' : null,
+      onAction: canScanBack
+          ? () => _performOcrScan(isFromCamera: isFromCamera, sideLabel: '뒷면')
+          : null,
+    );
   }
 
   void _showInlineNotice(
@@ -270,6 +366,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     });
   }
 
+  /// 빈 칸은 `''`가 아니라 null로 저장한다 — 모델의 선택 항목이 전부
+  /// nullable이고, `''`와 null이 섞이면 "값이 있나"를 두 가지로 물어야 한다.
+  static String? _emptyToNull(TextEditingController c) {
+    final v = c.text.trim();
+    return v.isEmpty ? null : v;
+  }
+
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
@@ -283,6 +386,11 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       addressDetail: _addressDetailController.text.trim().isEmpty
           ? null
           : _addressDetailController.text.trim(),
+      department: _emptyToNull(_departmentController),
+      officePhone: _emptyToNull(_officePhoneController),
+      fax: _emptyToNull(_faxController),
+      website: _emptyToNull(_websiteController),
+      postalCode: _emptyToNull(_postalCodeController),
       avatarPath: _avatarCleared ? null : _avatarPath,
       // 월만 고르고 일을 안 고른 상태는 저장하지 않는다(formatMonthDay가 null).
       birthMonthDay: MyProfileModel.formatMonthDay(_birthMonth, _birthDay),
@@ -428,6 +536,44 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                         ),
                       ],
                     ),
+                    // 앞면을 한 번 읽은 뒤에는 **안내가 없어도** 뒷면을 찍을 수
+                    // 있어야 한다. 종전에는 뒷면으로 가는 길이 "못 찾은 항목이
+                    // 있습니다" 안내에 딸린 버튼뿐이라, **앞면이 잘 읽히면
+                    // 뒷면을 찍을 방법이 사라졌다**(사용자 지적 2026-08-26).
+                    if (_scanCount == 1) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _performOcrScan(
+                            isFromCamera: true,
+                            sideLabel: '뒷면',
+                          ),
+                          icon: const AppIcon(
+                            AppIconId.scanCard,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                          label: const Text(
+                            '뒷면도 스캔 (선택)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                              color: AppColors.borderSubtle,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                   ],
 
@@ -457,11 +603,33 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   ),
                   const SizedBox(height: 12),
                   _buildField(
+                    controller: _departmentController,
+                    label: '부서 (선택)',
+                    hint: '예: 영업본부',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
                     controller: _phoneController,
                     label: '휴대폰 번호 *',
                     hint: '예: 010-1234-5678',
                     keyboardType: TextInputType.phone,
                     required: true,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _officePhoneController,
+                    label: '사무실 전화 (선택)',
+                    hint: '예: 02-1234-5678',
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [KoreanPhoneNumberFormatter()],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _faxController,
+                    label: '팩스 (선택)',
+                    hint: '예: 02-1234-5679',
+                    keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
                   ),
                   const SizedBox(height: 12),
@@ -478,6 +646,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                         return '올바른 이메일 형식을 입력해 주세요.';
                       return null;
                     },
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _websiteController,
+                    label: '웹사이트 (선택)',
+                    hint: '예: https://example.com',
+                    keyboardType: TextInputType.url,
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -499,6 +674,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     controller: _addressDetailController,
                     label: '상세주소 (선택)',
                     hint: '예: 5층 501호',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildField(
+                    controller: _postalCodeController,
+                    label: '우편번호 (선택)',
+                    hint: '예: 06134',
+                    keyboardType: TextInputType.number,
                   ),
                   const SizedBox(height: 12),
                   _buildBirthdayField(),

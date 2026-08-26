@@ -109,10 +109,13 @@ bool isWebViewNavigable(String url) {
 class AddressSearchView extends StatefulWidget {
   // OCR 스캔 결과나 기존 입력값처럼 "이미 갖고 있던 주소 텍스트"를 넘겨
   // 받으면, 사용자가 다음 우편번호 검색창에 처음부터 다시 타이핑하지
-  // 않아도 되게 돕는다. 다음 우편번호 위젯(postcode.v2.js)은 검색어를
-  // 미리 채워 넣는 공식 파라미터를 제공하지 않아서(iframe이 다른
-  // origin이라 직접 DOM 조작도 불가), 화면 상단에 원문을 보여주고
-  // 자동으로 클립보드에 복사해 "검색창에 붙여넣기만 하면" 되게 한다.
+  // 않아도 되게 돕는다. `embed(el, {q: '검색어'})`로 HTML을 만들 때 직접
+  // 넣으므로, 화면이 열리는 순간 이미 그 주소로 검색된 결과가 떠 있다.
+  //
+  // ⚠️ **예전 서술이 여기 남아 있었다**(2026-08-26 정정) — *"클립보드에
+  // 복사해 붙여넣게 한다"*고 적혀 있었는데, 그 방식은 웹뷰 안에서 붙여넣기가
+  // 안 돼 2026-08-12에 걷어냈다(바로 아래 initState 주석이 그 경위를 적고
+  // 있었고, 이 주석만 낡은 채 남아 서로 어긋나 있었다).
   final String? initialQuery;
 
   const AddressSearchView({super.key, this.initialQuery});

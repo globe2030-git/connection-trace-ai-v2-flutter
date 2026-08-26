@@ -335,9 +335,24 @@ class WalletViewModel extends ChangeNotifier {
     unawaited(_saveGroupFilter());
   }
 
-  /// 같은 전화번호로 이미 등록된 명함(있으면). 저장 전 중복 경고에 쓴다(P1-40).
-  ContactModel? findDuplicateByPhone(String phone, {String? excludeId}) =>
-      _contactsRepository.findByPhone(phone, excludeId: excludeId);
+  /// 같은 사람으로 볼 만한 명함(있으면). 저장 전 중복 경고에 쓴다(P1-40).
+  ///
+  /// 휴대폰끼리 · 이메일 완전 일치 · (번호가 양쪽 다 없을 때만) 이름+회사를
+  /// 본다. **사무실·직통·팩스는 보지 않는다** — 대표번호는 같은 회사 사람
+  /// 여럿이 공유한다(사용자 확정 2026-08-26).
+  DuplicateMatch? findDuplicate({
+    required String phone,
+    String? email,
+    String? name,
+    String? company,
+    String? excludeId,
+  }) => _contactsRepository.findDuplicate(
+    phone: phone,
+    email: email,
+    name: name,
+    company: company,
+    excludeId: excludeId,
+  );
 
   void addContact(ContactModel contact) {
     _contactsRepository.addContact(contact);

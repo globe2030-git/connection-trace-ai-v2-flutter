@@ -2262,7 +2262,6 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
     // 전화는 휴대폰 또는 사무실 전화 중 하나만 있으면 통과한다(추가 361).
     // 둘 다 비어 있을 때의 오류는 휴대폰 칸에서만 보여준다.
-    final phoneVal = _phoneController.text.trim();
     final phoneWasInitiallyEmpty =
         _initialValues['phone']!.trim().isEmpty &&
         _initialValues['officePhone']!.trim().isEmpty;
@@ -2304,16 +2303,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 저장 상태(_isSavingCard)를 켜기 전에 두어, 사용자가 취소해도 되돌릴
     // 상태가 없게 한다.
     if (!_isEditing) {
-      final dup = context.read<WalletViewModel>().findDuplicateByPhone(
-        phoneVal,
-      );
-      if (dup != null) {
+      final match = _findDuplicateContact();
+      if (match != null) {
+        final dup = match.contact;
         final proceed = await showDialog<bool>(
           context: context,
           builder: (dialogCtx) => AlertDialog(
-            title: const Text('이미 등록된 번호예요'),
+            title: const Text('이미 등록된 것 같아요'),
             content: Text(
-              '같은 전화번호가 "${dup.name}" 님으로 이미 등록돼 있어요.\n'
+              // 무엇 때문에 걸렸는지 말해 준다 — "같은 전화번호"라고만 하면
+              // 이메일이나 이름으로 걸린 경우에 거짓말이 된다.
+              '${match.reason} 명함이 "${dup.name}" 님으로 이미 등록돼 있어요.\n'
               '그래도 새 명함으로 추가할까요?',
             ),
             actions: [
@@ -2904,8 +2904,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 신뢰할 수 있게 식별하는 값이라(이직해도 개인 번호는 잘 안 바뀜) 이걸로
     // 매칭한다.
     if (!_isEditing) {
-      final duplicate = _findDuplicateContact(_phoneController.text.trim());
+      final duplicate = _findDuplicateContact();
       if (duplicate != null) {
+        final existing = duplicate.contact;
         final wantsUpdate = await _showDuplicateFoundDialog(duplicate);
         if (!mounted) return;
         if (wantsUpdate == false) {
@@ -2924,7 +2925,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (deleteOldRecord == null) return; // 대화상자 닫힘 — 저장 보류
 
         _applyUpdateToExisting(
-          duplicate,
+          existing,
           finalAddress,
           resolvedGeo,
           tags,
@@ -3031,23 +3032,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
-  String _normalizeDuplicatePhone(String raw) {
-    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
-    return digits.length > 9 ? digits.substring(digits.length - 9) : digits;
+  // "같은 사람" 판정은 저장소 한 곳에만 둔다(ContactsRepository.findDuplicate).
+  //
+  // ⚠️ 2026-08-26 이전에는 이 화면에 **같은 판정이 한 벌 더** 있었고, 규칙이
+  // 서로 달랐다 — 저장소는 숫자 전체를, 이 화면은 뒤 9자리를 비교해서
+  // **같은 번호가 한쪽에서만 중복으로 잡혔다.** 관대한 쪽(뒤 9자리)으로
+  // 합치면서 이 사본을 지웠다.
+  DuplicateMatch? _findDuplicateContact() {
+    return context.read<WalletViewModel>().findDuplicate(
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      name: _nameController.text.trim(),
+      company: _companyController.text.trim(),
+    );
   }
 
-  // "같은 사람"을 식별하는 기준은 휴대폰 번호 — 이직해서 회사/직함/이메일이
-  // 바뀌어도 개인 번호는 잘 안 바뀌기 때문에 가장 신뢰할 수 있는 값이다.
-  ContactModel? _findDuplicateContact(String phone) {
-    final normalized = _normalizeDuplicatePhone(phone);
-    if (normalized.isEmpty) return null;
-    for (final c in context.read<WalletViewModel>().contacts) {
-      if (_normalizeDuplicatePhone(c.phone) == normalized) return c;
-    }
-    return null;
-  }
-
-  Future<bool?> _showDuplicateFoundDialog(ContactModel existing) {
+  Future<bool?> _showDuplicateFoundDialog(DuplicateMatch match) {
+    final existing = match.contact;
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -3065,9 +3066,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '휴대폰 번호가 같은 기존 명함이 있습니다. 어떻게 할까요?',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 13.5),
+            Text(
+              // 무엇 때문에 같은 사람으로 봤는지 밝힌다. 종전에는 언제나
+              // "휴대폰 번호가 같은"이라고 말했는데, 이메일이나 이름으로
+              // 걸린 경우에는 사실과 다르다(2026-08-26).
+              '${match.reason} 기존 명함이 있습니다. 어떻게 할까요?',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13.5,
+              ),
             ),
             const SizedBox(height: 14),
             Container(
