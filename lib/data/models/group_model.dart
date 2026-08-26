@@ -22,7 +22,13 @@
 /// **한 줄짜리 커밋**으로 켠다. 빌드 시 `--dart-define=GROUPS_FEATURE=true`를
 /// 주면 그 전에도 개발·확인용으로 켤 수 있다(`tool/build_app.sh`의 `groups`
 /// 인자, 정의하지 않으면 항상 꺼진 채로 빌드된다).
-const bool kGroupsFeatureEnabled = bool.fromEnvironment('GROUPS_FEATURE');
+const bool kGroupsFeatureEnabled = bool.fromEnvironment(
+  'GROUPS_FEATURE',
+  // ✅ 2026-08-26부터 기본 켜짐(사용자 결정). 테스트 기간에는 열어 둔다 —
+  // 게이트를 방침 시행일에 묶어 두었더니 이용자가 없는데 개발만 막혔다.
+  // 시행일은 일반 사용자 배포 시점에 맞춰 다시 잡았다.
+  defaultValue: true,
+);
 
 /// 명함 그룹(추가 427) — 이용자가 직접 만드는 분류 묶음(예: "삼성전자 사람들").
 ///
