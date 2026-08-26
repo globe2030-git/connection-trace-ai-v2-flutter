@@ -46,52 +46,68 @@ import '../utils/vcard_util.dart';
 /// (`Share.kt:181` `copyToShareCacheFolder`), 우리가 원본을 지워도 상관없다.
 /// **원본을 늦게 지우면 평문만 오래 남는다.**
 ///
-/// ## 🚨 카카오톡 전송이 아직 안 된다 (미해결)
+/// ## 📌 카카오톡·문자 전송 — 원인은 **MIME 타입**이었다
 ///
-/// 2026-08-26 폴드 실측: 공유 시트에서 카카오톡을 고르면 **카카오톡이
-/// 열리기는 하는데 아무것도 안 받는다.** 공유 대상 선택 화면조차 안 뜨고
-/// 메인 화면만 뜬다. **로그에 오류가 하나도 안 찍힌다** — 우리 쪽은 공유
-/// 시트를 띄운 것까지 성공했고, 실패는 받는 앱 안에서 조용히 난다.
+/// 2026-08-26 폴드 실측. 처음에는 공유 시트에서 카카오톡을 고르면 **앱이
+/// 열리기는 하는데 아무것도 안 받았다.** 공유 대상 선택 화면조차 안 뜨고
+/// 메인 화면만 떴다. ⚠️ **로그에 오류가 하나도 안 찍혔다.**
 ///
-/// 📌 **같은 `.vcf` 를 「내 파일」앱에서 보내면 정상으로 간다**(대화방에
-/// *"홍길동 · 연락처 · 자세히 보기"* 카드가 뜬다). 경로만 다르다.
+/// 원인은 [_vcardMimeType] 주석에 적었다 — `text/*` 를 주면 카카오톡이
+/// **텍스트 공유로 처리하고 `EXTRA_STREAM` 을 무시**한다. `application/octet-stream`
+/// 으로 바꾸니 **카카오톡·문자 둘 다 전송됐다.**
 ///
-/// ⚠️ **다음 사람이 같은 셋을 다시 밟지 않도록 적어 둔다 — 셋 다 아니었다.**
+/// ## ⚠️ 이 결함을 쫓으며 세 번 헛짚었다 — 지우지 않고 남긴다
 ///
 /// | 의심한 것 | 재 본 결과 |
 /// |---|---|
-/// | 임시 파일을 너무 빨리 지워서 | `share_plus` 가 복사한다. 무관 |
-/// | MIME 이 `text/vcard` 라서 | `text/x-vcard` 로 바꿔도 그대로 |
-/// | 매니페스트 `<queries>` 에 `ACTION_SEND` 가 없어서 | 추가해도 그대로 |
+/// | 임시 파일을 너무 빨리 지워서 | `share_plus` 가 복사한다(`Share.kt:181`). 무관 |
+/// | `<queries>` 에 `ACTION_SEND` 가 없어서 | 권한은 정상 부여됐다(`dumpsys activity permissions` 로 확인) |
+/// | URI 제공자 차이(MediaStore vs FileProvider) | **아니었다.** 아래 참고 |
 ///
-/// **재는 방법**(빌드 없이 `adb` 로 변수를 하나씩 끈다):
+/// 🚨 **셋째가 특히 위험한 오진이었다.** `adb shell am start` 로 재서
+/// *"MediaStore 는 되고 우리 FileProvider 는 안 된다"* 고 좁혔는데, **그 방식이
+/// 카카오톡 프로세스 상태에 좌우돼 같은 조건을 두 번 재면 다른 결과가 나온다.**
+/// 콜드 스타트일 때만 공유 화면이 떴고, 그것을 URI 차이로 읽었다.
 ///
-/// ```
-/// adb shell "am start -a android.intent.action.SEND -t text/x-vcard \
-///   --eu android.intent.extra.STREAM content://media/external/file/<id> \
-///   -n com.kakao.talk/com.kakao.talk.activity.RecentExcludeIntentFilterActivity \
-///   --grant-read-uri-permission"
-/// ```
-///
-/// 이렇게 하면 **공유 대상 선택 화면이 뜬다**(subject 를 붙여도 뜬다). 즉
-/// 남은 차이는 **URI 를 어디서 주느냐** 하나다 — MediaStore ✅ vs 우리
-/// FileProvider ❌.
-///
-/// **다음에 볼 순서**: ① `grantUriPermission` 이 카카오톡에 실제로 붙는지
-/// ② FileProvider authority 충돌 ③ 파일 앱 경로와 인텐트 덤프 비교.
-/// 🚫 `share_plus` 13.x 올리기는 **막혔다** — `win32` 6.x → `package_info_plus`
-/// 10.1+ → `flutter_secure_storage` 10.x 로 이어져 **암호화 저장 패키지까지
-/// 갈아야 한다.**
+/// 📌 **`am start` 로 이 경로를 재지 마라. 실제 공유 시트로만 갈린다.**
 class ContactExportService {
-  /// vCard 의 MIME 타입. RFC 6350 의 정식 타입이다.
+  /// 🚨 **`text/vcard` 가 아니라 `application/octet-stream` 이다.**
   ///
-  /// ⚠️ **`text/x-vcard` 로 바꿔 봤으나 아무것도 달라지지 않았다**(2026-08-26
-  /// 폴드 실측). 파일 앱이 그 타입을 쓰기에 *"그 차이겠거니"* 했는데 **틀렸다.**
-  /// `adb` 로 인텐트를 직접 만들어 재 보니 MIME 도 `EXTRA_SUBJECT` 도 무관했고,
-  /// **차이는 URI 를 어디서 주느냐**였다(MediaStore ✅ / 우리 FileProvider ❌).
+  /// vCard 의 정식 타입은 `text/vcard`(RFC 6350)인데, **그것으로 보내면
+  /// 카카오톡에 파일이 도착하지 않는다**(2026-08-26 폴드 실측).
   ///
-  /// 📌 그러니 **여기를 다시 만지지 마라.** 원인은 아래쪽 URI 전달 경로에 있다.
-  static const String _vcardMimeType = 'text/vcard';
+  /// ## 무슨 일이 일어나나
+  ///
+  /// ```
+  /// text/vcard · text/x-vcard   카카오톡이 "텍스트 공유"로 처리하고
+  ///                             EXTRA_STREAM 을 무시한다.
+  ///                             → 앱은 열리는데 아무것도 안 받는다
+  /// application/octet-stream    파일로 처리한다 → 전송된다
+  /// ```
+  ///
+  /// 카카오톡 인텐트 필터에 `text` 가 들어 있어(`StaticType: text`) **공유
+  /// 시트에는 뜬다.** 그래서 *"고를 수는 있는데 아무 일도 안 일어나는"* 모양이
+  /// 된다. ⚠️ **로그에 오류가 하나도 안 찍힌다** — 우리 쪽은 공유 시트를 띄운
+  /// 것까지 성공했고, 실패는 받는 앱 안에서 조용히 난다.
+  ///
+  /// 📌 카카오 데브톡에도 *"`application/*` 으로는 단일 파일 공유가 된다"* 는
+  /// 보고가 있다. **카카오톡의 공식 파일 공유 가이드는 존재하지 않는다** —
+  /// 지원 MIME 범위가 공개돼 있지 않아 실측 말고는 알 방법이 없었다.
+  ///
+  /// ## ⚠️ 대가
+  ///
+  /// 파일 타입이 뭉뚱그려지므로 **연락처 앱이 공유 시트 후보에서 빠질 수
+  /// 있다**(연락처 앱은 보통 `text/x-vcard` 로 필터를 건다). 받는 쪽은
+  /// **확장자 `.vcf`** 로 판별한다 — 그래서 [vcardFileName] 이 확장자를 반드시
+  /// 붙인다.
+  ///
+  /// ## 📌 이 값을 다시 만지기 전에
+  ///
+  /// **`adb shell am start` 로 재지 마라.** 그 방식은 카카오톡 프로세스 상태에
+  /// 좌우돼 **같은 조건을 두 번 재면 다른 결과가 나온다.** 이 결함을 쫓는 동안
+  /// 그 방식으로 세 번 헛짚었다(임시 파일 삭제 시점 · MIME 무관 · `<queries>`).
+  /// **실제 공유 시트로만 갈렸다.**
+  static const String _vcardMimeType = 'application/octet-stream';
 
 
   /// 명함 하나를 vCard 로 만들어 공유 시트에 넘긴다.
