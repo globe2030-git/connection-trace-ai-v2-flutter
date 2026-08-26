@@ -74,5 +74,23 @@
             <action android:name="android.intent.action.DIAL"/>
             <data android:scheme="tel"/>
         </intent>
+        <!-- 🚨 명함 내보내기(추가 492)가 이것 없이는 **조용히 실패한다.**
+             2026-08-26 폴드 실측: 공유 시트에서 카카오톡을 고르면 카카오톡이
+             **열리기는 하는데 아무것도 안 받고** 메인 화면만 떴다. 로그에도
+             오류가 없었다.
+
+             원인은 위 둘과 같은 뿌리다. share_plus 는 파일을 자기
+             FileProvider 로 넘기면서 **조회된 앱들에게만** 읽기 권한을
+             부여하는데(`queryIntentActivities` → `grantUriPermission`),
+             Android 11+ 에서는 여기 선언한 것만 조회된다. 조회가 비면
+             권한이 아무에게도 안 가고, 받는 앱은 URI 를 받아도 못 읽는다.
+
+             📌 같은 파일을 「내 파일」앱에서 보내면 정상으로 갔다 — 그쪽은
+             MediaStore URI 라 이 권한 부여가 필요 없다. **그 차이가
+             원인을 갈랐다.** -->
+        <intent>
+            <action android:name="android.intent.action.SEND"/>
+            <data android:mimeType="*/*"/>
+        </intent>
     </queries>
 </manifest>

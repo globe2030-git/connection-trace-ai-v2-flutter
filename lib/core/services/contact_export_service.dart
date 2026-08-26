@@ -31,16 +31,69 @@ import '../utils/vcard_util.dart';
 /// 열었더니 *"연락처에 가져오기"*가 실제로 떴다(2026-08-25 폴드 실측,
 /// HANDOFF 644~666행). ⚠️ **iOS 는 아직 실측 전이다.**
 ///
-/// ## 🚨 임시 파일을 반드시 지운다
+/// ## 🚨 임시 파일을 곧바로 지운다
 ///
 /// `.vcf` 안에는 **제3자(명함 주인) 개인정보가 평문으로** 들어간다. 이 앱은
 /// 명함을 암호화해 보관하는데, 캐시에 평문이 남으면 **그 암호화의 의미가
 /// 깎인다.** 이 저장소는 스캔 임시 파일에서 같은 자리를 두 번 겪었다
 /// (backlog 추가 247·253).
 ///
-/// 그래서 공유가 끝나면 `finally` 에서 지운다. 공유를 취소해도, 예외가 나도
-/// 지운다.
+/// 그래서 공유가 끝나면 `finally` 에서 지운다. 취소해도, 예외가 나도 지운다.
+///
+/// ⚠️ **"너무 빨리 지워서 공유가 실패하는 것 아닌가"를 의심해 지연 삭제로
+/// 바꿔 봤으나, 그게 아니었다**(2026-08-26). `share_plus` 는 넘겨받은 파일을
+/// **자기 폴더(`caches/share_plus`)로 복사한 뒤** 공유하므로
+/// (`Share.kt:181` `copyToShareCacheFolder`), 우리가 원본을 지워도 상관없다.
+/// **원본을 늦게 지우면 평문만 오래 남는다.**
+///
+/// ## 🚨 카카오톡 전송이 아직 안 된다 (미해결)
+///
+/// 2026-08-26 폴드 실측: 공유 시트에서 카카오톡을 고르면 **카카오톡이
+/// 열리기는 하는데 아무것도 안 받는다.** 공유 대상 선택 화면조차 안 뜨고
+/// 메인 화면만 뜬다. **로그에 오류가 하나도 안 찍힌다** — 우리 쪽은 공유
+/// 시트를 띄운 것까지 성공했고, 실패는 받는 앱 안에서 조용히 난다.
+///
+/// 📌 **같은 `.vcf` 를 「내 파일」앱에서 보내면 정상으로 간다**(대화방에
+/// *"홍길동 · 연락처 · 자세히 보기"* 카드가 뜬다). 경로만 다르다.
+///
+/// ⚠️ **다음 사람이 같은 셋을 다시 밟지 않도록 적어 둔다 — 셋 다 아니었다.**
+///
+/// | 의심한 것 | 재 본 결과 |
+/// |---|---|
+/// | 임시 파일을 너무 빨리 지워서 | `share_plus` 가 복사한다. 무관 |
+/// | MIME 이 `text/vcard` 라서 | `text/x-vcard` 로 바꿔도 그대로 |
+/// | 매니페스트 `<queries>` 에 `ACTION_SEND` 가 없어서 | 추가해도 그대로 |
+///
+/// **재는 방법**(빌드 없이 `adb` 로 변수를 하나씩 끈다):
+///
+/// ```
+/// adb shell "am start -a android.intent.action.SEND -t text/x-vcard \
+///   --eu android.intent.extra.STREAM content://media/external/file/<id> \
+///   -n com.kakao.talk/com.kakao.talk.activity.RecentExcludeIntentFilterActivity \
+///   --grant-read-uri-permission"
+/// ```
+///
+/// 이렇게 하면 **공유 대상 선택 화면이 뜬다**(subject 를 붙여도 뜬다). 즉
+/// 남은 차이는 **URI 를 어디서 주느냐** 하나다 — MediaStore ✅ vs 우리
+/// FileProvider ❌.
+///
+/// **다음에 볼 순서**: ① `grantUriPermission` 이 카카오톡에 실제로 붙는지
+/// ② FileProvider authority 충돌 ③ 파일 앱 경로와 인텐트 덤프 비교.
+/// 🚫 `share_plus` 13.x 올리기는 **막혔다** — `win32` 6.x → `package_info_plus`
+/// 10.1+ → `flutter_secure_storage` 10.x 로 이어져 **암호화 저장 패키지까지
+/// 갈아야 한다.**
 class ContactExportService {
+  /// vCard 의 MIME 타입. RFC 6350 의 정식 타입이다.
+  ///
+  /// ⚠️ **`text/x-vcard` 로 바꿔 봤으나 아무것도 달라지지 않았다**(2026-08-26
+  /// 폴드 실측). 파일 앱이 그 타입을 쓰기에 *"그 차이겠거니"* 했는데 **틀렸다.**
+  /// `adb` 로 인텐트를 직접 만들어 재 보니 MIME 도 `EXTRA_SUBJECT` 도 무관했고,
+  /// **차이는 URI 를 어디서 주느냐**였다(MediaStore ✅ / 우리 FileProvider ❌).
+  ///
+  /// 📌 그러니 **여기를 다시 만지지 마라.** 원인은 아래쪽 URI 전달 경로에 있다.
+  static const String _vcardMimeType = 'text/vcard';
+
+
   /// 명함 하나를 vCard 로 만들어 공유 시트에 넘긴다.
   ///
   /// 공유 시트를 띄웠으면 `true`. 파일을 만들지 못했거나 공유가 실패하면
@@ -58,7 +111,7 @@ class ContactExportService {
       file = await _writeTempVCard(contact, nameFormat);
       await SharePlus.instance.share(
         ShareParams(
-          files: [XFile(file.path, mimeType: 'text/vcard')],
+          files: [XFile(file.path, mimeType: _vcardMimeType)],
           // ⚠️ 제목에 이름이 들어간다. 메신저에 따라 미리보기로 보이므로
           //    보내는 사람이 무엇을 보내는지 알 수 있어야 한다.
           subject: '${contact.name} 연락처',
