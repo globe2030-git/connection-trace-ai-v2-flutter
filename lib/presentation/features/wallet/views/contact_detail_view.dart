@@ -121,7 +121,7 @@ class ContactDetailView extends StatelessWidget {
                     _header(context, uid),
                     ..._contactRows(context),
                     // 그룹 진입점은 빌드 스위치로 숨긴다(group_model.dart의
-                    // kGroupsFeatureEnabled 참고, 방침 v2.3 시행일 8/30 게이트).
+                    // kGroupsFeatureEnabled 참고, 방침 v2.3 시행 게이트).
                     if (kGroupsFeatureEnabled) ..._groupRows(context),
                     ..._historyRows(context),
                   ],

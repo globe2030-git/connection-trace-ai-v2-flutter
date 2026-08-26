@@ -4090,7 +4090,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
 
                   // 8-2. 그룹(추가 427) — 태그와 달리 다중 선택 시트로 고른다.
                   // 빌드 스위치로 숨긴다(group_model.dart의 kGroupsFeatureEnabled
-                  // 참고, 방침 v2.3 시행일 8/30 게이트). 숨겨도 _groupIds는
+                  // 참고, 방침 v2.3 시행 게이트). 숨겨도 _groupIds는
                   // 기존 명함의 groupIds로 그대로 초기화돼 저장 시 값을 잃지 않는다.
                   if (kGroupsFeatureEnabled) ...[
                     _buildGroupField(),

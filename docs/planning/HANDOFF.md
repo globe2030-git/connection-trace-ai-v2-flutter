@@ -260,7 +260,7 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
 안드로이드  Firebase App Distribution, 테스터 5명 (PM 실행)
 아이폰     TestFlight 내부 테스팅 (사용자가 Xcode Organizer로 업로드)
 탑재 키    행안부 검색·좌표 · 브이월드 · 카카오 · 네이버 (5개, 양쪽 다 실측 확인)
-그룹 기능  꺼짐 — 방침 v2.3 시행일(2026-08-30) 게이트
+그룹 기능  꺼짐 — 방침 v2.3 시행 게이트(날짜는 방침 문서에)
 ```
 
 **+9 대비 담긴 것**
@@ -296,7 +296,7 @@ IPA   <archive>/Products/Applications/Runner.app/Frameworks/App.framework/App
 ```
 빌드      1.0.0+9 · 커밋 7ad3039 · release · 업로드 키 서명
 탑재 키   행안부 검색·좌표 · 카카오 REST · 네이버 Client ID  (4개 전부 실측 확인)
-그룹 기능 꺼짐 — 방침 v2.3 시행일(2026-08-30) 게이트
+그룹 기능 꺼짐 — 방침 v2.3 시행 게이트(날짜는 방침 문서에)
 대상      Firebase App Distribution 등록 테스터 5명
 안내문    docs/planning/tester-guide.md (이번 판으로 갱신됨)
 ```
