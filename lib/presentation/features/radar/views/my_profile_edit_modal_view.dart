@@ -60,6 +60,16 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   late final TextEditingController _websiteController;
   late final TextEditingController _postalCodeController;
 
+  /// 이번 편집에서 명함을 몇 면 스캔했는지(0=아직, 1=앞면, 2=앞+뒷면).
+  ///
+  /// **명함 한 장은 앞면과 뒷면까지가 최대**다(사용자 정의 2026-08-14,
+  /// 등록 화면과 같은 규칙). 이 값으로 카메라에 보낼 면 이름과 안내 문구를
+  /// 정한다.
+  ///
+  /// ⚠️ 등록 화면과 달리 **사진을 보관하지 않으므로 대표 선택·면 빼기는
+  /// 없다.** 여기서 세는 것은 "무엇을 찍는 중인가"뿐이다.
+  int _scanCount = 0;
+
   /// 생일(월·일). 저장은 "MM-DD" 한 문자열이지만 입력은 두 목록으로 받는다.
   int? _birthMonth;
   int? _birthDay;
@@ -171,19 +181,27 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   /// 채워진 프로필을 고치는" 폼이라 명함 등록 때처럼 빈 칸만 채우는 방식이
   /// 아니라, 스캔으로 실제 읽힌 값만(빈 문자열은 무시) 기존 값 위에 덮어써
   /// "실물 명함으로 프로필을 최신화"하는 의도에 맞춘다.
-  Future<void> _performOcrScan({required bool isFromCamera}) async {
+  Future<void> _performOcrScan({
+    required bool isFromCamera,
+    String sideLabel = '앞면',
+  }) async {
     OcrScanResult? result;
     if (isFromCamera) {
       result = await Navigator.push<OcrScanResult>(
         context,
-        MaterialPageRoute(builder: (_) => const CameraScanModalView()),
+        // 지금 어느 면을 찍는 중인지 카메라 화면에 띄운다. 종전에는 이 화면이
+        // 라벨을 안 넘겨 **언제나 "앞면"으로 보였다** — 뒷면을 고르고 들어와도
+        // 알 수 없었다(등록 화면이 2026-08-14에 같은 이유로 고친 자리다).
+        MaterialPageRoute(
+          builder: (_) => CameraScanModalView(sideLabel: sideLabel),
+        ),
       );
     } else {
       result = await showModalBottomSheet<OcrScanResult>(
         context: context,
         isScrollControlled: true,
         backgroundColor: Colors.transparent,
-        builder: (_) => const FilePickerModalView(),
+        builder: (_) => FilePickerModalView(sideLabel: sideLabel),
       );
     }
     // 이 화면은 **텍스트만 쓰고 이미지는 저장하지 않는다.** 그래서 스캔이 남긴
@@ -196,6 +214,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     if (result == null || !mounted) return;
 
     setState(() {
+      // 면 하나를 읽었다. 등록 화면과 달리 사진을 쌓지 않으므로 세기만 한다.
+      if (_scanCount < 2) _scanCount++;
       final scanned = result!;
       // 읽힌 값만 덮어쓴다 — 빈 문자열은 "못 읽었다"는 뜻이라, 그걸로 덮으면
       // 사용자가 손으로 넣어 둔 값이 스캔 한 번에 지워진다.
@@ -224,32 +244,64 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     });
 
     // 명함 앞/뒷면에 정보가 나뉜 경우가 흔해서(add_card_modal_view.dart와 동일한
-    // 패턴) 필수 필드가 비어 있으면 "뒷면도 스캔해 보라"는 안내와 재촬영
-    // 버튼을 보여준다 — 이 화면엔 이 기능이 빠져 있어서 스캔 후 빈 칸이 있어도
-    // 다시 찍을 방법이 안내되지 않던 문제가 있었다.
-    final missingFields = <String>[
+    // 패턴) 못 채운 칸이 있으면 "뒷면도 스캔해 보라"고 안내한다.
+    //
+    // ⚠️ **필수와 선택을 갈라서 본다**(2026-08-26). 종전에는 필수 다섯만 보고
+    // 판정해서, 앞면에 그 다섯이 다 있으면 안내가 안 떴다. 그런데 **웹사이트·
+    // 팩스·부서는 뒷면에 있는 경우가 흔하다** — 안내가 안 뜨면 뒷면을 찍을
+    // 버튼도 안 나오고, 그 값들은 영영 안 들어온다(사용자 지적).
+    final missingRequired = <String>[
       if (_nameController.text.trim().isEmpty) '이름',
       if (_companyController.text.trim().isEmpty) '회사명',
       if (_addressController.text.trim().isEmpty) '주소',
       if (_phoneController.text.trim().isEmpty) '휴대폰 번호',
       if (_emailController.text.trim().isEmpty) '이메일',
     ];
+    final missingOptional = <String>[
+      if (_departmentController.text.trim().isEmpty) '부서',
+      if (_officePhoneController.text.trim().isEmpty) '사무실 전화',
+      if (_faxController.text.trim().isEmpty) '팩스',
+      if (_websiteController.text.trim().isEmpty) '웹사이트',
+      if (_postalCodeController.text.trim().isEmpty) '우편번호',
+    ];
 
     if (!mounted) return;
 
-    if (missingFields.isEmpty) {
+    // 뒷면까지 찍었으면 더 권하지 않는다 — 명함은 두 면이 최대다.
+    final canScanBack = _scanCount < 2;
+
+    if (missingRequired.isEmpty && missingOptional.isEmpty) {
       _showInlineNotice(
         '📸 스캔한 명함 정보로 채웠습니다. AI 인식이 완벽하지 않을 수 있으니 내용을 확인하고 저장해 주세요.',
         isError: false,
       );
-    } else {
-      _showInlineNotice(
-        '⚠️ ${missingFields.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요 — 뒷면도 스캔해 보세요.',
-        isError: true,
-        actionLabel: '뒷면 스캔',
-        onAction: () => _performOcrScan(isFromCamera: isFromCamera),
-      );
+      return;
     }
+
+    if (missingRequired.isNotEmpty) {
+      _showInlineNotice(
+        '⚠️ ${missingRequired.join(', ')} 정보를 찾지 못했습니다. 명함 뒷면에 있을 수도 있어요'
+        '${canScanBack ? ' — 뒷면도 스캔해 보세요.' : '. 직접 입력해 주세요.'}',
+        isError: true,
+        actionLabel: canScanBack ? '뒷면 스캔' : null,
+        onAction: canScanBack
+            ? () => _performOcrScan(isFromCamera: isFromCamera, sideLabel: '뒷면')
+            : null,
+      );
+      return;
+    }
+
+    // 여기부터는 선택 항목만 빈 경우다. **없어도 되는 값이므로 경고가 아니다** —
+    // 빨간 문구로 띄우면 "뭔가 잘못됐다"로 읽힌다.
+    _showInlineNotice(
+      '📸 채웠습니다. ${missingOptional.join(', ')}은(는) 못 찾았어요 — 선택 항목이라 비워 두셔도 됩니다'
+      '${canScanBack ? '. 명함 뒷면에 있다면 뒷면도 스캔해 보세요.' : '.'}',
+      isError: false,
+      actionLabel: canScanBack ? '뒷면 스캔' : null,
+      onAction: canScanBack
+          ? () => _performOcrScan(isFromCamera: isFromCamera, sideLabel: '뒷면')
+          : null,
+    );
   }
 
   void _showInlineNotice(
@@ -484,6 +536,44 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                         ),
                       ],
                     ),
+                    // 앞면을 한 번 읽은 뒤에는 **안내가 없어도** 뒷면을 찍을 수
+                    // 있어야 한다. 종전에는 뒷면으로 가는 길이 "못 찾은 항목이
+                    // 있습니다" 안내에 딸린 버튼뿐이라, **앞면이 잘 읽히면
+                    // 뒷면을 찍을 방법이 사라졌다**(사용자 지적 2026-08-26).
+                    if (_scanCount == 1) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _performOcrScan(
+                            isFromCamera: true,
+                            sideLabel: '뒷면',
+                          ),
+                          icon: const AppIcon(
+                            AppIconId.scanCard,
+                            size: 18,
+                            color: AppColors.textSecondary,
+                          ),
+                          label: const Text(
+                            '뒷면도 스캔 (선택)',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textSecondary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                              color: AppColors.borderSubtle,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                   ],
 
