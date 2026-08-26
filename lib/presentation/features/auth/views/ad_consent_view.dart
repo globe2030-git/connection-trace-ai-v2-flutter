@@ -4,11 +4,7 @@ import '../../../../core/services/ad_consent_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
 
-/// 광고성 정보 수신 동의 화면(추가 472 · 방침 v2.4 시행 후 유효).
-///
-/// ⚠️ 시행일은 방침 문서 한 곳에만 둔다(2026-08-26 결정).
-/// 🚨 다만 아래 [textVersion]의 날짜는 **일정이 아니라 문구 버전 식별자**다 —
-/// 이미 받은 동의가 "어느 문구에 대한 것인지"를 가리키므로 **바꾸지 않는다.**
+/// 광고성 정보 수신 동의 화면(추가 472 · 시행 2026-09-15).
 ///
 /// 로그인 직후, **아직 답한 적 없는 계정에게만 한 번** 보인다.
 ///
@@ -60,7 +56,35 @@ class AdConsentView extends StatefulWidget {
     this.initialPush = false,
     this.submitLabel = '시작하기',
     this.footnote = '하나도 선택하지 않고 시작하셔도 괜찮아요',
+    this.dismissOnSaveFailure = false,
   });
+
+  /// 저장에 실패했을 때 **화면을 닫을지.**
+  ///
+  /// ## 🚨 왜 이 값이 생겼나
+  ///
+  /// 2026-08-26 폴드 실측: `firestore.rules` 가 아직 배포되지 않아 서버가
+  /// 쓰기를 거부하는데(`PERMISSION_DENIED`), **그러면 이 화면을 지나갈 수가
+  /// 없었다.** [submitLabel] 을 눌러도 *"설정을 저장하지 못했어요"* 만 뜨고
+  /// 제자리다. 로그에 세 번 찍혀 있었다 — 사용자가 세 번 눌렀다는 뜻이다.
+  ///
+  /// ⚠️ **화면은 "받지 않으셔도 모든 기능을 그대로 쓰실 수 있어요" 라고
+  /// 말하는데, 실제로는 앱에 들어갈 수가 없었다.** 문구와 동작이 어긋났다.
+  /// 안드로이드 뒤로가기로만 빠져나올 수 있었고 그런 안내는 어디에도 없다.
+  ///
+  /// 자동 테스트는 전부 통과했다 — *"저장이 실패하면 안내를 띄운다"* 까지는
+  /// 맞게 돌았기 때문이다. **막다른 길이 된다는 것은 화면에서만 보인다.**
+  ///
+  /// ## 첫 물음과 설정에서 다르게 다룬다
+  ///
+  /// | | 저장 실패했을 때 |
+  /// |---|---|
+  /// | **첫 물음**(`true`) | 알리고 **닫는다** — 앱을 못 쓰게 막으면 안 된다 |
+  /// | **설정**(`false`) | 알리고 **머문다** — 바꾸러 들어온 사람이다 |
+  ///
+  /// 닫아도 안전하다. 저장이 안 됐으니 **동의하지 않은 상태**로 남고, 그
+  /// 상태에서는 아무것도 보내지 않는다.
+  final bool dismissOnSaveFailure;
 
   /// 설정에서 다시 열 때의 현재 값.
   ///
@@ -122,7 +146,21 @@ class _AdConsentViewState extends State<AdConsentView> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) return;
-    // 서버가 거부했다. **화면을 이 화면에 들어올 때의 값으로 되돌리고**
+
+    // 🚨 **첫 물음이면 닫는다.** 여기서 머물면 앱에 들어갈 길이 없다
+    //    ([dismissOnSaveFailure] 주석 참고).
+    if (widget.dismissOnSaveFailure) {
+      final navigator = Navigator.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('지금은 저장하지 못했어요. 설정에서 언제든 다시 하실 수 있어요.'),
+        ),
+      );
+      navigator.pop();
+      return;
+    }
+
+    // 설정에서 들어온 경우. **화면을 이 화면에 들어올 때의 값으로 되돌리고**
     // 이유를 알린다. 무조건 false 로 내리면 설정에서 켜져 있던 사람에게
     // "꺼진 것처럼" 보여 서버 상태와 화면이 반대로 어긋난다.
     setState(() {

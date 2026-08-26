@@ -15,12 +15,14 @@ void main() {
     WidgetTester tester, {
     SnsAuthProvider? provider = SnsAuthProvider.google,
     Future<bool> Function({required bool email, required bool push})? onSubmit,
+    bool dismissOnSaveFailure = false,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AdConsentView(
           provider: provider,
           onSubmit: onSubmit ?? ({required email, required push}) async => true,
+          dismissOnSaveFailure: dismissOnSaveFailure,
         ),
       ),
     );
@@ -228,6 +230,93 @@ void main() {
         find.textContaining('크림하우스주식회사'),
         findsOneWidget,
         reason: '누가 보내는지 화면에 없으면 명시적 동의로 보기 어렵다(안내서 p.12)',
+      );
+    });
+  });
+
+  group('🚨 첫 물음에서는 막다른 길이 되면 안 된다', () {
+    /// 2026-08-26 폴드 실측에서 나온 것이다. `firestore.rules` 가 아직
+    /// 배포되지 않아 서버가 쓰기를 거부하는데(`PERMISSION_DENIED`),
+    /// **그러면 이 화면을 지나갈 수가 없었다.** [시작하기]를 눌러도
+    /// *"설정을 저장하지 못했어요"* 만 뜨고 제자리다 — 로그에 세 번 찍혀
+    /// 있었다(사용자가 세 번 눌렀다).
+    ///
+    /// ⚠️ **화면은 "받지 않으셔도 모든 기능을 그대로 쓰실 수 있어요" 라고
+    /// 말하는데 실제로는 앱에 못 들어갔다.** 안드로이드 뒤로가기가 유일한
+    /// 탈출구였고 그런 안내는 어디에도 없다.
+    ///
+    /// 📌 **이 파일의 다른 테스트는 전부 통과하고 있었다** — *"저장 실패하면
+    /// 안내를 띄운다"* 까지는 맞게 돌았기 때문이다. **규칙은 지켰는데 사람이
+    /// 갇혔다.**
+    testWidgets('⭐ 저장에 실패해도 화면이 닫힌다', (tester) async {
+      var closed = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    await Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => AdConsentView(
+                          provider: SnsAuthProvider.google,
+                          dismissOnSaveFailure: true,
+                          onSubmit: ({required email, required push}) async =>
+                              false,
+                        ),
+                      ),
+                    );
+                    closed = true;
+                  },
+                  child: const Text('열기'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('열기'));
+      await tester.pumpAndSettle();
+      expect(find.text('시작하기'), findsOneWidget);
+
+      await tester.tap(find.text('시작하기'));
+      await tester.pumpAndSettle();
+
+      expect(
+        closed,
+        isTrue,
+        reason: '여기서 안 닫히면 이용자가 앱에 들어갈 길이 없다. 동의는 '
+            '선택이고, 화면 스스로도 그렇게 말하고 있다',
+      );
+    });
+
+    testWidgets('⭐ 닫으면서 무슨 일인지 알린다', (tester) async {
+      await pump(
+        tester,
+        dismissOnSaveFailure: true,
+        onSubmit: ({required email, required push}) async => false,
+      );
+      await tester.tap(find.text('시작하기'));
+      await tester.pump();
+      expect(
+        find.textContaining('설정에서 언제든 다시'),
+        findsOneWidget,
+        reason: '조용히 닫히면 "내 선택이 저장됐나"를 모른다',
+      );
+    });
+
+    testWidgets('⭐ 설정에서 들어온 경우에는 머문다 — 바꾸러 온 사람이다', (tester) async {
+      await pump(
+        tester,
+        onSubmit: ({required email, required push}) async => false,
+      );
+      await tester.tap(find.text('시작하기'));
+      await tester.pumpAndSettle();
+      expect(find.text('시작하기'), findsOneWidget);
+      expect(
+        find.text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'),
+        findsOneWidget,
       );
     });
   });
