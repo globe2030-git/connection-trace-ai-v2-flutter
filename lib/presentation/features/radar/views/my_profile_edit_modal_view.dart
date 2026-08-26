@@ -10,9 +10,11 @@ import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
+import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/ocr_scanner_service.dart';
 import '../../../../core/utils/scan_temp_cleanup.dart';
 import '../../../../data/models/my_profile_model.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/address_search_view.dart';
 import '../../wallet/views/camera_scan_modal_view.dart';
@@ -70,6 +72,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
   /// 없다.** 여기서 세는 것은 "무엇을 찍는 중인가"뿐이다.
   int _scanCount = 0;
 
+  /// 스캔한 내 명함 사진의 **암호문 경로**. 저장을 눌러야 확정된다.
+  String? _cardImagePath;
+
+  /// 이번 편집에서 새로 스캔한 **평문 원본** 경로(임시). 저장 시 암호화하고,
+  /// 쓰고 나면 지운다 — 평문이 캐시에 남으면 암호화하는 이유가 무력해진다
+  /// (추가 247·253에서 두 번 겪은 자리).
+  String? _scannedSourcePath;
+
+  /// "사진 지우기"를 눌렀는가. 저장 시 반영한다.
+  bool _cardImageCleared = false;
+
   /// 생일(월·일). 저장은 "MM-DD" 한 문자열이지만 입력은 두 목록으로 받는다.
   int? _birthMonth;
   int? _birthDay;
@@ -108,6 +121,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _postalCodeController = TextEditingController(
       text: profile.postalCode ?? '',
     );
+    _cardImagePath = profile.cardImagePath;
     _birthMonth = profile.birthMonth;
     _birthDay = profile.birthDay;
     _addressDetailController = TextEditingController(
@@ -130,6 +144,9 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     _faxController.dispose();
     _websiteController.dispose();
     _postalCodeController.dispose();
+    // 저장하지 않고 닫았다면 스캔 원본(평문)이 남는다 — 여기서 지운다.
+    final unsaved = _scannedSourcePath;
+    if (unsaved != null) unawaited(deleteQuietly(unsaved));
     super.dispose();
   }
 
@@ -210,12 +227,31 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     //
     // 결과를 다 쓴 뒤에 지운다. 지금 지워도 되는 이유는 아래에서 `result`의
     // **문자열 필드만** 읽고 파일은 다시 열지 않기 때문이다.
-    if (result != null) unawaited(deleteQuietly(result.imagePath));
-    if (result == null || !mounted) return;
+    // 2026-08-26부터 **사진을 보관한다**(사용자 지시). 그래서 여기서 바로
+    // 지우지 않고 경로를 들고 있다가, 저장 시 암호화한 뒤 지운다.
+    //
+    // ⚠️ 저장을 안 누르고 화면을 닫으면 그때 지운다(dispose) — 어느 경로로
+    // 나가든 평문이 남지 않아야 한다.
+    if (result == null || !mounted) {
+      if (result != null) unawaited(deleteQuietly(result.imagePath));
+      return;
+    }
+    final scannedSource = result.imagePath;
 
     setState(() {
-      // 면 하나를 읽었다. 등록 화면과 달리 사진을 쌓지 않으므로 세기만 한다.
+      // 면 하나를 읽었다. 등록 화면과 달리 **대표 선택은 없다** — 내 명함은
+      // 목록에 뜨는 값이 아니라 고를 이유가 없다.
       if (_scanCount < 2) _scanCount++;
+      if (scannedSource != null && scannedSource.isNotEmpty) {
+        // 앞면을 찍고 뒷면을 찍으면 뒷면이 보관본이 된다. 마지막에 찍은 면을
+        // 남기는 것이 "다시 찍었다"는 행동과 가장 가깝다.
+        final previous = _scannedSourcePath;
+        _scannedSourcePath = scannedSource;
+        _cardImageCleared = false;
+        if (previous != null && previous != scannedSource) {
+          unawaited(deleteQuietly(previous));
+        }
+      }
       final scanned = result!;
       // 읽힌 값만 덮어쓴다 — 빈 문자열은 "못 읽었다"는 뜻이라, 그걸로 덮으면
       // 사용자가 손으로 넣어 둔 값이 스캔 한 번에 지워진다.
@@ -304,6 +340,135 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     );
   }
 
+
+  /// 보여 줄 명함 사진이 있는가 — 저장된 암호문이든 방금 스캔한 원본이든.
+  bool get _hasCardImage =>
+      !_cardImageCleared &&
+      ((_scannedSourcePath != null) || (_cardImagePath != null));
+
+  /// 스캔한 내 명함 사진. **암호문이라 복호화해서 그린다**(등록 화면과 같다).
+  /// 방금 스캔한 것은 아직 평문 원본이라 그대로 읽는다.
+  Widget _buildCardImageBlock() {
+    final uid = context.read<AuthRepository>().firebaseUid;
+    final fresh = _scannedSourcePath;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.cardSurface,
+        border: Border.all(color: AppColors.borderSubtle),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const AppIcon(
+                AppIconId.scanCard,
+                size: 15,
+                color: AppColors.accentText,
+              ),
+              const SizedBox(width: 7),
+              const Text(
+                '스캔한 내 명함',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.accentText,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: _confirmRemoveCardImage,
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  '사진 삭제',
+                  style: TextStyle(fontSize: 12, color: AppColors.destructive),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              height: 128,
+              width: double.infinity,
+              child: fresh != null
+                  ? Image.file(File(fresh), fit: BoxFit.contain)
+                  : FutureBuilder<Uint8List?>(
+                      future: uid == null
+                          ? Future.value(null)
+                          : ContactImageService().loadDecryptedCardImage(
+                              uid: uid,
+                              path: _cardImagePath!,
+                            ),
+                      builder: (context, snap) {
+                        final bytes = snap.data;
+                        if (bytes == null) {
+                          return Container(color: AppColors.bgBase);
+                        }
+                        return Image.memory(bytes, fit: BoxFit.contain);
+                      },
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '이 기기에 암호화되어 저장돼요. QR로 공유할 때는 글자 정보만 나갑니다.',
+            style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 사진 지우기 — **되돌릴 수 없다.** 서버 백업이 꺼져 있어 기기의 암호문이
+  /// 유일본이다. 그래서 무엇이 지워지고 무엇이 남는지 먼저 말한다.
+  Future<void> _confirmRemoveCardImage() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('명함 사진을 지울까요?'),
+        content: const Text(
+          '사진만 지웁니다. 스캔해서 채운 이름·회사·연락처는 그대로 남습니다.\n\n'
+          '이 사진은 이 기기에만 있어 지우면 되돌릴 수 없어요 — 다시 찍어야 합니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('그대로 두기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '사진 지우기',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _cardImageCleared = true;
+      _scanCount = 0;
+    });
+    // 아직 저장 전이라면 평문 원본을 여기서 지운다.
+    final fresh = _scannedSourcePath;
+    if (fresh != null) {
+      unawaited(deleteQuietly(fresh));
+      _scannedSourcePath = null;
+    }
+  }
+
   void _showInlineNotice(
     String text, {
     required bool isError,
@@ -373,8 +538,31 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     return v.isEmpty ? null : v;
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // 명함 사진 — 남의 명함과 **같은 경로**로 암호화해 보관한다
+    // (`ContactImageService`, AES-256-GCM). 예약 id 하나를 쓰므로 서버 백업을
+    // 켜는 날 같은 플래그로 함께 올라간다.
+    //
+    // ⚠️ 로그인(uid)이 없으면 키가 없어 저장하지 않는다 — 등록 화면과 같다.
+    var cardImagePath = _cardImageCleared ? null : _cardImagePath;
+    final uid = context.read<AuthRepository>().firebaseUid;
+    final source = _scannedSourcePath;
+    if (source != null && uid != null) {
+      final saved = await ContactImageService().saveEncryptedCardImage(
+        uid: uid,
+        contactId: ContactImageService.myProfileCardId,
+        sourcePath: source,
+      );
+      if (!mounted) return;
+      if (saved != null) cardImagePath = saved;
+    }
+    // 암호화가 끝났으면 평문 원본은 더 볼 일이 없다.
+    if (source != null) {
+      unawaited(deleteQuietly(source));
+      _scannedSourcePath = null;
+    }
 
     final updated = MyProfileModel(
       name: _nameController.text.trim(),
@@ -391,6 +579,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       fax: _emptyToNull(_faxController),
       website: _emptyToNull(_websiteController),
       postalCode: _emptyToNull(_postalCodeController),
+      cardImagePath: cardImagePath,
       avatarPath: _avatarCleared ? null : _avatarPath,
       // 월만 고르고 일을 안 고른 상태는 저장하지 않는다(formatMonthDay가 null).
       birthMonthDay: MyProfileModel.formatMonthDay(_birthMonth, _birthDay),
@@ -475,6 +664,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   const SizedBox(height: 16),
 
                   if (OcrScannerService.isSupportedOnThisPlatform) ...[
+                    if (_hasCardImage) ...[
+                      _buildCardImageBlock(),
+                      const SizedBox(height: 10),
+                    ],
                     Row(
                       children: [
                         Expanded(
