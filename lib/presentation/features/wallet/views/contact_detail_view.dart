@@ -14,6 +14,7 @@ import '../../../common/card_image_viewer.dart';
 import '../../../common/contact_avatar.dart';
 import '../view_models/groups_view_model.dart';
 import 'add_card_modal_view.dart';
+import 'contact_export_confirm_dialog.dart';
 import 'group_assign_sheet.dart';
 
 /// 명함 **상세 보기** — 읽는 화면이다(2026-08-19 사용자 확정, 추가 330).
@@ -672,6 +673,11 @@ class _ExportButtonState extends State<_ExportButton> {
 
   Future<void> _export() async {
     if (_busy) return;
+    // 🚨 공유 시트를 바로 띄우지 않는다. 제3자 개인정보를 앱 밖으로 내보내는
+    //    동작이라 **무엇이 나가는지** 먼저 보여 준다
+    //    ([ContactExportConfirmDialog] 주석 참고).
+    final go = await ContactExportConfirmDialog.show(context, widget.contact);
+    if (!go || !mounted) return;
     setState(() => _busy = true);
     // 아이패드에서 팝오버가 뜰 자리. 없으면 공유 시트가 안 뜬다.
     final box = context.findRenderObject() as RenderBox?;
