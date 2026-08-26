@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/card_photo_downscale.dart';
+import '../utils/card_photo_backfill.dart';
 import '../utils/card_photo_quota.dart';
 import '../utils/scan_temp_cleanup.dart';
 import 'card_photo_backup_service.dart';
@@ -90,7 +91,31 @@ class ContactImageService {
     required String contactId,
     required String encryptedFilePath,
   }) async {
-    final quota = await _quota.fetch(uid);
+    await _uploadWithQuota(
+      uid: uid,
+      contactId: contactId,
+      encryptedFilePath: encryptedFilePath,
+      quota: await _quota.fetch(uid),
+    );
+  }
+
+  /// 한도를 **이미 알고 있을 때** 쓰는 알맹이.
+  ///
+  /// ⚠️ 한도를 인자로 받는 이유: [CardPhotoQuotaService.fetch]는 부를 때마다
+  /// Firestore를 읽는다. 명함 한 장을 저장할 때는 왕복 한 번이라 괜찮지만,
+  /// [backfillCardImageUploads]처럼 수백 장을 도는 자리에서 매번 부르면
+  /// **장수만큼 서버를 읽는다**(기기 표본 103장 기준 103회). 그래서 도는
+  /// 쪽이 한 번 읽어 넘긴다.
+  ///
+  /// 반면 `syncedCount`는 **매번 다시 읽는다.** 올릴수록 늘어나는 값이라
+  /// 한 번 읽어 두면 한도를 넘겨 올리게 된다. 이쪽은 기기 안(prefs)이라
+  /// 왕복이 없다.
+  Future<void> _uploadWithQuota({
+    required String uid,
+    required String contactId,
+    required String encryptedFilePath,
+    required int quota,
+  }) async {
     final synced = (await _backupState.load()).syncedCount;
 
     if (!canUpload(synced, quota)) {
@@ -107,6 +132,82 @@ class ContactImageService {
       contactId,
       ok ? CardPhotoBackupState.synced : CardPhotoBackupState.failed,
     );
+  }
+
+  /// 기기에 이미 있는 명함 사진 중 **아직 서버에 없는 것**을 올린다(추가 508).
+  ///
+  /// ## 무엇을 메우나
+  ///
+  /// 서버 백업을 켜기 전(2026-08-26)에 등록한 명함은 **한 장도 안 올라가
+  /// 있다.** 업로드가 [saveEncryptedCardImage] 안에서만 일어나기 때문이다 —
+  /// 즉 "앞으로 찍는 것만 백업된다"는 상태였다. 이용자 입장에서는 기기를
+  /// 바꾸면 예전 사진이 다 사라지는데, **게시된 방침은 "기기를 바꾸거나 앱을
+  /// 다시 설치했을 때 잃지 않도록"이라고 말한다.** 방침과 구현이 어긋난
+  /// 자리라 메운다.
+  ///
+  /// ## 🚨 셀룰러에서도 올린다 — 알고 그렇게 뒀다
+  ///
+  /// **연결 종류를 알 방법이 지금 없다.** `connectivity_plus` 류 패키지가
+  /// `pubspec.yaml`에 없고(2026-08-26 확인), 새 의존성을 들이는 것은 이
+  /// 작업의 범위 밖으로 정했다. 그래서 Wi-Fi인지 셀룰러인지 가리지 않고
+  /// 올린다.
+  ///
+  /// 감수한 크기: 기기 표본 103장 × 평균 236KB ≈ **24MB**(둘 다 실측).
+  /// 한도(2,000장)까지 차 있으면 이론상 그보다 훨씬 크다.
+  ///
+  /// ⚠️ **다음 사람에게**: 이용자에게서 데이터 요금 이야기가 나오면 여기가
+  /// 그 자리다. 재발견하느라 시간 쓰지 말 것 — 고치려면 연결 판정 패키지를
+  /// 들이는 결정이 먼저다.
+  ///
+  /// ## 이어받기
+  ///
+  /// 건별로 장부에 결과를 남기므로(위 [_uploadWithQuota]) 중간에 끊겨도
+  /// 다음 실행이 남은 것만 집는다. 따로 진행률을 저장하지 않는다.
+  ///
+  /// 순차로 올린다 — 수백 장을 동시에 올리면 회선을 다 쓰고 다른 복원
+  /// 작업까지 굶는다([downloadMissingCardImages]와 같은 판단, 추가 76).
+  ///
+  /// 실제로 올린 건수를 돌려준다(0이면 메울 것이 없었거나 다 실패한 것이다).
+  Future<int> backfillCardImageUploads(String uid) async {
+    if (!CardPhotoBackupService.kCardPhotoBackupEnabled) return 0;
+    try {
+      final local = await findAllExistingCardImagePaths();
+      if (local.isEmpty) return 0;
+
+      // 재설치 뒤라면 장부가 비어 있다. 서버 목록으로 먼저 되살리지 않으면
+      // **이미 서버에 있는 것까지 전부 다시 올린다.**
+      await _restoreBackupStateIfEmpty(uid);
+
+      final targets = selectCardPhotoBackfillTargets(
+        localContactIds: local.keys,
+        ledger: await _backupState.load(),
+      );
+      if (targets.isEmpty) return 0;
+
+      final quota = await _quota.fetch(uid);
+      var uploaded = 0;
+      for (final id in targets) {
+        final path = local[id];
+        if (path == null) continue;
+        await _uploadWithQuota(
+          uid: uid,
+          contactId: id,
+          encryptedFilePath: path,
+          quota: quota,
+        );
+        // 장부가 곧 결과다 — upload가 성공을 돌려주지 않으므로 다시 읽는다.
+        if ((await _backupState.load()).stateOf(id) ==
+            CardPhotoBackupState.synced) {
+          uploaded++;
+        }
+      }
+      // 건수만 남긴다. 어느 명함인지는 개인정보로 이어질 수 있다.
+      debugPrint('명함 사진 소급 업로드: ${targets.length}건 중 $uploaded건');
+      return uploaded;
+    } catch (e) {
+      debugPrint('명함 사진 소급 업로드 실패: ${e.runtimeType}');
+      return 0;
+    }
   }
 
   /// 서버 복원이 로컬 명함을 덮어쓰면 `cardImagePath`가 유실된다 — 백업
