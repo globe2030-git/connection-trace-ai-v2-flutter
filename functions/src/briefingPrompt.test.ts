@@ -197,3 +197,26 @@ test("분야는 다른 절(날씨·메모·직전 포인트)과 함께 써도 �
   assert.match(p, /관심사: 독서/);
   assert.match(p, /생성 다양성 시드: z9/);
 });
+
+// 🚨 새로 등록한 명함은 소통 기록이 0건이다. 그때 "관계·근황" 축은 재료가
+// 없는데, 모델이 그 자리를 지어내는 것이 가장 그럴듯해 보인다("지난번에
+// 말씀하신 프로젝트는…"은 기록이 없어도 자연스럽고 이용자는 구분 못 한다).
+test("소통 기록이 없어도 분야 축 지시가 그 자리를 지어내지 말라고 못 박는다", () => {
+  const p = buildPrompt(req({fieldKey: "retail", communicationLogs: []}));
+  assert.match(p, /최근 소통 기록 없음/);
+  assert.match(p, /기댈 내용이 없으면/);
+  assert.match(p, /억지로 채우지 말고/);
+  assert.match(p, /없었던 일을 있었던 것처럼 쓰면\n  안 됩니다/);
+  // 축을 대신해도 문장 수는 그대로 3개 — "정확히 3개"와 부딪히지 않게
+  assert.match(p, /문장은 그대로 3개입니다/);
+  assert.match(p, /정확히 3개/);
+});
+
+test("소통 기록이 있어도 같은 지시가 남아 있다(분기 없이 항상)", () => {
+  const p = buildPrompt(req({
+    fieldKey: "retail",
+    communicationLogs: ["3월 통화"],
+  }));
+  assert.match(p, /- 3월 통화/);
+  assert.match(p, /기댈 내용이 없으면/);
+});
