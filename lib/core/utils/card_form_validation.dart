@@ -13,10 +13,29 @@
 /// 명함은 휴대폰만 있거나 사무실 전화만 있는 경우가 흔한데, 휴대폰이 단독
 /// 필수였던 예전 규칙은 사무실 전화뿐인 명함에도 가짜 휴대폰을 요구했다.
 ///
+/// ## 규칙 (2026-08-26 사용자 확정 — 이 파일이 유일한 출처)
+///
+/// ```
+/// 이름 · 회사명            항상 필수
+/// 휴대폰 · 사무실 전화 · 이메일   셋 중 하나 이상
+/// 주소                     선택 (내 명함도 마찬가지)
+/// ```
+///
+/// 2026-08-26에 **이메일을 단독 필수에서 빼고 연락 수단 묶음에 넣었다.**
+/// 위 배경과 같은 이유다 — 이메일이 없는 명함은 흔한데 단독 필수면 그 자리에
+/// 가짜 주소가 들어간다. 실제로 사용자가 중복 판정을 시험하려다 임의 이메일을
+/// 넣어야 했고, 같은 날 중복 판정에 이메일이 축으로 들어가 **가짜 이메일이
+/// 그 축을 오염시키는** 구조가 됐다.
+///
+/// 주소는 **명함 등록에서는 원래 선택인데 내 명함에서만 필수**였다. 같은
+/// 물건에 규칙이 둘이면 어느 쪽이 맞는지 아무도 모른다. 선택으로 맞춘다 —
+/// 다만 내 명함 주소는 "주변 인맥" 거리 계산의 기준점이라, **막는 대신
+/// 무엇이 제한되는지 알려 주는** 안내가 그 자리를 대신한다(화면 쪽).
+///
 /// ## 세 가지 상황
 ///
-/// 1. **신규 등록**: 이름·회사명·이메일은 항상 필수. 전화는 휴대폰 또는
-///    사무실 전화 중 하나만 있으면 통과.
+/// 1. **신규 등록**: 이름·회사명은 항상 필수. 연락 수단은 휴대폰·사무실
+///    전화·이메일 중 하나만 있으면 통과.
 /// 2. **편집(정리 상태 보존)**: 폼을 열던 시점에 이미 비어 있던 필수 칸은
 ///    빈 채로 저장을 허용한다. 데이터 정제로 비운 필드를 편집할 때마다 다시
 ///    채우라고 막으면 가짜 값이 재생산된다. 값을 넣으면 형식 검사는 그대로
@@ -76,55 +95,57 @@ String? validateRequiredTextField({
   return null;
 }
 
-/// 이메일 칸 검증 — 필수 여부는 [validateRequiredTextField]와 같은 규칙,
-/// 값이 있을 때만 형식(`@`와 `.` 포함)을 본다.
-String? validateEmailField({
-  required String? value,
-  required bool isEditing,
-  required bool wasInitiallyEmpty,
-  bool relaxAll = relaxRequiredForCleanup,
-}) {
+/// 이메일 칸 검증 — **값이 있을 때 형식만 본다.**
+///
+/// 2026-08-26 전에는 이 칸이 단독 필수였다. 지금은 휴대폰·사무실 전화와
+/// 함께 "연락 수단 셋 중 하나" 묶음에 들어가고, 그 묶음의 "하나도 없음"
+/// 오류는 [validateContactReachField]가 휴대폰 칸에서만 보여준다 — 한 번
+/// 비었다고 세 칸에 빨간 줄이 동시에 뜨면 무엇을 채워야 하는지 오히려
+/// 알기 어렵다(사무실 전화가 이미 쓰던 방식과 같다).
+String? validateEmailField(String? value) {
   final trimmed = value?.trim() ?? '';
-  if (trimmed.isEmpty) {
-    return shouldSkipEmptyRequiredCheck(
-          isEditing: isEditing,
-          wasInitiallyEmpty: wasInitiallyEmpty,
-          relaxAll: relaxAll,
-        )
-        ? null
-        : '이메일을 입력해 주세요.';
-  }
+  if (trimmed.isEmpty) return null;
   if (!trimmed.contains('@') || !trimmed.contains('.')) {
     return '올바른 이메일 형식을 입력해 주세요.';
   }
   return null;
 }
 
-/// 휴대폰 칸 검증(either-or 규칙의 오류 문구는 이 칸에서만 뜬다).
+/// 휴대폰 칸 검증 + **연락 수단 묶음**(휴대폰·사무실 전화·이메일) 판정.
 ///
-/// - 사무실 전화([officeValue])가 있으면 휴대폰은 비어도 통과.
-/// - 둘 다 비어 있으면 [wasInitiallyEmpty](편집 시 "둘 다 원래 비어
-///   있었는지")·[relaxAll]에 따라 건너뛰거나, "휴대폰 또는 사무실 전화 중
-///   하나를 입력해 주세요."를 반환한다.
-/// - 휴대폰 값이 있으면 사무실 전화 유무와 무관하게 형식을 검사한다.
-String? validateMobilePhoneField({
+/// 이름이 `validateMobilePhoneField`가 아닌 이유: 2026-08-26에 이메일이
+/// 묶음에 들어오면서 이 함수가 보는 것이 "휴대폰"만이 아니게 됐다. 이름이
+/// 하는 일과 어긋나면 다음 사람이 이메일을 안 넘기고도 맞게 부른 줄 안다.
+///
+/// - 사무실 전화([officeValue])나 이메일([emailValue]) 중 하나라도 있으면
+///   휴대폰은 비어도 통과.
+/// - 셋 다 비어 있으면 [wasInitiallyEmpty](편집 시 "셋 다 원래 비어
+///   있었는지")·[relaxAll]에 따라 건너뛰거나 묶음 오류를 반환한다.
+/// - 휴대폰 값이 있으면 다른 칸과 무관하게 형식을 검사한다.
+///
+/// ⚠️ 이메일은 여기서 **있는지만** 본다. 형식은 [validateEmailField]가
+/// 이메일 칸에서 따로 본다 — 형식이 틀린 이메일도 "연락 수단이 하나 있다"로
+/// 치는데, 그러지 않으면 이메일 오타 하나에 휴대폰 칸까지 빨개진다.
+String? validateContactReachField({
   required String? mobileValue,
   required String? officeValue,
+  required String? emailValue,
   required bool isEditing,
   required bool wasInitiallyEmpty,
   bool relaxAll = relaxRequiredForCleanup,
 }) {
   final mobile = mobileValue?.trim() ?? '';
   final office = officeValue?.trim() ?? '';
+  final email = emailValue?.trim() ?? '';
   if (mobile.isEmpty) {
-    if (office.isNotEmpty) return null;
+    if (office.isNotEmpty || email.isNotEmpty) return null;
     return shouldSkipEmptyRequiredCheck(
           isEditing: isEditing,
           wasInitiallyEmpty: wasInitiallyEmpty,
           relaxAll: relaxAll,
         )
         ? null
-        : '휴대폰 또는 사무실 전화 중 하나를 입력해 주세요.';
+        : '휴대폰 · 사무실 전화 · 이메일 중 하나는 입력해 주세요.';
   }
   if (!koreanPhoneRegExp.hasMatch(mobile)) {
     return '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.';
@@ -132,7 +153,7 @@ String? validateMobilePhoneField({
   return null;
 }
 
-/// 사무실 전화 칸 검증 — either-or의 "비어 있음" 오류는 휴대폰 칸에서만
+/// 사무실 전화 칸 검증 — 묶음의 "비어 있음" 오류는 휴대폰 칸에서만
 /// 보여준다(스펙). 이 칸은 값이 있을 때 형식만 본다.
 String? validateOfficePhoneField(String? value) {
   final trimmed = value?.trim() ?? '';

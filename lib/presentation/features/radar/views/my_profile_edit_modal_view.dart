@@ -7,6 +7,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/utils/image_file_cache.dart';
+import '../../../../core/utils/card_form_validation.dart'
+    as form_validation;
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
@@ -286,16 +288,31 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     // 판정해서, 앞면에 그 다섯이 다 있으면 안내가 안 떴다. 그런데 **웹사이트·
     // 팩스·부서는 뒷면에 있는 경우가 흔하다** — 안내가 안 뜨면 뒷면을 찍을
     // 버튼도 안 나오고, 그 값들은 영영 안 들어온다(사용자 지적).
+    //
+    // ⚠️ **2026-08-26: 폼의 필수/선택이 바뀌어 이 목록도 따라 옮겼다.**
+    // 규칙만 바꾸고 목록을 그대로 뒀다면, 폼은 "선택"이라 하는데 스캔
+    // 직후엔 "⚠️ 찾지 못했습니다"라고 경고하는 상태가 된다 — 한 화면
+    // 안에서 말이 엇갈린다. 필수/선택을 갈라 보는 구조 자체는 그대로다.
+    final mobile = _phoneController.text.trim();
+    final officePhone = _officePhoneController.text.trim();
+    final email = _emailController.text.trim();
+    // 셋 중 하나라도 있으면 연락은 닿는다. 하나도 없을 때만 경고다 —
+    // 개별 칸이 비었다고 경고하면 다시 가짜 값을 부른다.
+    final hasAnyContact =
+        mobile.isNotEmpty || officePhone.isNotEmpty || email.isNotEmpty;
     final missingRequired = <String>[
       if (_nameController.text.trim().isEmpty) '이름',
       if (_companyController.text.trim().isEmpty) '회사명',
-      if (_addressController.text.trim().isEmpty) '주소',
-      if (_phoneController.text.trim().isEmpty) '휴대폰 번호',
-      if (_emailController.text.trim().isEmpty) '이메일',
+      if (!hasAnyContact) '연락처(휴대폰·사무실 전화·이메일 중 하나)',
     ];
     final missingOptional = <String>[
+      // 연락 수단이 하나도 없으면 위에서 이미 경고했다 — 여기서 개별 칸을
+      // 또 늘어놓으면 같은 말을 두 번 한다.
+      if (hasAnyContact && mobile.isEmpty) '휴대폰 번호',
+      if (hasAnyContact && officePhone.isEmpty) '사무실 전화',
+      if (hasAnyContact && email.isEmpty) '이메일',
+      if (_addressController.text.trim().isEmpty) '주소',
       if (_departmentController.text.trim().isEmpty) '부서',
-      if (_officePhoneController.text.trim().isEmpty) '사무실 전화',
       if (_faxController.text.trim().isEmpty) '팩스',
       if (_websiteController.text.trim().isEmpty) '웹사이트',
       if (_postalCodeController.text.trim().isEmpty) '우편번호',
@@ -780,6 +797,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     label: '이름 / 직책 *',
                     hint: '예: 홍길동 대표',
                     required: true,
+                    validator: (val) => form_validation
+                        .validateRequiredTextField(
+                          value: val,
+                          emptyMessage: '이름을 입력해 주세요.',
+                          // 내 명함은 "신규 등록/편집"이 갈리지 않는다 —
+                          // 한 벌뿐이라 언제나 같은 폼이다. 그래서 편집
+                          // 완화(원래 비어 있던 칸은 빈 채로 저장 허용)를
+                          // 타지 않는다: isEditing을 false로 고정한다.
+                          isEditing: false,
+                          wasInitiallyEmpty: false,
+                        ),
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -793,6 +821,13 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                     label: '회사명 *',
                     hint: '예: 커넥션 트레이스 AI',
                     required: true,
+                    validator: (val) => form_validation
+                        .validateRequiredTextField(
+                          value: val,
+                          emptyMessage: '회사명을 입력해 주세요.',
+                          isEditing: false,
+                          wasInitiallyEmpty: false,
+                        ),
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -804,18 +839,29 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   _buildField(
                     controller: _phoneController,
                     label: '휴대폰 번호 *',
-                    hint: '예: 010-1234-5678',
+                    hint: '예: 010-1234-5678 · 사무실 전화나 이메일만 있어도 돼요',
                     keyboardType: TextInputType.phone,
                     required: true,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
+                    // 명함 등록 화면과 같은 규칙을 쓴다(card_form_validation).
+                    // 묶음의 "하나도 없음" 오류는 이 칸에서만 뜬다.
+                    validator: (val) => form_validation
+                        .validateContactReachField(
+                          mobileValue: val,
+                          officeValue: _officePhoneController.text,
+                          emailValue: _emailController.text,
+                          isEditing: false,
+                          wasInitiallyEmpty: false,
+                        ),
                   ),
                   const SizedBox(height: 12),
                   _buildField(
                     controller: _officePhoneController,
                     label: '사무실 전화 (선택)',
-                    hint: '예: 02-1234-5678',
+                    hint: '예: 02-1234-5678 · 휴대폰이 없을 때 이 칸이 대신합니다',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
+                    validator: form_validation.validateOfficePhoneField,
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -828,17 +874,10 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   const SizedBox(height: 12),
                   _buildField(
                     controller: _emailController,
-                    label: '이메일 *',
-                    hint: '예: example@company.com',
+                    label: '이메일 (선택)',
+                    hint: '예: example@company.com · 없으면 비워 두세요',
                     keyboardType: TextInputType.emailAddress,
-                    required: true,
-                    validator: (val) {
-                      if (val == null || val.trim().isEmpty)
-                        return '이메일을 입력해 주세요.';
-                      if (!val.contains('@') || !val.contains('.'))
-                        return '올바른 이메일 형식을 입력해 주세요.';
-                      return null;
-                    },
+                    validator: form_validation.validateEmailField,
                   ),
                   const SizedBox(height: 12),
                   _buildField(
@@ -850,9 +889,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                   const SizedBox(height: 12),
                   _buildField(
                     controller: _addressController,
-                    label: '주소 (도로명) *',
+                    label: '주소 (도로명, 선택)',
                     hint: '예: 서울특별시 강남구 테헤란로 123',
-                    required: true,
                     suffixIcon: IconButton(
                       icon: const Icon(
                         Icons.search,
@@ -860,6 +898,27 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                       ),
                       tooltip: '도로명주소 검색',
                       onPressed: _openAddressSearch,
+                    ),
+                  ),
+                  // 주소를 필수에서 풀면서(2026-08-26) **막는 대신 알리는**
+                  // 쪽으로 바꿨다. 내 명함 주소는 "주변 인맥" 거리 계산의
+                  // 기준점이라, 비우면 실제로 못 쓰는 기능이 생긴다 — 그걸
+                  // 말해 주지 않고 그냥 통과시키면 사용자는 나중에 주변
+                  // 목록이 빈 이유를 알 수 없다.
+                  //
+                  // 값이 있든 없든 늘 보여준다. 비었을 때만 띄우려면 입력할
+                  // 때마다 다시 그려야 하는데(컨트롤러 리스너), 이 한 줄을
+                  // 위해 화면을 다시 그릴 이유가 없다. 문장도 양쪽 다 맞다.
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 2, right: 2),
+                    child: Text(
+                      '주소를 넣으면 「주변 인맥」에서 거리 계산의 기준점이 됩니다. '
+                      '비워 둬도 저장됩니다.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: AppColors.textMuted,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

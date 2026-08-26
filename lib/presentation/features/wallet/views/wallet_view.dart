@@ -261,7 +261,10 @@ class _WalletViewState extends State<WalletView> {
           ],
           const SizedBox(width: 8),
           _GroupFilterChip(
-            label: '+ 그룹',
+            // ⚠️ 라벨에 '+'를 넣지 않는다 — 이 칩은 icon 이 있으면 아이콘을
+            // 앞에 그리므로 "+ + 그룹"이 된다(2026-08-26 실기기에서 드러남).
+            // 그룹 기능이 꺼져 있는 동안에는 이 칩 자체가 안 보여서 몰랐다.
+            label: '그룹',
             selected: false,
             icon: Icons.add,
             onTap: () => _promptCreateGroup(context, groupsVm),

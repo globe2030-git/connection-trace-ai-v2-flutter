@@ -76,201 +76,122 @@ void main() {
     });
   });
 
-  group('이메일 — 필수 규칙은 위와 같고, 값이 있을 때만 형식을 본다', () {
-    test('비어 있으면(신규) 막는다', () {
-      expect(
-        validateEmailField(
-          value: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        '이메일을 입력해 주세요.',
-      );
+  group('이메일 — 2026-08-26부터 단독 필수가 아니다. 형식만 본다', () {
+    test('비어 있으면 통과 — 예전에는 여기서 막았고, 그게 가짜 이메일의 원인이었다', () {
+      expect(validateEmailField(''), isNull);
+      expect(validateEmailField(null), isNull);
+      expect(validateEmailField('   '), isNull);
     });
 
     test('값이 있는데 형식이 틀리면 형식 오류', () {
       expect(
-        validateEmailField(
-          value: 'not-an-email',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
+        validateEmailField('not-an-email'),
         '올바른 이메일 형식을 입력해 주세요.',
       );
     });
 
     test('형식이 맞으면 통과', () {
-      expect(
-        validateEmailField(
-          value: 'name@company.com',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        isNull,
-      );
-    });
-
-    test('편집: 열 때 비었던 칸은 형식 검사 없이 통과', () {
-      expect(
-        validateEmailField(value: '', isEditing: true, wasInitiallyEmpty: true),
-        isNull,
-      );
-    });
-
-    test('정리 모드: 비어 있어도 통과, 값이 있으면 형식은 여전히 본다', () {
-      expect(
-        validateEmailField(
-          value: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-          relaxAll: true,
-        ),
-        isNull,
-      );
-      expect(
-        validateEmailField(
-          value: 'broken',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-          relaxAll: true,
-        ),
-        '올바른 이메일 형식을 입력해 주세요.',
-      );
+      expect(validateEmailField('name@company.com'), isNull);
     });
   });
 
-  group('전화 — 휴대폰 또는 사무실 전화 중 하나만 있으면 통과(either-or)', () {
+  group('연락 수단 — 휴대폰·사무실 전화·이메일 중 하나만 있으면 통과', () {
+    String? reach({
+      String? mobile,
+      String? office,
+      String? email,
+      bool isEditing = false,
+      bool wasInitiallyEmpty = false,
+      bool relaxAll = false,
+    }) => validateContactReachField(
+      mobileValue: mobile,
+      officeValue: office,
+      emailValue: email,
+      isEditing: isEditing,
+      wasInitiallyEmpty: wasInitiallyEmpty,
+      relaxAll: relaxAll,
+    );
+
+    const groupError = '휴대폰 · 사무실 전화 · 이메일 중 하나는 입력해 주세요.';
+
     test('휴대폰만 있으면 통과(형식 맞음)', () {
-      expect(
-        validateMobilePhoneField(
-          mobileValue: '010-1234-5678',
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        isNull,
-      );
-      expect(validateOfficePhoneField(''), isNull);
+      expect(reach(mobile: '010-1234-5678'), isNull);
     });
 
     test('사무실 전화만 있으면 휴대폰 칸도 통과', () {
-      expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '02-123-4567',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        isNull,
-      );
-      expect(validateOfficePhoneField('02-123-4567'), isNull);
+      expect(reach(mobile: '', office: '02-123-4567'), isNull);
     });
 
-    test('둘 다 없으면(신규) 휴대폰 칸에 either-or 오류', () {
-      expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        '휴대폰 또는 사무실 전화 중 하나를 입력해 주세요.',
-      );
-      // 사무실 전화 칸 자체는 오류를 보여주지 않는다 — 스펙: 오류는
-      // 휴대폰 칸에만 뜬다.
-      expect(validateOfficePhoneField(''), isNull);
+    // 🚨 이번 변경의 핵심. 이메일뿐인 명함에 가짜 휴대폰을 요구하던 자리다.
+    test('이메일만 있어도 휴대폰 칸이 통과한다', () {
+      expect(reach(mobile: '', office: '', email: 'a@b.com'), isNull);
     });
 
-    test('둘 다 있으면 통과', () {
-      expect(
-        validateMobilePhoneField(
-          mobileValue: '010-1234-5678',
-          officeValue: '02-123-4567',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
-        isNull,
-      );
-      expect(validateOfficePhoneField('02-123-4567'), isNull);
+    test('셋 다 없으면(신규) 휴대폰 칸에 묶음 오류', () {
+      expect(reach(mobile: '', office: '', email: ''), groupError);
+      expect(reach(), groupError);
     });
 
-    test('형식 오류는 값이 있을 때만 — 휴대폰 형식이 틀리면 막는다', () {
+    test('공백만 든 값은 없는 것으로 친다', () {
+      expect(reach(mobile: ' ', office: '  ', email: '   '), groupError);
+    });
+
+    // 형식이 틀린 이메일도 "연락 수단이 하나 있다"로 친다. 그러지 않으면
+    // 이메일 오타 하나에 휴대폰 칸까지 빨개진다 — 형식은 이메일 칸이 본다.
+    test('형식이 틀린 이메일도 묶음 조건은 채운다(형식은 이메일 칸이 본다)', () {
+      expect(reach(mobile: '', office: '', email: 'broken'), isNull);
+      expect(validateEmailField('broken'), '올바른 이메일 형식을 입력해 주세요.');
+    });
+
+    test('휴대폰 값이 있으면 다른 칸과 무관하게 형식을 본다', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '010-2345', // 자릿수 부족
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-        ),
+        reach(mobile: '01012345678', office: '02-123-4567', email: 'a@b.com'),
         '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.',
       );
     });
 
-    test('형식 오류는 값이 있을 때만 — 사무실 전화 형식이 틀리면 막는다', () {
+    test('사무실 전화 형식은 그 칸이 따로 본다', () {
       expect(
-        validateOfficePhoneField('02-abcd'),
+        validateOfficePhoneField('021234567'),
         '올바른 전화번호 형식(예: 02-123-4567)으로 입력해 주세요.',
       );
+      expect(validateOfficePhoneField(''), isNull);
     });
 
-    test('편집: 열 때 휴대폰·사무실 둘 다 비어 있었으면 그대로 저장 허용', () {
+    test('편집: 열 때 셋 다 비어 있었으면 그대로 저장 허용', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '',
-          isEditing: true,
-          wasInitiallyEmpty: true,
-        ),
+        reach(mobile: '', office: '', email: '',
+            isEditing: true, wasInitiallyEmpty: true),
         isNull,
       );
     });
 
-    test('편집: 열 때 휴대폰만 있었는데 지금 둘 다 지우면 여전히 막는다', () {
+    test('편집: 열 때 하나라도 있었는데 지금 셋 다 지우면 여전히 막는다', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '',
-          isEditing: true,
-          wasInitiallyEmpty: false,
-        ),
-        '휴대폰 또는 사무실 전화 중 하나를 입력해 주세요.',
+        reach(mobile: '', office: '', email: '',
+            isEditing: true, wasInitiallyEmpty: false),
+        groupError,
       );
     });
 
     test('신규 등록은 편집 완화 규칙을 타지 않는다 — 강제', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: true, // isEditing이 false면 의미 없음
-        ),
-        '휴대폰 또는 사무실 전화 중 하나를 입력해 주세요.',
+        reach(mobile: '', office: '', email: '',
+            isEditing: false, wasInitiallyEmpty: true),
+        groupError,
       );
     });
 
-    test('정리 모드면 편집 여부와 무관하게 둘 다 없어도 통과', () {
+    test('정리 모드면 편집 여부와 무관하게 셋 다 없어도 통과', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '',
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-          relaxAll: true,
-        ),
+        reach(mobile: '', office: '', email: '', relaxAll: true),
         isNull,
       );
     });
 
     test('정리 모드에서도 값이 있으면 형식은 그대로 본다', () {
       expect(
-        validateMobilePhoneField(
-          mobileValue: '010-99',
-          officeValue: '',
-          isEditing: false,
-          wasInitiallyEmpty: false,
-          relaxAll: true,
-        ),
+        reach(mobile: '01012345678', relaxAll: true),
         '올바른 전화번호 형식(예: 010-1234-5678)으로 입력해 주세요.',
       );
     });

@@ -2260,16 +2260,19 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // (빈 주소일 때의 저장 경로는 아래 지오코딩 단계에서 분기한다.)
     final rawAddress = _addressController.text.trim();
 
-    // 전화는 휴대폰 또는 사무실 전화 중 하나만 있으면 통과한다(추가 361).
-    // 둘 다 비어 있을 때의 오류는 휴대폰 칸에서만 보여준다.
-    final phoneWasInitiallyEmpty =
+    // 연락 수단은 휴대폰·사무실 전화·이메일 중 하나만 있으면 통과한다
+    // (추가 361에서 전화 둘로 시작해 2026-08-26에 이메일까지 묶었다).
+    // 하나도 없을 때의 오류는 휴대폰 칸에서만 보여준다.
+    final contactWasInitiallyEmpty =
         _initialValues['phone']!.trim().isEmpty &&
-        _initialValues['officePhone']!.trim().isEmpty;
-    final phoneError = form_validation.validateMobilePhoneField(
+        _initialValues['officePhone']!.trim().isEmpty &&
+        _initialValues['email']!.trim().isEmpty;
+    final phoneError = form_validation.validateContactReachField(
       mobileValue: _phoneController.text,
       officeValue: _officePhoneController.text,
+      emailValue: _emailController.text,
       isEditing: _isEditing,
-      wasInitiallyEmpty: phoneWasInitiallyEmpty,
+      wasInitiallyEmpty: contactWasInitiallyEmpty,
     );
     if (phoneError != null) {
       _focusAndShowError(_phoneFocusNode, '⚠️ $phoneError');
@@ -2284,9 +2287,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     }
 
     final emailError = form_validation.validateEmailField(
-      value: _emailController.text,
-      isEditing: _isEditing,
-      wasInitiallyEmpty: _initialValues['email']!.trim().isEmpty,
+      _emailController.text,
     );
     if (emailError != null) {
       _focusAndShowError(_emailFocusNode, '⚠️ $emailError');
@@ -3977,24 +3978,29 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     order: 5,
                     nextFocusNode: _officePhoneFocusNode,
                     label: '휴대폰 번호 *',
-                    hint: '예: 010-1234-5678 · 사무실 전화만 있어도 돼요',
+                    hint: '예: 010-1234-5678 · 사무실 전화나 이메일만 있어도 돼요',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
+                    // 연락 수단 묶음(휴대폰·사무실 전화·이메일)의 "하나도
+                    // 없음" 오류는 이 칸에서만 뜬다. 세 칸이 동시에 빨개지면
+                    // 무엇을 채워야 하는지 오히려 알기 어렵다.
                     validator: (val) =>
-                        form_validation.validateMobilePhoneField(
+                        form_validation.validateContactReachField(
                           mobileValue: val,
                           officeValue: _officePhoneController.text,
+                          emailValue: _emailController.text,
                           isEditing: _isEditing,
                           wasInitiallyEmpty:
                               _initialValues['phone']!.trim().isEmpty &&
-                              _initialValues['officePhone']!.trim().isEmpty,
+                              _initialValues['officePhone']!.trim().isEmpty &&
+                              _initialValues['email']!.trim().isEmpty,
                         ),
                   ),
                   const SizedBox(height: 10),
 
-                  // 6. 사무실 전화번호 — 휴대폰이 없으면 이 칸이 대신 필수가
-                  // 된다(either-or). 이 칸 자체는 값이 있을 때 형식만 본다 —
-                  // "비어 있음" 오류는 휴대폰 칸에서만 보여준다(스펙).
+                  // 6. 사무실 전화번호 — 연락 수단 묶음(휴대폰·사무실 전화·
+                  // 이메일)의 한 자리다. 이 칸 자체는 값이 있을 때 형식만
+                  // 본다 — "비어 있음" 오류는 휴대폰 칸에서만 보여준다(스펙).
                   _buildFormField(
                     controller: _officePhoneController,
                     ocrKey: 'office',
@@ -4002,7 +4008,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     order: 6,
                     nextFocusNode: _directPhoneFocusNode,
                     label: '사무실 전화번호 (선택)',
-                    hint: '예: 02-123-4567 · 휴대폰이 없으면 이 칸이 필요해요',
+                    hint: '예: 02-123-4567 · 휴대폰이 없을 때 이 칸이 대신합니다',
                     keyboardType: TextInputType.phone,
                     inputFormatters: [KoreanPhoneNumberFormatter()],
                     validator: form_validation.validateOfficePhoneField,
@@ -4036,23 +4042,21 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 10),
 
-                  // 7. 이메일 (필수!)
+                  // 7. 이메일 — 2026-08-26부터 **단독 필수가 아니다.**
+                  // 연락 수단 묶음의 한 자리로 내려왔다(card_form_validation
+                  // 머리말 참고). 이메일이 없는 명함은 흔한데 단독 필수면 그
+                  // 자리에 가짜 주소가 들어가고, 같은 날 중복 판정이 이메일을
+                  // 축으로 쓰기 시작해 **가짜 이메일이 그 축을 오염**시킨다.
                   _buildFormField(
                     controller: _emailController,
                     ocrKey: 'email',
                     focusNode: _emailFocusNode,
                     order: 7,
                     nextFocusNode: _websiteFocusNode,
-                    label: '이메일 *',
-                    hint: '예: example@company.com',
+                    label: '이메일 (선택)',
+                    hint: '예: example@company.com · 없으면 비워 두세요',
                     keyboardType: TextInputType.emailAddress,
-                    validator: (val) => form_validation.validateEmailField(
-                      value: val,
-                      isEditing: _isEditing,
-                      wasInitiallyEmpty: _initialValues['email']!
-                          .trim()
-                          .isEmpty,
-                    ),
+                    validator: form_validation.validateEmailField,
                   ),
                   const SizedBox(height: 10),
 

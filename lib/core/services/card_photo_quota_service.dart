@@ -10,7 +10,7 @@ import '../utils/card_photo_quota.dart';
 ///
 /// **컴파일 상수로 박으면 한도를 올릴 때마다 앱을 새로 배포**해야 한다.
 /// 한도는 *"낮게 시작해 필요하면 올린다"*는 전제 위에 정해졌으므로(무료
-/// 200장) **올릴 일이 온다.** 그때 서버 값 하나만 바꾸면 되게 한다.
+/// 2,000장) **올릴 일이 온다.** 그때 서버 값 하나만 바꾸면 되게 한다.
 ///
 /// ⚠️ **`users/{uid}.cardPhotoQuota`는 서버 전용이다.**
 /// `firestore.rules`의 `clientWritableUserFields()`가 **허용 목록**이라, 거기
@@ -42,7 +42,7 @@ class CardPhotoQuotaService {
   static const String _prefsKey = 'card_photo_quota_cached_v1';
 
   /// 서버에서 읽고 기기에 갈무리한다. 실패하면 갈무리해 둔 값, 그것도 없으면
-  /// 기본값([kFreeCardPhotoQuota]).
+  /// 기본값([kCardPhotoQuota]).
   Future<int> fetch(String uid) async {
     try {
       final snap = await _db.collection('users').doc(uid).get();
@@ -66,7 +66,7 @@ class CardPhotoQuotaService {
       final prefs = await SharedPreferences.getInstance();
       return resolveQuota(prefs.getInt(_prefsKey));
     } catch (_) {
-      return kFreeCardPhotoQuota;
+      return kCardPhotoQuota;
     }
   }
 
