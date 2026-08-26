@@ -20,6 +20,18 @@ class MyProfileModel {
   final String? addressDetail;
   /// 우편번호 — 지오코딩에는 쓰지 않고 표시·vCard용이다.
   final String? postalCode;
+
+  /// 스캔한 **내 명함 사진**의 암호문 파일 경로(2026-08-26 사용자 지시).
+  ///
+  /// ⚠️ [avatarPath]와 **다른 값**이다 — 저쪽은 상대에게 보여 주는 얼굴
+  /// 사진이고, 이것은 **실물 명함 이미지**다. 화면이 둘을 섞어 말하면 안 된다.
+  ///
+  /// 남의 명함과 **같은 경로를 탄다**(`ContactImageService`, AES-256-GCM).
+  /// 내 명함만 다른 경로를 만들면 규칙이 두 벌이 되고, 서버 백업을 켤 때
+  /// 한쪽이 빠진다.
+  ///
+  /// 🚨 **QR/vCard 공유에는 나가지 않는다.** vCard는 글자만 담는다.
+  final String? cardImagePath;
   // 내 프로필 사진 — 연락처 아바타(프리셋 URL 순환)와 달리 본인의 실제 사진이라
   // 갤러리에서 고른 이미지를 앱 문서 디렉터리에 복사해 둔 로컬 파일 경로를 저장한다.
   final String? avatarPath;
@@ -53,6 +65,7 @@ class MyProfileModel {
     this.website,
     this.addressDetail,
     this.postalCode,
+    this.cardImagePath,
     this.avatarPath,
     this.birthMonthDay,
   });
@@ -119,6 +132,7 @@ class MyProfileModel {
     'website': website,
     'addressDetail': addressDetail,
     'postalCode': postalCode,
+    'cardImagePath': cardImagePath,
     'avatarPath': avatarPath,
     'birthMonthDay': birthMonthDay,
   };
@@ -140,6 +154,7 @@ class MyProfileModel {
     website: json['website'] as String?,
     addressDetail: json['addressDetail'] as String?,
     postalCode: json['postalCode'] as String?,
+    cardImagePath: json['cardImagePath'] as String?,
     avatarPath: json['avatarPath'] as String?,
     // 이 필드가 없던 시절에 저장된 프로필은 null로 읽힌다 — 마이그레이션 불필요.
     birthMonthDay: json['birthMonthDay'] as String?,
@@ -158,6 +173,9 @@ class MyProfileModel {
     String? website,
     String? addressDetail,
     String? postalCode,
+    // 명함 사진도 "지웠다"를 표현해야 해서 프로필 사진과 같은 방식을 쓴다.
+    String? cardImagePath,
+    bool clearCardImage = false,
     // 사진을 지우는 경우까지 표현해야 해서(값 있음/없음/명시적 null) 다른
     // 필드처럼 `?? this.x`로는 부족함 — 항상 이 값 그대로 반영한다는 별도
     // 플래그를 둔다.
@@ -180,6 +198,9 @@ class MyProfileModel {
       website: website ?? this.website,
       addressDetail: addressDetail ?? this.addressDetail,
       postalCode: postalCode ?? this.postalCode,
+      cardImagePath: clearCardImage
+          ? null
+          : (cardImagePath ?? this.cardImagePath),
       avatarPath: clearAvatar ? null : (avatarPath ?? this.avatarPath),
       birthMonthDay:
           clearBirthday ? null : (birthMonthDay ?? this.birthMonthDay),

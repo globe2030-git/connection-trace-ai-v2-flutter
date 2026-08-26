@@ -50,7 +50,20 @@ class ContactImageService {
   // 다시 읽고 복호화하지 않도록. 값은 실패 시 null이 아니라 캐시하지 않는다.
   static final Map<String, Uint8List> _decryptedCache = {};
 
+  /// **내 명함 사진**이 쓰는 예약 id(2026-08-26).
+  ///
+  /// 내 명함은 `ContactModel`이 아니지만 사진은 **남의 명함과 같은 경로**로
+  /// 보관한다 — 규칙이 두 벌이 되면 서버 백업을 켤 때 한쪽이 빠진다.
+  ///
+  /// ⚠️ 실제 명함 id(UUID 계열)와 겹치지 않도록 밑줄로 시작한다. 그리고
+  /// 파일명이 `contact_card_`로 시작하므로 [deleteAllCardImages]의 정리에도
+  /// **함께 걸린다**(계정 삭제 시 같이 지워져야 한다).
+  static const String myProfileCardId = '_my_profile_card';
+
   static String _fileName(String contactId) => 'contact_card_$contactId.enc';
+
+  /// 파일명 규칙을 테스트에서 확인할 수 있게 연다.
+  static String fileNameForTest(String contactId) => _fileName(contactId);
   static const String _fileNamePrefix = 'contact_card_';
   static const String _fileNameSuffix = '.enc';
 

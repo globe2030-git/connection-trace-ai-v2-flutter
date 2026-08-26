@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
+import 'dart:typed_data';
+
+import '../../../../core/services/contact_image_service.dart';
 import '../../../../data/models/my_profile_model.dart';
+import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/glass_card.dart';
 import 'my_profile_edit_modal_view.dart';
@@ -200,6 +204,10 @@ class MyProfileModalView extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if ((profile.cardImagePath ?? '').isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      _buildCardPhoto(context, profile.cardImagePath!),
+                    ],
                     const SizedBox(height: 16),
                     const Divider(color: AppColors.borderSubtle),
                     const SizedBox(height: 12),
@@ -307,6 +315,45 @@ class MyProfileModalView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// 스캔한 내 명함 사진. **암호문이라 복호화해서 그린다.**
+  ///
+  /// ⚠️ 프로필 사진(아바타)과 다른 값이다 — 저쪽은 얼굴, 이쪽은 실물 명함이다.
+  static Widget _buildCardPhoto(BuildContext context, String path) {
+    final uid = context.read<AuthRepository>().firebaseUid;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 150,
+            width: double.infinity,
+            child: uid == null
+                ? Container(color: AppColors.bgBase)
+                : FutureBuilder<Uint8List?>(
+                    future: ContactImageService().loadDecryptedCardImage(
+                      uid: uid,
+                      path: path,
+                    ),
+                    builder: (context, snap) {
+                      final bytes = snap.data;
+                      if (bytes == null) {
+                        return Container(color: AppColors.bgBase);
+                      }
+                      return Image.memory(bytes, fit: BoxFit.contain);
+                    },
+                  ),
+          ),
+        ),
+        const SizedBox(height: 7),
+        const Text(
+          '명함 사진은 이 기기에 암호화되어 보관됩니다. QR로 공유할 때는 글자 정보만 나갑니다.',
+          style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
+        ),
+      ],
     );
   }
 
