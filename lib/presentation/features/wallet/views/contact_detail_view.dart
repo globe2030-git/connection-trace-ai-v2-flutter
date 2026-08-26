@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/services/contact_export_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/phone_call_service.dart';
 import '../../../../core/utils/card_history_note.dart';
@@ -132,49 +133,7 @@ class ContactDetailView extends StatelessWidget {
             //
             // 예전에는 [편집]도 스크롤 안에 있어서 **끝까지 내려야** 나왔다.
             // 닫기가 없던 때 사용자가 [편집]으로 빠져나온 것도 그래서다.
-            Container(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: AppColors.borderSubtle)),
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textMuted,
-                        side: const BorderSide(color: AppColors.borderSubtle),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text('닫기'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  // ⚠️ [편집]도 [닫기]와 **같은 무채색 외곽선 스타일**로
-                  // 통일했다(2026-08-21, 브리프 ⑤) — 예전엔 파란 강조
-                  // 버튼이라 위쪽 "전화" 띠와 함께 파란 덩어리가 두 개
-                  // 겹쳐 보였다. 연락 동작은 이제 줄마다 아이콘이 맡으므로
-                  // 아래 줄은 이동(닫기·편집) 목적만 남았다 — 둘 다 같은
-                  // 무게로 둔다.
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.of(context).pop();
-                        AddCardModalView.show(context, contact: contact);
-                      },
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('편집'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textMuted,
-                        side: const BorderSide(color: AppColors.borderSubtle),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            ContactDetailBottomBar(contact: contact),
           ],
         ),
       ),
@@ -685,6 +644,146 @@ class _ZoomableCardAvatar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 명함을 **폰 주소록으로 내보내는** 버튼(추가 492).
+///
+/// 누르면 vCard(`.vcf`)를 만들어 OS 공유 시트를 띄운다. 어디로 보낼지는
+/// **이용자가 그 자리에서 고른다** — 우리가 주소록을 직접 만지지 않으므로
+/// 연락처 권한이 필요 없다([ContactExportService] 주석 참고).
+///
+/// 성공하면 아무 안내도 띄우지 않는다. 공유 시트가 떴다는 것 자체가 결과다.
+/// 실패했을 때만 말한다 — 아무 일도 안 일어난 것처럼 보이면 안 된다.
+class _ExportButton extends StatefulWidget {
+  const _ExportButton({required this.contact});
+
+  final ContactModel contact;
+
+  @override
+  State<_ExportButton> createState() => _ExportButtonState();
+}
+
+class _ExportButtonState extends State<_ExportButton> {
+  final _service = ContactExportService();
+  bool _busy = false;
+
+  Future<void> _export() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    // 아이패드에서 팝오버가 뜰 자리. 없으면 공유 시트가 안 뜬다.
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box == null || !box.hasSize
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+    final ok = await _service.shareAsVCard(
+      widget.contact,
+      sharePositionOrigin: origin,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        // ⚠️ 이름·번호를 문구에 넣지 않는다.
+        const SnackBar(content: Text('명함을 내보내지 못했습니다.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: _busy ? null : _export,
+      icon: _busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.ios_share, size: 18),
+      label: const Text('내보내기'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.textMuted,
+        side: const BorderSide(color: AppColors.borderSubtle),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+      ),
+    );
+  }
+}
+
+
+/// 명함 상세 시트의 **아래 고정 줄**.
+///
+/// 시트 본문과 떼어 둔 이유는 하나다 — [ContactDetailView] 전체는
+/// `AuthRepository` 를 읽어서 위젯 테스트로 띄울 수 없는데, **이 줄은 폭이
+/// 빠듯해서 실제로 재 봐야** 하기 때문이다(390px 에 버튼 셋).
+///
+/// 📌 이 저장소는 "계산했다"를 "확인했다"로 부르지 않는다(CLAUDE.md 4절).
+/// 그래서 줄바꿈·넘침 여부는 `contact_detail_bottom_bar_test.dart` 에서
+/// 실제로 렌더해 잰다.
+class ContactDetailBottomBar extends StatelessWidget {
+  const ContactDetailBottomBar({super.key, required this.contact});
+
+  final ContactModel contact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.borderSubtle)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textMuted,
+                side: const BorderSide(color: AppColors.borderSubtle),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+              child: const Text('닫기'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // 내보내기(추가 492)를 **가운데**에 넣는다. [닫기]는 왼쪽,
+          // [편집]은 오른쪽 — 원래 자리를 그대로 두어 손에 익은 위치가
+          // 바뀌지 않게 했다.
+          //
+          // ⚠️ **처음엔 아이콘만 두려 했다.** "셋이 되면 한글이 줄바꿈된다"고
+          // 봤는데 **틀렸다.** 390px 에서 재 보니 버튼이 110px, 아이콘 +
+          // "내보내기" 가 82.4px 라 27.6px 이 남았다 — 접히지도 잘리지도
+          // 않았다(`contact_detail_bottom_bar_test`).
+          //
+          // 그래서 라벨을 붙였다. 아이콘만 두었으면 **새 기능인데 무엇인지
+          // 안 보이는** 대가를 근거 없이 치를 뻔했다.
+          Expanded(child: _ExportButton(contact: contact)),
+          const SizedBox(width: 10),
+          // ⚠️ [편집]도 [닫기]와 **같은 무채색 외곽선 스타일**로
+          // 통일했다(2026-08-21, 브리프 ⑤) — 예전엔 파란 강조
+          // 버튼이라 위쪽 "전화" 띠와 함께 파란 덩어리가 두 개
+          // 겹쳐 보였다. 연락 동작은 이제 줄마다 아이콘이 맡으므로
+          // 아래 줄은 이동(닫기·편집) 목적만 남았다 — 둘 다 같은
+          // 무게로 둔다.
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                AddCardModalView.show(context, contact: contact);
+              },
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('편집'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.textMuted,
+                side: const BorderSide(color: AppColors.borderSubtle),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
