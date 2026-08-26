@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/address_geocoding_service.dart';
-import '../../../../core/services/phone_call_service.dart';
+import '../../../common/call_picker_sheet.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
@@ -583,7 +583,7 @@ class _NearbyMapViewState extends State<NearbyMapView> {
                         // 번호 두 개 처리와 "실제로 통화가 시작됐는가" 반환값이
                         // 이미 검증된 경로다(2026-08-10·08-11). 새로 짜면 그
                         // 검증을 버리는 셈이라 목록과 같은 것을 쓴다.
-                        PhoneCallService.showCallPicker(context, contact);
+                        showCallPicker(context, contact);
                       }
                     : null,
                 icon: AppIcon(

@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../../../core/icons/app_icons.dart';
 import '../../../../core/services/geo_backfill_service.dart';
-import '../../../../core/services/phone_call_service.dart';
+import '../../../common/call_picker_sheet.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/korean_initial.dart';
 import '../../../../data/models/contact_model.dart';
@@ -590,7 +590,7 @@ class _WalletViewState extends State<WalletView> {
               // 준 셈이었고, 값을 실수로 건드릴 위험도 있었다.
               // 편집은 상세 화면의 [편집] 버튼으로 간다.
               onEdit: () => ContactDetailView.show(context, contact),
-              onCall: () => PhoneCallService.showCallPicker(context, contact),
+              onCall: () => showCallPicker(context, contact),
               onDelete: () => viewModel.deleteContact(contact.id),
               onBriefing: () => _openBriefing(context, contact),
             ),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/icons/app_icons.dart';
-import '../../../../core/services/phone_call_service.dart';
+import '../../../common/call_picker_sheet.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/address_grouping.dart';
 import '../../../../core/utils/geo_utils.dart';
@@ -423,7 +423,7 @@ class _RadarViewState extends State<RadarView> {
                                       onOpen: () =>
                                           viewModel.openBriefing(contact),
                                       onCall: () =>
-                                          PhoneCallService.showCallPicker(
+                                          showCallPicker(
                                             context,
                                             contact,
                                           ),
@@ -497,7 +497,7 @@ class _RadarViewState extends State<RadarView> {
                                                               contact,
                                                             ),
                                                         onCall: () =>
-                                                            PhoneCallService.showCallPicker(
+                                                            showCallPicker(
                                                               context,
                                                               contact,
                                                             ),

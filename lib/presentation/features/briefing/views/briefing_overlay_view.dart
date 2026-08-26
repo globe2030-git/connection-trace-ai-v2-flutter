@@ -16,7 +16,7 @@ import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
-import '../../../../core/services/phone_call_service.dart';
+import '../../../common/call_picker_sheet.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
 import '../../wallet/view_models/wallet_view_model.dart';
@@ -1150,7 +1150,7 @@ class _SendChannelRow extends StatelessWidget {
     //
     // 통화가 끝나고 돌아오면 브리핑이 그대로 있어, 고른 대화 포인트를 다시
     // 볼 수 있다는 이점도 있다.
-    final launched = await PhoneCallService.showCallPicker(context, contact);
+    final launched = await showCallPicker(context, contact);
     // 소통 기록 저장 의도는 **전화 걸기가 실제로 시작된 뒤에만** 남긴다.
     // 시트를 열자마자 남기면, 번호를 고르지 않고 닫은 경우에도 의도가 남아
     // — iOS에선 공유 시트를 닫기만 해도 resumed가 오므로 — 엉뚱한 시점에
