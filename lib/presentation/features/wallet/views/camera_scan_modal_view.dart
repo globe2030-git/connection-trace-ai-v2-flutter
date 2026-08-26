@@ -705,7 +705,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   ///
   /// ⚠️ **이 숫자가 이번 작업의 갈림길이다.** 잘라낸 긴 변이 축소 임계
   /// (1,600px)를 넘지 않으면 `contact_image_service`가 축소를 건너뛰고,
-  /// 저장본이 커져 **무료 200장 한도의 근거가 흔들린다**(인계 문서 5절).
+  /// 저장본이 커져 **2,000장 한도의 비용 근거가 흔들린다**(인계 문서 5절).
   ///
   /// 로그로 확인할 수 없는 기기라 **확인 화면에 띄운다** — `flutter run`이
   /// 앱에 못 붙고 `idevicesyslog`에도 앱 로그가 안 올라온다(2026-08-16 실측).
@@ -1359,7 +1359,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
   ///
   /// ⚠️ **결과 크기를 로그로 남긴다.** 잘라낸 긴 변이 축소 임계(1,600px)를
   /// 넘는지가 이 작업의 갈림길이다 — 안 넘으면 `contact_image_service`가
-  /// 축소를 건너뛰어 저장본이 커지고 **무료 200장 한도의 근거가 흔들린다.**
+  /// 축소를 건너뛰어 저장본이 커지고 **2,000장 한도의 비용 근거가 흔들린다.**
   Future<XFile?> _cropByDetectedQuad(XFile rawFile, Size screenSize) async {
     // ⚠️ **검출이 켜졌다고 자르기까지 바꾸지 않는다**(추가 293).
     //
@@ -2200,7 +2200,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                               ),
                             // ⚠️ 크롭 결과 픽셀 수(release 빌드 제외).
                             // 이 숫자가 축소 임계(1,600)를 넘는지가 저장
-                            // 용량·무료 200장 한도와 직접 걸린다.
+                            // 용량·2,000장 한도와 직접 걸린다.
                             if (!kReleaseMode && _lastCropSummary != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 4),
