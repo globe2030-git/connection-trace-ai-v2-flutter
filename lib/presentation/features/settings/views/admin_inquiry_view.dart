@@ -26,6 +26,13 @@ class _AdminInquiryManagementViewState
   String _searchQuery = '';
   _AdminFilterStatus _filterStatus = _AdminFilterStatus.all;
 
+  /// 지금 몇 건까지 내려받아 두었나. "더 보기"를 누르면 한 쪽만큼 늘어난다.
+  ///
+  /// ⚠️ **검색·상태 필터는 이 범위 안에서만 돈다**(클라이언트 필터라서).
+  /// 그래서 목록 아래에 범위를 밝히고, 넓힐 수단을 함께 둔다 — 안 그러면
+  /// 오래된 문의가 조용히 안 보인다(추가 480).
+  int _limit = InquiryRepository.adminPageSize;
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -102,7 +109,7 @@ class _AdminInquiryManagementViewState
           // 2. 문의 내역 리스트 (StreamBuilder)
           Expanded(
             child: StreamBuilder<List<InquiryModel>>(
-              stream: _repo.watchAllInquiriesForAdmin(),
+              stream: _repo.watchAllInquiriesForAdmin(limit: _limit),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -138,22 +145,84 @@ class _AdminInquiryManagementViewState
                   return nameMatches || emailMatches || subjectMatches;
                 }).toList();
 
+                // 더 받아올 것이 남았는지 — 받은 수가 상한과 같으면 더
+                // 있을 수 있다는 뜻이다(정확히 같을 때 마지막 쪽일 수도
+                // 있으나, 한 번 더 눌러 확인하는 편이 안 보이는 것보다 낫다).
+                final mayHaveMore = inquiries.length >= _limit;
+
                 if (filtered.isEmpty) {
                   return Center(
-                    child: Text(
-                      query.isEmpty
-                          ? '접수된 문의 내역이 없습니다.'
-                          : "'$query' 검색 결과가 없습니다.",
-                      style: const TextStyle(color: AppColors.textMuted),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            query.isEmpty
+                                ? '접수된 문의 내역이 없습니다.'
+                                : "'$query' 검색 결과가 없습니다.",
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(color: AppColors.textMuted),
+                          ),
+                          // ⚠️ 검색이 전체가 아니라 받아 둔 범위에서만 돈다는
+                          // 것을 밝힌다. 이 한 줄이 없으면 관리자가 "그런 문의
+                          // 없다"고 잘못 판단한다.
+                          if (query.isNotEmpty && mayHaveMore) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              '최근 ${inquiries.length}건 안에서 찾았습니다.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            TextButton(
+                              onPressed: _loadMore,
+                              child: const Text('더 불러와서 다시 찾기'),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   );
                 }
 
+                // 목록 끝에 "더 보기"를 한 칸 더 붙인다. 더 받을 것이 없으면
+                // 붙이지 않는다 — 눌러도 아무 일이 없는 버튼을 두지 않는다.
+                final itemCount = filtered.length + (mayHaveMore ? 1 : 0);
+
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: filtered.length,
+                  itemCount: itemCount,
                   separatorBuilder: (context, index) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
+                    if (index == filtered.length) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          children: [
+                            TextButton(
+                              onPressed: _loadMore,
+                              child: Text(
+                                '더 보기 (${InquiryRepository.adminPageSize}건)',
+                              ),
+                            ),
+                            // ⚠️ 지금 보고 있는 것이 전부가 아니라는 것을
+                            // 밝힌다. 검색·필터가 이 범위 안에서만 돌기
+                            // 때문이다(추가 480).
+                            Text(
+                              '최근 ${inquiries.length}건을 받아 두었습니다.',
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
                     final item = filtered[index];
                     return _AdminInquiryCard(
                       inquiry: item,
@@ -167,6 +236,13 @@ class _AdminInquiryManagementViewState
         ],
       ),
     );
+  }
+
+  /// 한 쪽만큼 더 받아온다. 스트림을 다시 여는 것이라 이미 받은 것도 함께
+  /// 다시 오지만, 관리자 화면이고 누를 때만 일어나므로 그대로 둔다 —
+  /// 커서를 들고 이어 붙이는 방식은 실시간 구독과 섞이면 복잡해진다.
+  void _loadMore() {
+    setState(() => _limit += InquiryRepository.adminPageSize);
   }
 
   Widget _filterChip(String label, _AdminFilterStatus status) {

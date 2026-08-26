@@ -69,11 +69,34 @@ class InquiryRepository {
         });
   }
 
-  /// 관리자가 전체 문의 내역을 구독한다(firestore.rules의 isAdmin() 권한 필요).
-  Stream<List<InquiryModel>> watchAllInquiriesForAdmin() {
+  /// 관리자 목록의 기본 표시 건수. "더 보기"를 누르면 이만큼씩 늘어난다.
+  static const int adminPageSize = 50;
+
+  /// 관리자가 최신 문의부터 [limit]건을 구독한다(firestore.rules의 isAdmin()
+  /// 권한 필요).
+  ///
+  /// ## ⚠️ 왜 상한이 있나 (추가 480)
+  ///
+  /// 예전에는 상한 없이 `inquiries` 컬렉션 전체를 구독했다. 그러면 **읽기
+  /// 요금이 이용자 수가 아니라 누적 문의 수에 비례한다** — 관리자가 이
+  /// 화면을 열 때마다 지금까지의 문의를 전부 내려받는다.
+  ///
+  /// 📌 **테스터 수에서는 안 드러난다.** 드러날 때는 이미 요금이 나간 뒤다.
+  ///
+  /// ## ⚠️ 상한이 검색 범위를 바꾼다 — 화면이 그걸 알려야 한다
+  ///
+  /// 이 화면의 검색·상태 필터는 **내려받은 목록 안에서** 도는 클라이언트
+  /// 필터다. 즉 상한을 걸면 **검색도 그 범위 안에서만** 된다. 그래서
+  /// `admin_inquiry_view.dart`가 "최근 N건에서 찾았다"를 문구로 밝히고
+  /// "더 보기"로 범위를 넓힐 수 있게 해 두었다. **상한만 걸고 화면을 그대로
+  /// 두면 오래된 문의가 조용히 안 보이게 된다.**
+  Stream<List<InquiryModel>> watchAllInquiriesForAdmin({
+    int limit = adminPageSize,
+  }) {
     return _db
         .collection('inquiries')
         .orderBy('createdAt', descending: true)
+        .limit(limit)
         .snapshots()
         .map((snap) => snap.docs.map(InquiryModel.fromFirestore).toList());
   }
