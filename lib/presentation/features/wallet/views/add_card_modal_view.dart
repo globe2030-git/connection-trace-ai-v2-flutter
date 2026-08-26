@@ -2962,9 +2962,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       id: contactId,
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
-      title: _titleController.text.trim().isEmpty
-          ? '담당자'
-          : _titleController.text.trim(),
+      // 🚨 비어 있으면 비운 채로 둔다 — 없는 직함을 지어내지 않는다(추가 516).
+      //
+      // 2026-08-26 이전에는 이 자리에서 빈 직함을 「담당자」로 바꿔 넣었다.
+      // 화면에만 그렇게 보이는 게 아니라 **ContactModel.title 에 실제로
+      // 저장**됐고, 그 값이 목록·상세는 물론 **내보내기(vCard)·AI 프롬프트·
+      // 서버 백업까지** 따라갔다. 이용자는 자기가 넣지 않은 직함이 저장된
+      // 줄 모른다.
+      //
+      // 📌 이건 **제3자(명함 주인)에 대한 사실 주장**이라 더 무겁다.
+      //    CLAUDE.md 4절이 사용자 요구로 못 박은 원칙 —
+      //    *"데이터가 없으면 비어 있는 상태를 그대로 보여준다"* 에 어긋났다.
+      //
+      // ⚠️ 바로 아랫줄 `department` 는 처음부터 올바른 방식이었다.
+      //    설계가 아니라 **한 줄이 어긋나 있던 것**이다.
+      //
+      // ⚠️ `title` 은 non-nullable 이라 `null` 대신 빈 문자열로 둔다.
+      //    화면에서 빈 값을 거르는 곳: `wallet_view` 867행,
+      //    `contact_detail_view` 150행. 안 거르던 두 곳은 이 커밋에서 함께 고쳤다.
+      title: _titleController.text.trim(),
       department: _departmentController.text.trim().isEmpty
           ? null
           : _departmentController.text.trim(),
@@ -3097,7 +3113,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${existing.name} · ${existing.title} · ${existing.company}',
+                    // ⚠️ 빈 것은 빼고 잇는다 — 추가 516부터 직함이 빌 수 있어
+                    //    그냥 이으면 `홍길동 ·  · 회사` 처럼 구분자만 남는다.
+                    [
+                      existing.name,
+                      existing.title.trim(),
+                      existing.company,
+                    ].where((v) => v.trim().isNotEmpty).join(' · '),
                     style: const TextStyle(
                       color: AppColors.textPrimary,
                       fontSize: 13,
@@ -3217,7 +3239,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       final dateLabel = DateTime.now().toIso8601String().substring(0, 10);
       final oldFields = [
         existing.company,
-        existing.title,
+        // ⚠️ 추가 516부터 직함이 빌 수 있다. 아래 다른 항목들처럼 걸러야
+        //    `회사 /  / 010-...` 이 안 된다.
+        if (existing.title.trim().isNotEmpty) existing.title,
         // 2026-08-19(추가 328): 부서 칸을 만들면서 **여기 넣는 걸 빠뜨렸다**.
         // 이직하면 부서도 바뀌는데 이전 부서가 안 남았다.
         // ⚠️ 비어 있으면 넣지 않는다 — 옛 명함에는 이 값이 아예 없다(null).
@@ -3240,9 +3264,25 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     final updated = existing.copyWith(
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
-      title: _titleController.text.trim().isEmpty
-          ? '담당자'
-          : _titleController.text.trim(),
+      // 🚨 비어 있으면 비운 채로 둔다 — 없는 직함을 지어내지 않는다(추가 516).
+      //
+      // 2026-08-26 이전에는 이 자리에서 빈 직함을 「담당자」로 바꿔 넣었다.
+      // 화면에만 그렇게 보이는 게 아니라 **ContactModel.title 에 실제로
+      // 저장**됐고, 그 값이 목록·상세는 물론 **내보내기(vCard)·AI 프롬프트·
+      // 서버 백업까지** 따라갔다. 이용자는 자기가 넣지 않은 직함이 저장된
+      // 줄 모른다.
+      //
+      // 📌 이건 **제3자(명함 주인)에 대한 사실 주장**이라 더 무겁다.
+      //    CLAUDE.md 4절이 사용자 요구로 못 박은 원칙 —
+      //    *"데이터가 없으면 비어 있는 상태를 그대로 보여준다"* 에 어긋났다.
+      //
+      // ⚠️ 바로 아랫줄 `department` 는 처음부터 올바른 방식이었다.
+      //    설계가 아니라 **한 줄이 어긋나 있던 것**이다.
+      //
+      // ⚠️ `title` 은 non-nullable 이라 `null` 대신 빈 문자열로 둔다.
+      //    화면에서 빈 값을 거르는 곳: `wallet_view` 867행,
+      //    `contact_detail_view` 150행. 안 거르던 두 곳은 이 커밋에서 함께 고쳤다.
+      title: _titleController.text.trim(),
       department: _departmentController.text.trim().isEmpty
           ? null
           : _departmentController.text.trim(),
