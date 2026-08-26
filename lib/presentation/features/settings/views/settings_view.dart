@@ -20,6 +20,9 @@ import '../../../../core/services/card_photo_quota_service.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/encryption_key_service.dart';
+import '../../../../core/services/ad_consent_service.dart';
+import '../../auth/views/ad_consent_notice_dialog.dart';
+import '../../auth/views/ad_consent_view.dart';
 import '../../../../core/services/photo_improvement_consent_service.dart';
 import '../../../common/social_oauth_view.dart';
 import '../../../../data/repositories/auth_repository.dart';
@@ -324,6 +327,14 @@ class _SettingsViewState extends State<SettingsView> {
                       onTap: () =>
                           _confirmConsentWithdrawal(context, radarViewModel),
                     ),
+                  // 광고 수신 동의(추가 472). **조건 없이 항상 둔다.**
+                  //
+                  // 위 「위치 이용 동의 철회」는 `hasLocationConsent` 조건부라
+                  // 사람에 따라 없다. 이건 다르다 — 광고는 켜고 끄는 스위치라
+                  // **꺼진 채로 보이는 것이 정상**이고, 오히려 "내가 광고를
+                  // 받고 있나"를 확인하는 자리가 된다. 숨기면 그 확인을 할
+                  // 데가 없어진다.
+                  _AdConsentRow(uid: auth.firebaseUid),
                 ],
               ),
               const SizedBox(height: 26),
@@ -617,6 +628,136 @@ class _SettingsViewState extends State<SettingsView> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 광고 수신 동의 상태를 보여 주고, 눌러서 바꾸게 하는 행(추가 472).
+///
+/// ## 왜 토글이 아니라 한 행인가
+///
+/// 채널이 둘이고 그 위에 **개인정보 이용 동의라는 전제**가 있다. 토글로 펼치면
+/// 이 섹션에 세 줄이 붙는다 — 이 화면은 오늘 19행에서 11행으로 줄인 참이다.
+///
+/// 🚨 **더 중요한 이유는 따로 있다.** 전제 → 매체 잠금 구조를 여기서 다시
+/// 만들면 동의 화면과 **두 벌이 되고, 어긋나는 순간 한쪽이 법 요건을 잃는다.**
+/// 그래서 눌렀을 때 [AdConsentView]를 **그대로 다시 연다.**
+///
+/// ## 철회할 때도 처리결과를 알린다
+///
+/// §50⑦은 동의만이 아니라 **철회**에도 14일 내 통지를 요구한다. 끄고 나오면
+/// 같은 형식의 통지가 뜬다.
+class _AdConsentRow extends StatefulWidget {
+  const _AdConsentRow({required this.uid});
+
+  final String? uid;
+
+  @override
+  State<_AdConsentRow> createState() => _AdConsentRowState();
+}
+
+class _AdConsentRowState extends State<_AdConsentRow> {
+  final _service = AdConsentService();
+  AdConsentState _state = AdConsentState.unasked;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    // 기기 값을 먼저 그려 화면이 비어 보이지 않게 하고, 서버 값으로 덮는다.
+    // 서버를 못 읽으면 기기 값을 그대로 둔다(임의로 끄지 않는다).
+    final cached = await _service.loadCached();
+    if (mounted) setState(() => _state = cached);
+    final uid = widget.uid;
+    if (uid == null) return;
+    final remote = await _service.fetch(uid);
+    if (remote != null && mounted) setState(() => _state = remote);
+  }
+
+  String get _subtitle {
+    if (widget.uid == null) return '로그인하면 설정할 수 있어요';
+    final on = <String>[
+      if (_state.email) '이메일',
+      if (_state.push) '앱 알림',
+    ];
+    return on.isEmpty ? '받지 않는 중' : '${on.join(' · ')}(으)로 받는 중';
+  }
+
+  Future<void> _open() async {
+    final uid = widget.uid;
+    if (uid == null) return;
+    final before = _state;
+    var savedEmail = before.email;
+    var savedPush = before.push;
+    var saved = false;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AdConsentView(
+          provider: context.read<AuthRepository>().provider,
+          initialEmail: before.email,
+          initialPush: before.push,
+          submitLabel: '저장',
+          footnote: '끄셔도 모든 기능을 그대로 쓰실 수 있어요',
+          onSubmit: ({required email, required push}) async {
+            final ok = await _service.save(
+              uid: uid,
+              email: email,
+              push: push,
+              // 🚨 이미 답한 적이 있으므로 동의 시각을 덮지 않는다.
+              //    덮으면 2년 재확인 기산점과 입증자료가 어긋난다.
+              firstAnswer: false,
+            );
+            if (ok) {
+              saved = true;
+              savedEmail = email;
+              savedPush = push;
+            }
+            return ok;
+          },
+        ),
+      ),
+    );
+
+    if (!saved || !mounted) return;
+    setState(() => _state = AdConsentState(
+          email: savedEmail,
+          push: savedPush,
+          answered: true,
+        ));
+
+    // 바뀐 게 없으면 통지하지 않는다 — 처리한 것이 없기 때문이다.
+    final changed = savedEmail != before.email || savedPush != before.push;
+    if (!changed) return;
+
+    final nowOn = savedEmail || savedPush;
+    await showAdConsentNotice(
+      context,
+      email: savedEmail,
+      push: savedPush,
+      // 켜진 것이 하나도 없으면 철회로 알린다.
+      consented: nowOn,
+    );
+    await _service.markNotified(uid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsRow(
+      icon: const AppIcon(
+        // ⚠️ 위 「위치 이용 동의 철회」와 다른 아이콘을 쓴다. 바로 아래 붙어
+        //    있다는 위치가 이미 "같은 줄기"를 말하므로, 아이콘까지 같으면
+        //    무엇이 다른지가 안 보인다(3e 가 원격 로그아웃에서 겪은 자리).
+        AppIconId.notification,
+        size: 22,
+        color: AppColors.accentText,
+      ),
+      title: '광고성 정보 수신',
+      subtitle: _subtitle,
+      onTap: widget.uid == null ? null : _open,
     );
   }
 }

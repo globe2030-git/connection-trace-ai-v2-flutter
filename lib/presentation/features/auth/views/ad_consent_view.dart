@@ -52,7 +52,20 @@ class AdConsentView extends StatefulWidget {
     super.key,
     required this.provider,
     required this.onSubmit,
+    this.initialEmail = false,
+    this.initialPush = false,
+    this.submitLabel = '시작하기',
+    this.footnote = '하나도 선택하지 않고 시작하셔도 괜찮아요',
   });
+
+  /// 설정에서 다시 열 때의 현재 값.
+  ///
+  /// ⚠️ **설정에서도 같은 화면을 쓴다.** 잠금 구조(전제 → 매체)를 따로 만들면
+  /// 두 화면이 어긋나고, 어긋나는 순간 한쪽이 법 요건을 잃는다.
+  final bool initialEmail;
+  final bool initialPush;
+  final String submitLabel;
+  final String footnote;
 
   /// 로그인에 쓴 제공자. 이메일 항목을 보일지 정한다.
   final SnsAuthProvider? provider;
@@ -76,9 +89,9 @@ class AdConsentView extends StatefulWidget {
 }
 
 class _AdConsentViewState extends State<AdConsentView> {
-  bool _useAgreed = false;
-  bool _email = false;
-  bool _push = false;
+  late bool _useAgreed = widget.initialEmail || widget.initialPush;
+  late bool _email = widget.initialEmail;
+  late bool _push = widget.initialPush;
   bool _busy = false;
 
   bool get _emailAvailable => adEmailChannelAvailable(widget.provider);
@@ -105,11 +118,13 @@ class _AdConsentViewState extends State<AdConsentView> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (ok) return;
-    // 서버가 거부했다. 화면을 되돌리고 이유를 알린다.
+    // 서버가 거부했다. **화면을 이 화면에 들어올 때의 값으로 되돌리고**
+    // 이유를 알린다. 무조건 false 로 내리면 설정에서 켜져 있던 사람에게
+    // "꺼진 것처럼" 보여 서버 상태와 화면이 반대로 어긋난다.
     setState(() {
-      _useAgreed = false;
-      _email = false;
-      _push = false;
+      _email = widget.initialEmail;
+      _push = widget.initialPush;
+      _useAgreed = widget.initialEmail || widget.initialPush;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -233,9 +248,9 @@ class _AdConsentViewState extends State<AdConsentView> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text(
-                              '시작하기',
-                              style: TextStyle(
+                          : Text(
+                              widget.submitLabel,
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -243,11 +258,15 @@ class _AdConsentViewState extends State<AdConsentView> {
                     ),
                   ),
                   const SizedBox(height: 11),
-                  const Text(
+                  Text(
                     // 하나도 안 골라도 진행된다는 것을 화면에서 말한다
                     // (시행령 §17①1호 · 법 §22⑤).
-                    '하나도 선택하지 않고 시작하셔도 괜찮아요',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                    widget.footnote,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: AppColors.textMuted,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),

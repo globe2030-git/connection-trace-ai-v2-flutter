@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/account_bootstrap_service.dart';
+import '../../core/services/ad_consent_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../../core/utils/account_switch_policy.dart';
@@ -11,6 +12,8 @@ import '../../data/services/data_backup_service.dart';
 import '../../data/repositories/contacts_repository.dart';
 import '../../data/repositories/groups_repository.dart';
 import '../../data/repositories/my_profile_repository.dart';
+import '../features/auth/views/ad_consent_notice_dialog.dart';
+import '../features/auth/views/ad_consent_view.dart';
 import '../features/auth/views/login_view.dart';
 
 /// 계정 전환 안전장치(backlog #50)에서 "이 기기에 마지막으로 로그인했던
@@ -185,6 +188,76 @@ class _AuthGateState extends State<AuthGate> {
       ),
     );
     await prefs.setString(kLastSignedInUidPrefsKey, uid);
+
+    // 광고 수신 동의(추가 472) — **복원이 끝난 뒤에** 묻는다.
+    //
+    // 여기 두는 이유 둘.
+    //  1) 빈 화면 위에 동의 시트가 뜨면 **가입 절차로 읽힌다.** 선택 동의인데
+    //     필수처럼 보이면 자유로운 동의(시행령 §17①1호)에서 멀어진다.
+    //  2) 복원 중에 뜨면 뒤에서 목록이 바뀌어 산만하다.
+    //
+    // ⚠️ 위쪽 두 return 경로(마지막 uid를 못 읽음 · 계정 전환)에서는 묻지
+    //    않는다. 앞은 "모르는 상태"이고 뒤는 이용자가 방금 무거운 선택을 한
+    //    직후다. **다음 로그인에 다시 기회가 온다** — 이 파일이 이미 같은
+    //    판단을 여러 번 한다.
+    if (!context.mounted) return;
+    await _maybeAskAdConsent(context, uid);
+  }
+
+  /// 아직 답한 적 없는 계정에게 광고 수신 동의를 **한 번** 묻는다.
+  ///
+  /// 신규·기존 이용자가 **한 경로로** 처리된다 — 기준이 "가입한 지 얼마나
+  /// 됐나"가 아니라 **"이 계정에 응답 기록이 있나"**이기 때문이다.
+  Future<void> _maybeAskAdConsent(BuildContext context, String uid) async {
+    final service = AdConsentService();
+    // 읽기에 실패하면 묻지 않는다 — 이미 답한 사람에게 또 묻는 것보다
+    // 한 번 건너뛰는 편이 낫다(AdConsentService.shouldAsk 주석).
+    if (!await service.shouldAsk(uid)) return;
+    if (!context.mounted) return;
+
+    final provider = context.read<AuthRepository>().provider;
+    var saved = false;
+    var savedEmail = false;
+    var savedPush = false;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => AdConsentView(
+          provider: provider,
+          onSubmit: ({required email, required push}) async {
+            final ok = await service.save(
+              uid: uid,
+              email: email,
+              push: push,
+              firstAnswer: true,
+            );
+            if (ok) {
+              saved = true;
+              savedEmail = email;
+              savedPush = push;
+            }
+            return ok;
+          },
+        ),
+      ),
+    );
+
+    if (!saved || !context.mounted) return;
+
+    // ⚠️ 처리결과 통지는 **하나라도 켠 경우에만** 띄운다. 아무것도 안 고른
+    //    것은 "동의를 받은 사실"이 없어 §50⑦의 통지 대상이 아니고, 굳이
+    //    띄우면 거부한 사람에게 팝업을 하나 더 보이는 셈이 된다.
+    if (!savedEmail && !savedPush) return;
+
+    await showAdConsentNotice(
+      context,
+      email: savedEmail,
+      push: savedPush,
+      consented: true,
+    );
+    // 통지 증적을 남긴다. 실패해도 통지는 이미 보였으므로 되돌리지 않는다.
+    await service.markNotified(uid);
   }
 
   Future<bool?> _showAccountSwitchDialog(BuildContext context) {
