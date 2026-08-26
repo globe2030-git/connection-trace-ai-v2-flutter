@@ -563,22 +563,138 @@ class ContactsRepository extends ChangeNotifier {
     }
   }
 
-  /// 같은 전화번호(숫자만 비교)로 이미 등록된 명함을 찾는다. 없으면 null.
+  /// 같은 전화번호로 이미 등록된 명함을 찾는다. 없으면 null.
   ///
   /// 같은 사람 명함을 두 번 스캔하면 그대로 두 건이 쌓이는 문제(P1-40)를 저장
-  /// 직전에 잡기 위한 것. 하이픈·공백·국가번호 표기 차이를 무시하려고 숫자만
-  /// 남겨 비교한다. [excludeId]를 주면 그 명함은 제외한다(편집 시 자기 자신).
-  ContactModel? findByPhone(String phone, {String? excludeId}) {
-    final target = _digitsOnly(phone);
-    if (target.isEmpty) return null;
-    for (final c in _contacts) {
+  /// 직전에 잡기 위한 것. [excludeId]를 주면 그 명함은 제외한다(편집 시 자기 자신).
+  ///
+  /// ⚠️ **휴대폰 칸 하나만 본다.** 넓게 보려면 [findDuplicate]를 쓴다 — 이
+  /// 함수는 기존 호출부를 위해 남겨 둔 좁은 판정이다.
+  ContactModel? findByPhone(String phone, {String? excludeId}) =>
+      findDuplicate(phone: phone, excludeId: excludeId)?.contact;
+
+  /// 같은 사람으로 볼 만한 명함을 찾는다. 없으면 null.
+  ///
+  /// ## 무엇끼리 맞춰 보는가 (2026-08-26 사용자 확정)
+  ///
+  /// | 축 | 규칙 |
+  /// |---|---|
+  /// | **휴대폰** | 휴대폰끼리만 |
+  /// | **이메일** | 완전 일치 |
+  /// | **이름 + 회사** | 양쪽 다 **번호가 없을 때만**, 보조로 |
+  ///
+  /// 🚨 **사무실·직통·팩스는 판정에 쓰지 않는다.** 사용자 지적: *"대표번호는
+  /// 같은 사람이 많아서 안 돼."* 회사 대표번호는 그 회사 사람 모두의 명함에
+  /// 같이 인쇄되므로, 그것으로 사람을 맞추면 **남남을 같은 사람으로 본다.**
+  ///
+  /// 📌 **중복을 놓치는 것보다 엉뚱한 사람을 합치라고 권하는 것이 더 나쁘다** —
+  /// 전자는 두 건이 쌓일 뿐이지만 후자는 **데이터를 섞는다.**
+  ///
+  /// ⚠️ 이메일도 공용 주소(`info@…`)가 있어, **이미 명함 둘 이상에 쓰인
+  /// 이메일은 개인 주소로 보지 않는다.** 짐작하지 않고 데이터에서 센다 —
+  /// 진짜 중복은 기존 명함 한 건에만 있으므로 이 그물에 안 걸린다.
+  DuplicateMatch? findDuplicate({
+    required String phone,
+    String? email,
+    String? name,
+    String? company,
+    String? excludeId,
+  }) => matchIn(
+    _contacts,
+    phone: phone,
+    email: email,
+    name: name,
+    company: company,
+    excludeId: excludeId,
+  );
+
+  /// [findDuplicate]의 알맹이 — **목록만 있으면 도는 순수 함수**다.
+  ///
+  /// 저장소를 띄우지 않고 규칙만 테스트할 수 있게 갈라 두었다. 판정 규칙은
+  /// 화면과 저장소가 **한 벌만** 써야 하므로(2026-08-26 정정 전에는 두 벌이었다)
+  /// 여기 하나로 모은다.
+  static DuplicateMatch? matchIn(
+    List<ContactModel> contacts, {
+    required String phone,
+    String? email,
+    String? name,
+    String? company,
+    String? excludeId,
+  }) {
+    final mobile = normalizePhone(phone);
+    final mail = _normalizeEmail(email ?? '');
+    final who = _normalizeName(name ?? '');
+    final org = _normalizeName(company ?? '');
+
+    final sharedEmails = _sharedEmails(contacts, excludeId: excludeId);
+
+    DuplicateMatch? weak;
+    for (final c in contacts) {
       if (c.id == excludeId) continue;
-      if (_digitsOnly(c.phone) == target) return c;
+
+      if (mobile.isNotEmpty && normalizePhone(c.phone) == mobile) {
+        return DuplicateMatch(c, DuplicateMatchField.mobile);
+      }
+      if (mail.isNotEmpty &&
+          _normalizeEmail(c.email) == mail &&
+          !sharedEmails.contains(mail)) {
+        return DuplicateMatch(c, DuplicateMatchField.email);
+      }
+
+      // 보조 축 — 번호가 **양쪽 다 없을 때만** 본다. 번호가 있는데 안 맞았다면
+      // 그건 "다른 사람"이라는 신호이므로, 이름이 같다고 뒤집지 않는다
+      // (동명이인이 그대로 걸린다).
+      if (weak == null &&
+          mobile.isEmpty &&
+          normalizePhone(c.phone).isEmpty &&
+          who.isNotEmpty &&
+          org.isNotEmpty &&
+          _normalizeName(c.name) == who &&
+          _normalizeName(c.company) == org) {
+        weak = DuplicateMatch(c, DuplicateMatchField.nameAndCompany);
+      }
     }
-    return null;
+    return weak;
   }
 
-  static String _digitsOnly(String s) => s.replaceAll(RegExp(r'[^0-9]'), '');
+  /// 이미 명함 **둘 이상**에 쓰인 이메일 — 공용 주소로 본다.
+  static Set<String> _sharedEmails(
+    List<ContactModel> contacts, {
+    String? excludeId,
+  }) {
+    final count = <String, int>{};
+    for (final c in contacts) {
+      if (c.id == excludeId) continue;
+      final e = _normalizeEmail(c.email);
+      if (e.isEmpty) continue;
+      count[e] = (count[e] ?? 0) + 1;
+    }
+    return {
+      for (final e in count.entries)
+        if (e.value >= 2) e.key,
+    };
+  }
+
+  /// 이름·회사 비교용 — 공백을 없애고 소문자로. 표기 흔들림(`(주)` 앞뒤 공백,
+  /// `홍 길동`)까지는 손대지 않는다. **넓게 잡으면 동명이인이 걸린다.**
+  static String _normalizeName(String raw) =>
+      raw.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+
+  /// 전화번호를 비교용으로 정규화한다 — 숫자만 남기고, 10자리가 넘으면
+  /// **뒤 9자리**만 쓴다.
+  ///
+  /// ⚠️ 뒤 9자리로 자르는 이유는 국가번호 표기 차이다(`010-1234-5678` ↔
+  /// `+82-10-1234-5678`). 앞자리를 그대로 비교하면 같은 번호가 다르게 읽힌다.
+  ///
+  /// 📌 **이 규칙이 종전에는 두 벌이었다**(2026-08-26 정정) — 저장소는 숫자
+  /// 전체를, 등록 화면은 뒤 9자리를 비교해서 **같은 번호가 한쪽에서만 중복으로
+  /// 잡혔다.** 관대한 쪽으로 합쳤다.
+  static String normalizePhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    return digits.length > 9 ? digits.substring(digits.length - 9) : digits;
+  }
+
+  static String _normalizeEmail(String raw) => raw.trim().toLowerCase();
 
   /// 이 명함이 주소 지오코딩을 모두 실패해 좌표를 못 얻은 상태인지(P1-25).
   /// 화면에서 "주소로 위치를 못 찾아 주변 목록에 안 뜬다"는 안내에 쓴다.
@@ -646,4 +762,36 @@ class ContactsRepository extends ChangeNotifier {
     final uid = _uid;
     if (uid != null) DataBackupService.backupContact(uid, contact);
   }
+}
+
+/// [ContactsRepository.findDuplicate]가 무엇 때문에 같은 사람으로 봤는지.
+///
+/// 화면이 이유를 말해 줄 수 있어야 한다 — *"같은 전화번호"*라고만 하면
+/// **이메일이 같아서 걸린 경우에 거짓말이 된다.**
+enum DuplicateMatchField {
+  /// 휴대폰 칸끼리 같다.
+  mobile,
+
+  /// 번호도 이메일도 없어 **이름과 회사가 같은 것**만 보고 걸렀다. 확신이
+  /// 낮은 신호이므로 화면이 그렇게 말해야 한다.
+  nameAndCompany,
+
+  /// 이메일이 같다.
+  email,
+}
+
+class DuplicateMatch {
+  const DuplicateMatch(this.contact, this.field);
+
+  final ContactModel contact;
+  final DuplicateMatchField field;
+
+  /// 화면 문장에 끼워 쓰는 사유. **"~한 명함" 앞에 붙는 꼴**로 통일했다 —
+  /// 두 다이얼로그가 문장 모양이 달라서, 명사형으로 두면 한쪽이 깨진다.
+  String get reason => switch (field) {
+    DuplicateMatchField.mobile => '휴대폰 번호가 같은',
+    DuplicateMatchField.email => '이메일 주소가 같은',
+    DuplicateMatchField.nameAndCompany =>
+      '이름과 회사가 같은(전화번호가 없어 확실하지는 않은)',
+  };
 }
