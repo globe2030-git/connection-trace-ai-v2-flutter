@@ -400,8 +400,17 @@ class _OcrStatsViewState extends State<OcrStatsView> {
       ],
       // ⚠️ "누가 처리했나"의 회차별 스냅샷(추가 435) — 위 형태 집계와는
       // 다른 축이다. 이건 **마지막 회차 한 번**만 담고 덮어쓴다.
+      //
+      // 📌 화면에는 "백필"이라고 쓰지 않는다(2026-08-28 사용자 요청).
+      // backfill 은 "뒤늦게 채워 넣기"라는 영어 개발 용어인데, 이 화면을
+      // 열어 본 사용자가 **무슨 말인지 물었다.** 관리자 화면이라도 뜻이
+      // 안 통하면 숫자를 읽을 수 없다 — 이 화면의 목적이 "숫자를 읽고
+      // 판단하는 것"이라 이름이 막히면 화면 자체가 소용없어진다.
+      //
+      // 코드 쪽 이름(GeoBackfillService·backfillMissingGeo)은 그대로 둔다.
+      // 그것까지 바꾸면 이 저장소 기록·주석과 이름이 어긋나 검색이 끊긴다.
       if (_stageStats.isNotEmpty) ...[
-        _card('마지막 백필 회차 · 단계별 결과', [
+        _card('마지막 좌표 채우기 · 단계별 결과', [
           for (final key in _stageOrder)
             if (_stageStats[key] != null)
               _statRow(_stageLabels[key] ?? key, '${_stageStats[key]}건'),
