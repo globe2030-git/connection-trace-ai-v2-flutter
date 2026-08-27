@@ -29,6 +29,21 @@ class GroupsRepository extends ChangeNotifier {
 
   final EncryptionKeyService _encryptionKeyService;
 
+  // ⚠️ 로드-쓰기 경합 방지용 세대 번호(추가 510).
+  //
+  // 생성자가 `_loadFromDisk()`를 **await 없이** 띄우고, `setCurrentUid()`도
+  // 실제 호출부(`auth_gate.dart` `_syncUidAndRestore`)에서 **await 없이**
+  // 불린다. 그 로드가 끝나기 전에 `clearLocal()`·`forceRestoreFromServer()`
+  // 같은 "지금 상태가 곧 정답"인 조작이 먼저 끝나면, 늦게 끝난 로드가 그
+  // 결과를 디스크(또는 앞 계정) 내용으로 덮어쓸 수 있다 — 그 로드는 그
+  // 조작이 있었다는 것을 모르기 때문이다.
+  //
+  // `_groups`를 바꾸는 모든 지점에서 이 번호를 올리고, `_loadFromDisk()`는
+  // 시작할 때 번호를 기억해 뒀다가 반영 직전에 번호가 그대로인지 확인한다
+  // — 그사이 누가 끼어들었으면(번호가 바뀌었으면) 이 로드 결과는 **낡은
+  // 것**이므로 버린다.
+  int _generation = 0;
+
   // ContactsRepository/MyProfileRepository와 동일한 지연 로드/마이그레이션
   // 플래그. 로그인 전(uid 없음)에는 암호화 키를 만들 수 없어 평문으로 두고,
   // 로그인 시점에 재로드/재암호화한다.
@@ -62,6 +77,7 @@ class GroupsRepository extends ChangeNotifier {
     final restored = await DataBackupService.restoreGroups(uid);
     if (restored == null || restored.isEmpty) return;
     _groups = restored;
+    _generation++;
     notifyListeners();
     await _saveToDisk();
   }
@@ -72,6 +88,7 @@ class GroupsRepository extends ChangeNotifier {
   Future<void> forceRestoreFromServer(String uid) async {
     final restored = await DataBackupService.restoreGroups(uid);
     _groups = restored ?? [];
+    _generation++;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -89,6 +106,7 @@ class GroupsRepository extends ChangeNotifier {
   /// 건드리지 않는다(호출자가 필요하면 별도로 처리).
   Future<void> clearLocal() async {
     _groups = [];
+    _generation++;
     notifyListeners();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -99,6 +117,11 @@ class GroupsRepository extends ChangeNotifier {
   }
 
   Future<void> _loadFromDisk() async {
+    // 시작 시점의 세대 번호를 기억해 둔다. 이 로드가 끝나기 전에 다른 곳에서
+    // `_groups`를 바꾸면(클리어·강제 복원 등) 번호가 올라가고, 그러면 아래
+    // 반영 시점에 "낡은 로드"로 판정해 버린다(추가 510).
+    final startGeneration = _generation;
+
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_storageKey);
@@ -114,9 +137,12 @@ class GroupsRepository extends ChangeNotifier {
       }
 
       if (legacyList != null) {
-        _groups = legacyList
+        final parsed = legacyList
             .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
             .toList();
+        if (_generation != startGeneration) return; // 낡은 로드 — 버린다.
+        _groups = parsed;
+        _generation++;
         notifyListeners();
         if (_uid != null) {
           await _saveToDisk();
@@ -135,9 +161,12 @@ class GroupsRepository extends ChangeNotifier {
       final key = await _encryptionKeyService.getOrCreateUserKey(uid);
       final decoded = await DataCryptoService.decryptJson(raw, key);
       final jsonList = decoded['groups'] as List<dynamic>? ?? const [];
-      _groups = jsonList
+      final parsed = jsonList
           .map((j) => GroupModel.fromJson(j as Map<String, dynamic>))
           .toList();
+      if (_generation != startGeneration) return; // 낡은 로드 — 버린다.
+      _groups = parsed;
+      _generation++;
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading groups: $e');
@@ -178,6 +207,7 @@ class GroupsRepository extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
     _groups = [..._groups, group];
+    _generation++;
     notifyListeners();
     _persist();
     return group;
@@ -189,6 +219,7 @@ class GroupsRepository extends ChangeNotifier {
     _groups = _groups
         .map((g) => g.id == id ? g.copyWith(name: trimmed) : g)
         .toList();
+    _generation++;
     notifyListeners();
     _persist();
   }
@@ -198,6 +229,7 @@ class GroupsRepository extends ChangeNotifier {
   /// `GroupsViewModel.deleteGroup`이 두 저장소를 함께 보며 처리한다.
   void deleteGroup(String id) {
     _groups = _groups.where((g) => g.id != id).toList();
+    _generation++;
     notifyListeners();
     _persist();
   }

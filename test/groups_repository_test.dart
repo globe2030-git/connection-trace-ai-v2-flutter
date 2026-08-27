@@ -29,8 +29,10 @@
 // ⚠️ **고정 대기는 "얼마나 걸리는지 안다"고 가정한다.** 그 가정이 다른
 // 커밋의 성능 개선으로 깨졌고, 깨진 것이 느린 기계에서만 보였다.
 // → [_waitUntil] 로 **조건이 만족될 때까지** 기다린다.
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:connection_trace_ai_flutter/core/services/encryption_key_service.dart';
 import 'package:connection_trace_ai_flutter/data/repositories/groups_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -223,7 +225,7 @@ void main() {
       //    비운 뒤에 그 로드가 끝나면서 `_groups` 를 디스크 내용으로 다시
       //    덮어쓴다(`groups_repository.dart` 40행이 띄우고 101행이 덮는다).
       //    2026-08-26 에 바인딩을 켜면서 로드가 느려지자 드러났다.
-      //    **추가 510 으로 따로 잡는다 — 이 파일에서 고치지 않는다.**
+      //    아래 "생성 직후 clearLocal" 테스트가 그 경합 자체를 잡는다(추가 510).
       await _settle();
 
       repo.createGroup('그룹A');
@@ -233,6 +235,50 @@ void main() {
 
       expect(repo.groups, isEmpty);
       expect(await _savedRaw(), isNull);
+    });
+
+    test('⭐ setCurrentUid의 재로드가 끝나기 전에 clearLocal 을 부르면 늦게 끝난 로드가 되살리지 않는다(추가 510)', () async {
+      // 실제 사고 경로(auth_gate.dart `_syncUidAndRestore`)를 그대로 흉내
+      // 낸다 — 거기서는 `groupsRepo.setCurrentUid(uid)`를 **await 하지
+      // 않고** 곧바로 다음 화면 흐름(계정 전환 다이얼로그 → "교체" 선택 →
+      // `clearLocal()`)으로 넘어간다. `setCurrentUid`가 암호화된 내용을
+      // 복호화할 때는 `DataCryptoService.decryptJson`이 `compute()`
+      // 아이솔레이트를 띄우므로(추가 481) 그동안 진짜 시간차가 생긴다 —
+      // 그 틈에 `clearLocal()`이 먼저 끝나고, 뒤늦게 끝난 재로드가 방금
+      // 비운 `_groups`를 디스크(구 계정) 내용으로 덮어쓰면 안 된다.
+
+      // 테스트 환경엔 기기 보안 저장소·Firestore가 둘 다 없어서, 인스턴스마다
+      // 새 `EncryptionKeyService`를 만들면 그때그때 새로 발급한 키가 메모리
+      // 캐시에만 남는다 — 두 리포지토리 인스턴스가 같은 키를 봐야 복호화가
+      // 맞물리므로 서비스를 공유한다(실제 앱은 기기 보안 저장소로 이 역할을
+      // 대신한다).
+      final sharedKeyService = EncryptionKeyService();
+
+      // 1) 로그인 상태로 그룹을 만들어 암호화된 형태로 미리 저장해 둔다.
+      final seed = GroupsRepository(encryptionKeyService: sharedKeyService);
+      await seed.setCurrentUid('owner-uid');
+      seed.createGroup('되살아나면 안 되는 그룹');
+      await _waitUntil(() async {
+        final v = await _savedRaw();
+        return v != null && !v.contains('되살아나면 안 되는 그룹');
+      });
+
+      // 2) 앱 재시작과 같은 새 인스턴스 — 생성자는 uid 없이 시작하므로
+      //    암호화된 raw를 보고 `_pendingEncryptedLoad`만 세우고 빠르게
+      //    끝난다(복호화 비용 없음).
+      final repo = GroupsRepository(encryptionKeyService: sharedKeyService);
+      await _settle();
+      expect(repo.groups, isEmpty, reason: 'uid 설정 전이라 아직 복호화 못 함');
+
+      // 3) auth_gate.dart 와 동일한 패턴 — setCurrentUid를 기다리지 않고
+      //    곧바로 clearLocal을 부른다("교체" 선택 흐름).
+      unawaited(repo.setCurrentUid('owner-uid'));
+      await repo.clearLocal();
+
+      // 복호화(compute 아이솔레이트)가 늦게 끝날 시간을 충분히 준다.
+      await _settle();
+
+      expect(repo.groups, isEmpty, reason: '늦게 끝난 재로드가 지운 그룹을 되살리면 안 된다');
     });
   });
 }
