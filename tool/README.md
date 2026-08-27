@@ -77,6 +77,88 @@ privacy.py`의 `uid[:10]` 관례와 동일) — 전체 uid 목록을 나열하�
 포맷은 `lib/core/services/data_crypto_service.dart`와 같다(base64(nonce 12B +
 암호문 + MAC 16B)). `analyze_ai_cost.py`는 표준 라이브러리만 쓴다(추가 의존성 없음).
 
+## Cloud Storage 실물 조회 (2026-08-26에 처음 씀 — 스크립트가 아직 없다)
+
+⚠️ **명함 사진은 Cloud Storage에 있고, 위 스크립트들은 Firestore만 본다.**
+2026-08-26에 추가 517·518을 잡은 것이 이 조회였는데, **방법이 저장소 어디에도
+없었다.** 다음 사람이 다시 찾지 않게 적어 둔다.
+
+`firebase` CLI가 없어도 된다 — `gcloud`·`gsutil`로 된다.
+
+```bash
+# 개수
+gsutil ls -r "gs://connection-sense.firebasestorage.app/**" | grep -c "\.enc$"
+
+# 목록 + 크기 + 시각 (판정은 개수가 아니라 이것으로 한다 — 아래 참고)
+gsutil ls -l -r "gs://connection-sense.firebasestorage.app/**" | grep "\.enc$"
+```
+
+🚨 **빈 출력을 "0건"으로 읽지 마라.** 목록이 비는 것은 *"정말 없다"*일 수도
+있고 *"권한이 없어 안 보인다"*일 수도 있다. 한 단계 더 해서 갈라야 한다.
+
+```bash
+gsutil ls -L -b "gs://connection-sense.firebasestorage.app"   # 메타데이터가 읽히면 접근은 되는 것
+```
+
+### 🚨 개수로 판정하지 마라 — 목록으로 판정하라
+
+```bash
+awk '{print $NF}' 목록.txt | sed -E 's#.*/cards/##' | sort | shasum | cut -c1-12
+```
+
+**개수는 같은데 내용이 다를 수 있다.** 삭제가 엉뚱한 것을 지우고 다른 것이 새로
+올라오면 개수로는 안 잡힌다. 추가 517에서 이 방법이 *"지워야 할 그 하나가
+정확히 남아 있고, 엉뚱한 것은 0건 지워졌다"*까지 갈랐다 — **삭제가 아예 안 도는
+것과 엉뚱한 것을 지우는 것은 완전히 다른 결함이다.**
+
+📌 여러 세션이 같은 기기를 쓰면 **시각까지** 봐야 한다(추가 313: 두 세션이 각자
+기준선과 비교해 둘 다 "17장"이라고 보고한 사고).
+
+## 배포된 보안 규칙 원문 받기
+
+⚠️ **"배포했다"와 "서버가 그걸 쓴다"는 다르다.** 파일이 아니라 서버가 지금
+쓰는 규칙을 받아야 한다.
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+# ① 릴리스 목록 — 어느 룰셋을 쓰는지
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: connection-sense" \
+  "https://firebaserules.googleapis.com/v1/projects/connection-sense/releases"
+# ② 그 룰셋 원문
+curl -s -H "Authorization: Bearer $TOKEN" -H "X-Goog-User-Project: connection-sense" \
+  "https://firebaserules.googleapis.com/v1/projects/connection-sense/rulesets/<ID>"
+```
+
+🚨 **`X-Goog-User-Project` 헤더가 없으면 403이 난다** — *"requires a quota
+project, which is not set by default"*. 이것 때문에 처음에 권한 문제로 오해했다.
+
+## 실기기 검증에서 시간을 잡아먹은 것들 (2026-08-26)
+
+- 🚨 **폴드는 화면이 둘이라 `screencap`에 디스플레이 id를 줘야 한다.** 안 주면
+  경고 문구가 PNG 앞에 섞여 **파일이 깨진다**(이미지 뷰어가 못 연다).
+
+  ```bash
+  adb shell dumpsys SurfaceFlinger --display-id      # id 확인
+  adb exec-out screencap -p -d <id> > s.png
+  ```
+
+- ⚠️ **명함 삭제 경로는 셋인데 두 곳에는 없다.** 상세 화면에도 편집 화면에도
+  삭제 버튼이 없다. **목록 행 스와이프** 또는 **선택 모드(✓≡) → 빨간 「N개 삭제」**
+  다. 앞의 둘을 뒤지다 시간을 썼다.
+
+- 🚨 **명함 상세의 전화 아이콘은 시트를 안 거치고 바로 건다.** 목록·주변 화면의
+  전화 아이콘만 "어느 번호로 걸까요" 시트를 띄운다. **검증 중에 상세에서 누르면
+  실제 사람에게 전화가 걸린다.**
+
+- ⚠️ **`adb shell input text`로는 한글을 넣을 수 없다.** 그래서 한글이 든 칸은
+  **비웠다가 되돌릴 수 없다.** 내 명함 주소 검증을 이 이유로 건너뛰었다 —
+  **못 되돌릴 것은 건드리지 않는다.**
+
+- ⚠️ **연속으로 여러 칸을 채우면 좌표가 어긋난다.** 한 칸을 채우면 화면이
+  밀리는데, 그 상태에서 다음 좌표를 그대로 쓰면 **엉뚱한 칸에 들어간다**(실제로
+  회사명이 부서 칸에 들어갔다). CLAUDE.md 4-2절의 *"자동 탭을 보내기 전에 그
+  화면을 먼저 확인한다"*가 이 자리에도 그대로 적용된다.
+
 ## 알려진 제약
 
 - `verify_device_local.py`는 **Android 전용**이다. iOS는 샌드박스라 앱 내부
