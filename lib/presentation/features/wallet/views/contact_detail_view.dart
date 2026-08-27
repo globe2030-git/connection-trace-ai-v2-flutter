@@ -660,9 +660,9 @@ class _ZoomableCardAvatar extends StatelessWidget {
 
 /// 좌표를 못 얻은 명함에 상태를 알리는 줄(P1-25).
 ///
-/// 실패 횟수는 `GeoBackfillService` 가 기기에 적어 둔 것을 **읽기만** 한다
-/// ([GeoFailureLookup]). 화면이 그 값을 볼 통로가 없었던 것이 이 안내가 여태
-/// 없던 이유다.
+/// 포기 여부 판정은 `GeoBackfillService.resolveGivenUpIds` 가 한다 — 이 화면은
+/// [GeoFailureLookup] 을 거쳐 그 결과를 받아 쓰기만 한다. 시도 횟수·주소 해시를
+/// 여기서 다시 세지 않는다(그렇게 만들었다가 되돌린 경위는 그 파일에 있다).
 ///
 /// ⚠️ **읽어 오는 동안에는 아무것도 그리지 않는다.** 잠깐 떴다 사라지면
 /// 이용자는 무엇을 본 것인지 모른다.
@@ -685,12 +685,14 @@ class _GeoNoticeState extends State<_GeoNotice> {
   }
 
   Future<void> _load() async {
-    final counts =
-        await GeoFailureLookup().loadFailureCounts([widget.contact]);
+    final givenUp = await GeoFailureLookup().loadGivenUpIds([widget.contact]);
     if (!mounted) return;
-    setState(
-      () => _state = geoNoticeStateOf(widget.contact, counts[widget.contact.id]),
-    );
+    setState(() {
+      _state = geoNoticeStateOf(
+        widget.contact,
+        givenUp.contains(widget.contact.id),
+      );
+    });
   }
 
   @override

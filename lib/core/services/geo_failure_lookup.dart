@@ -1,11 +1,6 @@
-import 'dart:convert';
-
-import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../data/models/contact_model.dart';
 import '../utils/address_region.dart';
+import 'geo_backfill_service.dart';
 
 /// 명함 하나가 **주변 화면에서 어떤 상태인지**.
 ///
@@ -33,97 +28,59 @@ enum GeoNoticeState {
 
 /// 좌표를 못 얻은 명함이 **왜 그런지**를 화면에 알려 주는 읽기 전용 통로.
 ///
-/// ## 🚨 왜 이것이 따로 필요한가
+/// ## 🚨 처음에 이 파일을 잘못 만들었다 — 경위를 남긴다
 ///
-/// P1-25(명함 상세 안내)가 여태 안 된 이유는 **안내를 안 만들어서가 아니라
-/// 만들 재료가 화면에 없었기 때문**이다.
+/// 처음 판은 `shared_preferences` 의 시도 기록을 **직접 열어 해석했다.** 키
+/// 이름·주소 해시 계산·`maxAttempts` 3을 [GeoBackfillService] 와 **똑같이 한 벌
+/// 더 적어 두고**, 그 둘이 어긋나지 않도록 대조 테스트까지 붙였다.
+///
+/// ⚠️ **그럴 필요가 없었다. 판정 함수가 이미 있었다.**
 ///
 /// ```
-/// ContactModel            geo 하나만 들고 있다 — 실패 이유·시도 횟수가 없다
-/// GeoBackfillService      시도 횟수를 shared_preferences 에 보관한다
-/// 화면                    그 값을 볼 통로가 없었다
+/// GeoBackfillService.resolveGivenUpIds   기록을 한 번 읽어 목록 전체를 판정
+/// ocr_stats_view.dart:103                이미 쓰고 있었다
+/// contacts_repository.hasAddressGeocodingFailed   주석에 "(P1-25)" 라고 적혀 있다
 /// ```
 ///
-/// ## ⚠️ 읽기만 한다. 아무것도 쓰지 않는다
+/// 착수 근거를 *"화면이 그 값을 볼 통로가 없다"* 로 적었는데 **통로는 있었다.**
+/// `main` 실물을 먼저 열어 보라는 규약(CLAUDE.md 4-2절)을 **내 작업에는 적용하지
+/// 않은 것**이 원인이다.
 ///
-/// `shared_preferences` 는 **암호화되지 않는다.** 지금 그 키에 들어 있는 것은
-/// **명함 id · 주소 해시 · 실패 횟수**뿐이고 **주소 원문이 아니다.** 이 클래스는
-/// 그 상태를 그대로 두기 위해 **읽기만** 한다 — 쓰기 메서드를 두지 않는다.
+/// 📌 **더 나쁜 점은 동작이 맞았다는 것이다.** 복제한 해시 계산이 우연히 아니라
+/// 정확히 같아서 테스트가 전부 통과했고, 그래서 **자동 검사로는 안 잡혔다.**
+/// 틀렸으면 잡혔을 것을, 맞아서 놓쳤다.
 ///
-/// 📌 기록을 만들고 지우는 것은 [GeoBackfillService] 하나뿐이다. 여기서 함께
-/// 쓰기 시작하면 **같은 키를 두 곳이 만지게 되고, 어느 쪽이 마지막인지 알 수
-/// 없어진다.**
+/// ## 그래서 지금은 위임만 한다
+///
+/// 이 파일에 남은 것은 **[GeoBackfillService] 의 판정을 화면이 쓸 모양으로
+/// 바꿔 주는 얇은 층**과, 그 결과를 문구로 가르는 [geoNoticeStateOf] 뿐이다.
+/// 키·해시·횟수는 **한 곳에만 있다.**
 class GeoFailureLookup {
-  /// [GeoBackfillService] 가 쓰는 키. **같은 값을 두 곳에 적지 않도록** 여기서
-  /// 다시 정의하지 말아야 하지만, 그쪽이 private 이라 부득이 맞춰 둔다.
+  GeoFailureLookup({GeoBackfillService? service})
+    : _service = service ?? GeoBackfillService();
+
+  final GeoBackfillService _service;
+
+  /// [contacts] 중 **주소로 좌표를 얻지 못해 포기된** 명함 id 집합.
   ///
-  /// ⚠️ **한쪽을 바꾸면 다른 쪽도 바꿔야 한다.** 어긋나면 이 통로가 **조용히
-  /// 빈 값을 돌려준다** — 오늘 `firestore.rules` 에서 겪은 것과 같은 모양이다
-  /// (추가 533). 그래서 테스트로 고정했다.
-  static const String prefsKey = 'geo_backfill_attempts_v1';
-
-  /// [GeoBackfillService.maxAttemptsPerContact] 와 같아야 한다. 위와 같은 이유로
-  /// 테스트가 둘을 견준다.
-  static const int maxAttempts = 3;
-
-  /// 명함 id → 실패 횟수. **그 명함의 지금 주소로 실패한 횟수만** 센다.
-  ///
-  /// 주소가 바뀌면 이전 기록은 의미가 없다 — [GeoBackfillService] 도 같은
-  /// 이유로 주소 해시를 함께 저장하고, 여기서도 그 규칙을 그대로 따른다.
-  Future<Map<String, int>> loadFailureCounts(
-    Iterable<ContactModel> contacts,
-  ) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(prefsKey);
-      if (raw == null || raw.isEmpty) return const {};
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) return const {};
-
-      final addressHashById = {
-        for (final c in contacts)
-          if ((c.address?.trim().isNotEmpty ?? false))
-            c.id: hashAddress(c.address!.trim()),
-      };
-
-      final result = <String, int>{};
-      decoded.forEach((key, value) {
-        if (key is! String || value is! Map) return;
-        final storedHash = value['h'] as String? ?? '';
-        final count = (value['n'] as num?)?.toInt() ?? 0;
-        // 지금 주소로 실패한 것만 센다.
-        if (addressHashById[key] == storedHash) result[key] = count;
-      });
-      return result;
-    } catch (e) {
-      // ⚠️ 주소·이름을 로그에 남기지 않는다. 종류만 찍는다.
-      debugPrint('좌표 실패 기록 조회 실패: ${e.runtimeType}');
-      return const {};
-    }
-  }
-
-  /// [GeoBackfillService] 와 **같은 방식**으로 주소를 해시한다.
-  ///
-  /// 🚨 이 계산이 달라지면 저장된 기록과 하나도 안 맞아 **조용히 "실패한 적
-  /// 없음"이 된다.** 테스트로 고정했다.
-  static String hashAddress(String address) =>
-      sha256.convert(utf8.encode(address)).toString().substring(0, 12);
+  /// 판정은 전부 [GeoBackfillService.resolveGivenUpIds] 가 한다 — 시도 횟수도,
+  /// **주소가 바뀌면 이전 실패는 무효**라는 규칙도 그쪽 것이다. 여기서 다시
+  /// 세지 않는다.
+  Future<Set<String>> loadGivenUpIds(Iterable<ContactModel> contacts) =>
+      _service.resolveGivenUpIds(contacts.toList());
 }
 
 /// 명함 하나의 상태를 정한다. **화면이 무슨 말을 할지가 여기서 갈린다.**
 ///
-/// [failureCount] 는 [GeoFailureLookup.loadFailureCounts] 가 준 값이고, 기록이
-/// 없으면 `null` 이다.
+/// [givenUp] 은 [GeoFailureLookup.loadGivenUpIds] 에 이 명함이 들어 있었는지다.
 ///
 /// ⚠️ **아직 포기하지 않은 명함에는 안내를 띄우지 않는다.** 다음 실행에서 좌표를
 /// 얻을 수 있는데 *"찾지 못했습니다"* 라고 하면 **틀린 말**이 된다.
-GeoNoticeState geoNoticeStateOf(ContactModel c, int? failureCount) {
+GeoNoticeState geoNoticeStateOf(ContactModel c, bool givenUp) {
   if (c.geo != null) return GeoNoticeState.located;
   if (!(c.address?.trim().isNotEmpty ?? false)) return GeoNoticeState.noAddress;
-  if ((failureCount ?? 0) < GeoFailureLookup.maxAttempts) {
-    // 아직 시도할 여지가 있다 — 말하지 않는다.
-    return GeoNoticeState.located;
-  }
+  // 아직 시도할 여지가 있다 — 말하지 않는다.
+  if (!givenUp) return GeoNoticeState.located;
   return regionOf(c.address).shortLabel == null
       ? GeoNoticeState.hidden
       : GeoNoticeState.regionOnly;
