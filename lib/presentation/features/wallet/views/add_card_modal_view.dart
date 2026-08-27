@@ -3939,7 +3939,33 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                     ),
                   ),
                   // P1-25: 주소로 위치를 못 찾으면 이 명함은 '주변' 목록에 안 뜬다.
-                  // 사용자에게 이유와 조치(주소 수정)를 알려 준다.
+                  // 이유와 할 수 있는 동작을 알려 준다.
+                  //
+                  // ⚠️ **"주소를 확인해 주세요"라고 하지 않는다**(2026-08-28).
+                  // 옛 문구가 그랬는데, 저장 시점 다이얼로그
+                  // (_showUnresolvableAddressDialog)는 같은 사건을 두고
+                  // "주소 자체가 틀렸다는 뜻은 아닙니다"라고 말한다 — 한 앱이
+                  // 같은 일에 대해 "당신 잘못이 아니다"와 "당신이 확인하라"를
+                  // 함께 말하고 있었다.
+                  //
+                  // 🚨 **왜 실패하는지는 아직 아무도 모른다.** 2026-08-28
+                  // 실기기에서 진단 화면을 처음 읽었는데, **실패로 기록된
+                  // 것이 통틀어 1건**이었다(그것도 "번호 없음" 주소 하나).
+                  // 3회 실패해 포기된 명함은 0장이다. 표본이 1이다.
+                  //
+                  // 모르는 것을 화면이 단정하면 안 된다. "확인해 주세요"는
+                  // **주소에 문제가 있다고 단정하는 말**이라, 근거가 생기기
+                  // 전까지는 쓸 수 없다. 그래서 원인을 말하지 않고 **할 수
+                  // 있는 동작 하나만** 남겼다. HANDOFF 1987행도 같은 자리를
+                  // "이것도 추정이다 … 실패 집계 확인이 먼저다"로 남겼다.
+                  //
+                  // ⚠️ **「좌표가 없는 주소의 형태」 표를 근거로 삼지 말 것.**
+                  // 그 표에는 **아직 시도조차 안 한 명함이 들어온다**
+                  // (countShapesWithoutGeo 주석 참고). 같은 날 실측이 그것을
+                  // 보여 줬다 — 앱을 한 번 다시 켜니 좌표 없음이 71장에서
+                  // 41장으로 **정확히 30장**(백필 한 회차 상한) 줄었고, 그
+                  // 회차는 30건 시도해 30건 성공했다. 즉 그 표는 실패율이
+                  // 아니라 **백필 진행률**을 보여 준다.
                   if (_addressGeoFailed) ...[
                     const SizedBox(height: 8),
                     Container(
@@ -3956,15 +3982,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
                       child: const Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // location_off 는 "꺼짐/차단"으로 읽힌다. 이건
+                          // 고장이 아니라 알림이고, 상세 화면의 같은 안내
+                          // (GeoNoticeRow)도 place_outlined 를 쓴다.
                           Icon(
-                            Icons.location_off,
+                            Icons.place_outlined,
                             size: 16,
                             color: AppColors.textSecondary,
                           ),
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '위치를 못 찾았어요. 주소를 확인해 주세요.',
+                              '이 주소로는 위치를 못 찾았어요. 주소 검색으로 다시 골라 보세요.',
                               style: TextStyle(
                                 fontSize: 12,
                                 height: 1.4,
