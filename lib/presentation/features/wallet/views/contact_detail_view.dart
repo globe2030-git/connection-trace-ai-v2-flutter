@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/services/contact_export_service.dart';
+import '../../../../core/services/geo_failure_lookup.dart';
 import '../../../../core/services/contact_export_settings_service.dart';
 import '../../../../core/services/contact_image_service.dart';
 import '../../../../core/services/phone_call_service.dart';
@@ -16,6 +17,7 @@ import '../../../common/contact_avatar.dart';
 import '../view_models/groups_view_model.dart';
 import 'add_card_modal_view.dart';
 import 'contact_export_confirm_dialog.dart';
+import 'geo_notice_row.dart';
 import 'contact_export_name_format_sheet.dart';
 import 'group_assign_sheet.dart';
 
@@ -123,6 +125,10 @@ class ContactDetailView extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     _header(context, uid),
+                    // 이 명함이 **주변 화면에서 왜 그렇게 보이는지** 알린다
+                    // (P1-25). ⚠️ 경고가 아니라 선택지다 — 지역으로 보이는
+                    // 명함은 고장이 아니다(GeoNoticeRow 주석 참고).
+                    _GeoNotice(contact: contact),
                     ..._contactRows(context),
                     // 그룹 진입점은 빌드 스위치로 숨긴다(group_model.dart의
                     // kGroupsFeatureEnabled 참고, 방침 v2.3 시행 게이트).
@@ -648,6 +654,58 @@ class _ZoomableCardAvatar extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 좌표를 못 얻은 명함에 상태를 알리는 줄(P1-25).
+///
+/// 포기 여부 판정은 `GeoBackfillService.resolveGivenUpIds` 가 한다 — 이 화면은
+/// [GeoFailureLookup] 을 거쳐 그 결과를 받아 쓰기만 한다. 시도 횟수·주소 해시를
+/// 여기서 다시 세지 않는다(그렇게 만들었다가 되돌린 경위는 그 파일에 있다).
+///
+/// ⚠️ **읽어 오는 동안에는 아무것도 그리지 않는다.** 잠깐 떴다 사라지면
+/// 이용자는 무엇을 본 것인지 모른다.
+class _GeoNotice extends StatefulWidget {
+  const _GeoNotice({required this.contact});
+
+  final ContactModel contact;
+
+  @override
+  State<_GeoNotice> createState() => _GeoNoticeState();
+}
+
+class _GeoNoticeState extends State<_GeoNotice> {
+  GeoNoticeState? _state;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final givenUp = await GeoFailureLookup().loadGivenUpIds([widget.contact]);
+    if (!mounted) return;
+    setState(() {
+      _state = geoNoticeStateOf(
+        widget.contact,
+        givenUp.contains(widget.contact.id),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = _state;
+    if (state == null) return const SizedBox.shrink();
+    return GeoNoticeRow(
+      state: state,
+      onEditAddress: () {
+        // 주소는 이 화면에 없다(추가 332) — 고치러 갈 길만 연다.
+        Navigator.of(context).pop();
+        AddCardModalView.show(context, contact: widget.contact);
+      },
     );
   }
 }
