@@ -57,8 +57,30 @@ class _MainTabScreenState extends State<MainTabScreen>
   bool _exitArmed = false;
   Timer? _exitArmTimer;
 
+  // ⚠️ `SettingsView()`는 일부러 `const`로 두지 않는다(추가 513).
+  //
+  // `IndexedStack`은 화면을 전부 계속 그리므로(숨겨진 탭도 매 리빌드마다
+  // build()를 다시 부른다), 탭을 바꿔도 State가 안 사라지는 것 자체는
+  // 문제가 아니다. 문제는 **`const` 위젯은 Dart가 같은 인스턴스로
+  // 정규화(canonicalize)해서**, 매번 같은 `List`를 새로 만들어도 안의
+  // `const SettingsView()`는 `identical()`이 참이 되고, Flutter는 이
+  // 경우 `Element.updateChild`에서 자식을 다시 그리지 않고 그대로
+  // 넘어간다는 것이다 — 결과적으로 **`SettingsView.build()`가 앱을 새로
+  // 시작한 뒤 딱 한 번만 실행되고, 그 뒤로는 탭을 눌러도 다시 실행되지
+  // 않는다.** 그 안의 `_CardPhotoBackupStatusRow`(사진 백업 현황)가
+  // `initState()`에서 한 번만 읽고 절대 안 바뀌던 원인이 이것이다 —
+  // 명함을 등록해 서버에 사진이 올라가도, 이미 그려진 그 화면은 다시
+  // 그려질 기회 자체가 없었다.
+  //
+  // `SettingsView()`만 `const`를 빼면 매 리빌드(탭 전환 포함)마다 새
+  // 위젯 인스턴스가 만들어져 `didUpdateWidget`이 불리고, 그 안의
+  // `_CardPhotoBackupStatusRowState.didUpdateWidget`이 최신 값을 다시
+  // 읽는다(State 자체는 그대로 유지되므로 `initState`가 다시 불리는 건
+  // 아니다). Radar·Wallet은 이 결함이 보고되지 않아 그대로 `const`로 둔다
+  // — 바꾸는 범위를 좁혀 다른 화면에 영향이 번지지 않게 한다.
   List<Widget> get _screens =>
-      widget.debugScreens ?? const [RadarView(), WalletView(), SettingsView()];
+      widget.debugScreens ??
+      [const RadarView(), const WalletView(), SettingsView()];
 
   @override
   void initState() {

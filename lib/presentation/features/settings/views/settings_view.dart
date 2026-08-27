@@ -1221,6 +1221,20 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
     _load();
   }
 
+  // ⚠️ 탭을 다시 열 때마다 최신 값을 읽는다(추가 513).
+  //
+  // 이 화면은 `IndexedStack`(main_tab_screen.dart) 아래에 있어서 탭을
+  // 나갔다 들어와도 이 State 자체는 사라지지 않는다 — 그래서 `initState`가
+  // 다시 불리는 것을 기대할 수 없다. 대신 부모(`SettingsView`)가
+  // `const`를 빼서 매 리빌드마다 이 위젯을 새로 만들게 고쳤으므로,
+  // 여기서 `didUpdateWidget`을 훅으로 써서 다시 읽는다. `_load()`는
+  // 로컬 shared_preferences 읽기라 자주 불려도 비용이 작다.
+  @override
+  void didUpdateWidget(covariant _CardPhotoBackupStatusRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _load();
+  }
+
   Future<void> _load() async {
     final uid = widget.uid;
     final quota = uid == null
