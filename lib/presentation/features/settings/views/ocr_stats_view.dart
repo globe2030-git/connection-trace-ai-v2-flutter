@@ -48,11 +48,16 @@ class _OcrStatsViewState extends State<OcrStatsView> {
     'jusoSuccess': '행안부 성공',
     'osFallbackSuccess': 'OS 폴백 성공',
     'bothFailed': '둘 다 실패',
+    // ⚠️ 이 줄만 성격이 다르다 — 나머지는 "어느 공급자가 답했나"인데
+    // 이것은 **아무에게도 안 물어봤다**는 뜻이다(2026-08-28).
+    'reusedFromSameAddress': '같은 주소에서 가져옴',
   };
 
   // 화면에는 늘 같은 순서로 보여준다(집계 맵 순서는 삽입 순서라 회차마다
   // 달라질 수 있다).
   static const _stageOrder = [
+    // 맨 위에 둔다 — 통신을 아낀 건수라 회차를 읽을 때 먼저 보이는 편이 낫다.
+    'reusedFromSameAddress',
     'jusoSuccess',
     'jusoSearchFailed',
     'jusoCoordFailed',

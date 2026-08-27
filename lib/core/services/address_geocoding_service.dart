@@ -33,7 +33,22 @@ enum GeoFailureReason {
 ///    남긴다([jusoSearchFailed]/[jusoCoordFailed]) — 원인 자리를 좁힐 수 있다.
 /// 4. 행안부를 아예 시도 못 했으면(키 없음) [bothFailed] — "키 탑재 여부"는
 ///    화면에 별도로 뜨므로 여기서 더 쪼개지 않는다.
-enum GeoStage { jusoSearchFailed, jusoCoordFailed, jusoSuccess, osFallbackSuccess, bothFailed }
+/// 좌표 한 건이 **어떻게 끝났는지**(추가 435 계측).
+///
+/// ⚠️ [reusedFromSameAddress] 만 성격이 다르다 — 나머지 넷은 *"어느 공급자가
+/// 답했나"* 인데 이것은 **아무에게도 안 물어봤다**는 뜻이다. 한 표에 함께
+/// 두는 이유는 화면이 묻는 것이 *"이 회차에 30건이 어떻게 처리됐나"* 라서다.
+enum GeoStage {
+  jusoSearchFailed,
+  jusoCoordFailed,
+  jusoSuccess,
+  osFallbackSuccess,
+  bothFailed,
+
+  /// 같은 주소를 가진 다른 명함이 **이미 좌표를 갖고 있어 그대로 썼다.**
+  /// 통신을 하지 않았다(2026-08-28).
+  reusedFromSameAddress,
+}
 
 class AddressValidationResult {
   final bool isValid;

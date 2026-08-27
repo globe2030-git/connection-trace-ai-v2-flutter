@@ -155,8 +155,13 @@ class GeoBackfillService {
   /// 이 콜백에서 명함을 즉시 갱신·저장하면 "도중에 죽어도 이미 성공한 것은
   /// 남는다"가 성립한다. 콜백이 끝나기를 기다렸다가 다음 건으로 넘어간다
   /// (저장이 실제로 끝난 뒤 진행해야 순서가 어긋나지 않는다).
+  ///
+  /// [knownGeoByAddress]는 **주소 원문 → 이미 아는 좌표**다. 여기 있는 주소는
+  /// 통신을 하지 않고 그 값을 그대로 쓴다 — 자세한 것은 아래 "같은 주소는
+  /// 다시 안 물어본다" 참고.
   Future<Map<String, GeoPosition>> backfill(
     List<ContactModel> contacts, {
+    Map<String, GeoPosition>? knownGeoByAddress,
     void Function(int done, int total)? onProgress,
     FutureOr<void> Function(String contactId, GeoPosition geo)? onResolved,
   }) async {
@@ -168,6 +173,24 @@ class GeoBackfillService {
     if (targets.isEmpty) return const {};
 
     final resolved = <String, GeoPosition>{};
+    // ## 같은 주소는 다시 안 물어본다 (2026-08-28, globe2030님 지적)
+    //
+    // 예전에는 명함 단위로 돌았다 — 같은 회사 명함이 5장이면 **똑같은 주소를
+    // 5번** 물어봤다. globe2030님이 짚었다: "회사별 좌표는 한번만 확인되면
+    // 저장되는데 명함마다 계속 검색할 이유가 없지 않나."
+    //
+    // 📌 **새 저장소를 만들지 않는다.** 좌표는 이미 명함에 들어 있으므로
+    // 명함 목록 자체가 캐시다. 호출자가 그 목록에서 map을 만들어 넘긴다.
+    //
+    // ⚠️ **주소 글자가 정확히 같을 때만** 빌려온다. 정규화는 하지 않는다 —
+    // "서울 강남구"와 "서울특별시 강남구"를 같다고 보려면 주소를 정규화해야
+    // 하는데, **잘못 묶으면 엉뚱한 좌표가 붙는다.** 조금이라도 다르면 평소대로
+    // 물어본다: 안 되는 쪽으로 안전하다.
+    //
+    // ⭐ **정규화 없이도 쓸 만한 이유**: `address`와 `addressDetail`이 따로
+    // 저장된다(층·호수는 다른 칸에 들어간다). 그래서 같은 회사 명함이면
+    // `address`가 글자 그대로 같을 가능성이 높다.
+    final known = <String, GeoPosition>{...?knownGeoByAddress};
     // 이번 회차의 단계별 집계(추가 435 계측) — "행안부 검색 실패/좌표 실패/
     // 성공, OS 폴백 성공, 둘 다 실패"를 개수로만 남긴다. `result.stage`가
     // null이면(주입된 테스트 더미 등, 계측을 안 채운 경우) 그 시도는 세지
@@ -179,6 +202,25 @@ class GeoBackfillService {
 
     for (final contact in targets) {
       final address = contact.address!.trim();
+
+      // 이미 아는 주소면 통신하지 않는다.
+      final borrowed = known[address];
+      if (borrowed != null) {
+        resolved[contact.id] = borrowed;
+        // 이 명함의 옛 실패 기록도 지운다 — 좌표를 얻었으니 실패가 아니다.
+        attempts.remove(contact.id);
+        stageCounts[GeoStage.reusedFromSameAddress] =
+            (stageCounts[GeoStage.reusedFromSameAddress] ?? 0) + 1;
+        if (onResolved != null) {
+          await onResolved(contact.id, borrowed);
+        }
+        done++;
+        onProgress?.call(done, targets.length);
+        // ⚠️ 여기서는 [_gap]을 기다리지 않는다 — 그 간격은 주소 서버를
+        // 몰아치지 않으려는 것인데, 이 건은 서버를 부르지 않았다.
+        continue;
+      }
+
       GeoFailureReason? failureReason;
       try {
         final result = await _geocode(address);
@@ -189,6 +231,8 @@ class GeoBackfillService {
         final geo = result.geoPosition;
         if (result.isValid && geo != null) {
           resolved[contact.id] = geo;
+          // 이 회차의 다음 명함이 같은 주소면 빌려 쓴다.
+          known[address] = geo;
           attempts.remove(contact.id);
           consecutiveFailures = 0;
           if (onResolved != null) {
