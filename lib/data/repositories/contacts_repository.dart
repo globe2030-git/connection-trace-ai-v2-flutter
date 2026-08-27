@@ -6,6 +6,7 @@ import '../../core/services/contact_image_service.dart';
 import '../../core/services/data_crypto_service.dart';
 import '../../core/services/encryption_key_service.dart';
 import '../../core/services/geo_backfill_service.dart';
+import '../../core/utils/geo_utils.dart';
 import '../models/contact_model.dart';
 import '../services/data_backup_service.dart';
 
@@ -345,6 +346,27 @@ class ContactsRepository extends ChangeNotifier {
   /// 회차 도중 앱이 죽으면 그 회차의 성공분이 통째로 사라지는 것이 확인됐다.
   /// 지금은 [GeoBackfillService.backfill]의 `onResolved` 콜백으로 한 건씩
   /// 반영·저장하므로 "도중에 죽어도 이미 성공한 것은 남는다."
+  /// 주소 원문 → 이미 아는 좌표. 같은 주소를 두 번 물어보지 않기 위한 것이다.
+  ///
+  /// ⚠️ **주소를 트림만 하고 그대로 쓴다.** 정규화하지 않는 이유는
+  /// [GeoBackfillService.backfill] 주석에 있다 — 잘못 묶으면 엉뚱한 좌표가
+  /// 붙는다.
+  ///
+  /// 같은 주소에 서로 다른 좌표를 가진 명함이 있으면 **먼저 나온 것**을 쓴다.
+  /// 어느 쪽이든 그 주소로 얻은 값이라 차이가 있어도 무의미할 만큼 작고,
+  /// 애초에 그런 경우는 지오코더 응답이 바뀐 옛 데이터뿐이다.
+  Map<String, GeoPosition> _knownGeoByAddress() {
+    final map = <String, GeoPosition>{};
+    for (final c in _contacts) {
+      final geo = c.geo;
+      if (geo == null) continue;
+      final address = c.address?.trim() ?? '';
+      if (address.isEmpty) continue;
+      map.putIfAbsent(address, () => geo);
+    }
+    return map;
+  }
+
   Future<void> backfillMissingGeo() async {
     if (_isBackfillingGeo) return;
 
@@ -359,6 +381,14 @@ class ContactsRepository extends ChangeNotifier {
     try {
       await _geoBackfillService.backfill(
         pending,
+        // 이미 좌표를 얻은 명함들의 주소를 함께 넘긴다(2026-08-28).
+        // 같은 주소면 다시 물어보지 않고 그 값을 쓴다 — 같은 회사 명함이
+        // 여러 장이면 그만큼 헛호출이었다(globe2030님 지적).
+        //
+        // 📌 새 저장소를 만들지 않는다. 좌표는 이미 명함에 들어 있으니
+        // **이 목록이 곧 캐시**다. 그래서 신규 명함이 기존 명함의 주소와
+        // 같으면 등록 직후 바로 채워진다.
+        knownGeoByAddress: _knownGeoByAddress(),
         onProgress: (done, total) {
           _geoBackfillDone = done;
           _geoBackfillTotal = total;

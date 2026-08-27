@@ -52,6 +52,8 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  _reuseTests();
+
   group('ContactModel 백업 페이로드', () {
     test('서버 백업에는 좌표(lat/lng)가 들어가지 않는다', () {
       final json = _contact(
@@ -383,6 +385,133 @@ void main() {
       expect(await service.hasGivenUpGeo(contacts.single), isFalse);
       final resolved = await service.backfill(contacts);
       expect(resolved['c1']!.lat, 9, reason: '기록을 지우면 다시 지오코더를 부른다');
+    });
+  });
+}
+
+/// 🚨 **같은 주소는 다시 안 물어본다** (2026-08-28, globe2030님 지적).
+///
+/// > *"회사별 좌표는 한번만 확인되면 저장되서 명함의 회사 주소로 계속
+/// > 검색할 이유가 없지않나?"*
+///
+/// 예전에는 명함 단위로 돌아서 같은 회사 명함 5장이면 **똑같은 주소를 5번**
+/// 물어봤다. 그 헛호출이 한 회차 상한(30장)의 자리까지 차지했다.
+///
+/// ⚠️ 여기서 지키는 것 둘이다.
+///
+/// ```
+/// ① 같은 주소면 통신하지 않는다        _geocode 호출 횟수를 센다
+/// ② 다른 주소면 반드시 통신한다        빌려오기가 번지지 않게
+/// ```
+///
+/// 📌 ②가 더 중요하다. **틀린 좌표가 붙는 유일한 경로**가 "같지 않은데
+/// 같다고 본 것"이라, 그 경계를 테스트로 못 박는다.
+void _reuseTests() {
+  group('🚨 같은 주소는 좌표를 다시 안 물어본다', () {
+    late int calls;
+    late List<String> asked;
+
+    GeoBackfillService service(Map<String, GeoPosition> answers) {
+      calls = 0;
+      asked = [];
+      return GeoBackfillService(
+        gapBetweenRequests: Duration.zero,
+        geocode: (address) async {
+          calls++;
+          asked.add(address);
+          final geo = answers[address];
+          return geo == null ? _fail : _ok(geo);
+        },
+      );
+    }
+
+    test('⭐ 같은 주소 명함 셋이면 한 번만 물어본다', () async {
+      const addr = '서울특별시 강남구 테헤란로 1';
+      const geo = GeoPosition(lat: 37.5, lng: 127.0);
+      final s = service({addr: geo});
+
+      final resolved = await s.backfill([
+        _contact(id: 'a', address: addr),
+        _contact(id: 'b', address: addr),
+        _contact(id: 'c', address: addr),
+      ]);
+
+      expect(calls, 1, reason: '나머지 둘은 첫 답을 빌려 쓴다');
+      expect(resolved.length, 3, reason: '셋 다 좌표를 얻는다');
+      expect(resolved['b'], geo);
+      expect(resolved['c'], geo);
+    });
+
+    test('⭐ 이미 좌표를 가진 명함의 주소면 아예 안 물어본다', () async {
+      const addr = '서울특별시 강남구 테헤란로 1';
+      const geo = GeoPosition(lat: 37.5, lng: 127.0);
+      // 답을 하나도 주지 않는다 — 통신하면 실패한다.
+      final s = service(const {});
+
+      final resolved = await s.backfill(
+        [_contact(id: 'new', address: addr)],
+        knownGeoByAddress: const {addr: geo},
+      );
+
+      expect(calls, 0, reason: '기존 명함이 이미 아는 주소다');
+      expect(resolved['new'], geo);
+    });
+
+    test('🚨 주소가 조금이라도 다르면 반드시 물어본다', () async {
+      const known = '서울특별시 강남구 테헤란로 1';
+      const other = '서울 강남구 테헤란로 1'; // 사람 눈엔 같지만 글자가 다르다
+      const geo = GeoPosition(lat: 37.5, lng: 127.0);
+      final s = service(const {});
+
+      await s.backfill(
+        [_contact(id: 'x', address: other)],
+        knownGeoByAddress: const {known: geo},
+      );
+
+      expect(
+        calls,
+        1,
+        reason: '정규화하지 않는다 — 잘못 묶으면 엉뚱한 좌표가 붙는다. '
+            '안 되는 쪽으로 안전하게 둔다',
+      );
+      expect(asked.single, other);
+    });
+
+    test('⭐ 빌려온 건도 단계별 집계에 남는다', () async {
+      const addr = '서울특별시 강남구 테헤란로 1';
+      const geo = GeoPosition(lat: 37.5, lng: 127.0);
+      final s = service(const {});
+
+      await s.backfill(
+        [_contact(id: 'a', address: addr), _contact(id: 'b', address: addr)],
+        knownGeoByAddress: const {addr: geo},
+      );
+
+      final stats = await GeoBackfillService.readStageStats();
+      expect(
+        stats[GeoStage.reusedFromSameAddress.name],
+        2,
+        reason: '이 숫자가 곧 "주소가 얼마나 겹치는가"의 실측이다 — '
+            '재지 않으면 "좋아졌겠지"만 남는다',
+      );
+    });
+
+    test('⭐ 실패한 주소는 빌려주지 않는다', () async {
+      const addr = '서울특별시 강남구 테헤란로 1';
+      final s = service(const {}); // 무조건 실패
+
+      final resolved = await s.backfill([
+        _contact(id: 'a', address: addr),
+        _contact(id: 'b', address: addr),
+      ]);
+
+      expect(resolved, isEmpty);
+      expect(
+        calls,
+        2,
+        reason: '실패는 캐시하지 않는다 — 일시적 통신 문제일 수 있고, '
+            '재시도 횟수는 명함마다 따로 센다',
+      );
     });
   });
 }
