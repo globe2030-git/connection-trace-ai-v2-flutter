@@ -316,8 +316,9 @@ service cloud.firestore {
     function isValidOcrNameSourceMap(m) {
       return m.keys().hasOnly([
         'keywordSplit', 'koreanStripped', 'mixedTokenFront', 'mixedTokenLast',
-        'leftoverFallback', 'fontSizePreferred', 'mergedWithAddress',
-        'splitFromTitle', 'hangulTokenPreferred', 'rawLineRecheck', 'none'
+        'leftoverFallback', 'fontSizePreferred', 'romanizedSurname',
+        'mergedWithAddress', 'splitFromTitle', 'hangulTokenPreferred',
+        'rawLineRecheck', 'none'
       ]) &&
         (!('keywordSplit' in m) || isOcrCount(m.keywordSplit)) &&
         (!('koreanStripped' in m) || isOcrCount(m.koreanStripped)) &&
@@ -325,6 +326,7 @@ service cloud.firestore {
         (!('mixedTokenLast' in m) || isOcrCount(m.mixedTokenLast)) &&
         (!('leftoverFallback' in m) || isOcrCount(m.leftoverFallback)) &&
         (!('fontSizePreferred' in m) || isOcrCount(m.fontSizePreferred)) &&
+        (!('romanizedSurname' in m) || isOcrCount(m.romanizedSurname)) &&
         (!('mergedWithAddress' in m) || isOcrCount(m.mergedWithAddress)) &&
         (!('splitFromTitle' in m) || isOcrCount(m.splitFromTitle)) &&
         (!('hangulTokenPreferred' in m) || isOcrCount(m.hangulTokenPreferred)) &&
