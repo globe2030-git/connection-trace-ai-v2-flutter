@@ -159,6 +159,49 @@ project, which is not set by default"*. 이것 때문에 처음에 권한 문제
   회사명이 부서 칸에 들어갔다). CLAUDE.md 4-2절의 *"자동 탭을 보내기 전에 그
   화면을 먼저 확인한다"*가 이 자리에도 그대로 적용된다.
 
+## 공유(다른 앱으로 보내기)를 재는 법 (2026-08-26, 추가 506·507)
+
+카카오톡으로 명함이 안 가던 원인을 쫓으며 쓴 것들이다. **하루가 걸렸고, 그중
+절반은 잘못된 방법으로 재느라 쓴 시간이다.**
+
+🚨 **`adb shell am start` 로 공유 경로를 재지 마라.** 받는 앱의 프로세스
+상태에 좌우돼 **같은 조건을 두 번 재면 다른 결과가 나온다.** 콜드 스타트일
+때만 공유 화면이 떴고, 그것을 *"URI 제공자 차이"* 로 읽어 하루를 헤맸다
+(추가 507). **실제 공유 시트로만 갈린다.**
+
+- **URI 읽기 권한이 받는 앱에 실제로 부여됐는지**
+
+  ```bash
+  adb shell dumpsys activity permissions | grep share_provider
+  #   +10079<2> content://…   ← 부여됨
+  #   -10079[1] content://…   ← 해제됨
+  adb shell "cmd package list packages --uid 10079"   # 그 uid 가 누구인지
+  ```
+
+  📌 추가 507 에서 *"권한이 안 붙어서 그렇다"* 는 가설을 깬 명령이다 —
+  **네 번 시도 모두 정상 부여돼 있었다.**
+
+- **받는 앱이 어떤 MIME 을 받는지** (추가 506 의 원인을 확정한 명령)
+
+  ```bash
+  adb shell dumpsys package com.kakao.talk | grep -A12 RecentExcludeIntentFilterActivity
+  #   StaticType: text  ← 필터는 통과하지만 텍스트 공유로 처리한다
+  ```
+
+  🚨 **필터에 뜬다고 받는 것이 아니다.** 카카오톡은 `text/*` 를 텍스트 공유로
+  처리해 **`EXTRA_STREAM` 을 버린다** — 공유 시트에는 뜨는데 아무것도 안 받고
+  **로그에 오류도 안 남는다.**
+
+- **화면 판정을 눈이 아니라 문자열로** (Flutter 화면은 개별 좌표가 안 나온다)
+
+  ```bash
+  adb shell uiautomator dump /sdcard/u.xml
+  adb shell cat /sdcard/u.xml | grep -o "찾을문구"
+  ```
+
+  📌 눈으로 보면 흔들린다. **판정 기준을 문자열로 고정**해야 같은 조건을 두 번
+  잴 수 있다.
+
 ## 알려진 제약
 
 - `verify_device_local.py`는 **Android 전용**이다. iOS는 샌드박스라 앱 내부
