@@ -9880,6 +9880,33 @@ release에서 코드가 안 돌고(`kDebugMode`), 검사 7건이 그것을 지�
 검사: `analyze 19` · `test 556`(신규 6건)
 ## 향후 후보 (미착수)
 
+- 🚨 **(2026-08-26 실기기 logcat 실측, 아직 아무도 안 판 것)** 앱이 돌 때
+  **App Check 토큰 획득이 반복 실패하고, 그 여파로 Firestore 쓰기 하나가
+  거부되고 있다.** 추가 517을 재현하며 logcat에 잡혔고, **어제 "범위 밖"으로
+  넘겼다가 어디에도 안 적힐 뻔했다.**
+
+  ```
+  W/StorageUtil: Error getting App Check token; using placeholder token instead.
+                 Error: j8.j: Too many attempts.
+  W/Firestore:   Write failed at ocrStats/<uid>:
+                 PERMISSION_DENIED: Missing or insufficient permissions.
+  I/flutter:     OCR 통계 업로드 실패: [cloud_firestore/permission-denied]
+  ```
+
+  ⚠️ **모르는 것이 많다** — 언제부터인지, 다른 서버 호출에도 영향이 있는지,
+  `Too many attempts`가 재시도 폭주인지 아니면 정상적인 백오프인지. **셋 다
+  안 쟀다.**
+
+  📌 **왜 값이 있나**: `generateBriefing`은 App Check 토큰이 없으면 테스터
+  허용목록(`config/testers`)으로 통과하게 해 뒀다(추가 111). **그 우회가
+  없었으면 AI가 통째로 막혔을 상태로 보인다.** 테스트 종료 후 허용목록을
+  비우고 `enforceAppCheck: true`를 복원할 계획인데(같은 항목), **그 전에 이
+  실패의 원인을 알아야 한다** — 안 그러면 복원하는 순간 막힌다.
+
+  ⚠️ `ocrStats` 쓰기는 부가 기능이라 실패해도 앱이 안 멈춘다. 그래서
+  **조용히 실패하고 아무도 몰랐다.** 다만 그 자체보다 **App Check 쪽이
+  본체**로 보인다.
+
 - **(2026-08-04, 추가 72 후속)** 명함 원본 사진(캐시 폴더의 JPG) 암호화.
   이번 암호화 작업은 명함/프로필 JSON 텍스트 필드만 대상으로 했고, 이미지
   바이트 자체는 범위 밖으로 남겨둠 — 별도 작업 필요(이미지 파일 암호화는
