@@ -55,8 +55,13 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
   int _resendLeft = 0;
   Timer? _ticker;
 
-  /// 상한에 걸렸는가. 걸리면 문의 안내를 보여 준다.
-  bool _blocked = false;
+  /// 막혔다면 **왜** 막혔는가. `null`이면 안 막혔다.
+  ///
+  /// 🚨 **둘을 가르는 이유**: 하루 상한은 **내일 풀리고**, 「이미 다른 계정」은
+  /// 안 풀린다. 그런데 둘을 같은 문구로 다루면 **기다리면 되는 사람에게
+  /// 「막혔다」고 말하게 된다.** 「막혔다」는 사실이 아니고 **「오늘은 막혔다」**가
+  /// 사실이다.
+  _BlockReason? _blockReason;
 
   @override
   void dispose() {
@@ -95,7 +100,7 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
       switch (res.result) {
         case PhoneOtpRequestResult.sent:
           _codeSent = true;
-          _blocked = false;
+          _blockReason = null;
           // 서버가 정한 간격이 곧 유효시간이라(추가 563), 여기서 3분을
           // 다시 계산하지 않는다.
           _startCountdown(res.retryAfterMs != null
@@ -105,8 +110,10 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
           _startCountdown(((res.retryAfterMs ?? 0) / 1000).ceil());
           _error = '아직 다시 받을 수 없어요.';
         case PhoneOtpRequestResult.dailyCap:
-          _blocked = true;
-          _error = '오늘 받을 수 있는 횟수를 다 썼어요.';
+          _blockReason = _BlockReason.dailyCap;
+          // ⚠️ 여기에 "막혔다"고 쓰지 않는다 — 아래 안내가 내일 열린다는
+          // 것을 말하므로 같은 말을 두 번 하지 않는다.
+          _error = null;
         case PhoneOtpRequestResult.invalidNumber:
           _error = '휴대전화번호를 다시 확인해 주세요.';
         case PhoneOtpRequestResult.sendFailed:
@@ -154,8 +161,8 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
         case PhoneOtpConfirmResult.alreadyTaken:
           // ⏸️ 1차 범위에서는 잇지 않는다(추가 564). 어긋남을 드러내고
           // 사람에게 넘긴다.
-          _blocked = true;
-          _error = '이 번호는 이미 다른 계정에 연결되어 있어요.';
+          _blockReason = _BlockReason.alreadyTaken;
+          _error = null;
         case PhoneOtpConfirmResult.unknown:
         case PhoneOtpConfirmResult.verified:
           _error = '문제가 생겼어요. 잠시 후 다시 시도해 주세요.';
@@ -248,9 +255,9 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
                 ],
                 const SizedBox(height: 16),
                 _infoBox(),
-                if (_blocked) ...[
+                if (_blockReason != null) ...[
                   const SizedBox(height: 12),
-                  _blockedBox(context),
+                  _blockedBox(context, _blockReason!),
                 ],
                 const SizedBox(height: 24),
                 _primaryButton(
@@ -405,12 +412,28 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
     );
   }
 
-  /// 상한에 걸렸거나 번호가 이미 쓰이고 있을 때.
+  /// 막힌 사람에게 **무엇이 사실인지** 말한다.
   ///
-  /// 🚨 **막힌 사람을 그냥 두지 않는다.** 그날 가입을 못 하게 된다.
-  /// ⚠️ 고객센터 전화번호는 아직 없어서(월요일 항목) **가짜 번호를 넣지
-  /// 않고** 이미 있는 「1:1 문의」로 보낸다.
-  Widget _blockedBox(BuildContext context) {
+  /// 🚨 **주된 길은 「기다리면 된다」이고 문의는 보조다.** 문의를 유일한 길로
+  /// 두면, 문의를 못 쓰는 계정(이메일 없는 소셜 계정 — 추가 576)에서 사람이
+  /// 정말 갇힌다. 하루 상한은 **내일 풀리므로** 그것을 먼저 말한다.
+  ///
+  /// ⚠️ 고객센터 전화번호는 아직 없다. **가짜 번호를 넣지 않고** 이미 있는
+  /// 「1:1 문의」로 보낸다.
+  Widget _blockedBox(BuildContext context, _BlockReason reason) {
+    final (title, body) = switch (reason) {
+      // 내일 풀린다 — 그 사실을 먼저 말한다.
+      _BlockReason.dailyCap => (
+          '오늘은 더 보낼 수 없어요',
+          '내일 다시 받으실 수 있어요.',
+        ),
+      // 이쪽은 기다려서 풀리지 않는다. 사람에게 넘긴다.
+      _BlockReason.alreadyTaken => (
+          '이 번호는 이미 다른 계정에 연결되어 있어요',
+          '먼저 인증하셨던 방법으로 로그인해 주세요.',
+        ),
+    };
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -421,18 +444,18 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '도움이 필요하시면 알려 주세요',
-            style: TextStyle(
+          Text(
+            title,
+            style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppColors.accentText,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            '문의를 남겨 주시면 확인해 드립니다.',
-            style: TextStyle(
+          Text(
+            body,
+            style: const TextStyle(
               fontSize: 12.5,
               height: 1.65,
               color: AppColors.accentText,
@@ -446,7 +469,8 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 6),
               child: Text(
-                '1:1 문의하기',
+                // 보조 길이라는 것이 문구에 드러나야 한다.
+                '급하시면 문의하기',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -459,4 +483,13 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
       ),
     );
   }
+}
+
+/// 왜 막혔는가. 🚨 **풀리는 것과 안 풀리는 것을 가른다.**
+enum _BlockReason {
+  /// 하루 발송 상한 — **내일 풀린다.**
+  dailyCap,
+
+  /// 이 번호가 이미 다른 계정에 있다 — 기다려서 풀리지 않는다.
+  alreadyTaken,
 }

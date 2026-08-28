@@ -58,6 +58,48 @@ enum PhoneOtpConfirmResult {
 class PhoneVerificationService {
   static const String region = 'asia-northeast3';
 
+  /// 🚨 **게이트를 켤지 말지 — 원격 스위치.**
+  ///
+  /// ## 왜 스위치가 필요한가
+  ///
+  /// 게이트는 `phoneVerifiedAt`이 없으면 막는데, **기존 이용자에게는 그 필드가
+  /// 없다.** 그래서 스위치가 없으면 **새 빌드를 받는 순간 기존 테스터 전원이
+  /// 인증 화면에 갇힌다** — 건너뛰기가 없고 뒤로가기도 막혀 있어서 나갈
+  /// 길이 아예 없다.
+  ///
+  /// ⚠️ **자동 테스트로는 안 보이는 층이다.** 테스트도 CI도 초록인데
+  /// 병합하면 사람이 잠긴다. 규칙이 아니라 *"누구에게 무슨 일이 일어나는가"*를
+  /// 봐야 나온다.
+  ///
+  /// ## 지갑(과금) 코드가 쓴 방식과 같다 (CLAUDE.md 6절)
+  ///
+  /// ```
+  /// 코드는 main 에 올라간다
+  /// 서버에 배포돼도 켜지지 않는다
+  /// 실제 스위치는 「필드를 만드는 것」 하나 — 그것만 사용자 결정
+  /// ```
+  ///
+  /// 🚨 **끄는 쪽이 기본값이다.** 문서가 없어도, 필드가 없어도, 읽기에
+  /// 실패해도 **안 막는다.** *"설정이 없으면 막는다"*가 되면 설정을 깜빡한
+  /// 것이 사람을 가두는 일이 된다.
+  static Future<bool> isGateEnabled() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('phoneVerification')
+          .get();
+      // 문서가 없으면 꺼짐.
+      final data = snap.data();
+      if (data == null) return false;
+      // 필드가 없거나 true가 아니면 꺼짐.
+      return data['enforce'] == true;
+    } catch (e) {
+      debugPrint('phoneVerification 설정 조회 실패: ${e.runtimeType}');
+      // 🚨 못 읽으면 끈다 — 막지 않는다.
+      return false;
+    }
+  }
+
   /// 이 계정이 번호 인증을 마쳤는지.
   ///
   /// ⚠️ **못 읽으면 `null`을 준다** — `false`가 아니다. 둘은 다르다.

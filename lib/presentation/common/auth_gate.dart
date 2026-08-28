@@ -390,10 +390,23 @@ class _AuthGateState extends State<AuthGate> {
       if (_phoneCheckedForUid != uid) {
         _phoneCheckedForUid = uid;
         _phoneVerified = null;
-        PhoneVerificationService.isVerified(uid).then((v) {
+        // 🚨 **스위치를 먼저 본다.** 꺼져 있으면 인증 여부를 볼 필요도 없다.
+        //
+        // 이 순서가 중요하다 — 스위치가 꺼져 있는데 `phoneVerifiedAt`을 먼저
+        // 읽어 `false`로 두면, 나중에 누가 스위치 검사를 빼먹었을 때 곧바로
+        // 사람이 갇힌다. **꺼져 있으면 `true`로 둬서 「막을 이유가 없음」을
+        // 명시한다.**
+        () async {
+          final enabled = await PhoneVerificationService.isGateEnabled();
+          if (!mounted || _phoneCheckedForUid != uid) return;
+          if (!enabled) {
+            setState(() => _phoneVerified = true);
+            return;
+          }
+          final v = await PhoneVerificationService.isVerified(uid);
           if (!mounted || _phoneCheckedForUid != uid) return;
           setState(() => _phoneVerified = v);
-        });
+        }();
       }
       if (_phoneVerified == false) {
         return PhoneVerifyView(

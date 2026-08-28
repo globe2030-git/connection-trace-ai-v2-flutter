@@ -69,4 +69,42 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 🚨 게이트 스위치 — 기본값이 「꺼짐」이라는 것
+  //
+  // 스위치가 없던 판에서는 **새 빌드를 받는 순간 기존 테스터 전원이 인증
+  // 화면에 갇혔다.** `phoneVerifiedAt` 이 없으면 막는데 기존 계정에는 그
+  // 필드가 없기 때문이다. 건너뛰기도 뒤로가기도 없어서 나갈 길이 아예
+  // 없었다.
+  //
+  // ⚠️ **테스트도 CI 도 초록이었다.** 규칙이 아니라 "누구에게 무슨 일이
+  // 일어나는가"를 봐야 나오는 층이다. 아래 테스트는 그 판정 규칙 자체를
+  // 잠근다.
+  // ─────────────────────────────────────────────────────────────────────
+
+  group('게이트 스위치 판정', () {
+    // 서비스가 쓰는 것과 같은 규칙. Firestore 를 태우지 않고 규칙만 본다.
+    bool enforceFrom(Map<String, dynamic>? data) => data?['enforce'] == true;
+
+    test('문서가 없으면 꺼짐', () {
+      expect(enforceFrom(null), isFalse);
+    });
+
+    test('필드가 없으면 꺼짐', () {
+      expect(enforceFrom({}), isFalse);
+      expect(enforceFrom({'other': true}), isFalse);
+    });
+
+    test('🚨 true 가 아닌 값은 전부 꺼짐 — 문자열도 켜지면 안 된다', () {
+      expect(enforceFrom({'enforce': false}), isFalse);
+      expect(enforceFrom({'enforce': 'true'}), isFalse);
+      expect(enforceFrom({'enforce': 1}), isFalse);
+      expect(enforceFrom({'enforce': null}), isFalse);
+    });
+
+    test('정확히 true 일 때만 켜진다', () {
+      expect(enforceFrom({'enforce': true}), isTrue);
+    });
+  });
 }
