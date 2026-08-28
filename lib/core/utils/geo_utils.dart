@@ -5,6 +5,26 @@ class GeoPosition {
   final double lng;
 
   const GeoPosition({required this.lat, required this.lng});
+
+  /// 🚨 **값으로 비교한다**(2026-08-29, 추가 578).
+  ///
+  /// 없으면 **값이 같아도 다른 객체면 다르다**고 나온다. 실제로 물릴 뻔했다 —
+  /// 추가 572(같은 명함 판정)에서 **두 기기가 같은 주소를 각자 계산한 흔한
+  /// 경우**가 「좌표가 부딪힌다」로 읽혀 **영영 안 합쳐질 뻔했다.** 기능이
+  /// 막으려는 것과 정반대로 도는 자리였다.
+  ///
+  /// 📌 그때는 부르는 쪽에서 `lat`·`lng`를 직접 비교해 피했는데, **다음
+  /// 사람이 그 사정을 모르고 `==`를 쓰면 같은 함정에 빠진다.** 여기서 막는다.
+  ///
+  /// ⚠️ `Set`·`Map` 키로 쓸 때도 같은 문제였다 — 중복이 안 걸러진다. 지금은
+  /// 그렇게 쓰는 곳이 없지만(추가 578 훑기에서 확인), 생기면 바로 물린다.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GeoPosition && other.lat == lat && other.lng == lng;
+
+  @override
+  int get hashCode => Object.hash(lat, lng);
 }
 
 class GeoUtils {
