@@ -16,6 +16,7 @@ import '../features/auth/views/ad_consent_notice_dialog.dart';
 import '../features/auth/views/ad_consent_view.dart';
 import '../features/auth/views/login_view.dart';
 import '../../core/services/card_photo_backup_state.dart';
+import '../../core/services/carried_over_contacts.dart';
 
 /// 계정 전환 안전장치(backlog #50)에서 "이 기기에 마지막으로 로그인했던
 /// uid"를 기억해두는 shared_preferences 키. 앱 재시작에도 유지되어야 해서
@@ -151,6 +152,9 @@ class _AuthGateState extends State<AuthGate> {
         //    개인정보 최소화와 데이터 보전이 부딪히는 별개 판단이고,
         //    사진 서버 백업이 켜진 지금 다시 봐야 한다(아래 ⚠️ 참고).
         await CardPhotoBackupStateService().clear();
+        // 「교체」는 로컬을 이 계정 것으로 갈아 끼운다 — 넘어온 명함 표시가
+        // 남으면 **자기 명함을 서버에 안 올리게 된다**(추가 556).
+        await CarriedOverContactsService().clear();
         await contactsRepo.forceRestoreFromServer(uid);
         await profileRepo.forceRestoreFromServer(uid);
         await groupsRepo.forceRestoreFromServer(uid);
@@ -174,6 +178,12 @@ class _AuthGateState extends State<AuthGate> {
         // 📌 그래서 **올리는 쪽이 아니라 말하는 쪽을 고친다.** 여기서는
         //    장부만 사실에 맞게 적고, 서버는 부르지 않는다.
         await CardPhotoBackupStateService().markCarriedOverAll(
+          contactsRepo.contacts.map((c) => c.id),
+        );
+        // 🚨 **본문도 같이 표시한다**(추가 556). 위 사진 장부만으로는
+        //    부족했다 — 명함 본문은 다음 로그인의 `syncWithServer`가
+        //    올려 버렸고, 그 함수는 사진 장부를 보지 않는다.
+        await CarriedOverContactsService().markAll(
           contactsRepo.contacts.map((c) => c.id),
         );
       }

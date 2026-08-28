@@ -1,3 +1,4 @@
+import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -322,7 +323,25 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     await _saveToDisk();
     // 로컬에만 있거나 로컬이 더 최신인 명함을 서버로 올린다(손실 방지·편집 전파).
-    for (final c in outcome.toPush) {
+    //
+    // 🚨 **단, 다른 계정에서 넘어온 명함은 뺀다**(2026-08-28, 추가 556).
+    //
+    // 계정 전환에서 「유지」를 고르면 명함 본문을 새 계정 서버로 **일부러
+    // 안 올린다**(`mayMigrateToServer`). 그런데 그 보호가 **일회성
+    // 마이그레이션 하나에만** 걸려 있었다 — 전환하는 그 실행에서는 안
+    // 올리지만, 그때 "마지막 로그인 계정"이 갱신되므로 **다음에 앱을 켜면
+    // 이 함수가 그대로 올렸다.** 이 함수는 "넘어온 명함"이라는 개념을
+    // 몰랐다.
+    //
+    // ✅ 실물: 폴드는 「유지」 전환 뒤 **새 명함을 하나도 등록하지 않았는데**
+    // 같은 시간대에 서버 명함이 103건이 됐다(사용자 확인 + 서버 실물 조회).
+    final carriedOver = await CarriedOverContactsService().load();
+    final pushable = selectPushTargets(
+      outcome.toPush,
+      carriedOver,
+      idOf: (c) => c.id,
+    );
+    for (final c in pushable) {
       unawaited(DataBackupService.backupContact(uid, c));
     }
     // 서버 백업엔 좌표가 없으므로(C안) 좌표 없는 명함의 좌표를 주소로 채운다.
