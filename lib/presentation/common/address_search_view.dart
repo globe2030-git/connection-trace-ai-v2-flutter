@@ -106,6 +106,68 @@ bool isWebViewNavigable(String url) {
 /// 다음(카카오) 우편번호 서비스를 웹뷰로 띄워 실제 도로명주소를 검색·선택하게
 /// 한다(API 키가 필요 없는 무료 공개 서비스). 주소를 고르면 [AddressSearchResult]를
 /// 반환하며 팝업을 닫는다. 검색 없이 닫으면 null을 반환한다.
+/// 웹뷰가 보낸 한 줄(JSON)을 결과로 바꾼다. **결과가 없으면 null**이다.
+///
+/// ## 🚨 왜 위젯에서 떼어냈나 (2026-08-28)
+///
+/// globe2030님이 *"검색 후 주소는 가져오는데 우편번호는 가져오지 않는다"*고
+/// 제보했다. 그런데 이 해석이 **위젯 콜백 안에 붙어 있어 테스트가 하나도
+/// 없었다** — `test/` 전체에 `zonecode`가 한 번도 안 나온다(grep 확인).
+///
+/// 📌 **테스트가 없던 이유가 "안 만들어서"가 아니라 "만들 수 없어서"였다.**
+/// 웹뷰 채널 콜백은 기기 없이 못 부른다. 그래서 **떼어내는 것이 곧 고치는
+/// 일의 절반**이다 — 이제 웹 쪽이 무엇을 보내든 이 함수로 재현할 수 있다.
+///
+/// ⚠️ **동작은 한 글자도 바꾸지 않았다.** 원인을 아직 모르는 채로 손보면
+/// 무엇이 고쳤는지 알 수 없어진다. 먼저 잠그고, 그다음에 본다.
+@visibleForTesting
+AddressSearchResult? parseAddressSearchMessage(String raw) {
+  try {
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    final fullAddress = data['fullAddress'] as String?;
+    final roadAddress = data['roadAddress'] as String?;
+    final jibunAddress = data['jibunAddress'] as String?;
+    final buildingName = data['buildingName'] as String?;
+    final zonecode = data['zonecode'] as String?;
+    // 카카오가 준 좌표(추가 348). **못 받으면 null이고 그게 정상이다.**
+    //
+    // ⚠️ 카카오는 `x=경도 · y=위도`로 주는데, 웹뷰 쪽에서 이미 lat/lng로
+    // 맞춰 보낸다. **여기서 또 뒤집으면 지구 반대편이 된다** — 뒤집혀도
+    // 화면에는 "좌표 있음"으로 보여서 지도를 열기 전에는 티가 안 난다.
+    final geo = parseGeoFromWebView(data['lat'], data['lng']);
+    // 목록에 보인 문장을 그대로 쓴다. 예전 저장분과의 호환을 위해
+    // fullAddress가 없으면 기존 방식으로 물러선다.
+    final address = (fullAddress != null && fullAddress.trim().isNotEmpty)
+        ? fullAddress
+        : (roadAddress != null && roadAddress.trim().isNotEmpty)
+              ? roadAddress
+              : jibunAddress;
+    if (address == null || address.trim().isEmpty) {
+      debugPrint('[AddressSearch] 주소가 비어 결과 없이 닫음');
+      return null;
+    }
+    return AddressSearchResult(
+      address: address,
+      roadAddress: (roadAddress != null && roadAddress.trim().isNotEmpty)
+          ? roadAddress.trim()
+          : null,
+      jibunAddress: (jibunAddress != null && jibunAddress.trim().isNotEmpty)
+          ? jibunAddress.trim()
+          : null,
+      buildingName: (buildingName != null && buildingName.trim().isNotEmpty)
+          ? buildingName.trim()
+          : null,
+      postalCode: (zonecode != null && zonecode.trim().isNotEmpty)
+          ? zonecode.trim()
+          : null,
+      geo: geo,
+    );
+  } catch (e) {
+    debugPrint('[AddressSearch] 파싱 실패, 결과 없이 닫음: $e');
+    return null;
+  }
+}
+
 class AddressSearchView extends StatefulWidget {
   // OCR 스캔 결과나 기존 입력값처럼 "이미 갖고 있던 주소 텍스트"를 넘겨
   // 받으면, 사용자가 다음 우편번호 검색창에 처음부터 다시 타이핑하지
@@ -152,58 +214,12 @@ class _AddressSearchViewState extends State<AddressSearchView> {
             Navigator.pop(context);
             return;
           }
-          try {
-            final data = jsonDecode(message.message) as Map<String, dynamic>;
-            final fullAddress = data['fullAddress'] as String?;
-            final roadAddress = data['roadAddress'] as String?;
-            final jibunAddress = data['jibunAddress'] as String?;
-            final buildingName = data['buildingName'] as String?;
-            final zonecode = data['zonecode'] as String?;
-            // 카카오가 준 좌표(추가 348). **못 받으면 null이고 그게 정상이다.**
-            //
-            // ⚠️ 카카오는 `x=경도 · y=위도`로 주는데, 웹뷰 쪽에서 이미 lat/lng로
-            // 맞춰 보낸다. **여기서 또 뒤집으면 지구 반대편이 된다** — 뒤집혀도
-            // 화면에는 "좌표 있음"으로 보여서 지도를 열기 전에는 티가 안 난다.
-            final geo = parseGeoFromWebView(data['lat'], data['lng']);
-            // 목록에 보인 문장을 그대로 쓴다. 예전 저장분과의 호환을 위해
-            // fullAddress가 없으면 기존 방식으로 물러선다.
-            final address =
-                (fullAddress != null && fullAddress.trim().isNotEmpty)
-                ? fullAddress
-                : (roadAddress != null && roadAddress.trim().isNotEmpty)
-                      ? roadAddress
-                      : jibunAddress;
-            if (address == null || address.trim().isEmpty) {
-              debugPrint('[AddressSearch] 주소가 비어 결과 없이 닫음');
-              Navigator.pop(context);
-              return;
-            }
-            Navigator.pop(
-              context,
-              AddressSearchResult(
-                address: address,
-                roadAddress:
-                    (roadAddress != null && roadAddress.trim().isNotEmpty)
-                    ? roadAddress.trim()
-                    : null,
-                jibunAddress:
-                    (jibunAddress != null && jibunAddress.trim().isNotEmpty)
-                    ? jibunAddress.trim()
-                    : null,
-                buildingName:
-                    (buildingName != null && buildingName.trim().isNotEmpty)
-                    ? buildingName.trim()
-                    : null,
-                postalCode: (zonecode != null && zonecode.trim().isNotEmpty)
-                    ? zonecode.trim()
-                    : null,
-                geo: geo,
-              ),
-            );
-          } catch (e) {
-            debugPrint('[AddressSearch] 파싱 실패, 결과 없이 닫음: $e');
+          final result = parseAddressSearchMessage(message.message);
+          if (result == null) {
             Navigator.pop(context);
+            return;
           }
+          Navigator.pop(context, result);
         },
       )
       ..setNavigationDelegate(
