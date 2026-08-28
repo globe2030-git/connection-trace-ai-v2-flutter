@@ -44,6 +44,21 @@ enum CardPhotoBackupState {
 
   /// 올리려다 **실패했다**(네트워크 등). 나중에 다시 시도할 수 있다.
   failed,
+
+  /// **다른 계정에서 이 기기에 남아 있던 명함**이라 이 계정으로는 올리지
+  /// 않는다(2026-08-28, 추가 555).
+  ///
+  /// 계정을 갈아탈 때 "유지"를 고르면 명함 본문은 새 계정 서버로 **일부러
+  /// 올리지 않는다**([mayMigrateToServer]) — 제3자 개인정보가 두 계정에
+  /// 이중으로 존재하기 때문이다. 사진도 같은 이유로 올리면 안 된다.
+  ///
+  /// ⚠️ **그런데 화면은 그 명함들을 「백업됨」이라고 말하고 있었다.** 앞
+  /// 계정의 장부가 그대로 남았기 때문이다(같은 기기, 같은 contactId).
+  /// 실제로는 새 계정 서버에 한 장도 없다 — **기기를 잃으면 못 되살린다.**
+  ///
+  /// 📌 그래서 **올리는 쪽이 아니라 말하는 쪽을 고쳤다.** 이 상태는
+  /// "실패"가 아니라 "대상이 아님"이다. 다시 시도하지 않는다.
+  carriedOver,
 }
 
 /// 보관본이 **실제로 축소됐는지**와 그 크기 구간(2026-08-16).
@@ -87,6 +102,7 @@ const Map<CardPhotoBackupState, String> _stateNames = {
   CardPhotoBackupState.synced: 'synced',
   CardPhotoBackupState.quotaExceeded: 'quota',
   CardPhotoBackupState.failed: 'failed',
+  CardPhotoBackupState.carriedOver: 'carried',
 };
 
 CardPhotoBackupState? stateFromName(String? raw) {
@@ -191,6 +207,25 @@ class CardPhotoBackupStateService {
     await _save(map);
   }
 
+  /// 계정 전환에서 "유지"를 고른 명함들을 **백업 대상 아님**으로 적는다
+  /// (2026-08-28, 추가 555).
+  ///
+  /// ⚠️ [markSyncedAll]과 달리 **덮어쓴다.** 여기서 고치려는 것이 바로
+  /// 앞 계정이 남긴 `synced` 기록이기 때문이다 — 덧붙이기만 하면 그 거짓말이
+  /// 그대로 남는다.
+  ///
+  /// 서버를 부르지 않는다. 이 함수가 하는 일은 **장부가 사실을 말하게 하는
+  /// 것**뿐이고, 사진을 옮기지도 지우지도 않는다.
+  Future<void> markCarriedOverAll(Iterable<String> contactIds) async {
+    final ids = contactIds.where((id) => id.isNotEmpty).toList();
+    if (ids.isEmpty) return;
+    var map = await load();
+    for (final id in ids) {
+      map = map.withState(id, CardPhotoBackupState.carriedOver);
+    }
+    await _save(map);
+  }
+
   Future<void> forget(String contactId) async =>
       _save((await load()).without(contactId));
 
@@ -223,6 +258,7 @@ class CardPhotoBackupSummary {
     required this.quotaExceeded,
     required this.failed,
     required this.quota,
+    this.carriedOver = 0,
   });
 
   /// 서버에 올라간 장수.
@@ -233,6 +269,9 @@ class CardPhotoBackupSummary {
 
   /// 올리려다 **실패한** 장수. 다시 시도할 수 있다.
   final int failed;
+
+  /// 다른 계정에서 옮겨와 **올리지 않는** 장수(추가 555).
+  final int carriedOver;
 
   /// 이 이용자의 한도(서버 값 또는 기본값).
   final int quota;
@@ -249,12 +288,13 @@ class CardPhotoBackupSummary {
   bool get isNearFull => !isFull && synced >= (quota * 0.8).floor();
 
   /// 사용자에게 알릴 것이 있나(경고 구간이거나, 안 올라간 것이 있거나).
-  bool get needsAttention => isNearFull || isFull || quotaExceeded > 0 || failed > 0;
+  bool get needsAttention =>
+      isNearFull || isFull || quotaExceeded > 0 || failed > 0 || carriedOver > 0;
 }
 
 /// 상태 지도와 한도로 현황을 만든다.
 CardPhotoBackupSummary summarize(CardPhotoBackupStateMap map, int quota) {
-  var synced = 0, quotaExceeded = 0, failed = 0;
+  var synced = 0, quotaExceeded = 0, failed = 0, carriedOver = 0;
   for (final raw in map.raw.values) {
     switch (stateFromName(raw)) {
       case CardPhotoBackupState.synced:
@@ -263,6 +303,8 @@ CardPhotoBackupSummary summarize(CardPhotoBackupStateMap map, int quota) {
         quotaExceeded++;
       case CardPhotoBackupState.failed:
         failed++;
+      case CardPhotoBackupState.carriedOver:
+        carriedOver++;
       case null:
         break;
     }
@@ -271,6 +313,7 @@ CardPhotoBackupSummary summarize(CardPhotoBackupStateMap map, int quota) {
     synced: synced,
     quotaExceeded: quotaExceeded,
     failed: failed,
+    carriedOver: carriedOver,
     quota: quota,
   );
 }

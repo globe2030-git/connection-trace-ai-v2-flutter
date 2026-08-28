@@ -1324,6 +1324,21 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
       subtitle = '백업 ${s.synced}/${s.quota}장 · 기기를 바꿔도 복원됩니다';
     }
 
+    // 🚨 **다른 계정에서 옮겨온 명함은 이 계정으로 백업되지 않는다**
+    // (2026-08-28, 추가 555). 계정을 갈아탈 때 "유지"를 고르면 명함 본문을
+    // 일부러 안 올리는데(제3자 개인정보가 두 계정에 이중으로 존재하게 되므로),
+    // **사진도 같은 이유로 안 올라간다.**
+    //
+    // ⚠️ 그런데 그동안 화면은 그 명함들을 **「백업됨」이라고 말하고 있었다** —
+    // 앞 계정의 장부가 같은 기기에 그대로 남았기 때문이다. 안 올라간다는 것
+    // 자체는 옳은 동작이므로 **고칠 것은 말하는 쪽**이다.
+    //
+    // 📌 위 어느 갈래로 갔든 덧붙인다. 「한도에 닿았다」와 「옮겨온 명함은
+    // 안 올라간다」는 **서로 다른 사실이고 동시에 참일 수 있다.**
+    final carriedNotice = s.carriedOver > 0
+        ? '\n다른 계정에서 옮겨온 ${s.carriedOver}장은 백업되지 않습니다'
+        : '';
+
     return _SettingsRow(
       icon: AppIcon(
         AppIconId.aiDataInfo,
@@ -1333,7 +1348,7 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
             : AppColors.accentText,
       ),
       title: '명함 사진 백업',
-      subtitle: subtitle,
+      subtitle: '$subtitle$carriedNotice',
     );
   }
 }
