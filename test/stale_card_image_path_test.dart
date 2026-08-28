@@ -115,13 +115,17 @@ void main() {
       expect(detail.contains('contactId: contact.id'), isTrue);
     });
 
-    test('읽는 쪽이 id로 다시 찾을 줄 안다', () {
+    // ⚠️ **기대를 한 번 고쳤다**(추가 559). 554에서는 *"저장된 경로가 없으면
+    // `findExistingCardImagePath`로 되찾는다"*였는데, 그 뒤 **순서를 뒤집어**
+    // 명함 id로 만든 정본을 **먼저** 보게 했다. 되찾는 동작이 사라진 것이
+    // 아니라 **더 앞으로 옮겨진 것**이라, 확인할 대상도 그쪽으로 옮긴다.
+    test('읽는 쪽이 id로 경로를 만들어 먼저 본다', () {
       final svc = File(
         'lib/core/services/contact_image_service.dart',
       ).readAsStringSync();
       final body = svc.substring(svc.indexOf('Future<Uint8List?> loadDecryptedCardImage'));
       final fn = body.substring(0, body.indexOf('\n  /// 로컬에 암호문 파일이 없는'));
-      expect(fn.contains('findExistingCardImagePath'), isTrue);
+      expect(fn.contains('canonicalPath(contactId)'), isTrue);
     });
   });
 }

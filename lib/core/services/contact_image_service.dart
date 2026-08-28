@@ -63,6 +63,49 @@ class ContactImageService {
 
   static String _fileName(String contactId) => 'contact_card_$contactId.enc';
 
+  /// 문서 폴더 경로 캐시(2026-08-28, 추가 559).
+  ///
+  /// 아래 [canonicalPath]를 **읽을 때마다** 부르는데, 명함이 수백 장이면
+  /// 플랫폼 채널 왕복이 그만큼 늘어난다. 앱이 도는 동안 이 경로는 안 바뀌므로
+  /// 한 번만 묻는다.
+  static String? _docsPathCache;
+
+  static Future<String?> _docsPath() async {
+    final cached = _docsPathCache;
+    if (cached != null) return cached;
+    try {
+      return _docsPathCache = (await getApplicationDocumentsDirectory()).path;
+    } catch (e) {
+      debugPrint('문서 폴더 조회 실패: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  /// 명함 id로 **지금 이 기기에서의 정본 경로**를 만든다(추가 559).
+  ///
+  /// ## 🚨 저장된 경로는 정답이 아니다
+  ///
+  /// 명함에 적혀 있는 `cardImagePath`는 **저장하던 그 순간의 절대경로**다.
+  /// iOS 문서 폴더 경로에는 앱 컨테이너 UUID가 들어 있어 **앱을 다시 깔면
+  /// 바뀐다** — 그래서 아이폰에서 사진이 통째로 안 보였다(추가 554).
+  ///
+  /// 554는 **낡았으면 고쳐 쓰는** 데까지 갔다. 그런데 그건 *"저장된 값이
+  /// 먼저고, 틀렸으면 고친다"*이다. **틀릴 수 있는 값을 계속 먼저 믿는
+  /// 구조**가 남는다.
+  ///
+  /// 📌 그래서 순서를 뒤집는다. **파일명은 명함 id로 결정되므로**(위
+  /// [_fileName]) 언제든 다시 만들 수 있다 — 서버 업로드 경로는 처음부터
+  /// 그렇게 하고 있었고, 그래서 **업로드는 멀쩡했는데 화면만 비었다.**
+  /// 이제 화면도 같은 방식으로 찾는다.
+  ///
+  /// 저장된 경로는 **없어지지 않는다.** 사진이 있는지 없는지를 나타내는
+  /// 표시로는 계속 쓰이고, 정본이 없을 때 마지막으로 시도해 본다.
+  Future<String?> canonicalPath(String contactId) async {
+    final docs = await _docsPath();
+    if (docs == null) return null;
+    return '$docs/${_fileName(contactId)}';
+  }
+
   /// 파일명 규칙을 테스트에서 확인할 수 있게 연다.
   static String fileNameForTest(String contactId) => _fileName(contactId);
   static const String _fileNamePrefix = 'contact_card_';
@@ -386,20 +429,26 @@ class ContactImageService {
     required String path,
     String? contactId,
   }) async {
-    final cached = _decryptedCache[path];
-    if (cached != null) return cached;
     try {
-      var file = File(path);
-      if (!file.existsSync()) {
-        // 낡은 경로다. 명함 id를 알면 지금 문서 폴더에서 다시 찾는다.
-        final repaired = contactId == null
-            ? null
-            : await findExistingCardImagePath(contactId);
-        if (repaired == null) return null;
-        final again = _decryptedCache[repaired];
-        if (again != null) return again;
-        file = File(repaired);
+      // 🚨 **정본을 먼저 본다**(2026-08-28, 추가 559). 저장된 경로는 저장하던
+      // 순간의 절대경로라 **틀릴 수 있는 값**이다 — 명함 id로 만든 경로가
+      // 지금 이 기기의 사실이다.
+      //
+      // ⚠️ 저장된 경로도 버리지 않는다. 파일명 규칙이 바뀌었거나 예외적인
+      // 경우를 위해 **정본에 파일이 없으면** 마지막으로 시도한다.
+      final canonical = contactId == null ? null : await canonicalPath(contactId);
+      final candidates = <String>[?canonical, path];
+      String? found;
+      for (final c in candidates) {
+        final hit = _decryptedCache[c];
+        if (hit != null) return hit;
+        if (File(c).existsSync()) {
+          found = c;
+          break;
+        }
       }
+      if (found == null) return null;
+      final file = File(found);
       final encrypted = await file.readAsBytes();
       final key = await _keyService.getOrCreateUserKey(uid);
       final plain = await DataCryptoService.decryptBytes(encrypted, key);

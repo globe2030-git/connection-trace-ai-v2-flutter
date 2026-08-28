@@ -32,6 +32,11 @@ class ContactAvatar extends StatefulWidget {
   final String? cardImagePath;
   final String? uid;
 
+  /// 명함 id — 있으면 **저장된 경로보다 이것으로 만든 정본 경로를 먼저**
+  /// 본다(2026-08-28, 추가 559). 저장된 경로는 저장하던 순간의 절대경로라
+  /// iOS에서는 앱을 다시 깔면 틀린 값이 된다(추가 554).
+  final String? contactId;
+
   const ContactAvatar({
     super.key,
     required this.photoPath,
@@ -40,6 +45,7 @@ class ContactAvatar extends StatefulWidget {
     this.useBrandFallback = false,
     this.cardImagePath,
     this.uid,
+    this.contactId,
   });
 
   @override
@@ -61,7 +67,8 @@ class _ContactAvatarState extends State<ContactAvatar> {
   void didUpdateWidget(covariant ContactAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.cardImagePath != widget.cardImagePath ||
-        oldWidget.uid != widget.uid) {
+        oldWidget.uid != widget.uid ||
+        oldWidget.contactId != widget.contactId) {
       _maybeLoadCard();
     }
   }
@@ -70,7 +77,11 @@ class _ContactAvatarState extends State<ContactAvatar> {
     final path = widget.cardImagePath;
     final uid = widget.uid;
     _cardBytes = (path != null && uid != null)
-        ? ContactImageService().loadDecryptedCardImage(uid: uid, path: path)
+        ? ContactImageService().loadDecryptedCardImage(
+            uid: uid,
+            path: path,
+            contactId: widget.contactId,
+          )
         : null;
   }
 

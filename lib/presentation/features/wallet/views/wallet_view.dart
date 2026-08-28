@@ -859,6 +859,7 @@ class _ContactCard extends StatelessWidget {
                     radius: 26,
                     // "명함을 대표 이미지로" 켠 인맥은 암호화된 명함 이미지를
                     // 아바타로 보여준다(추가 133).
+                    contactId: contact.id,
                     cardImagePath: contact.useCardAsAvatar
                         ? contact.cardImagePath
                         : null,

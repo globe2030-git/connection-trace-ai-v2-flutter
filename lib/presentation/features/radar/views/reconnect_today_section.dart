@@ -106,6 +106,7 @@ class _ReconnectTile extends StatelessWidget {
             photoPath: contact.avatarUrl,
             name: contact.name,
             radius: 20,
+            contactId: contact.id,
             cardImagePath: contact.useCardAsAvatar
                 ? contact.cardImagePath
                 : null,

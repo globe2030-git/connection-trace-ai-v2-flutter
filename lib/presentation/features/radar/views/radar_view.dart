@@ -1801,6 +1801,7 @@ class _NearbyContactTile extends StatelessWidget {
             photoPath: contact.avatarUrl,
             name: contact.name,
             radius: 22,
+            contactId: contact.id,
             cardImagePath: contact.useCardAsAvatar
                 ? contact.cardImagePath
                 : null,

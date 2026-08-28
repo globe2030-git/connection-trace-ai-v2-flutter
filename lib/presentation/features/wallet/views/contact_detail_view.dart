@@ -640,6 +640,7 @@ class _ZoomableCardAvatar extends StatelessWidget {
               photoPath: contact.avatarUrl,
               name: contact.name,
               radius: 30,
+              contactId: contact.id,
               cardImagePath: contact.cardImagePath,
               uid: uid,
             ),
