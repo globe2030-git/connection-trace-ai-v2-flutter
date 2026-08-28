@@ -21,6 +21,7 @@ import 'data/repositories/contacts_repository.dart';
 import 'data/repositories/groups_repository.dart';
 import 'data/repositories/my_profile_repository.dart';
 import 'presentation/common/auth_gate.dart';
+import 'presentation/common/app_lock_gate.dart';
 import 'presentation/common/splash_gate.dart';
 import 'presentation/common/version_gate.dart';
 import 'presentation/features/radar/view_models/radar_view_model.dart';
@@ -205,7 +206,12 @@ class ConnectionTraceApp extends StatelessWidget {
         // 스플래시 뒤, 로그인 이전에 버전을 확인한다(P1-45) — 강제 업데이트면
         // 로그인·본 화면으로 들어가기 전에 막아야 하기 때문.
         home: const SplashGate(
-          child: VersionGate(child: AuthGate(child: MainTabScreen())),
+          // 앱 잠금은 AuthGate **안쪽**이다 — 로그인 전에는 지킬 것이 없고,
+          // 로그인 흐름 위에 인증 창을 겹치면 무엇을 하라는 화면인지 알 수
+          // 없어진다(추가 568).
+          child: VersionGate(
+            child: AuthGate(child: AppLockGate(child: MainTabScreen())),
+          ),
         ),
       ),
     );

@@ -147,5 +147,7 @@
 		     이 판단에 포함되지 않는다 — 필요하면 법무 검토를 따로 받는다. -->
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
-	</dict>
+		<key>NSFaceIDUsageDescription</key>
+	<string>앱 잠금을 켜면 명함첩을 열 때 본인 확인에 Face ID를 사용합니다.</string>
+</dict>
 </plist>
