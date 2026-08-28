@@ -190,9 +190,9 @@ class ContactImageService {
       final local = await findAllExistingCardImagePaths();
       if (local.isEmpty) return 0;
 
-      // 재설치 뒤라면 장부가 비어 있다. 서버 목록으로 먼저 되살리지 않으면
+      // 재설치 뒤라면 장부가 비어 있다. 서버 목록과 먼저 대조하지 않으면
       // **이미 서버에 있는 것까지 전부 다시 올린다.**
-      await _restoreBackupStateIfEmpty(uid);
+      await _reconcileBackupStateWithServer(uid);
 
       final targets = selectCardPhotoBackfillTargets(
         localContactIds: local.keys,
@@ -445,16 +445,33 @@ class ContactImageService {
   /// 빈 집합으로 돌려준다. **실패를 0으로 적으면 한도가 느슨해지는 방향으로
   /// 틀린다** — 그건 지금 고치려는 결함과 같은 모양이다. 그래서 `null`이면
   /// 조용히 넘어가고 다음 복원 때 다시 시도한다.
-  Future<void> _restoreBackupStateIfEmpty(String uid) async {
+  Future<void> _reconcileBackupStateWithServer(String uid) async {
     try {
-      if ((await _backupState.load()).raw.isNotEmpty) return;
+      // 🚨 **예전에는 장부가 비었을 때만 돌았다**(2026-08-28, 추가 558).
+      //
+      // 그래서 **장부가 틀린 채로 차 있으면 영영 안 고쳐졌다.** 폴드는
+      // `104장 백업됨`인데 서버가 0장이었고, 아이폰의 `130`은 **앞 계정
+      // 서버의 사진 수**였다. 둘 다 "비어 있지 않아서" 이 함수가 그냥
+      // 지나갔다.
+      //
+      // 이제 **언제나 대조한다.** 서버 목록 조회 1회가 늘지만, 그 대가로
+      // 장부가 처음으로 사실을 따라간다.
       final onServer = await _photoBackup.listSyncedContactIds(uid);
-      if (onServer == null || onServer.isEmpty) return;
-      await _backupState.markSyncedAll(onServer);
-      debugPrint('사진 백업 상태 복구: ${onServer.length}건');
+      // ⚠️ **못 읽은 것과 없는 것은 다르다.** null이면 아무것도 하지 않는다 —
+      // 섞으면 장부가 통째로 지워지고 한도 천장이 사라진다.
+      if (onServer == null) return;
+      final before = await _backupState.load();
+      final after = reconcileWithServer(before, onServer);
+      if (after.encode() == before.encode()) return;
+      await _backupState.replaceAll(after);
+      // 건수만 남긴다. 어느 명함인지는 개인정보로 이어질 수 있다.
+      debugPrint(
+        '사진 백업 장부 대조: 서버 ${onServer.length}건 · '
+        '장부 ${before.raw.length} → ${after.raw.length}',
+      );
     } catch (e) {
-      // 복구 실패가 복원 자체를 막아서는 안 된다 — 사진을 되찾는 것이 먼저다.
-      debugPrint('사진 백업 상태 복구 실패: ${e.runtimeType}');
+      // 대조 실패가 복원 자체를 막아서는 안 된다 — 사진을 되찾는 것이 먼저다.
+      debugPrint('사진 백업 장부 대조 실패: ${e.runtimeType}');
     }
   }
 
@@ -474,7 +491,7 @@ class ContactImageService {
     if (!CardPhotoBackupService.kCardPhotoBackupEnabled) return {};
     final ids = contactIds.toList();
     if (ids.isEmpty) return {};
-    await _restoreBackupStateIfEmpty(uid);
+    await _reconcileBackupStateWithServer(uid);
     final restored = <String, String>{};
     try {
       final docsDir = await getApplicationDocumentsDirectory();
