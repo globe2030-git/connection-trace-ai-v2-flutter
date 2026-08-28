@@ -154,6 +154,28 @@ class _AuthGateState extends State<AuthGate> {
         await contactsRepo.forceRestoreFromServer(uid);
         await profileRepo.forceRestoreFromServer(uid);
         await groupsRepo.forceRestoreFromServer(uid);
+      } else {
+        // 🚨 "유지"를 골랐다 — 이 명함들의 사진은 **이 계정으로 올리지
+        //    않는다.** 그런데 장부에는 앞 계정이 남긴 「백업됨」이 그대로
+        //    남아 있다(같은 기기, 같은 contactId). 그래서 설정 화면이
+        //    **한 장도 안 올라간 명함을 「백업됨」이라고 말한다.**
+        //
+        // ✅ 실물(2026-08-28, 추가 555): 아이폰 장부 130장 · 새 계정 서버
+        //    0장이었고, 그 130은 **앞 계정 서버의 사진 수와 정확히 같았다.**
+        //    기기에 기록된 계정 전환 이력도 `choice: keep` 두 건이었다.
+        //
+        // ⚠️ **처음에는 "장부를 비워 다시 올리게 하자"고 했는데 그것이
+        //    틀렸다.** 명함 본문을 일부러 안 올리는 자리에서 사진만 올리는
+        //    꼴이 되고(바로 아래 주석), 사진에도 이름·전화·회사가 인쇄돼
+        //    있으니 실질은 같은 개인정보다. 게다가 **암호화 키가 계정마다
+        //    달라** 새 계정은 그 파일을 열지도 못한다 — 못 여는 개인정보만
+        //    한 벌 더 쌓인다.
+        //
+        // 📌 그래서 **올리는 쪽이 아니라 말하는 쪽을 고친다.** 여기서는
+        //    장부만 사실에 맞게 적고, 서버는 부르지 않는다.
+        await CardPhotoBackupStateService().markCarriedOverAll(
+          contactsRepo.contacts.map((c) => c.id),
+        );
       }
       // ⚠️ **여기서 처음으로 서버 쓰기가 허용된다.** 선택이 끝났기 때문이다.
       //
