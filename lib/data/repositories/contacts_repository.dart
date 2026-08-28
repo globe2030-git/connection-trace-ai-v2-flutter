@@ -1,3 +1,4 @@
+import '../../core/services/card_photo_backup_state.dart';
 import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -356,6 +357,23 @@ class ContactsRepository extends ChangeNotifier {
   /// **정작 새고 있던 기기에는 안 듣는다.**
   ///
   /// 이미 표시가 하나라도 있으면 건너뛴다 — 전환 시점에 제대로 붙은 기기다.
+  ///
+  /// ## 🚨 **본문과 사진, 둘 다 표시해야 한다** (2026-08-28, 추가 561)
+  ///
+  /// 처음에는 **본문 장부에만** 붙였다. 그런데 사진 쪽은 **다른 장부**를 보고,
+  /// 그 장부의 「넘어온 것」 표시는 **계정을 바꾸는 순간에만** 붙는다(추가 555)
+  /// — **이미 바꾼 기기에는 없다.**
+  ///
+  /// 그 상태에서 추가 558이 사진 장부의 **틀린 「백업됨」을 지우자**, 소급
+  /// 업로드가 그것들을 *"아직 안 올린 것"*으로 보고 **올리기 시작했다.**
+  ///
+  /// ✅ **실물(2026-08-28 밤, 서버 조회)**: 설치 직후 **폴드 사진 0 → 35장 ·
+  /// 아이폰 2 → 66장.** 555가 막으려던 바로 그 일이 **555·556·558을 다 넣은
+  /// 뒤에 일어났다.**
+  ///
+  /// 📌 **고친 것이 새 경로를 열었다.** 대조(558)는 제대로 돌았고, 누출을
+  /// 막는 표시(555)도 있었는데, **그 둘을 잇는 자리가 비어 있었다.** 장부가
+  /// 둘이면 표시도 둘 다 해야 한다.
   Future<void> _markCarriedOverOnceIfNeeded(String uid) async {
     final service = CarriedOverContactsService();
     if ((await service.load()).isNotEmpty) return;
@@ -369,8 +387,11 @@ class ContactsRepository extends ChangeNotifier {
     );
     if (ids.isEmpty) return;
     await service.markAll(ids);
+    // 🚨 사진 장부에도 같이 적는다(추가 561). 여기가 비어 있으면 소급
+    //    업로드가 그 명함들의 사진을 새 계정 서버로 올린다.
+    await CardPhotoBackupStateService().markCarriedOverAll(ids);
     // 건수만 남긴다 — 어느 명함인지는 개인정보로 이어질 수 있다.
-    debugPrint('넘어온 명함 소급 표시: ${ids.length}건');
+    debugPrint('넘어온 명함 소급 표시: ${ids.length}건(본문·사진)');
   }
 
   /// 주소는 있는데 좌표가 없는 명함들의 좌표를 주소로부터 다시 계산해 채운다.
