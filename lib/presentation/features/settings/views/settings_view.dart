@@ -16,6 +16,7 @@ import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/remote_signout_service.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/card_photo_backup_state.dart';
+import '../../../../core/services/app_lock_service.dart';
 import '../../../../core/services/carried_over_contacts.dart';
 import '../../../../core/services/card_photo_quota_service.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
@@ -356,6 +357,14 @@ class _SettingsViewState extends State<SettingsView> {
                     subtitle: '이 기기와 서버에 암호화하여 보관',
                     value: '로컬 + 서버 백업',
                   ),
+                  // 앱 잠금은 「명함 데이터」 바로 아래다(추가 570) — 이 앱이
+                  // 담고 있는 것이 **제3자(명함 주인)의 개인정보**라는 사실
+                  // 바로 다음에, 그것을 지키는 수단을 둔다.
+                  //
+                  // 📌 세션 만료(자동 로그아웃) 대신 이것을 골랐다. 기기 잠금이
+                  // 풀려도 앱은 잠기고 **재로그인이 없다** — 재로그인은 복원
+                  // 대기와 "데이터가 사라졌다" 오해로 이어진다(추가 456·569).
+                  const _AppLockRow(),
                   // 명함을 폰 주소록으로 내보낼 때 **이름 칸에 무엇을 적을지**
                   // (추가 494). 「명함 데이터」 바로 아래에 둔 이유는, 이것이
                   // 명함 데이터가 **앱 밖으로 나갈 때의 모양**을 정하기
@@ -1466,6 +1475,127 @@ class _PhotoImprovementConsentRowState
               Switch.adaptive(
                 value: _consented,
                 onChanged: signedIn && !_busy ? _toggle : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 앱 잠금 토글(추가 570) — 켜면 앱을 열 때 본인 확인을 요구한다.
+///
+/// ## 🚨 켜기 전에 이 기기가 할 수 있는지 확인한다
+///
+/// 못 쓰는 기기에서 켜 두면 **앱에 영영 못 들어간다.** 되돌릴 길이 앱 안에
+/// 없다 — 그래서 켜는 순간 [AppLockService.isAvailable]을 먼저 묻고, 안 되면
+/// 켜지 않고 이유를 알린다.
+///
+/// 📌 기본은 꺼짐이다. 켜는 것은 이용자의 선택이다.
+class _AppLockRow extends StatefulWidget {
+  const _AppLockRow();
+
+  @override
+  State<_AppLockRow> createState() => _AppLockRowState();
+}
+
+class _AppLockRowState extends State<_AppLockRow> {
+  final _service = AppLockService();
+  bool _enabled = false;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final v = await _service.isEnabled();
+    if (!mounted) return;
+    setState(() => _enabled = v);
+  }
+
+  Future<void> _toggle(bool next) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    if (next) {
+      // 켤 때만 확인한다. 끄는 것은 언제든 되어야 한다.
+      final can = await _service.isAvailable();
+      if (!mounted) return;
+      if (!can) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('이 기기에서는 지문·얼굴 또는 화면 잠금을 먼저 설정해야 해요.'),
+          ),
+        );
+        return;
+      }
+    }
+    await _service.setEnabled(next);
+    if (!mounted) return;
+    setState(() {
+      _enabled = next;
+      _busy = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const subtitle = '앱을 열 때 지문·얼굴로 본인 확인을 해요';
+    return Semantics(
+      toggled: _enabled,
+      label: '앱 잠금. $subtitle',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 76),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.accentSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.lock_outline,
+                  size: 22,
+                  color: AppColors.accentText,
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '앱 잠금',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Switch.adaptive(
+                value: _enabled,
+                onChanged: _busy ? null : _toggle,
               ),
             ],
           ),

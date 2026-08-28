@@ -45,6 +45,11 @@ dependencies:
   provider: ^6.1.5+1
   url_launcher: ^6.3.0
   shared_preferences: ^2.3.5
+
+  # 앱 잠금(생체인증) — 추가 456에서 승인, 568에서 착수 지시.
+  # 세션 만료 대신 이것을 쓴다: 기기 잠금이 풀려도 앱은 잠기고,
+  # 재로그인이 없어 "데이터가 사라졌다" 오해로 이어지지 않는다.
+  local_auth: ^2.3.0
   # main.dart에서 FlutterNativeSplash.preserve()/.remove()를 런타임에 직접
   # 호출해 페이드아웃 전환을 구현하므로(SplashGate) 빌드 시점에만 쓰이는
   # dev_dependencies가 아니라 dependencies에 있어야 함.
