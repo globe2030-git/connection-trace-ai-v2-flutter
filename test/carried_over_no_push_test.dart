@@ -24,6 +24,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 ({String id}) row(String id) => (id: id);
 
+({String id, DateTime? updatedAt}) card(String id, DateTime? updatedAt) =>
+    (id: id, updatedAt: updatedAt);
+
+final switchedAt = DateTime.utc(2026, 8, 28, 2, 9);
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -53,6 +58,37 @@ void main() {
         idOf: (r) => r.id,
       );
       expect(out, isEmpty);
+    });
+  });
+
+  group('소급 표시 — 표시가 없는 기기를 시각으로 가른다', () {
+    List<String> pick(List<({String id, DateTime? updatedAt})> cards) =>
+        selectCarriedOverByTime(
+          cards,
+          switchedAt: switchedAt,
+          idOf: (c) => c.id,
+          updatedAtOf: (c) => c.updatedAt,
+        );
+
+    test('⭐ 전환보다 오래된 명함은 넘어온 것으로 본다', () {
+      expect(pick([card('a', DateTime.utc(2026, 8, 27))]), ['a']);
+    });
+
+    test('🚨 전환 뒤에 손댄 명함은 제외한다 — 이 계정에서 만든 것이다', () {
+      expect(pick([card('a', DateTime.utc(2026, 8, 28, 6))]), isEmpty);
+    });
+
+    test('시각을 모르면(null) 넘어온 것으로 본다 — 손댄 적이 없다는 뜻이다', () {
+      expect(pick([card('a', null)]), ['a']);
+    });
+
+    test('⚠️ 섞여 있으면 갈라낸다 — 아이폰이 이 경우였다(자기 명함 5건)', () {
+      final out = pick([
+        card('old1', DateTime.utc(2026, 8, 20)),
+        card('old2', null),
+        card('mine', DateTime.utc(2026, 8, 28, 13)),
+      ]);
+      expect(out, ['old1', 'old2']);
     });
   });
 
@@ -104,6 +140,14 @@ void main() {
       ).readAsStringSync();
       expect(src.contains('CarriedOverContactsService().markAll'), isTrue);
       expect(src.contains('CarriedOverContactsService().clear()'), isTrue);
+    });
+
+    test('소급 표시가 동기화 앞에서 한 번 돈다 — 없으면 정작 샌 기기에 안 듣는다', () {
+      final src = File(
+        'lib/data/repositories/contacts_repository.dart',
+      ).readAsStringSync();
+      expect(src.contains('_markCarriedOverOnceIfNeeded'), isTrue);
+      expect(src.contains('DataBackupService.lastKeepSwitchAt'), isTrue);
     });
 
     test('탈퇴하면 비운다 — 다음 계정이 자기 명함을 못 올리면 안 된다', () {

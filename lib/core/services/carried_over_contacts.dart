@@ -78,6 +78,33 @@ class CarriedOverContactsService {
   }
 }
 
+/// 전환 시각보다 **오래된** 명함 id를 고른다 — 소급 표시용(추가 556).
+///
+/// 🚨 표시는 전환하는 순간에 붙는데, **그 코드가 생기기 전에 전환한 기기에는
+/// 표시가 없다.** 그 기기들이 바로 이번에 샌 기기들이다.
+///
+/// ```
+/// 전환보다 오래된 명함        → 앞 계정에서 넘어온 것  → 표시한다
+/// 전환 뒤에 손댄 명함          → 이 계정에서 만든 것    → 표시하지 않는다
+/// 시각을 모르는 명함(null)     → 손댄 적이 없다는 뜻    → 표시한다
+/// ```
+///
+/// ⚠️ **"전부 넘어온 것으로 친다"로 하면 자기 명함의 백업이 조용히 멈춘다.**
+/// 실제로 아이폰 계정에는 전환 뒤에 손댄 명함이 5건 있었다(서버 기록 시각으로
+/// 확인). 그 5건까지 묶으면 그 명함들은 어디에도 백업되지 않는다.
+List<String> selectCarriedOverByTime<T>(
+  Iterable<T> contacts, {
+  required DateTime switchedAt,
+  required String Function(T) idOf,
+  required DateTime? Function(T) updatedAtOf,
+}) => contacts
+    .where((c) {
+      final at = updatedAtOf(c);
+      return at == null || at.isBefore(switchedAt);
+    })
+    .map(idOf)
+    .toList();
+
 /// 서버로 올릴 명함을 고른다 — **넘어온 명함은 뺀다**(2026-08-28, 추가 556).
 ///
 /// 순수 함수로 뺀 이유는 [selectCardPhotoBackfillTargets]와 같다: 올리는 일

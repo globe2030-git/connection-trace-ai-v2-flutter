@@ -335,6 +335,7 @@ class ContactsRepository extends ChangeNotifier {
     //
     // ✅ 실물: 폴드는 「유지」 전환 뒤 **새 명함을 하나도 등록하지 않았는데**
     // 같은 시간대에 서버 명함이 103건이 됐다(사용자 확인 + 서버 실물 조회).
+    await _markCarriedOverOnceIfNeeded(uid);
     final carriedOver = await CarriedOverContactsService().load();
     final pushable = selectPushTargets(
       outcome.toPush,
@@ -346,6 +347,30 @@ class ContactsRepository extends ChangeNotifier {
     }
     // 서버 백업엔 좌표가 없으므로(C안) 좌표 없는 명함의 좌표를 주소로 채운다.
     unawaited(backfillMissingGeo());
+  }
+
+  /// 「유지」로 전환한 뒤 **표시가 없는 기기**를 소급해서 한 번 표시한다(추가 556).
+  ///
+  /// 🚨 표시는 전환하는 순간에 붙는데, **그 코드가 생기기 전에 전환한 기기에는
+  /// 없다.** 그 기기들이 바로 이번에 샌 기기들이라, 여기가 없으면 이번 수정이
+  /// **정작 새고 있던 기기에는 안 듣는다.**
+  ///
+  /// 이미 표시가 하나라도 있으면 건너뛴다 — 전환 시점에 제대로 붙은 기기다.
+  Future<void> _markCarriedOverOnceIfNeeded(String uid) async {
+    final service = CarriedOverContactsService();
+    if ((await service.load()).isNotEmpty) return;
+    final switchedAt = await DataBackupService.lastKeepSwitchAt(uid);
+    if (switchedAt == null) return;
+    final ids = selectCarriedOverByTime(
+      _contacts,
+      switchedAt: switchedAt,
+      idOf: (c) => c.id,
+      updatedAtOf: (c) => c.updatedAt,
+    );
+    if (ids.isEmpty) return;
+    await service.markAll(ids);
+    // 건수만 남긴다 — 어느 명함인지는 개인정보로 이어질 수 있다.
+    debugPrint('넘어온 명함 소급 표시: ${ids.length}건');
   }
 
   /// 주소는 있는데 좌표가 없는 명함들의 좌표를 주소로부터 다시 계산해 채운다.
