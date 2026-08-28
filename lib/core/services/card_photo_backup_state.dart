@@ -226,6 +226,12 @@ class CardPhotoBackupStateService {
     await _save(map);
   }
 
+  /// 대조 결과로 장부를 **통째로 갈아 끼운다**(추가 558).
+  ///
+  /// ⚠️ [markSyncedAll]처럼 덧붙이지 않는다 — 대조의 요점이 **틀린 기록을
+  /// 지우는 것**이라, 덧붙이기만 하면 아무것도 못 고친다.
+  Future<void> replaceAll(CardPhotoBackupStateMap map) async => _save(map);
+
   Future<void> forget(String contactId) async =>
       _save((await load()).without(contactId));
 
@@ -290,6 +296,55 @@ class CardPhotoBackupSummary {
   /// 사용자에게 알릴 것이 있나(경고 구간이거나, 안 올라간 것이 있거나).
   bool get needsAttention =>
       isNearFull || isFull || quotaExceeded > 0 || failed > 0 || carriedOver > 0;
+}
+
+/// **서버 실물과 장부를 맞춘다**(2026-08-28, 추가 558).
+///
+/// ## 왜 필요한가 — 장부가 사실인지 아무도 확인하지 않았다
+///
+/// 이 장부는 *"내가 올렸다고 생각한 것"*이지 *"서버에 있는 것"*이 아니다. 둘이
+/// 갈라져도 **대조하는 코드가 없었다.**
+///
+/// ✅ **실물**: 폴드는 장부가 `104장 백업됨`인데 서버에는 **0장**이었고,
+/// 아이폰은 `130장`인데 그 130은 **앞 계정 서버의 사진 수**였다. 화면이 두
+/// 숫자를 나란히 띄우기 시작하고 나서야 드러났다(추가 551) — 그런데 화면은
+/// *"어긋납니다"*라고 **말할 뿐 바로잡지는 못한다.** 그 자리를 메운다.
+///
+/// ## 규칙
+///
+/// ```
+/// 서버에 있음                     → synced      (사유가 무엇이든 실물이 이긴다)
+/// 서버에 없음 + carriedOver       → 그대로      (🚨 올리면 안 되는 것이다)
+/// 서버에 없음 + synced            → 기록을 지운다 ("모른다" = 다시 시도 대상)
+/// 서버에 없음 + failed·quota      → 그대로      (사유 쪽이 더 자세하다)
+/// ```
+///
+/// 🚨 **`carriedOver`를 건드리면 안 되는 이유**: 그 명함들은 **서버에 없는 것이
+/// 정상**이다(다른 계정에서 넘어와 올리지 않기로 한 것). 여기서 기록을 지우면
+/// 소급 업로드가 **제3자 개인정보를 남의 계정 서버로 올린다** — 대조가 오히려
+/// 사고를 만드는 방향이다.
+///
+/// ⚠️ **서버 목록을 못 읽었을 때는 절대 부르지 말 것.** "못 읽었다"와 "없다"를
+/// 섞으면 장부가 통째로 지워지고, 한도 천장이 사라진다.
+CardPhotoBackupStateMap reconcileWithServer(
+  CardPhotoBackupStateMap ledger,
+  Set<String> onServer,
+) {
+  final next = <String, String>{};
+  ledger.raw.forEach((id, raw) {
+    final state = stateFromName(raw);
+    if (onServer.contains(id)) {
+      next[id] = stateToName(CardPhotoBackupState.synced);
+      return;
+    }
+    if (state == CardPhotoBackupState.synced) return; // 기록을 지운다
+    next[id] = raw;
+  });
+  // 장부에 없는데 서버에 있는 것 — 재설치로 장부가 비었을 때가 여기다.
+  for (final id in onServer) {
+    next[id] = stateToName(CardPhotoBackupState.synced);
+  }
+  return CardPhotoBackupStateMap(next);
 }
 
 /// 상태 지도와 한도로 현황을 만든다.
