@@ -42,6 +42,13 @@ class _OcrStatsViewState extends State<OcrStatsView> {
   /// 마지막 백필 회차의 단계별 집계(추가 435). `{GeoStage.name: 건수}`.
   Map<String, int> _stageStats = const {};
 
+  /// 같은 주소에서 좌표를 빌려 쓴 **누적** 횟수(2026-08-28).
+  ///
+  /// ⚠️ 위 [_stageStats]와 **다른 값**이다. 그쪽은 마지막 회차 한 번만 담고
+  /// 덮어쓰는데, 등록 경로의 재사용은 **명함을 저장할 때마다** 일어나 회차와
+  /// 무관하다. 같은 자리에 넣으면 다음 백필이 그 숫자를 지운다.
+  int _reuseTotal = 0;
+
   static const _stageLabels = {
     'jusoSearchFailed': '행안부 검색 실패',
     'jusoCoordFailed': '행안부 좌표 실패',
@@ -108,6 +115,7 @@ class _OcrStatsViewState extends State<OcrStatsView> {
     final givenUp = await GeoBackfillService().resolveGivenUpIds(contacts);
     final jusoConfigured = GeoBackfillService.isJusoConfigured();
     final stageStats = await GeoBackfillService.readStageStats();
+    final reuseTotal = await GeoBackfillService.readAddressReuseTotal();
     if (!mounted) return;
     setState(() {
       _summary = summary;
@@ -115,6 +123,7 @@ class _OcrStatsViewState extends State<OcrStatsView> {
       _givenUpCount = givenUp.length;
       _jusoConfigured = jusoConfigured;
       _stageStats = stageStats;
+      _reuseTotal = reuseTotal;
       _loading = false;
     });
   }
@@ -360,6 +369,14 @@ class _OcrStatsViewState extends State<OcrStatsView> {
         // 대상에서 빠져 있다. 아래 "좌표 다시 시도"로 기록을 지우고 한 번
         // 더 시도할 수 있다.
         _statRow('그중 재시도를 포기함(3회 실패)', '$_givenUpCount장'),
+        // ⚠️ 아래 「마지막 좌표 채우기」의 같은 이름과 **다른 값**이다.
+        // 그쪽은 마지막 회차 한 번, 이것은 처음부터 쌓은 누적이다. 그래서
+        // 이름 뒤에 「(누적)」만 붙였다 — 이름이 아예 다르면 두 숫자를 서로
+        // 다른 것으로 읽고, 같으면 왜 값이 다른지 모른다.
+        //
+        // 📌 이 숫자가 곧 **"주소가 얼마나 겹치나"**의 실측이다.
+        if (_reuseTotal > 0)
+          _statRow('같은 주소에서 가져옴(누적)', '$_reuseTotal건'),
         if (_givenUpCount > 0) ...[
           const SizedBox(height: 12),
           SizedBox(
