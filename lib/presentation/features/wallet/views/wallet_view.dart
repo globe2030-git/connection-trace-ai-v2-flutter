@@ -56,9 +56,10 @@ class _WalletViewState extends State<WalletView> {
       _selectionMode = true;
       _selectedIds.clear();
     });
-    // 선택 모드의 "N개 삭제" 바가 화면 하단 가운데(_buildDeleteBar)에
-    // 뜨는 동안은 같은 자리의 명함 등록 FAB을 숨긴다 — 안 그러면 FAB이
-    // 그 버튼을 가린다(main_tab_screen.dart의 hideFab 문서 참고).
+    // 선택 모드의 "N개 삭제" 바가 화면 폭 전체(_buildDeleteBar)로 뜨는
+    // 동안은 명함 등록 FAB을 숨긴다 — FAB이 `endFloat`(오른쪽 아래)라도
+    // 이 바가 폭 전체라 오른쪽 끝과 겹친다(main_tab_screen.dart의
+    // hideFab 문서 참고).
     MainTabScreen.hideFab.value = true;
   }
 
@@ -563,11 +564,19 @@ class _WalletViewState extends State<WalletView> {
     final list = ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
-      // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의 FAB(명함
-      // 등록)가 `centerDocked`라 하단 바 경계에 반쯤 걸쳐 뜬다 — FAB
-      // 반지름(28)만큼 목록 위로 겹치므로, 그대로 두면 마지막 명함 행이
-      // FAB에 가려진다. 반지름 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다.
-      padding: EdgeInsets.only(bottom: 80, right: showIndexBar ? 22 : 0),
+      // 하단 여백 24 → 96(2026-08-28, 두 번째 수정).
+      //
+      // ⚠️ 처음엔 80으로 두고 main_tab_screen.dart의 FAB을 `centerDocked`
+      // (하단 바 가운데 도킹)로 뒀었는데, 실기기(폴드, 빌드 04db06a)에서
+      // "명함" 탭 아이콘 자체가 FAB에 가려지는 더 큰 결함이 나와 FAB을
+      // `endFloat`(오른쪽 아래)로 옮겼다 — 이 여백 값은 그 구조 변경에
+      // 맞춰 다시 정한 것이다. FAB 지름(56) + 화면 가장자리 여백(16) +
+      // 보기 편한 여유(24)를 더해 96으로 뒀다.
+      //
+      // 📌 이 숫자는 계산값이다 — 실기기로 다시 재지 않았다. 지난번(80)도
+      // 계산이었고 실기기에서 부족했던 전례가 있으니, 실기기 확인 전까지는
+      // "일단 넉넉히 잡은 값"으로 간주한다.
+      padding: EdgeInsets.only(bottom: 96, right: showIndexBar ? 22 : 0),
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];
@@ -617,7 +626,12 @@ class _WalletViewState extends State<WalletView> {
         list,
         Positioned(
           top: 0,
-          bottom: 0,
+          // 예전엔 0(화면 맨 아래까지) — FAB이 `endFloat`(오른쪽 아래)로
+          // 옮겨 오면서 이 인덱스 바의 맨 아래 글자들과 같은 모서리를
+          // 쓰게 됐다. 위 목록 여백과 같은 근거(FAB 지름 56 + 여백 16 +
+          // 여유 24)로 96만큼 띄워 마지막 글자가 FAB 뒤로 들어가지 않게
+          // 한다(2026-08-28).
+          bottom: 96,
           right: 0,
           child: _InitialIndexBar(
             groups: groups,

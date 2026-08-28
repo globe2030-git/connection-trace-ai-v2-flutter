@@ -34,10 +34,10 @@ class MainTabScreen extends StatefulWidget {
   ///
   /// **왜 필요한가**: 명함 지갑의 다건 선택 삭제 모드(F-06)가 켜지면
   /// 화면 맨 아래에 폭 전체짜리 "N개 삭제" 바가 뜬다(`wallet_view.dart`
-  /// `_buildDeleteBar`). FAB은 `centerDocked`라 그 바로 위, 같은 가로
-  /// 중앙에 얹힌다 — 그대로 두면 FAB이 삭제 버튼 한가운데를 가린다.
-  /// `tabRequest`와 같은 패턴(정적 `ValueNotifier`)으로 화면이 이 셸에
-  /// 신호를 보낸다.
+  /// `_buildDeleteBar`). FAB 위치가 `endFloat`(오른쪽 아래)이라도 그 바가
+  /// 화면 폭 전체이므로 FAB과 오른쪽 끝이 겹친다 — 그대로 두면 삭제
+  /// 버튼의 오른쪽 일부를 FAB이 가린다. `tabRequest`와 같은 패턴(정적
+  /// `ValueNotifier`)으로 화면이 이 셸에 신호를 보낸다.
   static final ValueNotifier<bool> hideFab = ValueNotifier<bool>(false);
 
   /// 테스트 전용: 실제 화면(주변/명함/설정) 대신 가벼운 대역 화면을 주입한다.
@@ -202,11 +202,11 @@ class _MainTabScreenState extends State<MainTabScreen>
       child: Scaffold(
         body: IndexedStack(index: _currentIndex, children: _screens),
         // 명함 등록 진입점을 "주변"·"명함" 두 화면의 머리글(화면 오른쪽 위)
-        // 대신 하단 바 가운데로 옮긴다(globe2030님 결정, 2026-08-28 —
-        // "한장 한장 할때도 연속으로 할때도 명함추가 버튼이 위에 있어서
-        // 불편해. … 하단의 설정 옆에 있으면 좋겠다"). 원인은 한 손(엄지)
-        // 조작 — 화면 오른쪽 위는 큰 화면(폴드 등)에서 엄지가 닿기 어렵고,
-        // 하단은 항상 닿는다. 설계 문서:
+        // 대신 하단으로 옮긴다(globe2030님 결정, 2026-08-28 — "한장 한장
+        // 할때도 연속으로 할때도 명함추가 버튼이 위에 있어서 불편해. …
+        // 하단의 설정 옆에 있으면 좋겠다"). 원인은 한 손(엄지) 조작 — 화면
+        // 오른쪽 위는 큰 화면(폴드 등)에서 엄지가 닿기 어렵고, 하단은 항상
+        // 닿는다. 설계 문서:
         // docs/planning/specs/card-add-button-placement-2026-08-28.md.
         //
         // `NavigationBar`의 세 목적지("주변"·"명함"·"설정")에 네 번째
@@ -216,14 +216,37 @@ class _MainTabScreenState extends State<MainTabScreen>
         // 모양 자체가 달라(떠 있고, 선택 상태가 없다) 탭인지 동작인지
         // 헷갈릴 일이 없다 — 표준 Material 관습이라 학습 비용도 없다.
         //
+        // ⚠️ **2026-08-28 실기기(폴드) 결함 — `centerDocked`를 썼다가 되돌린
+        // 자리다.** 처음엔 "하단 가운데"를 문자 그대로 `centerDocked`로
+        // 구현했는데, **이 탭 바는 목적지가 3개라 가운데 자리에 이미
+        // "명함" 탭이 있다.** `centerDocked`는 보통 짝수(2·4) 탭처럼
+        // 가운데가 비어 있을 때 쓰는 위치라, 탭 개수를 안 세고 골랐더니
+        // "명함" 탭 아이콘이 FAB에 완전히 가려졌다(실기기 확인, 빌드
+        // 04db06a). 목록 마지막 항목이 가려지는 것도 하단 여백만으로는
+        // 못 고쳤다 — 가운데 도킹이라 화면 폭 전체 한가운데를 덮기
+        // 때문이다. **교훈: `FloatingActionButtonLocation.centerDocked`는
+        // "가운데에 예쁘게 뜬다"가 아니라 "가운데 자리를 실제로 차지한다"는
+        // 뜻이다 — 다음에 이 위젯을 쓸 때는 먼저 탭(또는 그 자리에 이미
+        // 있는 것) 개수부터 센다.**
+        //
+        // 지금은 `endFloat`(화면 오른쪽 아래)로 바꿨다 — 탭 3개 중 어느
+        // 것과도 안 겹치고, 오른쪽 아래는 마침 "설정" 탭이 있는 쪽이라
+        // globe2030님이 말씀하신 "설정 옆"과도 공간적으로 가깝다(정확히
+        // "설정 탭 자리"는 아니지만, 화면에서 "설정"에 가장 가까운
+        // 모서리다). "설정 옆"을 "설정 탭 자체를 대체"로 읽지 않고
+        // "하단 중에서도 설정 쪽 구석"으로 읽은 판단이다 — 문자 그대로
+        // "설정 옆"을 원하시면 탭 자체를 4개로 늘리거나 4번째 자리에
+        // 넣는 안(⑤ⓒ, 설계 문서 3절)으로 다시 가야 한다.
+        //
         // "설정" 탭에서는 숨긴다 — globe2030님 원문은 "명함 지갑이던
         // 주변이던"이지 설정 화면까지 포함하지 않았고, 설정 화면에 명함
         // 등록 동작이 떠 있는 것은 맥락상 어색하다.
         //
         // [MainTabScreen.hideFab]이 켜져 있을 때도 숨긴다 — 명함 지갑의
-        // 다건 선택 삭제 모드가 이 자리(하단 가운데)에 폭 전체짜리
-        // "N개 삭제" 바를 띄우는데, FAB을 그대로 두면 그 버튼을 가린다.
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        // 다건 선택 삭제 모드가 화면 하단에 폭 전체짜리 "N개 삭제" 바를
+        // 띄우는데, `endFloat`로 옮긴 지금도 오른쪽 아래 모서리에서는
+        // 그 바의 오른쪽 끝과 겹친다.
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         floatingActionButton:
             _currentIndex == MainTabScreen.settingsTabIndex ||
                 MainTabScreen.hideFab.value

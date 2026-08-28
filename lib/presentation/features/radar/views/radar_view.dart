@@ -161,14 +161,19 @@ class _RadarViewState extends State<RadarView> {
                             return false;
                           },
                           child: SingleChildScrollView(
-                            // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의
-                            // FAB(명함 등록)가 `centerDocked`라 하단 바 경계에
-                            // 반쯤 걸쳐 뜬다 — FAB 반지름(28)만큼 이 스크롤
-                            // 영역 위로 겹치므로, 그대로 두면 마지막 카드(예:
-                            // 가까운 인맥 목록의 끝)가 FAB에 가려진다. 반지름
-                            // 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다
+                            // 하단 여백 24 → 96(2026-08-28, 두 번째 수정).
+                            //
+                            // ⚠️ 처음엔 80이었고 main_tab_screen.dart의 FAB이
+                            // `centerDocked`(하단 바 가운데 도킹)였는데,
+                            // 실기기(폴드, 빌드 04db06a)에서 "명함" 탭
+                            // 아이콘이 FAB에 완전히 가려지는 결함이 나와
+                            // FAB을 `endFloat`(오른쪽 아래)로 옮겼다 — 이
+                            // 여백은 그 변경에 맞춘 값이다. FAB 지름(56) +
+                            // 화면 가장자리 여백(16) + 여유(24) = 96
                             // (wallet_view.dart와 같은 값·같은 근거).
-                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 80),
+                            //
+                            // 📌 계산값이다 — 실기기로 다시 재지 않았다.
+                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 96),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
