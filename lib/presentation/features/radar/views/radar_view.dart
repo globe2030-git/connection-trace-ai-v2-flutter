@@ -161,14 +161,16 @@ class _RadarViewState extends State<RadarView> {
                             return false;
                           },
                           child: SingleChildScrollView(
-                            // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의
-                            // FAB(명함 등록)가 `centerDocked`라 하단 바 경계에
-                            // 반쯤 걸쳐 뜬다 — FAB 반지름(28)만큼 이 스크롤
-                            // 영역 위로 겹치므로, 그대로 두면 마지막 카드(예:
-                            // 가까운 인맥 목록의 끝)가 FAB에 가려진다. 반지름
-                            // 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다
-                            // (wallet_view.dart와 같은 값·같은 근거).
-                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 80),
+                            // ⚠️ 2026-08-28 하루 동안 이 값이 24 → 80 → 96 →
+                            // (지금) 24로 왔다갔다 했다 — 전부 명함 등록
+                            // FAB(하단에 떠서 이 스크롤 영역 위를 가리던)
+                            // 때문이었다. 지금은 FAB이 없고 탭 바
+                            // 목적지("등록")로 바뀌었다 — 탭 바는
+                            // `Scaffold.bottomNavigationBar`라 body(이 스크롤
+                            // 영역)와 자리를 나눠 쓸 뿐 위에 겹쳐 뜨지 않으므로,
+                            // 마지막 카드를 가릴 것이 없다. 원래 값(24)으로
+                            // 되돌린다(wallet_view.dart와 같은 값·같은 근거).
+                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -561,9 +563,11 @@ class _RadarViewState extends State<RadarView> {
   /// 제거).** 예전엔 이 자리와 명함 지갑 머리글 오른쪽 위, 두 곳에 자리·
   /// 모양을 맞춰 하나씩 있었다(2026-08-12 결정). globe2030님이 실사용
   /// (하루 아이폰 126장·폴드 190장 등록)에서 "위에 있어서 불편하다"고
-  /// 하셨고, 한 손(엄지) 조작에는 하단이 낫다는 판단에 따라
-  /// `main_tab_screen.dart`의 FAB(하단 바 가운데 도킹) 하나로 합쳤다.
-  /// 설계 근거: docs/planning/specs/card-add-button-placement-2026-08-28.md.
+  /// 하셨다. 같은 날 하단 FAB(가운데 도킹 → 오른쪽 아래)을 거쳐 지금은
+  /// `main_tab_screen.dart`의 하단 탭 바 4번째 목적지("등록") 하나로
+  /// 합쳤다 — globe2030님이 처음부터 "탭 바"를 뜻하셨다는 것을 다시
+  /// 확인해 주셨다. 설계 근거:
+  /// docs/planning/specs/card-add-button-placement-2026-08-28.md.
   /// [context]를 지역 매개변수로 받는다 — `State.context`(게터)를 그대로
   /// 쓰면 분석기가 `await` 뒤 `mounted` 가드를 좁혀 읽지 못해
   /// `use_build_context_synchronously`가 잘못 걸린다(2026-08-22 실측,
@@ -621,12 +625,12 @@ class _RadarViewState extends State<RadarView> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // "명함 등록" 원형 버튼은 여기 있었다(2026-08-28에 FAB으로
-            // 옮기며 제거 — 위 문서 주석 참고). 남은 QR 버튼의 40×40
-            // 크기 고정은 원래 "옆의 명함등록 버튼과 크기를 맞추려는"
-            // 목적이었는데, 그 짝이 없어진 지금도 기본 IconButton(48×48)
-            // 보다 이 화면의 다른 원형 아이콘들과 통일된 크기라 그대로
-            // 둔다.
+            // "명함 등록" 원형 버튼은 여기 있었다(2026-08-28에 하단 탭 바
+            // "등록" 목적지로 옮기며 제거 — 위 문서 주석 참고). 남은 QR
+            // 버튼의 40×40 크기 고정은 원래 "옆의 명함등록 버튼과 크기를
+            // 맞추려는" 목적이었는데, 그 짝이 없어진 지금도 기본
+            // IconButton(48×48)보다 이 화면의 다른 원형 아이콘들과
+            // 통일된 크기라 그대로 둔다.
             IconButton(
               tooltip: 'QR 스캔',
               style: IconButton.styleFrom(
