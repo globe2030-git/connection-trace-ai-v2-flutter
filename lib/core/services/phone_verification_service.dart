@@ -58,6 +58,15 @@ enum PhoneOtpConfirmResult {
 class PhoneVerificationService {
   static const String region = 'asia-northeast3';
 
+  /// 디버그 빌드에서 게이트를 강제로 켠다(검증용).
+  ///
+  /// `flutter build apk --debug --dart-define=PHONE_GATE_FORCE=true`
+  ///
+  /// ⚠️ 기본값은 `false`다. 그리고 [kDebugMode] 뒤에 있어 **릴리스에서는
+  /// 분기 자체가 사라진다.**
+  static const bool _forceGateInDebug =
+      bool.fromEnvironment('PHONE_GATE_FORCE');
+
   /// 🚨 **게이트를 켤지 말지 — 원격 스위치.**
   ///
   /// ## 왜 스위치가 필요한가
@@ -83,6 +92,25 @@ class PhoneVerificationService {
   /// 실패해도 **안 막는다.** *"설정이 없으면 막는다"*가 되면 설정을 깜빡한
   /// 것이 사람을 가두는 일이 된다.
   static Future<bool> isGateEnabled() async {
+    // 🚨 **디버그 빌드에서만 강제로 켤 수 있다.** 검증용이다.
+    //
+    // ## 왜 서버 설정을 안 쓰나
+    //
+    // 게이트를 실기기에서 보려면 스위치가 켜져 있어야 하는데, **서버에 켜
+    // 두면 끄는 것을 잊을 수 있다.** 잊으면 켜진 채로 남고, 나중에 빌드가
+    // 나가는 순간 **아무 신호 없이 전원이 잠긴다.**
+    //
+    // 📌 여기서는 **아예 안 만드는 길**이 있다 — 빌드 인자로만 켜고,
+    // 그 빌드는 검증용이라 사라진다. **끌 것이 없으니 잊을 것도 없다.**
+    //
+    // ## 🚨 릴리스에서는 존재하지 않는다
+    //
+    // `kDebugMode`가 릴리스에서 컴파일 타임 상수 `false`라 이 분기는
+    // **트리 셰이킹으로 통째로 사라진다.** 인자를 넣어 릴리스를 구워도
+    // 켜지지 않는다 — 테스트 번호 목록과 달리 **운영에 남을 수 있는 값이
+    // 아니다.**
+    if (kDebugMode && _forceGateInDebug) return true;
+
     try {
       final snap = await FirebaseFirestore.instance
           .collection('config')

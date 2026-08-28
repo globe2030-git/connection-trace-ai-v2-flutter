@@ -273,6 +273,16 @@ class _AuthGateState extends State<AuthGate> {
   /// 신규·기존 이용자가 **한 경로로** 처리된다 — 기준이 "가입한 지 얼마나
   /// 됐나"가 아니라 **"이 계정에 응답 기록이 있나"**이기 때문이다.
   Future<void> _maybeAskAdConsent(BuildContext context, String uid) async {
+    // 🚨 **휴대전화번호 확인이 끝나기 전에는 묻지 않는다**(추가 560의 순서).
+    //
+    // 이 함수는 `_syncUidAndRestore`의 postFrameCallback에서 불리는데, 그
+    // 경로는 게이트와 무관하게 돈다. 막지 않으면 **인증 화면 위로 동의
+    // 시트가 얹힌다** — 실기기에서 실제로 그랬다(추가 573).
+    //
+    // ⚠️ 건너뛰는 것이지 없애는 것이 아니다. 인증을 마치면 다음 로그인에
+    // 다시 기회가 온다 — 이 파일이 이미 여러 번 하는 판단이다.
+    if (_phoneVerified != true) return;
+
     final service = AdConsentService();
     // 읽기에 실패하면 묻지 않는다 — 이미 답한 사람에게 또 묻는 것보다
     // 한 번 건너뛰는 편이 낫다(AdConsentService.shouldAsk 주석).
@@ -415,6 +425,18 @@ class _AuthGateState extends State<AuthGate> {
             setState(() => _phoneVerified = true);
           },
         );
+      }
+      // 🚨 **판정이 끝나기 전에는 앱 본체를 만들지 않는다.**
+      //
+      // 실기기에서 잡은 것이다(추가 573). 판정 중(`null`)에 `widget.child`를
+      // 만들었더니 **본체가 뜨면서 자기 시트들을 띄웠고**, 그 뒤에 인증
+      // 화면이 그려져 **광고 동의와 위치 안내가 인증 화면 위에 얹혔다.**
+      //
+      // 확정 순서(추가 560)는 인증이 광고 동의 **앞**인데, 화면에서는
+      // 광고 동의가 먼저 보였다. `auth.isLoading`을 빈 화면으로 두는 것과
+      // 같은 이유로 여기도 기다린다.
+      if (_phoneVerified == null) {
+        return const Scaffold(backgroundColor: AppColors.bgBase);
       }
     }
 
