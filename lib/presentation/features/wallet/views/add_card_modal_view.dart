@@ -2370,47 +2370,23 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       return;
     }
 
-    // 1-b. 전화번호 중복 확인(P1-40). 같은 번호가 이미 등록돼 있으면(같은 사람
-    // 명함을 두 번 스캔한 경우 등) 그냥 두 건으로 쌓이지 않도록 저장 전에
-    // 확인을 받는다. 편집 중에는 자기 자신과 부딪히므로 검사하지 않는다.
-    // 저장 상태(_isSavingCard)를 켜기 전에 두어, 사용자가 취소해도 되돌릴
-    // 상태가 없게 한다.
-    if (!_isEditing) {
-      final match = _findDuplicateContact();
-      if (match != null) {
-        final dup = match.contact;
-        final proceed = await showDialog<bool>(
-          context: context,
-          builder: (dialogCtx) => AlertDialog(
-            title: const Text('이미 등록된 것 같아요'),
-            content: Text(
-              // 무엇 때문에 걸렸는지 말해 준다 — "같은 전화번호"라고만 하면
-              // 이메일이나 이름으로 걸린 경우에 거짓말이 된다.
-              '${match.reason} 명함이 "${dup.name}" 님으로 이미 등록돼 있어요.\n'
-              '그래도 새 명함으로 추가할까요?',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx, false),
-                child: const Text('취소'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(dialogCtx, true),
-                child: const Text('그래도 추가'),
-              ),
-            ],
-          ),
-        );
-        if (proceed != true) {
-          // "취소"를 골랐다는 건 이 명함을 등록하지 않기로 확정한 것이므로
-          // 등록 화면까지 함께 닫는다(사용자 제보, 2026-08-12) — 예전엔
-          // 폼에 그대로 남아 닫기 버튼을 한 번 더 눌러야 했다.
-          if (mounted) Navigator.pop(context);
-          return;
-        }
-        if (!mounted) return;
-      }
-    }
+    // 1-b. 🚨 **중복 확인 창을 여기 두지 않는다**(2026-08-28, globe2030님 결정).
+    //
+    // 예전에는 이 자리에 「이미 등록된 것 같아요 … 그래도 새 명함으로
+    // 추가할까요?」가 있었고, **「그래도 추가」를 누르면 지갑에 두 줄이
+    // 생겼다.** 그것이 globe2030님이 제보한 「같은 사람이 두 장」의 원인이다.
+    //
+    // ```
+    // 첫 창「그래도 추가」  →  통과      새 명함이 된다
+    // 둘째 창「업데이트」   →  합쳐짐    🚨 「추가」를 골랐는데 결과는 「합침」
+    // ```
+    //
+    // 📌 **두 창이 같은 것을 서로 다른 말로 물었고, 첫 창의 선택이 버려졌다.**
+    //
+    // ⚠️ 그리고 「그래도 추가」로 가면 **이전 명함 기록 경로에 아예 안 간다** —
+    // globe2030님이 원한 *"명함이 바뀐 히스토리"* 가 그래서 안 쌓였다.
+    //
+    // 이제 확인은 저장 직전 한 곳(`_executeFinalSave`)에서만 한다.
 
     // 주소가 비어 있으면 지오코딩할 대상이 없다 — 건너뛰고 좌표 없이 저장한다.
     // 빈 문자열을 validateAndConvert에 넘기면 "주소를 못 찾았다" 다이얼로그가
@@ -2997,13 +2973,45 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (!mounted) return;
         if (deleteOldRecord == null) return; // 대화상자 닫힘 — 저장 보류
 
-        _applyUpdateToExisting(
+        // 🚨 **여기서 명함 사진을 먼저 저장한다**(2026-08-28).
+        //
+        // 사진을 만드는 코드(`saveEncryptedCardImage`)가 **이 분기 아래**에
+        // 있어서, 합치기로 가면 **거기 도달조차 하지 않았다.**
+        //
+        // ```
+        // 새로 찍음 → 중복으로 잡힘 → 「새 명함으로 등록」
+        //   글자는 갱신   ✅
+        //   사진은 버려짐  🚨  목록 썸네일이 안 나온다
+        // ```
+        //
+        // 📌 서버 실측이 이것을 뒷받침한다 — 사진이 명함 수만큼 올라가
+        // 있는데(126/126, id 도 전부 일치) **명함이 그것을 안 가리켰다.**
+        // 「저장이 안 된다」도 「경로가 죽었다」도 아니고 **연결을 안 한 것**이다.
+        //
+        // ⚠️ **`existing.id` 로 저장한다.** 합치면 살아남는 것이 그 id 다.
+        // 새 명함 id 로 저장하면 파일 이름이 안 맞아 나중에 다시 잇지도 못한다.
+        String? mergedCardImagePath = existing.cardImagePath;
+        final mergeUid = context.read<AuthRepository>().firebaseUid;
+        if (_scannedCardImageSourcePath != null && mergeUid != null) {
+          final saved = await ContactImageService().saveEncryptedCardImage(
+            uid: mergeUid,
+            contactId: existing.id,
+            sourcePath: _scannedCardImageSourcePath!,
+          );
+          if (!mounted) return;
+          // ⚠️ 실패하면 기존 사진을 그대로 둔다. 빈 값으로 덮지 않는다 —
+          //    오늘 `officePhone` 이 null 로 덮이던 것과 같은 함정이다.
+          if (saved != null) mergedCardImagePath = saved;
+        }
+
+        await _applyUpdateToExisting(
           existing,
           finalAddress,
           resolvedGeo,
           tags,
           interests,
           deleteOldRecord: deleteOldRecord,
+          cardImagePath: mergedCardImagePath,
         );
         return;
       }
@@ -3207,7 +3215,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         backgroundColor: AppColors.cardSurface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
-          '이미 등록된 인맥입니다',
+          // globe2030님 말씀 그대로다 — "새로운 명함으로 등록할지 묻고".
+          '같은 분의 새 명함인가요?',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.bold,
@@ -3221,7 +3230,8 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               // 무엇 때문에 같은 사람으로 봤는지 밝힌다. 종전에는 언제나
               // "휴대폰 번호가 같은"이라고 말했는데, 이메일이나 이름으로
               // 걸린 경우에는 사실과 다르다(2026-08-26).
-              '${match.reason} 기존 명함이 있습니다. 어떻게 할까요?',
+              '${match.reason} 기존 명함이 있습니다.\n'
+              '새 명함으로 등록하면 지금 명함은 이 분의 지난 명함으로 남습니다.',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13.5,
@@ -3287,7 +3297,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text(
-              '기존 정보 유지',
+              '그대로 두기',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontWeight: FontWeight.bold,
@@ -3297,7 +3307,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text(
-              '최신 정보로 업데이트',
+              '새 명함으로 등록',
               style: TextStyle(
                 color: AppColors.accentText,
                 fontWeight: FontWeight.bold,
@@ -3357,14 +3367,18 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     );
   }
 
-  void _applyUpdateToExisting(
+  Future<void> _applyUpdateToExisting(
     ContactModel existing,
     String finalAddress,
     GeoPosition? resolvedGeo,
     List<String> tags,
     List<String> interests, {
     required bool deleteOldRecord,
-  }) {
+
+    /// 합칠 명함에 붙일 사진 경로. **새로 찍었으면 새 것, 아니면 기존 것.**
+    /// 🚨 호출부가 이미 기존 값으로 채워서 넘긴다 — 여기서 비우지 않는다.
+    required String? cardImagePath,
+  }) async {
     // 🚨 `existing` 에 이미 쌓여 있던 이력을 지킨다(2026-08-28).
     //
     // 예전에는 여기서 `_memoController` 텍스트만 썼다. 그런데 그 칸에는 **이
@@ -3476,13 +3490,32 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       interests: interests.isEmpty ? existing.interests : interests,
       geo: resolvedGeo ?? existing.geo,
       memo: mergedMemo,
+      // 🚨 이 둘이 빠져 있어서 합치면 사진이 사라졌다(2026-08-28).
+      cardImagePath: cardImagePath,
+      // 사진이 실제로 있을 때만 "대표 이미지로 사용"이 의미가 있다.
+      // 새로 찍어 사진이 생겼으면 켜고, 아니면 기존 선택을 존중한다.
+      useCardAsAvatar: cardImagePath == null
+          ? false
+          : (_useCardAsAvatar || existing.useCardAsAvatar),
     );
 
     context.read<WalletViewModel>().updateContact(updated);
-    Navigator.pop(context);
+
+    // 🚨 합치기도 연속 등록 흐름에 태운다(2026-08-28).
+    //
+    // 예전에는 여기서 곧장 `Navigator.pop` 으로 지갑에 나갔다. 그래서
+    // **연속 등록 중에 중복이 걸리면 거기서 흐름이 끊겼다** — 다음 장을
+    // 찍으려면 「등록」을 다시 눌러야 했다. 새 명함을 저장했을 때와 같은
+    // 자리인데 한쪽만 이어지고 있었다.
+    final keepScanning = await _askKeepScanning(updated.name) ?? false;
+    if (!mounted) return;
+
+    Navigator.pop(context, keepScanning ? const _ContinueScanning() : null);
+    if (keepScanning) return; // 다음 촬영 화면이 바로 뜬다 — 스낵바는 가려진다
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('🔄 ${updated.name} 님의 정보를 최신 정보로 업데이트했습니다.'),
+        content: Text('🔄 ${updated.name} 님의 새 명함으로 바꿨습니다. 지난 명함은 남아 있어요.'),
         backgroundColor: AppColors.accent,
       ),
     );
