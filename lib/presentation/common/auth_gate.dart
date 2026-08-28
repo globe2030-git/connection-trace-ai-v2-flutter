@@ -15,6 +15,8 @@ import '../../data/repositories/my_profile_repository.dart';
 import '../features/auth/views/ad_consent_notice_dialog.dart';
 import '../features/auth/views/ad_consent_view.dart';
 import '../features/auth/views/login_view.dart';
+import '../features/auth/views/phone_verify_view.dart';
+import '../../core/services/phone_verification_service.dart';
 import '../../core/services/card_photo_backup_state.dart';
 import '../../core/services/carried_over_contacts.dart';
 
@@ -49,6 +51,23 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   String? _lastHandledUid;
+
+  /// 이 계정이 휴대전화번호 확인을 마쳤는가(추가 565).
+  ///
+  /// ```
+  /// null   아직 모른다 — 조회 중이거나 조회에 실패했다
+  /// false  안 했다 — 인증 화면을 그린다
+  /// true   했다 — 앱 본체로 간다
+  /// ```
+  ///
+  /// 🚨 **`null`과 `false`를 갈라 둔 것이 중요하다.** 모르는 것을 「안 했다」로
+  /// 다루면 **조회가 한 번 실패한 사람이 인증 화면에 갇힌다.** 그래서 모를
+  /// 때는 막지 않고 지나보낸다 — 다음 실행에 다시 기회가 온다.
+  ///
+  /// ⚠️ 이 판단은 이 파일이 이미 여러 번 한 것과 같다(광고 동의도 읽기에
+  /// 실패하면 묻지 않는다).
+  bool? _phoneVerified;
+  String? _phoneCheckedForUid;
 
   void _syncUidAndRestore(BuildContext context, String? uid) {
     if (uid == _lastHandledUid) return;
@@ -359,7 +378,33 @@ class _AuthGateState extends State<AuthGate> {
       _syncUidAndRestore(context, null);
       return const LoginView();
     }
-    _syncUidAndRestore(context, auth.firebaseUid);
+    final uid = auth.firebaseUid;
+    _syncUidAndRestore(context, uid);
+
+    // 휴대전화번호 확인(추가 565). SNS 로그인 **뒤**, 광고 동의 **앞**이다
+    // (docs/planning/specs/account-device-policy-2026-08-28.md).
+    //
+    // 🚨 건너뛰기가 없으므로 **여기서 막는다.** 광고 동의처럼 push했다
+    // 사라지는 방식이면 뒤로가기 한 번으로 뚫린다.
+    if (uid != null) {
+      if (_phoneCheckedForUid != uid) {
+        _phoneCheckedForUid = uid;
+        _phoneVerified = null;
+        PhoneVerificationService.isVerified(uid).then((v) {
+          if (!mounted || _phoneCheckedForUid != uid) return;
+          setState(() => _phoneVerified = v);
+        });
+      }
+      if (_phoneVerified == false) {
+        return PhoneVerifyView(
+          onVerified: () {
+            if (!mounted) return;
+            setState(() => _phoneVerified = true);
+          },
+        );
+      }
+    }
+
     return widget.child;
   }
 }

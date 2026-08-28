@@ -1,0 +1,151 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
+
+/// 인증번호 요청 결과. 🚨 **인증번호는 여기 없다** — 서버가 응답에 싣지 않는다.
+enum PhoneOtpRequestResult {
+  /// 보냈다(또는 테스트 번호라 보내지 않고 통과시켰다).
+  sent,
+
+  /// 아직 3분이 안 지났다.
+  tooSoon,
+
+  /// 오늘 받을 수 있는 횟수를 다 썼다.
+  dailyCap,
+
+  /// 번호 모양이 잘못됐다.
+  invalidNumber,
+
+  /// 보내지 못했다(발송사 키 없음·발송사 오류 등).
+  sendFailed,
+
+  /// 그 밖의 실패.
+  unknown,
+}
+
+/// 인증번호 확인 결과.
+enum PhoneOtpConfirmResult {
+  verified,
+
+  /// 3분이 지났다. 화면 문구는 "시간이 지났어요, 다시 받기"(추가 563).
+  expired,
+
+  /// 인증번호가 틀렸다.
+  mismatch,
+
+  /// 여러 번 틀려서 이 인증번호가 죽었다.
+  tooManyAttempts,
+
+  /// 인증번호를 아직 안 받았다.
+  noChallenge,
+
+  /// ⏸️ 이 번호가 **이미 다른 계정**에 있다. 1차 범위에서는 잇지 않고
+  /// 알리기만 한다(추가 564).
+  alreadyTaken,
+
+  unknown,
+}
+
+/// 휴대전화번호 인증(추가 565).
+///
+/// ## 🚨 이 클래스가 판정하지 않는다
+///
+/// 만료·상한·정답 여부는 **전부 서버가 본다**. 여기서 남은 시간을 세거나
+/// 횟수를 저장하지 않는다 — 기기 시계를 돌리거나 앱을 지웠다 깔면 뚫린다.
+///
+/// 화면이 타이머를 보여 주긴 하지만 그것은 **표시일 뿐**이고, 실제로 막는
+/// 것은 서버다. 타이머가 0이 되기 전에 눌러도 서버가 거부한다.
+class PhoneVerificationService {
+  static const String region = 'asia-northeast3';
+
+  /// 이 계정이 번호 인증을 마쳤는지.
+  ///
+  /// ⚠️ **못 읽으면 `null`을 준다** — `false`가 아니다. 둘은 다르다.
+  /// `false`는 *"안 했다"*이고 `null`은 *"모른다"*인데, 모르는 것을 안 한
+  /// 것으로 다루면 **읽기가 한 번 실패한 사람이 인증 화면에 갇힌다.**
+  /// 부르는 쪽이 그 구분을 보고 정한다.
+  static Future<bool?> isVerified(String uid) async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      final data = snap.data();
+      if (data == null) return false;
+      return data['phoneVerifiedAt'] != null;
+    } catch (e) {
+      // 개인정보가 섞이지 않도록 예외 타입만 남긴다(다른 서비스와 동일 원칙).
+      debugPrint('phoneVerified 조회 실패: ${e.runtimeType}');
+      return null;
+    }
+  }
+
+  /// 인증번호를 요청한다.
+  ///
+  /// [retryAfterMs]는 서버가 준 값이다 — 화면이 *"몇 초 뒤에 다시"*를 보여
+  /// 줄 때 **기기 시계로 세지 말고 이 값을 쓴다.**
+  static Future<({PhoneOtpRequestResult result, int? retryAfterMs})> request(
+    String phone,
+  ) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: region,
+      ).httpsCallable('phoneOtpRequest');
+      await callable.call<Map<String, dynamic>>({'phone': phone});
+      return (result: PhoneOtpRequestResult.sent, retryAfterMs: null);
+    } on FirebaseFunctionsException catch (e) {
+      final details = e.details;
+      final reason = details is Map ? details['reason'] as String? : null;
+      final retryAfterMs = details is Map
+          ? (details['retryAfterMs'] as num?)?.toInt()
+          : null;
+      return (
+        result: switch (e.code) {
+          'invalid-argument' => PhoneOtpRequestResult.invalidNumber,
+          'unavailable' => PhoneOtpRequestResult.sendFailed,
+          'resource-exhausted' => reason == 'daily-cap'
+              ? PhoneOtpRequestResult.dailyCap
+              : PhoneOtpRequestResult.tooSoon,
+          _ => PhoneOtpRequestResult.unknown,
+        },
+        retryAfterMs: retryAfterMs,
+      );
+    } catch (e) {
+      debugPrint('phoneOtpRequest 호출 실패: ${e.runtimeType}');
+      return (result: PhoneOtpRequestResult.unknown, retryAfterMs: null);
+    }
+  }
+
+  /// 인증번호를 확인한다.
+  static Future<PhoneOtpConfirmResult> confirm({
+    required String phone,
+    required String code,
+  }) async {
+    try {
+      final callable = FirebaseFunctions.instanceFor(
+        region: region,
+      ).httpsCallable('phoneOtpConfirm');
+      await callable.call<Map<String, dynamic>>({
+        'phone': phone,
+        'code': code,
+      });
+      return PhoneOtpConfirmResult.verified;
+    } on FirebaseFunctionsException catch (e) {
+      final details = e.details;
+      final reason = details is Map ? details['reason'] as String? : null;
+      if (e.code == 'already-exists') {
+        return PhoneOtpConfirmResult.alreadyTaken;
+      }
+      return switch (reason) {
+        'expired' => PhoneOtpConfirmResult.expired,
+        'too-many-attempts' => PhoneOtpConfirmResult.tooManyAttempts,
+        'no-challenge' => PhoneOtpConfirmResult.noChallenge,
+        'mismatch' => PhoneOtpConfirmResult.mismatch,
+        _ => PhoneOtpConfirmResult.unknown,
+      };
+    } catch (e) {
+      debugPrint('phoneOtpConfirm 호출 실패: ${e.runtimeType}');
+      return PhoneOtpConfirmResult.unknown;
+    }
+  }
+}
