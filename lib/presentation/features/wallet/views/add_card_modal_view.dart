@@ -2155,6 +2155,9 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         future: ContactImageService().loadDecryptedCardImage(
           uid: uid,
           path: _cardImagePath!,
+          // 낡은 경로면 id로 다시 찾게 한다(추가 554) — 편집 화면은 목록보다
+          // 먼저 열릴 수 있어 저장소 재연결을 기다리지 않는다.
+          contactId: widget.contactToEdit?.id,
         ),
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {

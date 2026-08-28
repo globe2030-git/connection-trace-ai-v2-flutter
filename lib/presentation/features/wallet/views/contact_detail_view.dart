@@ -614,6 +614,8 @@ class _ZoomableCardAvatar extends StatelessWidget {
     final bytes = await ContactImageService().loadDecryptedCardImage(
       uid: uid,
       path: contact.cardImagePath!,
+      // 낡은 경로면 id로 다시 찾게 한다(추가 554).
+      contactId: contact.id,
     );
     if (bytes == null || !context.mounted) return;
     await showCardImageViewer(
