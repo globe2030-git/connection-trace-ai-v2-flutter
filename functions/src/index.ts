@@ -62,6 +62,25 @@ import {
 import {generateReferralCode} from "./referralCode";
 import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
 import {
+  Challenge,
+  OTP_MAX_ATTEMPTS,
+  SendLedger,
+  TEST_PHONE_FIXED_CODE,
+  decideSend,
+  generateOtpCode,
+  isTestPhone,
+  normalizePhoneKr,
+  otpCodeHash,
+  parseTestNumbers,
+  phoneHash,
+  verifyOtp,
+} from "./phoneOtp";
+import {
+  AligoSender,
+  NoKeySender,
+  OtpSender,
+} from "./phoneOtpSender";
+import {
   BillingTierRaw,
   isNonEmptyString,
   isValidIapPlatform,
@@ -101,6 +120,37 @@ const appleSignInKey = defineSecret("APPLE_SIGNIN_KEY");
 // deviceId를 받은 요청을 처리할 때)에만 시크릿이 필요하다. 설계 근거:
 // docs/planning/monetization-referral-engineering-spec-2026-08-14.md §4-2.
 const deviceHashSalt = defineSecret("DEVICE_HASH_SALT");
+
+// 휴대전화번호·인증번호 해시용 salt(추가 565).
+//
+// 🚨 **한번 정해 데이터가 쌓이면 사실상 못 바꾼다** — 바꾸면 phoneAccounts의
+// 매핑이 전부 안 맞는다(추가 462가 CI/DI에서 지적한 것과 같은 구조).
+// `firebase functions:secrets:set PHONE_HASH_SALT`로 넣는다. deviceHashSalt와
+// 같이 선언 시점엔 값이 필요 없고 `.value()` 호출 시점에만 필요하다.
+const phoneHashSalt = defineSecret("PHONE_HASH_SALT");
+
+// 알리고(알림톡 발송사) 키 넷. ⚠️ **아직 하나도 없다.**
+//
+// 📌 값이 없어도 빌드·배포가 되고, 없으면 `NoKeySender`가 골라져 **테스트
+// 번호 경로만 동작한다**(`pickSender` 참고). 키가 오면 값만 넣으면 된다.
+const aligoApiKey = defineSecret("ALIGO_API_KEY");
+const aligoUserId = defineSecret("ALIGO_USER_ID");
+const aligoSenderKey = defineSecret("ALIGO_SENDER_KEY");
+const aligoTplCode = defineSecret("ALIGO_TPL_CODE");
+const aligoSender = defineSecret("ALIGO_SENDER");
+
+// 🚨 **테스트 번호 목록. 기본값은 「없음」이다.**
+//
+// 이 값이 비면 `isTestPhone`이 항상 false를 주고 테스트 경로가 죽는다 —
+// *"설정이 없으면 전부 실제 발송"*이 기본이어야, 설정을 깜빡한 것이
+// **기능이 열린 채로 나가는 것**이 되지 않는다.
+//
+// ⚠️ **이 목록이 운영에 남으면 그 번호로 누구나 로그인한다.** 릴리스
+// 점검표에 확인 줄이 있다(docs/planning/release-checklist.md).
+const phoneTestNumbers = defineSecret("PHONE_TEST_NUMBERS");
+
+// 알리고 testMode. "Y"면 알리고까지 왕복하되 실제 발송을 안 한다.
+const aligoTestMode = defineSecret("ALIGO_TEST_MODE");
 
 // IAP(인앱결제) 영수증 검증용 시크릿 2개(U7, 뼈대만). **값은 아직 설정하지
 // 않는다** — 스토어 상품ID가 아직 등록되지 않았고(사용자 게이트, P1-1)
@@ -2423,5 +2473,282 @@ export const revokeMySessions = onCall(
     const revokedAt = new Date().toISOString();
     logger.info("원격 로그아웃", {uid, revokedAt});
     return {revokedAt};
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// 휴대전화번호 인증 (추가 565)
+//
+// 방침·순서·값의 근거: docs/planning/specs/account-device-policy-2026-08-28.md
+//
+// ## 🚨 판정은 전부 여기서 한다
+//
+// ```
+// ❌ 기기 시계로 만료 판정      시간을 돌리면 뚫린다
+// ❌ 기기에 횟수 저장           지웠다 깔면 상한이 초기화된다
+// ✅ 이 함수들이 판정한다        앱을 지웠다 깔아도 상한이 유지된다
+// ```
+//
+// ## ⏸️ 1차 범위 밖 — 계정 잇기
+//
+// 번호가 이미 다른 uid에 있으면 **알리기만 하고 잇지 않는다**(추가 564).
+// uid 형식(A안/B안)이 안 정해졌고, 그것은 되돌릴 수 없는 결정이다.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** OTP 관련 시크릿을 함수 하나에 묶어 선언한다. */
+const OTP_SECRETS = [
+  phoneHashSalt,
+  aligoApiKey,
+  aligoUserId,
+  aligoSenderKey,
+  aligoTplCode,
+  aligoSender,
+  aligoTestMode,
+  phoneTestNumbers,
+];
+
+/**
+ * 지금 쓸 발송기를 고른다.
+ *
+ * 🚨 **키가 하나라도 비면 `NoKeySender`다.** 절반만 설정된 채로 실제 발송을
+ * 시도하면 알리고가 왜 거부했는지 알기 어렵고, 무엇보다 **설정이 덜 된 것을
+ * 「되는 것」으로 착각**하게 된다.
+ */
+function pickSender(): OtpSender {
+  const apikey = safeSecret(aligoApiKey);
+  const userid = safeSecret(aligoUserId);
+  const senderkey = safeSecret(aligoSenderKey);
+  const tplCode = safeSecret(aligoTplCode);
+  const sender = safeSecret(aligoSender);
+  if (!apikey || !userid || !senderkey || !tplCode || !sender) {
+    return new NoKeySender();
+  }
+  return new AligoSender({
+    apikey,
+    userid,
+    senderkey,
+    tplCode,
+    sender,
+    // 기본이 testMode다 — 실제 발송은 "N"을 명시적으로 넣어야 열린다.
+    testMode: safeSecret(aligoTestMode) !== "N",
+  });
+}
+
+/** 시크릿이 아직 없을 때 `.value()`가 던지는 것을 빈 문자열로 받는다. */
+function safeSecret(s: {value: () => string}): string {
+  try {
+    return s.value() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** 로그에 남겨도 되는 만큼만. 🚨 번호·인증번호는 절대 넣지 않는다. */
+function otpLogFields(phoneHashValue: string) {
+  return {phonePrefix: phoneHashValue.slice(0, 8)};
+}
+
+interface OtpRequestData {
+  phone?: unknown;
+}
+
+/**
+ * 인증번호를 요청한다.
+ *
+ * 📌 **응답에 인증번호를 절대 싣지 않는다.** 테스트 번호도 마찬가지다 —
+ * 테스트 번호는 고정 코드(`000000`)라 애초에 알려 줄 필요가 없다.
+ */
+export const phoneOtpRequest = onCall<OtpRequestData>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요해요.");
+    }
+
+    const e164 = normalizePhoneKr(
+      typeof request.data?.phone === "string" ? request.data.phone : null,
+    );
+    if (e164 === null) {
+      throw new HttpsError(
+        "invalid-argument",
+        "휴대전화번호를 다시 확인해 주세요.",
+      );
+    }
+
+    const salt = phoneHashSalt.value();
+    const key = phoneHash(e164, salt);
+    const db = getFirestore();
+    const now = Date.now();
+
+    const ledgerRef = db.collection("phoneSendLedger").doc(key);
+    const challengeRef = db.collection("phoneOtpChallenges").doc(key);
+
+    const testNumbers = parseTestNumbers(safeSecret(phoneTestNumbers));
+    const isTest = isTestPhone(e164, testNumbers);
+    // ⭐ 테스트 번호는 코드를 만들지 않는다 — 샐 경로 자체가 없다.
+    const code = isTest ? TEST_PHONE_FIXED_CODE : generateOtpCode();
+
+    // 상한 판정과 장부 기록을 한 트랜잭션에 묶는다. 나눠 두면 동시에 두 번
+    // 눌렀을 때 상한을 넘겨 보낼 수 있다.
+    const decision = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ledgerRef);
+      const ledger = snap.exists ? (snap.data() as SendLedger) : null;
+      const d = decideSend(ledger, now);
+      if (!d.allowed) return d;
+      tx.set(ledgerRef, d.nextLedger);
+      tx.set(challengeRef, {
+        codeHash: otpCodeHash(code, salt),
+        createdAt: now,
+        attempts: 0,
+      } satisfies Challenge);
+      return d;
+    });
+
+    if (!decision.allowed) {
+      logger.info("인증번호 요청 거부", {
+        ...otpLogFields(key),
+        reason: decision.reason,
+      });
+      const message =
+        decision.reason === "resend-too-soon" ?
+          "조금 뒤에 다시 받을 수 있어요." :
+          "오늘 받을 수 있는 횟수를 다 썼어요.";
+      throw new HttpsError("resource-exhausted", message, {
+        reason: decision.reason,
+        retryAfterMs: decision.retryAfterMs,
+      });
+    }
+
+    if (isTest) {
+      // 🚨 테스트 번호라는 사실을 로그에 남긴다. 운영에서 이 줄이 보이면
+      // 목록이 안 지워진 것이다.
+      logger.warn("테스트 번호로 인증 진행(발송 안 함)", otpLogFields(key));
+      return {sent: true, via: "test-number"};
+    }
+
+    const outcome = await pickSender().send(e164, code);
+    if (!outcome.sent) {
+      logger.error("인증번호 발송 실패", {
+        ...otpLogFields(key),
+        reason: outcome.reason,
+      });
+      throw new HttpsError(
+        "unavailable",
+        "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요.",
+      );
+    }
+
+    logger.info("인증번호 발송", {...otpLogFields(key), via: outcome.via});
+    return {sent: true, via: outcome.via};
+  },
+);
+
+interface OtpConfirmData {
+  phone?: unknown;
+  code?: unknown;
+}
+
+/**
+ * 인증번호를 확인하고 번호를 이 계정에 붙인다.
+ *
+ * ⏸️ **번호가 이미 다른 uid에 있으면 알리기만 한다**(추가 564) — 자동으로
+ * 합치지 않는다. 잇기는 uid 형식이 정해진 뒤에 얹는다.
+ */
+export const phoneOtpConfirm = onCall<OtpConfirmData>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "로그인이 필요해요.");
+    }
+
+    const e164 = normalizePhoneKr(
+      typeof request.data?.phone === "string" ? request.data.phone : null,
+    );
+    const inputCode =
+      typeof request.data?.code === "string" ? request.data.code.trim() : "";
+    if (e164 === null || inputCode.length === 0) {
+      throw new HttpsError("invalid-argument", "입력을 다시 확인해 주세요.");
+    }
+
+    const salt = phoneHashSalt.value();
+    const key = phoneHash(e164, salt);
+    const db = getFirestore();
+    const now = Date.now();
+
+    const challengeRef = db.collection("phoneOtpChallenges").doc(key);
+    const accountRef = db.collection("phoneAccounts").doc(key);
+
+    const result = await db.runTransaction(async (tx) => {
+      const challengeSnap = await tx.get(challengeRef);
+      // ⚠️ 트랜잭션 안의 읽기는 모두 첫 쓰기보다 앞에 와야 한다.
+      const accountSnap = await tx.get(accountRef);
+
+      const challenge = challengeSnap.exists ?
+        (challengeSnap.data() as Challenge) :
+        null;
+      const v = verifyOtp(challenge, inputCode, salt, now);
+
+      if (!v.ok) {
+        if (v.reason === "mismatch") {
+          tx.update(challengeRef, {attempts: v.nextAttempts});
+        }
+        return {kind: "verify-failed" as const, reason: v.reason};
+      }
+
+      // 맞았다. 코드는 즉시 버린다 — 재사용을 막는다.
+      tx.delete(challengeRef);
+
+      if (accountSnap.exists) {
+        const ownerUid = (accountSnap.data() as {uid?: string}).uid;
+        if (ownerUid && ownerUid !== uid) {
+          // ⏸️ 잇지 않는다. 어긋남을 화면에 드러내는 데까지가 1차 범위다.
+          return {kind: "taken" as const};
+        }
+        return {kind: "ok" as const};
+      }
+
+      tx.set(accountRef, {uid, verifiedAt: now});
+      return {kind: "ok" as const};
+    });
+
+    if (result.kind === "verify-failed") {
+      logger.info("인증번호 확인 실패", {
+        ...otpLogFields(key),
+        reason: result.reason,
+      });
+      const message =
+        result.reason === "expired" ?
+          "시간이 지났어요, 다시 받기" :
+          result.reason === "too-many-attempts" ?
+            "여러 번 틀려서 이 인증번호는 못 써요. 다시 받아 주세요." :
+            result.reason === "no-challenge" ?
+              "인증번호를 먼저 받아 주세요." :
+              "인증번호가 맞지 않아요.";
+      throw new HttpsError("permission-denied", message, {
+        reason: result.reason,
+        maxAttempts: OTP_MAX_ATTEMPTS,
+      });
+    }
+
+    if (result.kind === "taken") {
+      logger.info("이미 다른 계정에 연결된 번호", otpLogFields(key));
+      throw new HttpsError(
+        "already-exists",
+        "이 번호는 이미 다른 계정에 연결되어 있어요.",
+        {reason: "phone-taken"},
+      );
+    }
+
+    // 번호를 계정 문서에도 적어 둔다. 🚨 원문이 아니라 해시만 남긴다 —
+    // 이 문서는 클라이언트가 읽는다.
+    await db
+      .collection("users")
+      .doc(uid)
+      .set({phoneVerifiedAt: now, phoneHash: key}, {merge: true});
+
+    logger.info("휴대전화번호 인증 완료", otpLogFields(key));
+    return {verified: true};
   },
 );
