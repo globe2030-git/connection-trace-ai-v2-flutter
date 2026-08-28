@@ -2958,6 +2958,37 @@ class _AddCardModalViewState extends State<AddCardModalView> {
         if (!mounted) return;
         if (deleteOldRecord == null) return; // 대화상자 닫힘 — 저장 보류
 
+        // 🚨 **여기서 명함 사진을 먼저 저장한다**(2026-08-28).
+        //
+        // 사진을 만드는 코드(`saveEncryptedCardImage`)가 **이 분기 아래**에
+        // 있어서, 합치기로 가면 **거기 도달조차 하지 않았다.**
+        //
+        // ```
+        // 새로 찍음 → 중복으로 잡힘 → 「새 명함으로 등록」
+        //   글자는 갱신   ✅
+        //   사진은 버려짐  🚨  목록 썸네일이 안 나온다
+        // ```
+        //
+        // 📌 서버 실측이 이것을 뒷받침한다 — 사진이 명함 수만큼 올라가
+        // 있는데(126/126, id 도 전부 일치) **명함이 그것을 안 가리켰다.**
+        // 「저장이 안 된다」도 「경로가 죽었다」도 아니고 **연결을 안 한 것**이다.
+        //
+        // ⚠️ **`existing.id` 로 저장한다.** 합치면 살아남는 것이 그 id 다.
+        // 새 명함 id 로 저장하면 파일 이름이 안 맞아 나중에 다시 잇지도 못한다.
+        String? mergedCardImagePath = existing.cardImagePath;
+        final mergeUid = context.read<AuthRepository>().firebaseUid;
+        if (_scannedCardImageSourcePath != null && mergeUid != null) {
+          final saved = await ContactImageService().saveEncryptedCardImage(
+            uid: mergeUid,
+            contactId: existing.id,
+            sourcePath: _scannedCardImageSourcePath!,
+          );
+          if (!mounted) return;
+          // ⚠️ 실패하면 기존 사진을 그대로 둔다. 빈 값으로 덮지 않는다 —
+          //    오늘 `officePhone` 이 null 로 덮이던 것과 같은 함정이다.
+          if (saved != null) mergedCardImagePath = saved;
+        }
+
         await _applyUpdateToExisting(
           existing,
           finalAddress,
@@ -2965,6 +2996,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           tags,
           interests,
           deleteOldRecord: deleteOldRecord,
+          cardImagePath: mergedCardImagePath,
         );
         return;
       }
@@ -3324,6 +3356,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     List<String> tags,
     List<String> interests, {
     required bool deleteOldRecord,
+
+    /// 합칠 명함에 붙일 사진 경로. **새로 찍었으면 새 것, 아니면 기존 것.**
+    /// 🚨 호출부가 이미 기존 값으로 채워서 넘긴다 — 여기서 비우지 않는다.
+    required String? cardImagePath,
   }) async {
     final newMemo = _memoController.text.trim();
     String? mergedMemo;
@@ -3406,6 +3442,13 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       interests: interests.isEmpty ? existing.interests : interests,
       geo: resolvedGeo ?? existing.geo,
       memo: mergedMemo,
+      // 🚨 이 둘이 빠져 있어서 합치면 사진이 사라졌다(2026-08-28).
+      cardImagePath: cardImagePath,
+      // 사진이 실제로 있을 때만 "대표 이미지로 사용"이 의미가 있다.
+      // 새로 찍어 사진이 생겼으면 켜고, 아니면 기존 선택을 존중한다.
+      useCardAsAvatar: cardImagePath == null
+          ? false
+          : (_useCardAsAvatar || existing.useCardAsAvatar),
     );
 
     context.read<WalletViewModel>().updateContact(updated);
