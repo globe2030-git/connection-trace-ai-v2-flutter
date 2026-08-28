@@ -11,6 +11,7 @@ import '../../../../data/models/group_model.dart' show kGroupsFeatureEnabled;
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
+import '../../../navigation/main_tab_screen.dart';
 import '../view_models/groups_view_model.dart';
 import '../view_models/wallet_view_model.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
@@ -55,6 +56,10 @@ class _WalletViewState extends State<WalletView> {
       _selectionMode = true;
       _selectedIds.clear();
     });
+    // 선택 모드의 "N개 삭제" 바가 화면 하단 가운데(_buildDeleteBar)에
+    // 뜨는 동안은 같은 자리의 명함 등록 FAB을 숨긴다 — 안 그러면 FAB이
+    // 그 버튼을 가린다(main_tab_screen.dart의 hideFab 문서 참고).
+    MainTabScreen.hideFab.value = true;
   }
 
   void _exitSelectionMode() {
@@ -62,6 +67,7 @@ class _WalletViewState extends State<WalletView> {
       _selectionMode = false;
       _selectedIds.clear();
     });
+    MainTabScreen.hideFab.value = false;
   }
 
   void _toggleSelected(String id) {
@@ -311,11 +317,11 @@ class _WalletViewState extends State<WalletView> {
   }
 
   /// 접혔을 때만 보이는 축약 제목 줄 — "명함 지갑"+개수 배지(선택 모드면
-  /// 선택 개수)만 남기고 태그 칩은 뺀다. 오른쪽 동작(선택/명함 등록, 또는
-  /// 선택 모드의 전체선택·취소)은 스크롤 중에도 계속 쓸 수 있어야 해서
-  /// 그대로 남긴다 — 브리프 표는 "축약 제목+개수 배지"까지만 못 박았지만,
-  /// 등록·선택 진입로가 스크롤하면 사라지는 쪽이 더 불편하다고 판단했다
-  /// (디자이너 재량, 높이 예산 안에서 여유 있게 들어간다).
+  /// 선택 개수)만 남기고 태그 칩은 뺀다. 오른쪽 동작(선택, 또는 선택
+  /// 모드의 전체선택·취소)은 스크롤 중에도 계속 쓸 수 있어야 해서 그대로
+  /// 남긴다 — 브리프 표는 "축약 제목+개수 배지"까지만 못 박았지만, 선택
+  /// 진입로가 스크롤하면 사라지는 쪽이 더 불편하다고 판단했다(디자이너
+  /// 재량, 높이 예산 안에서 여유 있게 들어간다).
   Widget _buildCollapsedTop(
     WalletViewModel viewModel,
     List<ContactModel> contacts,
@@ -351,24 +357,37 @@ class _WalletViewState extends State<WalletView> {
     );
   }
 
-  /// 제목 줄 오른쪽 동작 — 선택 모드면 전체선택/취소, 아니면 선택 진입·
-  /// 명함 등록 아이콘. 접힌 줄·펼친 줄이 같은 동작을 그대로 공유한다.
+  /// 제목 줄 오른쪽 동작 — 선택 모드면 전체선택/취소, 아니면 "선택" 진입
+  /// 아이콘 하나뿐이다. 접힌 줄·펼친 줄이 같은 동작을 그대로 공유한다.
+  ///
+  /// ⚠️ **"명함 등록" 아이콘은 여기 없다(2026-08-28, globe2030님 결정으로
+  /// 제거).** 예전엔 이 자리(머리글 오른쪽 위)와 주변 화면의 같은 자리에
+  /// 각각 하나씩, 자리·모양을 맞춰 두 벌 있었다(2026-08-12 결정). 그런데
+  /// globe2030님이 실사용(하루 아이폰 126장·폴드 190장 등록)에서 "위에
+  /// 있어서 불편하다"고 하셨고, 한 손(엄지) 조작으로는 화면 하단이 낫다는
+  /// 판단에 따라 **main_tab_screen.dart의 FAB(하단 바 가운데 도킹) 하나로
+  /// 합쳤다.** 두 곳에 남기지 않은 이유: 같은 동작이 위·아래 두 곳에
+  /// 있으면 "이전 습관대로 위쪽을 계속 누르는" 경우가 남아 정작 옮긴
+  /// 효과가 옅어진다. 설계 근거는
+  /// docs/planning/specs/card-add-button-placement-2026-08-28.md.
+  ///
+  /// 다만 **빈 지갑 상태의 "첫 명함 등록" 버튼(아래 `_WalletEmptyState`,
+  /// ~1130행)은 그대로 남긴다** — 그건 항상 떠 있는 진입점의 중복이 아니라
+  /// "지갑이 비어 있다"는 안내 문구에 붙은 그 자리 한정 행동 유도이고,
+  /// 목록이 비었을 때만 보인다.
   Widget _buildHeaderTrailingActions(
     WalletViewModel viewModel,
     List<ContactModel> contacts,
   ) {
     if (_selectionMode) return _buildSelectionHeaderActions(contacts);
-    // "+"와 "명함 스캔" 버튼이 같은 기능이라 하나로 합쳤다 — 새 명함 등록
-    // 진입점은 이거 하나만 남긴다. 예전엔 라벨이 붙은 아웃라인 버튼이었지만,
-    // 주변 화면의 "명함 등록" 원형 아이콘 버튼과 자리·모양을 완전히
-    // 통일했다(사용자 결정, 2026-08-12) — 라벨 없이 아이콘만으로도 같은
-    // 화면 배치에 있는 다른 탭들이 이미 이 스타일을 쓰고 있어 낯설지 않다.
+    // "선택" 진입점(F-06)뿐이다. 명함이 있을 때만 보인다 — 빈 지갑에서는
+    // 고를 것이 없다. 스와이프 삭제는 그대로 두고, 이 버튼으로 다건 선택
+    // 삭제에 들어간다. 명함이 하나도 없으면 이 Row는 빈 채로 그려진다
+    // (mainAxisSize.min이라 자리를 차지하지 않는다) — 그 상태의 등록
+    // 진입점은 FAB와 `_WalletEmptyState`의 "첫 명함 등록" 버튼이 맡는다.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // "선택" 진입점(F-06). 명함이 있을 때만 보인다 — 빈 지갑에서는 고를
-        // 것이 없다. 스와이프 삭제는 그대로 두고, 이 버튼으로 다건 선택
-        // 삭제에 들어간다.
         if (viewModel.contacts.isNotEmpty)
           IconButton(
             tooltip: '선택 삭제',
@@ -387,23 +406,6 @@ class _WalletViewState extends State<WalletView> {
             ),
             onPressed: _enterSelectionMode,
           ),
-        if (viewModel.contacts.isNotEmpty) const SizedBox(width: 8),
-        IconButton(
-          tooltip: '명함 등록',
-          style: IconButton.styleFrom(
-            backgroundColor: AppColors.accentSoftStrong,
-            shape: const CircleBorder(),
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(40, 40),
-            maximumSize: const Size(40, 40),
-          ),
-          icon: const AppIcon(
-            AppIconId.addCard,
-            color: AppColors.accentText,
-            size: 20,
-          ),
-          onPressed: () => _openCardEditor(context),
-        ),
       ],
     );
   }
@@ -561,7 +563,11 @@ class _WalletViewState extends State<WalletView> {
     final list = ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
-      padding: EdgeInsets.only(bottom: 24, right: showIndexBar ? 22 : 0),
+      // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의 FAB(명함
+      // 등록)가 `centerDocked`라 하단 바 경계에 반쯤 걸쳐 뜬다 — FAB
+      // 반지름(28)만큼 목록 위로 겹치므로, 그대로 두면 마지막 명함 행이
+      // FAB에 가려진다. 반지름 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다.
+      padding: EdgeInsets.only(bottom: 80, right: showIndexBar ? 22 : 0),
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];

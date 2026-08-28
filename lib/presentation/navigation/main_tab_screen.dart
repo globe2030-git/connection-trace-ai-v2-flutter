@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../features/radar/view_models/radar_view_model.dart';
 import '../features/radar/views/radar_view.dart';
 import '../features/settings/views/settings_view.dart';
+import '../features/wallet/views/add_card_modal_view.dart';
 import '../features/wallet/views/wallet_view.dart';
 
 class MainTabScreen extends StatefulWidget {
@@ -28,6 +29,16 @@ class MainTabScreen extends StatefulWidget {
 
   /// [tabRequest]에 요청을 넣는다. 호출부가 notifier를 직접 만지지 않게 감싼다.
   static void openTab(int index) => tabRequest.value = index;
+
+  /// 명함 등록 FAB을 잠시 숨겨야 할 때 켜는 신호(2026-08-28).
+  ///
+  /// **왜 필요한가**: 명함 지갑의 다건 선택 삭제 모드(F-06)가 켜지면
+  /// 화면 맨 아래에 폭 전체짜리 "N개 삭제" 바가 뜬다(`wallet_view.dart`
+  /// `_buildDeleteBar`). FAB은 `centerDocked`라 그 바로 위, 같은 가로
+  /// 중앙에 얹힌다 — 그대로 두면 FAB이 삭제 버튼 한가운데를 가린다.
+  /// `tabRequest`와 같은 패턴(정적 `ValueNotifier`)으로 화면이 이 셸에
+  /// 신호를 보낸다.
+  static final ValueNotifier<bool> hideFab = ValueNotifier<bool>(false);
 
   /// 테스트 전용: 실제 화면(주변/명함/설정) 대신 가벼운 대역 화면을 주입한다.
   ///
@@ -87,12 +98,17 @@ class _MainTabScreenState extends State<MainTabScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     MainTabScreen.tabRequest.addListener(_handleTabRequest);
+    MainTabScreen.hideFab.addListener(_handleHideFabChanged);
+    // 이 화면이 다시 만들어질 때(예: 테스트, 핫리로드) 이전 세션이 남긴
+    // 값이 그대로 있으면 FAB이 이유 없이 숨어 있는 것처럼 보인다.
+    MainTabScreen.hideFab.value = false;
   }
 
   @override
   void dispose() {
     _exitArmTimer?.cancel();
     MainTabScreen.tabRequest.removeListener(_handleTabRequest);
+    MainTabScreen.hideFab.removeListener(_handleHideFabChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -103,6 +119,11 @@ class _MainTabScreenState extends State<MainTabScreen>
     setState(() => _currentIndex = requested);
     // 요청을 소비한다. 비우면 이 리스너가 한 번 더 불리지만 위에서 null로 걸러진다.
     MainTabScreen.tabRequest.value = null;
+  }
+
+  void _handleHideFabChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   @override
@@ -180,6 +201,45 @@ class _MainTabScreenState extends State<MainTabScreen>
       },
       child: Scaffold(
         body: IndexedStack(index: _currentIndex, children: _screens),
+        // 명함 등록 진입점을 "주변"·"명함" 두 화면의 머리글(화면 오른쪽 위)
+        // 대신 하단 바 가운데로 옮긴다(globe2030님 결정, 2026-08-28 —
+        // "한장 한장 할때도 연속으로 할때도 명함추가 버튼이 위에 있어서
+        // 불편해. … 하단의 설정 옆에 있으면 좋겠다"). 원인은 한 손(엄지)
+        // 조작 — 화면 오른쪽 위는 큰 화면(폴드 등)에서 엄지가 닿기 어렵고,
+        // 하단은 항상 닿는다. 설계 문서:
+        // docs/planning/specs/card-add-button-placement-2026-08-28.md.
+        //
+        // `NavigationBar`의 세 목적지("주변"·"명함"·"설정")에 네 번째
+        // 항목으로 끼워 넣지 않고 `FloatingActionButton`으로 띄운 이유:
+        // 저 셋은 눌러서 "머무는 곳"(선택 상태가 남는다)인데, 명함 등록은
+        // 눌러서 모달을 열고 끝나면 닫히는 "동작"이라 성격이 다르다. FAB는
+        // 모양 자체가 달라(떠 있고, 선택 상태가 없다) 탭인지 동작인지
+        // 헷갈릴 일이 없다 — 표준 Material 관습이라 학습 비용도 없다.
+        //
+        // "설정" 탭에서는 숨긴다 — globe2030님 원문은 "명함 지갑이던
+        // 주변이던"이지 설정 화면까지 포함하지 않았고, 설정 화면에 명함
+        // 등록 동작이 떠 있는 것은 맥락상 어색하다.
+        //
+        // [MainTabScreen.hideFab]이 켜져 있을 때도 숨긴다 — 명함 지갑의
+        // 다건 선택 삭제 모드가 이 자리(하단 가운데)에 폭 전체짜리
+        // "N개 삭제" 바를 띄우는데, FAB을 그대로 두면 그 버튼을 가린다.
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        floatingActionButton:
+            _currentIndex == MainTabScreen.settingsTabIndex ||
+                MainTabScreen.hideFab.value
+            ? null
+            : FloatingActionButton(
+                heroTag: 'add_card_fab',
+                tooltip: '명함 등록',
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.white,
+                onPressed: () => AddCardModalView.show(context),
+                child: const AppIcon(
+                  AppIconId.addCard,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: (index) {

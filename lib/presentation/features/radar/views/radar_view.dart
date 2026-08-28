@@ -161,7 +161,14 @@ class _RadarViewState extends State<RadarView> {
                             return false;
                           },
                           child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
+                            // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의
+                            // FAB(명함 등록)가 `centerDocked`라 하단 바 경계에
+                            // 반쯤 걸쳐 뜬다 — FAB 반지름(28)만큼 이 스크롤
+                            // 영역 위로 겹치므로, 그대로 두면 마지막 카드(예:
+                            // 가까운 인맥 목록의 끝)가 FAB에 가려진다. 반지름
+                            // 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다
+                            // (wallet_view.dart와 같은 값·같은 근거).
+                            padding: const EdgeInsets.fromLTRB(18, 14, 18, 80),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -545,10 +552,18 @@ class _RadarViewState extends State<RadarView> {
   }
 
   /// 스크롤 맨 위에서만 보이는 큰 제목 블록 — 큰 제목("주변 인맥")과 인사말/
-  /// 검색 문구, 명함등록·QR 버튼. 브리프 ⑦ 표에서 "흘려보냄"으로 지정한 두
+  /// 검색 문구, QR 스캔 버튼. 브리프 ⑦ 표에서 "흘려보냄"으로 지정한 두
   /// 항목 중 하나(나머지 하나인 지도 카드는 스크롤 본문 쪽에서 `!isSearching`
   /// 조건과 함께 그린다 — 검색 중에는 원래도 숨겼던 카드라 이 자리에 두면
   /// 그 규칙과 부딪힌다).
+  ///
+  /// ⚠️ **"명함 등록" 아이콘은 여기 없다(2026-08-28, globe2030님 결정으로
+  /// 제거).** 예전엔 이 자리와 명함 지갑 머리글 오른쪽 위, 두 곳에 자리·
+  /// 모양을 맞춰 하나씩 있었다(2026-08-12 결정). globe2030님이 실사용
+  /// (하루 아이폰 126장·폴드 190장 등록)에서 "위에 있어서 불편하다"고
+  /// 하셨고, 한 손(엄지) 조작에는 하단이 낫다는 판단에 따라
+  /// `main_tab_screen.dart`의 FAB(하단 바 가운데 도킹) 하나로 합쳤다.
+  /// 설계 근거: docs/planning/specs/card-add-button-placement-2026-08-28.md.
   /// [context]를 지역 매개변수로 받는다 — `State.context`(게터)를 그대로
   /// 쓰면 분석기가 `await` 뒤 `mounted` 가드를 좁혀 읽지 못해
   /// `use_build_context_synchronously`가 잘못 걸린다(2026-08-22 실측,
@@ -606,33 +621,17 @@ class _RadarViewState extends State<RadarView> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            IconButton(
-              tooltip: '명함 등록',
-              style: IconButton.styleFrom(
-                backgroundColor: AppColors.accentSoftStrong,
-                shape: const CircleBorder(),
-                // 기본 IconButton은 최소 48x48로 렌더링돼 옆의 QR 버튼과
-                // 크기가 안 맞았다 — 두 아이콘을 정확히 같은 크기(40px)로
-                // 고정.
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(40, 40),
-                maximumSize: const Size(40, 40),
-              ),
-              icon: const AppIcon(
-                AppIconId.addCard,
-                color: AppColors.accentText,
-                size: 20,
-              ),
-              onPressed: () => AddCardModalView.show(context),
-            ),
+            // "명함 등록" 원형 버튼은 여기 있었다(2026-08-28에 FAB으로
+            // 옮기며 제거 — 위 문서 주석 참고). 남은 QR 버튼의 40×40
+            // 크기 고정은 원래 "옆의 명함등록 버튼과 크기를 맞추려는"
+            // 목적이었는데, 그 짝이 없어진 지금도 기본 IconButton(48×48)
+            // 보다 이 화면의 다른 원형 아이콘들과 통일된 크기라 그대로
+            // 둔다.
             IconButton(
               tooltip: 'QR 스캔',
               style: IconButton.styleFrom(
                 backgroundColor: AppColors.accentSoftStrong,
                 shape: const CircleBorder(),
-                // 기본 IconButton은 최소 48x48로 렌더링돼 옆의 명함등록
-                // 버튼과 크기가 안 맞았다 — 두 아이콘을 정확히 같은
-                // 크기(40px)로 고정.
                 padding: EdgeInsets.zero,
                 minimumSize: const Size(40, 40),
                 maximumSize: const Size(40, 40),
