@@ -160,6 +160,29 @@ void main() {
     //
     // ✅ 실물: 새 빌드 설치 직후 **폴드 사진 0 → 35장 · 아이폰 2 → 66장.**
     // 555가 막으려던 일이 **555·556·558을 다 넣은 뒤에** 일어났다.
+    // 🚨 **오늘만 네 번째로 같은 모양이다**(2026-08-28, 추가 562).
+    //
+    // 추가 561을 넣기 전에 깔린 빌드가 **본문만 표시해 둔 기기**가 실제로
+    // 둘 있었다. 조건이 *"본문 표시가 있으면 건너뛴다"*였으므로, 그 기기에서는
+    // 새 빌드를 깔아도 **사진 장부에 영영 안 붙는다.**
+    //
+    // 📌 554 *"경로가 있으면 안 건드린다"* · 556 *"일회성 마이그레이션만
+    // 막는다"* · 558 *"비었을 때만 되살린다"* 와 같다. **조건을 쓸 때는
+    // "이미 된 것"이 아니라 "할 일이 남았나"를 물어야 한다.**
+    test('🚨 본문만 표시된 기기에서도 돈다 — 「이미 됐다」로 건너뛰지 않는다', () {
+      final src = File(
+        'lib/data/repositories/contacts_repository.dart',
+      ).readAsStringSync();
+      final fn = src.substring(src.indexOf('_markCarriedOverOnceIfNeeded(String uid)'));
+      final body = fn.substring(0, fn.indexOf('\n  /// 주소는 있는데'));
+      // 본문 표시만 보고 건너뛰던 옛 조건이 남아 있으면 안 된다.
+      expect(
+        body.contains("if ((await service.load()).isNotEmpty) return;"),
+        isFalse,
+      );
+      expect(body.contains('await photos.hasCarriedOver()'), isTrue);
+    });
+
     test('🚨 사진 장부에도 같이 표시한다 — 여기가 비면 사진이 새 계정으로 올라간다', () {
       final src = File(
         'lib/data/repositories/contacts_repository.dart',
@@ -167,7 +190,7 @@ void main() {
       final fn = src.substring(src.indexOf('_markCarriedOverOnceIfNeeded(String uid)'));
       final body = fn.substring(0, fn.indexOf('\n  /// 주소는 있는데'));
       expect(
-        body.contains('CardPhotoBackupStateService().markCarriedOverAll'),
+        body.contains('photos.markCarriedOverAll'),
         isTrue,
         reason: '본문만 표시하면 사진은 그대로 올라간다 — 실물로 겪었다',
       );

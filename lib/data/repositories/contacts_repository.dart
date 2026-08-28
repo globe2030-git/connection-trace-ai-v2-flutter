@@ -376,7 +376,20 @@ class ContactsRepository extends ChangeNotifier {
   /// 둘이면 표시도 둘 다 해야 한다.
   Future<void> _markCarriedOverOnceIfNeeded(String uid) async {
     final service = CarriedOverContactsService();
-    if ((await service.load()).isNotEmpty) return;
+    final photos = CardPhotoBackupStateService();
+    // 🚨 **둘 중 하나라도 비어 있으면 돈다**(2026-08-28, 추가 562).
+    //
+    // 처음에는 본문 표시만 보고 *"있으면 건너뛴다"*로 했다. 그런데 추가 561을
+    // 넣기 **전에** 깔린 빌드가 **본문만 표시해 둔 기기**가 실제로 둘 있었다 —
+    // 그 기기에서는 새 빌드를 깔아도 **사진 장부에 영영 안 붙는다.**
+    //
+    // 📌 오늘만 네 번째로 같은 모양이다(554 *"경로가 있으면 안 건드린다"* ·
+    // 556 *"일회성 마이그레이션만 막는다"* · 558 *"비었을 때만 되살린다"*).
+    // **좋은 의도로 만든 조건이 「고칠 기회」를 막는다** — 조건을 쓸 때는
+    // *"이미 된 것"*이 아니라 **"할 일이 남았나"**를 물어야 한다.
+    if ((await service.load()).isNotEmpty && await photos.hasCarriedOver()) {
+      return;
+    }
     final switchedAt = await DataBackupService.lastKeepSwitchAt(uid);
     if (switchedAt == null) return;
     final ids = selectCarriedOverByTime(
@@ -389,7 +402,7 @@ class ContactsRepository extends ChangeNotifier {
     await service.markAll(ids);
     // 🚨 사진 장부에도 같이 적는다(추가 561). 여기가 비어 있으면 소급
     //    업로드가 그 명함들의 사진을 새 계정 서버로 올린다.
-    await CardPhotoBackupStateService().markCarriedOverAll(ids);
+    await photos.markCarriedOverAll(ids);
     // 건수만 남긴다 — 어느 명함인지는 개인정보로 이어질 수 있다.
     debugPrint('넘어온 명함 소급 표시: ${ids.length}건(본문·사진)');
   }
