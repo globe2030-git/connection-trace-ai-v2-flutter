@@ -67,6 +67,18 @@ class GeoBackfillService {
   static const int _attemptsSaveEvery = 5;
 
   static const String _attemptsKey = 'geo_backfill_attempts_v1';
+
+  /// 같은 주소에서 좌표를 빌려 쓴 **누적** 횟수(2026-08-28).
+  ///
+  /// ## ⚠️ 왜 단계별 집계에 넣지 않았나
+  ///
+  /// [_stageStatsKey]는 **마지막 회차 한 번**만 담고 덮어쓴다. 그런데 등록
+  /// 경로의 재사용은 **회차와 무관하게** 일어난다 — 명함을 저장할 때마다다.
+  /// 같은 자리에 쓰면 **다음 백필 회차가 그 숫자를 지운다.**
+  ///
+  /// 📌 그리고 globe2030님이 알고 싶어 한 것은 *"이번 회차에 몇 건"*이 아니라
+  /// **"주소가 얼마나 겹치나"**다. 그건 누적이라야 답이 된다.
+  static const String _reuseTotalKey = 'geo_reuse_total_v1';
   static const String _shapeStatsKey = 'geo_backfill_fail_shapes_v1';
 
   /// 마지막 백필 회차의 단계별 집계(추가 435 계측) — 값은 항상 **이전 회차를
@@ -211,6 +223,9 @@ class GeoBackfillService {
         attempts.remove(contact.id);
         stageCounts[GeoStage.reusedFromSameAddress] =
             (stageCounts[GeoStage.reusedFromSameAddress] ?? 0) + 1;
+        // 회차 스냅샷과 별개로 누적도 센다 — 등록 경로의 재사용과 합쳐야
+        // "주소가 얼마나 겹치나"의 답이 된다.
+        await recordAddressReuse();
         if (onResolved != null) {
           await onResolved(contact.id, borrowed);
         }
@@ -413,6 +428,29 @@ class GeoBackfillService {
     } catch (e) {
       debugPrint('행안부 단계별 집계 로드 실패: $e');
       return const {};
+    }
+  }
+
+  /// 같은 주소에서 좌표를 빌려 썼음을 한 건 기록한다(누적).
+  ///
+  /// 📌 **주소도 좌표도 안 남긴다. 횟수만 센다.**
+  static Future<void> recordAddressReuse() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_reuseTotalKey, (prefs.getInt(_reuseTotalKey) ?? 0) + 1);
+    } catch (e) {
+      debugPrint('좌표 재사용 집계 저장 실패: $e');
+    }
+  }
+
+  /// 같은 주소에서 좌표를 빌려 쓴 누적 횟수. 기록이 없으면 0.
+  static Future<int> readAddressReuseTotal() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_reuseTotalKey) ?? 0;
+    } catch (e) {
+      debugPrint('좌표 재사용 집계 로드 실패: $e');
+      return 0;
     }
   }
 

@@ -346,6 +346,23 @@ class ContactsRepository extends ChangeNotifier {
   /// 회차 도중 앱이 죽으면 그 회차의 성공분이 통째로 사라지는 것이 확인됐다.
   /// 지금은 [GeoBackfillService.backfill]의 `onResolved` 콜백으로 한 건씩
   /// 반영·저장하므로 "도중에 죽어도 이미 성공한 것은 남는다."
+  /// [address]와 **글자 그대로 같은** 주소를 가진 명함의 좌표. 없으면 null.
+  ///
+  /// 등록 화면이 저장 직전에 부른다 — 같은 회사 명함이 여러 장이면 같은
+  /// 주소를 그 수만큼 물어보고 있었다(globe2030님 지적, 2026-08-28).
+  ///
+  /// ⚠️ **정규화하지 않는다.** 이유는 [_knownGeoByAddress] 주석과 같다.
+  GeoPosition? geoForSameAddress(String address) {
+    final key = address.trim();
+    if (key.isEmpty) return null;
+    final geo = _knownGeoByAddress()[key];
+    // 빌려 쓴 것을 센다. 이 숫자가 곧 "주소가 얼마나 겹치나"의 실측이다.
+    // ⚠️ 기다리지 않는다 — 저장 흐름을 붙잡을 이유가 없고, 실패해도
+    // 집계 한 건이 빠질 뿐이다.
+    if (geo != null) unawaited(GeoBackfillService.recordAddressReuse());
+    return geo;
+  }
+
   /// 주소 원문 → 이미 아는 좌표. 같은 주소를 두 번 물어보지 않기 위한 것이다.
   ///
   /// ⚠️ **주소를 트림만 하고 그대로 쓴다.** 정규화하지 않는 이유는

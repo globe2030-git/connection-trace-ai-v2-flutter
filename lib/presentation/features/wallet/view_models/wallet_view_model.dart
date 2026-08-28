@@ -340,6 +340,11 @@ class WalletViewModel extends ChangeNotifier {
   /// 휴대폰끼리 · 이메일 완전 일치 · (번호가 양쪽 다 없을 때만) 이름+회사를
   /// 본다. **사무실·직통·팩스는 보지 않는다** — 대표번호는 같은 회사 사람
   /// 여럿이 공유한다(사용자 확정 2026-08-26).
+  /// 같은 주소를 가진 명함의 좌표(등록 화면이 저장 직전에 본다).
+  /// 판정은 저장소 한 곳에만 둔다 — 여기서 다시 세지 않는다.
+  GeoPosition? geoForSameAddress(String address) =>
+      _contactsRepository.geoForSameAddress(address);
+
   DuplicateMatch? findDuplicate({
     required String phone,
     String? email,
