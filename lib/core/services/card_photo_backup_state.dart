@@ -226,6 +226,16 @@ class CardPhotoBackupStateService {
     await _save(map);
   }
 
+  /// 「넘어온 것」 표시가 하나라도 있나(추가 562).
+  ///
+  /// 🚨 소급 표시가 **돌아야 하는지 판단하는 데 쓴다.** 본문 장부만 보고
+  /// 판단하면, **본문은 이미 표시됐고 사진은 아직인 기기**에서 영영 안 돈다 —
+  /// 실제로 그 상태의 기기가 둘 있었다(추가 561을 넣은 직후).
+  Future<bool> hasCarriedOver() async {
+    final map = await load();
+    return map.raw.values.contains(stateToName(CardPhotoBackupState.carriedOver));
+  }
+
   /// 대조 결과로 장부를 **통째로 갈아 끼운다**(추가 558).
   ///
   /// ⚠️ [markSyncedAll]처럼 덧붙이지 않는다 — 대조의 요점이 **틀린 기록을
