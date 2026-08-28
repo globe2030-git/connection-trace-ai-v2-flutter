@@ -1,3 +1,4 @@
+import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -322,11 +323,54 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     await _saveToDisk();
     // 로컬에만 있거나 로컬이 더 최신인 명함을 서버로 올린다(손실 방지·편집 전파).
-    for (final c in outcome.toPush) {
+    //
+    // 🚨 **단, 다른 계정에서 넘어온 명함은 뺀다**(2026-08-28, 추가 556).
+    //
+    // 계정 전환에서 「유지」를 고르면 명함 본문을 새 계정 서버로 **일부러
+    // 안 올린다**(`mayMigrateToServer`). 그런데 그 보호가 **일회성
+    // 마이그레이션 하나에만** 걸려 있었다 — 전환하는 그 실행에서는 안
+    // 올리지만, 그때 "마지막 로그인 계정"이 갱신되므로 **다음에 앱을 켜면
+    // 이 함수가 그대로 올렸다.** 이 함수는 "넘어온 명함"이라는 개념을
+    // 몰랐다.
+    //
+    // ✅ 실물: 폴드는 「유지」 전환 뒤 **새 명함을 하나도 등록하지 않았는데**
+    // 같은 시간대에 서버 명함이 103건이 됐다(사용자 확인 + 서버 실물 조회).
+    await _markCarriedOverOnceIfNeeded(uid);
+    final carriedOver = await CarriedOverContactsService().load();
+    final pushable = selectPushTargets(
+      outcome.toPush,
+      carriedOver,
+      idOf: (c) => c.id,
+    );
+    for (final c in pushable) {
       unawaited(DataBackupService.backupContact(uid, c));
     }
     // 서버 백업엔 좌표가 없으므로(C안) 좌표 없는 명함의 좌표를 주소로 채운다.
     unawaited(backfillMissingGeo());
+  }
+
+  /// 「유지」로 전환한 뒤 **표시가 없는 기기**를 소급해서 한 번 표시한다(추가 556).
+  ///
+  /// 🚨 표시는 전환하는 순간에 붙는데, **그 코드가 생기기 전에 전환한 기기에는
+  /// 없다.** 그 기기들이 바로 이번에 샌 기기들이라, 여기가 없으면 이번 수정이
+  /// **정작 새고 있던 기기에는 안 듣는다.**
+  ///
+  /// 이미 표시가 하나라도 있으면 건너뛴다 — 전환 시점에 제대로 붙은 기기다.
+  Future<void> _markCarriedOverOnceIfNeeded(String uid) async {
+    final service = CarriedOverContactsService();
+    if ((await service.load()).isNotEmpty) return;
+    final switchedAt = await DataBackupService.lastKeepSwitchAt(uid);
+    if (switchedAt == null) return;
+    final ids = selectCarriedOverByTime(
+      _contacts,
+      switchedAt: switchedAt,
+      idOf: (c) => c.id,
+      updatedAtOf: (c) => c.updatedAt,
+    );
+    if (ids.isEmpty) return;
+    await service.markAll(ids);
+    // 건수만 남긴다 — 어느 명함인지는 개인정보로 이어질 수 있다.
+    debugPrint('넘어온 명함 소급 표시: ${ids.length}건');
   }
 
   /// 주소는 있는데 좌표가 없는 명함들의 좌표를 주소로부터 다시 계산해 채운다.

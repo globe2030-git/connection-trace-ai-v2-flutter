@@ -16,6 +16,7 @@ import '../../../../core/utils/seeded_tag_cleanup.dart';
 import '../../../../core/services/remote_signout_service.dart';
 import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/card_photo_backup_state.dart';
+import '../../../../core/services/carried_over_contacts.dart';
 import '../../../../core/services/card_photo_quota_service.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
@@ -1788,6 +1789,11 @@ Future<bool> _cleanUpLocalArtifacts(
   //      대개 그냥 맞지 않는 기록으로 남지만, 지갑 목록의 표시를 어긋나게
   //      만들 수 있어 함께 비운다.
   await CardPhotoBackupStateService().clear();
+
+  // 1-1) 다른 계정에서 넘어온 명함 표시(추가 556). 남겨 두면 **다음 계정이
+  //      자기 명함을 서버에 안 올리게** 된다 — 백업이 조용히 멈추는 방향이라
+  //      위 장부보다 오히려 더 나쁘다.
+  await CarriedOverContactsService().clear();
 
   // 1-2) 갈무리해 둔 사진 백업 한도. 앞 사람의 한도가 뒷사람에게 적용되면
   //      안 된다 — 충전 이용자가 쓰던 기기에 무료 이용자가 로그인하면

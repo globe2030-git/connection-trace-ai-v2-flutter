@@ -242,6 +242,36 @@ class DataBackupService {
   ///
   /// 최근 [_switchLogCap]건만 남긴다. 계정 전환은 드문 일이라 이 정도면
   /// 충분하고, 무한히 쌓아 둘 이유가 없다(§21① 최소보유).
+  /// 이 계정으로 갈아타면서 **「유지」를 고른 가장 최근 시각**. 없으면 null.
+  ///
+  /// 🚨 **이미 기기에 있던 명함이 「넘어온 것」인지 가리는 데 쓴다**(추가 556).
+  /// 표시는 전환하는 순간에 붙이는데, **그 코드가 생기기 전에 전환한 기기에는
+  /// 표시가 없다.** 그 기기들이 바로 이번에 샌 기기들이라, 소급해서 가릴
+  /// 기준이 필요하다.
+  ///
+  /// 📌 기준을 **시각**으로 잡는 이유: 전환보다 오래된 명함은 앞 계정에서
+  /// 넘어온 것이고, 전환 뒤에 손댄 명함은 **이 계정에서 만든 것**이다.
+  /// "전부 넘어온 것으로 친다"로 하면 **자기 명함까지 백업이 조용히 멈춘다.**
+  static Future<DateTime?> lastKeepSwitchAt(String uid) async {
+    try {
+      final snap = await _userDoc(uid).get();
+      final raw = (snap.data()?['accountSwitches'] as List<dynamic>?) ?? const [];
+      DateTime? latest;
+      for (final e in raw.whereType<Map<String, dynamic>>()) {
+        if (e['choice'] != 'keep') continue;
+        final at = DateTime.tryParse(e['at'] as String? ?? '');
+        if (at == null) continue;
+        if (latest == null || at.isAfter(latest)) latest = at;
+      }
+      return latest;
+    } catch (e) {
+      // 못 읽으면 소급 표시를 하지 않는다 — 잘못 표시하면 자기 명함의
+      // 백업이 멈추는 쪽으로 틀린다.
+      debugPrint('계정 전환 기록 조회 실패: ${e.runtimeType}');
+      return null;
+    }
+  }
+
   static Future<void> recordAccountSwitch(
     String uid, {
     required String previousUid,
