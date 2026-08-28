@@ -150,6 +150,31 @@ void main() {
       expect(src.contains('DataBackupService.lastKeepSwitchAt'), isTrue);
     });
 
+    // 🚨 **장부가 둘이면 표시도 둘 다 해야 한다**(2026-08-28, 추가 561).
+    //
+    // 처음에는 본문 장부에만 붙였다. 사진 쪽은 **다른 장부**를 보는데, 그
+    // 장부의 「넘어온 것」 표시는 **계정을 바꾸는 순간에만** 붙어(추가 555)
+    // **이미 바꾼 기기에는 없었다.** 그 상태에서 추가 558이 사진 장부의 틀린
+    // 「백업됨」을 지우자, 소급 업로드가 그것들을 "아직 안 올린 것"으로 보고
+    // **올리기 시작했다.**
+    //
+    // ✅ 실물: 새 빌드 설치 직후 **폴드 사진 0 → 35장 · 아이폰 2 → 66장.**
+    // 555가 막으려던 일이 **555·556·558을 다 넣은 뒤에** 일어났다.
+    test('🚨 사진 장부에도 같이 표시한다 — 여기가 비면 사진이 새 계정으로 올라간다', () {
+      final src = File(
+        'lib/data/repositories/contacts_repository.dart',
+      ).readAsStringSync();
+      final fn = src.substring(src.indexOf('_markCarriedOverOnceIfNeeded(String uid)'));
+      final body = fn.substring(0, fn.indexOf('\n  /// 주소는 있는데'));
+      expect(
+        body.contains('CardPhotoBackupStateService().markCarriedOverAll'),
+        isTrue,
+        reason: '본문만 표시하면 사진은 그대로 올라간다 — 실물로 겪었다',
+      );
+      // 같은 id 목록을 써야 한다. 따로 계산하면 두 장부가 어긋난다.
+      expect(body.contains('markCarriedOverAll(ids)'), isTrue);
+    });
+
     test('탈퇴하면 비운다 — 다음 계정이 자기 명함을 못 올리면 안 된다', () {
       final src = File(
         'lib/presentation/features/settings/views/settings_view.dart',
