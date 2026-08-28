@@ -12,6 +12,7 @@ import '../../../../core/icons/app_icons.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/card_face_label.dart';
 import '../../../../core/utils/card_form_validation.dart' as form_validation;
+import '../../../../core/utils/card_history_note.dart';
 import '../../../../core/utils/geo_utils.dart';
 import '../../../../core/utils/korean_phone_formatter.dart';
 import '../../../../core/utils/ocr_origin.dart';
@@ -217,6 +218,16 @@ class _AddCardModalViewState extends State<AddCardModalView> {
   late TextEditingController _tagsController;
   late TextEditingController _interestsController;
   late TextEditingController _memoController;
+
+  /// 이 명함에 쌓여 있던 **이전 명함 기록** 원문(`[이전 정보 · …]` 줄들).
+  ///
+  /// 🚨 **메모 칸에는 안 띄운다.** 예전에는 이력까지 통째로 띄우고 저장할 때
+  /// 그 텍스트를 그대로 덮어써서, **이용자가 메모를 정리하며 이력 줄을 지우면
+  /// 이력이 영영 사라졌다**(2026-08-28). 이제 화면에는 이용자가 쓴 메모만
+  /// 보이고, 이력은 여기 들고 있다가 저장할 때 다시 붙인다.
+  ///
+  /// 📌 이용자가 지울 수 있는 곳에 지우면 안 되는 것을 두지 않는다.
+  String _cardHistoryLines = '';
 
   // Strict Contiguous Sequential Focus Nodes to prevent Tab/Enter key jumping
   final _nameFocusNode = FocusNode();
@@ -490,7 +501,11 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     _interestsController = TextEditingController(
       text: c != null ? c.interests.join(', ') : '',
     );
-    _memoController = TextEditingController(text: c?.memo ?? '');
+    // 이력은 메모 칸에 안 띄우고 따로 보관한다(위 _cardHistoryLines 참고).
+    _cardHistoryLines = CardHistoryNote.historyLines(c?.memo);
+    _memoController = TextEditingController(
+      text: CardHistoryNote.userMemo(c?.memo),
+    );
     _fieldFocusOrder = [
       _nameFocusNode,
       _companyFocusNode,
@@ -3076,9 +3091,12 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           : const [],
       commLogs: _isEditing ? widget.contactToEdit!.commLogs : [],
       isPriority: _isEditing ? widget.contactToEdit!.isPriority : true,
-      memo: _memoController.text.trim().isEmpty
-          ? null
-          : _memoController.text.trim(),
+      // 이용자가 고친 메모 위에 이력을 도로 붙인다. 화면에 안 보이던 것이라
+      // 이용자는 건드릴 수 없었고, 그래서 사라지지 않는다.
+      memo: CardHistoryNote.join(
+        history: _cardHistoryLines,
+        userMemo: _memoController.text,
+      ),
       cardImagePath: cardImagePath,
       // 이미지가 실제로 있을 때만 "대표 이미지로 사용"이 의미가 있다.
       useCardAsAvatar: _useCardAsAvatar && cardImagePath != null,
@@ -3347,10 +3365,30 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     List<String> interests, {
     required bool deleteOldRecord,
   }) {
+    // 🚨 `existing` 에 이미 쌓여 있던 이력을 지킨다(2026-08-28).
+    //
+    // 예전에는 여기서 `_memoController` 텍스트만 썼다. 그런데 그 칸에는 **이
+    // 명함(새로 찍은 쪽)의 메모**만 들어 있고, **합쳐지는 대상(`existing`)의
+    // 이력은 어디에도 안 실렸다.** 그래서 두 번째 이직부터 **첫 번째 이력이
+    // 사라졌다** — 이력이 늘 한 벌만 남았다.
+    //
+    // 📌 위 `_cardHistoryLines` 와 다른 값이다. 그쪽은 "지금 편집 중인 명함"의
+    // 이력이고, 이쪽은 "합쳐지는 상대"의 이력이다. 합치기에서는 상대 것이
+    // 이어져야 한다.
+    final existingHistory = CardHistoryNote.historyLines(existing.memo);
+    final existingUserMemo = CardHistoryNote.userMemo(existing.memo);
     final newMemo = _memoController.text.trim();
     String? mergedMemo;
     if (deleteOldRecord) {
-      mergedMemo = newMemo.isEmpty ? null : newMemo;
+      // 「삭제」를 골랐어도 **이용자가 손으로 쓴 메모**는 남긴다 — 지우기로 한
+      // 것은 명함 정보이지 메모가 아니다.
+      mergedMemo = CardHistoryNote.join(
+        history: '',
+        userMemo: [
+          if (existingUserMemo.isNotEmpty) existingUserMemo,
+          if (newMemo.isNotEmpty) newMemo,
+        ].join('\n'),
+      );
     } else {
       final dateLabel = DateTime.now().toIso8601String().substring(0, 10);
       final oldFields = [
@@ -3371,7 +3409,17 @@ class _AddCardModalViewState extends State<AddCardModalView> {
           existing.address,
       ].join(' / ');
       final oldSnapshot = '[이전 정보 · $dateLabel] $oldFields';
-      mergedMemo = [oldSnapshot, if (newMemo.isNotEmpty) newMemo].join('\n');
+      // 새 기록이 맨 위, 그 아래 예전 기록들, 그 아래 이용자 메모.
+      mergedMemo = CardHistoryNote.join(
+        history: [
+          oldSnapshot,
+          if (existingHistory.isNotEmpty) existingHistory,
+        ].join('\n'),
+        userMemo: [
+          if (existingUserMemo.isNotEmpty) existingUserMemo,
+          if (newMemo.isNotEmpty) newMemo,
+        ].join('\n'),
+      );
     }
 
     // id/talkingPoints/commLogs/isPriority는 copyWith에서 안 건드리면 기존
