@@ -348,12 +348,16 @@ class WalletViewModel extends ChangeNotifier {
   DuplicateMatch? findDuplicate({
     required String phone,
     String? email,
+    String? officePhone,
+    String? directPhone,
     String? name,
     String? company,
     String? excludeId,
   }) => _contactsRepository.findDuplicate(
     phone: phone,
     email: email,
+    officePhone: officePhone,
+    directPhone: directPhone,
     name: name,
     company: company,
     excludeId: excludeId,

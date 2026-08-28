@@ -197,26 +197,41 @@ void main() {
       return repo;
     }
 
+    // ⚠️ 2026-08-29(추가 577)에 규칙이 **이름 + 휴대폰**으로 좁혀졌다. 번호만
+    // 넘기던 좁은 통로(`findByPhone`)는 그 규칙과 뜻이 어긋나 없앴다 —
+    // 남겨 두면 **규칙이 두 벌**이 된다. 여기서는 이름을 함께 넘긴다.
+    DuplicateMatch? find(
+      ContactsRepository repo,
+      String phone, {
+      String name = '이름c1',
+      String? excludeId,
+    }) => repo.findDuplicate(name: name, phone: phone, excludeId: excludeId);
+
     test('⭐ 하이픈·공백 표기가 달라도 같은 번호로 인식한다', () async {
       final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
-      expect(repo.findByPhone('010 1234 5678')?.id, 'c1');
-      expect(repo.findByPhone('01012345678')?.id, 'c1');
+      expect(find(repo, '010 1234 5678')?.contact.id, 'c1');
+      expect(find(repo, '01012345678')?.contact.id, 'c1');
     });
 
     test('없는 번호면 null', () async {
       final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
-      expect(repo.findByPhone('010-9999-9999'), isNull);
+      expect(find(repo, '010-9999-9999'), isNull);
     });
 
     test('빈 번호는 중복으로 보지 않는다', () async {
       final repo = await repoWith([withPhone('c1', '')]);
-      expect(repo.findByPhone(''), isNull);
-      expect(repo.findByPhone('   '), isNull);
+      expect(find(repo, ''), isNull);
+      expect(find(repo, '   '), isNull);
+    });
+
+    test('🚨 번호가 같아도 이름이 다르면 아니다 — 대표번호 함정을 막는 자리다', () async {
+      final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
+      expect(find(repo, '010-1234-5678', name: '다른사람'), isNull);
     });
 
     test('excludeId로 자기 자신은 제외한다(편집 시)', () async {
       final repo = await repoWith([withPhone('c1', '010-1234-5678')]);
-      expect(repo.findByPhone('010-1234-5678', excludeId: 'c1'), isNull);
+      expect(find(repo, '010-1234-5678', excludeId: 'c1'), isNull);
     });
   });
 

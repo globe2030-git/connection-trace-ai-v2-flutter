@@ -1,14 +1,24 @@
-// 같은 사람 판정 규칙 검증 (P1-40 확장, 2026-08-26 사용자 확정).
+// 같은 사람 판정 규칙 검증 (P1-40 → 2026-08-26 확장 → **2026-08-29 좁힘**, 추가 577).
 //
-// 종전 판정은 휴대폰 칸끼리만 비교했다. 그런데 명함에는 이메일도 있고, 폰
-// 주소록에서 가져오면 번호가 아예 없는 항목도 흔하다. 넓히면서 **넓히면 안
-// 되는 자리**도 함께 못 박는다.
+// ## 규칙이 바뀌었다 — 「이름 + 휴대폰」이 기준이다
 //
-// 🚨 사용자 지적: "대표번호는 같은 사람이 많아서 안 돼."
-//    회사 대표번호는 그 회사 사람 모두의 명함에 같이 인쇄된다. 그것으로
-//    사람을 맞추면 남남을 같은 사람으로 본다. **중복을 놓치는 것보다 엉뚱한
-//    사람을 합치라고 권하는 것이 더 나쁘다** — 전자는 두 건이 쌓일 뿐이지만
-//    후자는 데이터를 섞는다.
+// 종전에는 셋이었다. ① 휴대폰만 같으면 ② 이메일 완전일치 ③ 양쪽 다 번호가
+// 없을 때 이름+회사. 사용자가 **이름 + 휴대폰**으로 확정했다.
+//
+// ⭐ 얻는 것: **회사 대표번호를 함께 쓰는 두 사람이 더 이상 한 명으로 안 묶인다.**
+//    지금까지 ①에 걸려 묶였고 실제로 흔한 경우였다.
+//
+// 🚨 잃는 것: **휴대폰이 없는 명함끼리는 검사가 아예 안 돈다.** 2026-08-26에
+//    필수 조건이 「휴대폰·사무실 전화·이메일 중 하나」로 바뀌어 **휴대폰 없는
+//    명함이 실제로 생긴다.** 그래서 B안으로 갔다 — 이름은 반드시 AND로 걸고,
+//    휴대폰으로 판정할 수 없을 때만 사무실·직통·이메일을 본다.
+//
+// 📌 **대표번호 함정이 되살아나지 않는 이유**: 그 함정은 **번호만** 보고 묶어서
+//    생겼다. 이름을 AND로 걸면 대표번호를 공유해도 이름이 다르면 안 묶인다.
+//
+// ⚠️ 표본으로는 "휴대폰 없는 명함이 얼마나 되나"를 못 쟀다 — 8/20 신규 95장은
+//    **0장(0%)**인데, 그때는 휴대폰이 **단독 필수**여서 빈 채로 저장할 방법이
+//    없었다. **재는 도구가 답을 미리 정해 놓은 표본**이다.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:connection_trace_ai_flutter/data/models/contact_model.dart';
 import 'package:connection_trace_ai_flutter/data/repositories/contacts_repository.dart';
@@ -21,183 +31,189 @@ ContactModel _card({
   String? officePhone,
   String? directPhone,
   String email = '',
-}) {
-  return ContactModel(
-    id: id,
-    name: name,
-    company: company,
-    title: '팀장',
-    phone: phone,
-    officePhone: officePhone,
-    directPhone: directPhone,
-    email: email,
-    tags: const [],
-    talkingPoints: const [],
-  );
-}
+}) => ContactModel(
+  id: id,
+  name: name,
+  company: company,
+  title: '팀장',
+  phone: phone,
+  officePhone: officePhone,
+  directPhone: directPhone,
+  email: email,
+  tags: const [],
+  talkingPoints: const [],
+);
+
+DuplicateMatch? hit(
+  List<ContactModel> list, {
+  String name = '홍길동',
+  String phone = '',
+  String email = '',
+  String? office,
+  String? direct,
+  String? excludeId,
+}) => ContactsRepository.matchIn(
+  list,
+  name: name,
+  phone: phone,
+  email: email,
+  officePhone: office,
+  directPhone: direct,
+  excludeId: excludeId,
+);
 
 void main() {
-  group('휴대폰 — 휴대폰끼리만 본다', () {
-    test('같은 번호면 같은 사람으로 본다', () {
-      final cards = [_card(id: 'a', phone: '010-1111-2222')];
-
-      final hit = ContactsRepository.matchIn(cards, phone: '010-1111-2222');
-
-      expect(hit?.contact.id, 'a');
-      expect(hit?.field, DuplicateMatchField.mobile);
+  group('⭐ 이름 + 휴대폰 — 확실한 중복', () {
+    test('둘 다 같으면 중복이다', () {
+      final m = hit([
+        _card(id: 'c1', phone: '010-1234-5678'),
+      ], phone: '010-1234-5678');
+      expect(m?.contact.id, 'c1');
+      expect(m?.field, DuplicateMatchField.nameAndMobile);
     });
 
-    test('국가번호 표기가 달라도 같은 번호로 본다', () {
-      // 뒤 9자리로 자르는 규칙의 근거. 여기가 깨지면 +82 표기가 섞였을 때
-      // 같은 번호가 다른 번호로 읽힌다.
-      final cards = [_card(id: 'a', phone: '010-1111-2222')];
-
+    test('표기가 달라도 같은 번호로 본다', () {
       expect(
-        ContactsRepository.matchIn(cards, phone: '+82 10 1111 2222')?.contact.id,
-        'a',
+        hit([_card(id: 'c1', phone: '01012345678')], phone: '010-1234-5678')
+            ?.contact
+            .id,
+        'c1',
       );
     });
 
-    test('🚨 대표번호(사무실)는 판정에 쓰지 않는다', () {
-      // 같은 회사 사람 둘이 같은 대표번호를 갖고 있다. 이 번호로 사람을
-      // 맞추면 서로 중복으로 잡힌다.
-      final cards = [
-        _card(id: 'a', phone: '010-1111-0001', officePhone: '02-500-0000'),
-        _card(id: 'b', phone: '010-1111-0002', officePhone: '02-500-0000'),
-      ];
-
-      expect(ContactsRepository.matchIn(cards, phone: '02-500-0000'), isNull);
-    });
-
-    test('직통 번호도 판정에 쓰지 않는다', () {
-      final cards = [
-        _card(id: 'a', phone: '010-1111-0001', directPhone: '02-500-1234'),
-      ];
-
-      expect(ContactsRepository.matchIn(cards, phone: '02-500-1234'), isNull);
-    });
-
-    test('휴대폰이 비어 있으면 번호로는 아무것도 걸리지 않는다', () {
-      final cards = [_card(id: 'a', phone: '010-1111-2222')];
-
-      expect(ContactsRepository.matchIn(cards, phone: ''), isNull);
-    });
-  });
-
-  group('이메일 — 완전 일치, 다만 공용 주소는 뺀다', () {
-    test('대소문자·앞뒤 공백이 달라도 같은 주소로 본다', () {
-      final cards = [
-        _card(id: 'a', phone: '010-1111-2222', email: 'hong@example.invalid'),
-      ];
-
-      final hit = ContactsRepository.matchIn(
-        cards,
-        phone: '010-9999-8888',
-        email: '  HONG@Example.invalid ',
-      );
-
-      expect(hit?.contact.id, 'a');
-      expect(hit?.field, DuplicateMatchField.email);
-    });
-
-    test('🚨 이미 명함 둘 이상에 쓰인 이메일은 개인 주소로 보지 않는다', () {
-      // info@ 같은 공용 주소. 번호와 같은 이유로, 이것으로 맞추면 남남이 걸린다.
-      final cards = [
-        _card(id: 'a', phone: '010-1111-0001', email: 'info@example.invalid'),
-        _card(id: 'b', phone: '010-1111-0002', email: 'info@example.invalid'),
-      ];
-
+    test('🚨 번호가 같아도 이름이 다르면 아니다 — 대표번호 함정을 막는 자리다', () {
       expect(
-        ContactsRepository.matchIn(
-          cards,
-          phone: '',
-          email: 'info@example.invalid',
-        ),
-        isNull,
-      );
-    });
-
-    test('한 건에만 있는 주소는 그대로 걸린다 — 진짜 중복은 한 건이다', () {
-      final cards = [
-        _card(id: 'a', phone: '010-1111-0001', email: 'hong@example.invalid'),
-        _card(id: 'b', phone: '010-1111-0002', email: 'kim@example.invalid'),
-      ];
-
-      expect(
-        ContactsRepository.matchIn(
-          cards,
-          phone: '',
-          email: 'hong@example.invalid',
-        )?.contact.id,
-        'a',
-      );
-    });
-  });
-
-  group('이름+회사 — 번호가 양쪽 다 없을 때만 보는 보조 축', () {
-    test('번호도 이메일도 없으면 이름과 회사로 걸러 준다', () {
-      final cards = [_card(id: 'a', name: '홍길동', company: '가상상사')];
-
-      final hit = ContactsRepository.matchIn(
-        cards,
-        phone: '',
-        name: '홍 길동',
-        company: '가상상사',
-      );
-
-      expect(hit?.contact.id, 'a');
-      expect(hit?.field, DuplicateMatchField.nameAndCompany);
-    });
-
-    test('🚨 번호가 있는데 안 맞았다면 이름이 같아도 뒤집지 않는다', () {
-      // 여기가 동명이인이 갈리는 자리다. 번호가 다르다는 것은 "다른 사람"이라는
-      // 신호이므로, 이름이 같다고 그 신호를 덮으면 안 된다.
-      final cards = [
-        _card(
-          id: 'a',
+        hit(
+          [_card(id: 'c1', name: '김철수', phone: '010-1234-5678')],
           name: '홍길동',
-          company: '가상상사',
-          phone: '010-1111-0001',
+          phone: '010-1234-5678',
         ),
-      ];
-
-      final hit = ContactsRepository.matchIn(
-        cards,
-        phone: '010-2222-0002',
-        name: '홍길동',
-        company: '가상상사',
+        isNull,
       );
-
-      expect(hit, isNull);
     });
 
-    test('회사가 다르면 이름이 같아도 걸리지 않는다', () {
-      final cards = [_card(id: 'a', name: '홍길동', company: '가상상사')];
-
+    test('이름이 같아도 휴대폰이 다르면 아니다 — 동명이인이 걸린다', () {
       expect(
-        ContactsRepository.matchIn(
-          cards,
-          phone: '',
-          name: '홍길동',
-          company: '다른상사',
+        hit([_card(id: 'c1', phone: '010-1111-1111')], phone: '010-2222-2222'),
+        isNull,
+      );
+    });
+
+    test('자기 자신은 제외한다(편집 중)', () {
+      expect(
+        hit(
+          [_card(id: 'c1', phone: '010-1234-5678')],
+          phone: '010-1234-5678',
+          excludeId: 'c1',
         ),
         isNull,
       );
     });
   });
 
-  group('편집 중인 자기 자신은 제외한다', () {
-    test('excludeId 를 주면 그 명함과는 부딪히지 않는다', () {
-      final cards = [_card(id: 'a', phone: '010-1111-2222')];
+  group('🚨 휴대폰이 없을 때 — 이름 + 사무실·직통·이메일 (확신이 낮다)', () {
+    test('사무실 번호가 같으면 걸린다', () {
+      final m = hit(
+        [_card(id: 'c1', officePhone: '02-111-2222')],
+        office: '02-111-2222',
+      );
+      expect(m?.contact.id, 'c1');
+      expect(m?.field, DuplicateMatchField.nameAndOtherContact);
+    });
 
+    test('이메일이 같으면 걸린다', () {
       expect(
-        ContactsRepository.matchIn(
-          cards,
-          phone: '010-1111-2222',
-          excludeId: 'a',
+        hit([_card(id: 'c1', email: 'a@b.com')], email: 'a@b.com')?.field,
+        DuplicateMatchField.nameAndOtherContact,
+      );
+    });
+
+    test('직통이 상대의 사무실과 같아도 걸린다 — 칸을 가리지 않는다', () {
+      expect(
+        hit([_card(id: 'c1', officePhone: '02-111-2222')], direct: '02-111-2222')
+            ?.contact
+            .id,
+        'c1',
+      );
+    });
+
+    test('🚨 양쪽 다 휴대폰이 있는데 안 맞았으면 약한 축으로 뒤집지 않는다', () {
+      expect(
+        hit(
+          [
+            _card(
+              id: 'c1',
+              phone: '010-1111-1111',
+              officePhone: '02-111-2222',
+            ),
+          ],
+          phone: '010-2222-2222',
+          office: '02-111-2222',
+        ),
+        isNull,
+        reason: '휴대폰이 다르다는 것은 "다른 사람"이라는 신호다',
+      );
+    });
+
+    test('이름이 다르면 사무실이 같아도 아니다 — 대표번호를 함께 쓰는 남남', () {
+      expect(
+        hit(
+          [_card(id: 'c1', name: '김철수', officePhone: '02-111-2222')],
+          name: '홍길동',
+          office: '02-111-2222',
         ),
         isNull,
       );
+    });
+
+    test('⭐ 확실한 쪽이 있으면 그것을 먼저 돌려준다', () {
+      final m = hit(
+        [
+          _card(id: '약함', officePhone: '02-111-2222'),
+          _card(id: '확실', phone: '010-1234-5678'),
+        ],
+        phone: '010-1234-5678',
+        office: '02-111-2222',
+      );
+      expect(m?.contact.id, '확실');
+      expect(m?.field, DuplicateMatchField.nameAndMobile);
+    });
+  });
+
+  group('이름이 없으면 아무것도 못 한다', () {
+    test('이름 칸이 비면 검사하지 않는다', () {
+      expect(
+        hit([_card(id: 'c1', phone: '010-1234-5678')], name: '', phone: '010-1234-5678'),
+        isNull,
+      );
+    });
+  });
+
+  group('🚨 「중복이 없다」와 「검사를 못 했다」를 가른다', () {
+    test('이름과 연락 수단이 하나라도 있으면 검사할 수 있다', () {
+      expect(
+        ContactsRepository.canCheckDuplicate(name: '홍길동', phone: '010-1234-5678'),
+        isTrue,
+      );
+      expect(
+        ContactsRepository.canCheckDuplicate(name: '홍길동', officePhone: '02-1-2'),
+        isTrue,
+      );
+      expect(
+        ContactsRepository.canCheckDuplicate(name: '홍길동', email: 'a@b.com'),
+        isTrue,
+      );
+    });
+
+    test('이름이 없으면 못 한다', () {
+      expect(
+        ContactsRepository.canCheckDuplicate(name: '', phone: '010-1234-5678'),
+        isFalse,
+      );
+    });
+
+    test('연락 수단이 하나도 없으면 못 한다 — 화면이 그렇게 말해야 한다', () {
+      expect(ContactsRepository.canCheckDuplicate(name: '홍길동'), isFalse);
     });
   });
 }
