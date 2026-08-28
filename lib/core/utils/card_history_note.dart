@@ -51,6 +51,42 @@ class CardHistoryNote {
     return out;
   }
 
+  /// 이력 줄만 골라 **원문 그대로** 돌려준다(줄바꿈으로 이은 문자열).
+  ///
+  /// 저장할 때 이용자가 고친 메모 위에 다시 붙이기 위한 것이다 — [parse]는
+  /// 날짜와 내용을 갈라 버리므로 **원문 복원에 쓸 수 없다**(`[이전 정보 · …]`
+  /// 머리표가 사라진다).
+  ///
+  /// ## 🚨 왜 이것이 필요한가 (2026-08-28)
+  ///
+  /// 편집 화면이 메모 칸에 **이력 줄까지 통째로** 띄우고 저장할 때 그 텍스트를
+  /// 그대로 덮어썼다. **이용자가 메모를 정리하며 이력 줄을 지우면 이력이 영영
+  /// 사라졌다.** [userMemo]가 그것을 막으려고 있었는데 **부르는 곳이 없었다**
+  /// (`grep -rn "userMemo" lib` → 정의 한 줄뿐).
+  ///
+  /// 📌 CLAUDE.md 4절 표의 *"서비스는 정상, 부르는 쪽이 없음"* 과 같은 자리다.
+  static String historyLines(String? memo) {
+    if (memo == null || memo.isEmpty) return '';
+    return memo
+        .split('\n')
+        .where((l) => _lineRegExp.hasMatch(l.trim()))
+        .map((l) => l.trim())
+        .join('\n');
+  }
+
+  /// [historyLines]와 [userMemo]를 도로 하나로 잇는다. 저장 직전에 쓴다.
+  ///
+  /// 이력이 위, 이용자 메모가 아래 — 지금까지 쌓여 온 순서 그대로다.
+  /// 둘 다 비면 `null`(메모 없음)이다.
+  static String? join({required String history, required String userMemo}) {
+    final h = history.trim();
+    final u = userMemo.trim();
+    if (h.isEmpty && u.isEmpty) return null;
+    if (h.isEmpty) return u;
+    if (u.isEmpty) return h;
+    return '$h\n$u';
+  }
+
   /// 이력 줄을 걷어낸 **사용자가 쓴 메모**만 돌려준다.
   static String userMemo(String? memo) {
     if (memo == null || memo.isEmpty) return '';
