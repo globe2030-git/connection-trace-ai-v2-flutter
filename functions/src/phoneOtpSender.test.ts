@@ -16,6 +16,8 @@ import {
   AligoConfig,
   OTP_FAILOVER_BODY,
   OTP_TEMPLATE_BODY,
+  OTP_SERVICE_NAME,
+  OTP_TEMPLATE_SUBJECT,
   OTP_TEMPLATE_VARIABLE,
   NoKeySender,
   buildAligoSendPayload,
@@ -50,6 +52,32 @@ test("🚨 문안의 「3분」이 OTP_TTL_MS와 맞는다 — 어긋나면 템�
     `문안에 "${minutes}분 안에"가 없다. TTL을 바꿨다면 문안도 바꾸고 재심사를 받아야 한다.`,
   );
   assert.ok(OTP_FAILOVER_BODY.includes(`${minutes}분 안에`));
+});
+
+test("🚨 서비스 이름이 상수 한 자리에서만 나온다 — 이름이 아직 미정이다", () => {
+  // 2026-08-28에 「기별」이 취소됐고 커넥션센스·컨택센스·커넥트센스 중
+  // 미정이다. 문안이 흩어져 있으면 정해질 때 어디를 고쳐야 하는지 세어야
+  // 한다. 이 테스트는 그것이 흩어지는 것을 막는다.
+  //
+  // ⚠️ 이 값을 바꾸면 템플릿 재심사(영업일 2일)다.
+  assert.ok(OTP_TEMPLATE_BODY.startsWith(`[${OTP_SERVICE_NAME}]`));
+  assert.ok(OTP_FAILOVER_BODY.startsWith(`[${OTP_SERVICE_NAME}]`));
+
+  // 옛 이름이 남아 있지 않은지 본다. 하나라도 남으면 발송이 거부되거나
+  // 이용자가 모르는 이름의 문자를 받는다.
+  for (const stale of ["기별", "컨택센스", "커넥트센스"]) {
+    if (stale === OTP_SERVICE_NAME) continue;
+    assert.equal(
+      OTP_TEMPLATE_BODY.includes(stale),
+      false,
+      `본문에 옛 이름 "${stale}"이 남아 있다`,
+    );
+    assert.equal(OTP_FAILOVER_BODY.includes(stale), false);
+  }
+
+  // 제목에는 서비스명을 넣지 않는다 — 수신자에게 안 보이는 값이라
+  // 이름이 바뀔 때 고칠 자리를 늘릴 이유가 없다.
+  assert.equal(OTP_TEMPLATE_SUBJECT, "휴대폰 인증");
 });
 
 test("renderOtpMessage: 변수만 바뀌고 나머지는 한 글자도 안 바뀐다", () => {
