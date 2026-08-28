@@ -85,13 +85,30 @@ bool canTrustPickedGeo({
   return pickedGeo != null && pickedGeoAddress == rawAddress;
 }
 
+/// 저장 뒤 "계속 찍기"를 고르면 시트가 이 값으로 닫힌다(추가 — 연속 등록).
+/// 바깥에서 쓰는 값이 아니라 [AddCardModalView.show]가 자기 안에서만 본다.
+class _ContinueScanning {
+  const _ContinueScanning();
+}
+
 class AddCardModalView extends StatefulWidget {
   final ContactModel? contactToEdit;
   // QR 스캔 등으로 미리 채워 넣을 값 — contactToEdit과 달리 "새 명함"으로
   // 저장된다(기존 id를 덮어쓰지 않음). 필드 초기값 채우는 용도로만 쓰임.
   final ContactModel? prefillData;
 
-  const AddCardModalView({super.key, this.contactToEdit, this.prefillData});
+  /// 열자마자 촬영 화면을 띄운다. **연속 등록에서만 true**다.
+  ///
+  /// 📌 이것이 없으면 "계속 찍기"를 눌러도 등록 화면만 열리고 **촬영 버튼을
+  /// 또 눌러야 한다** — globe2030님이 불편하다고 한 그 한 번이 그대로 남는다.
+  final bool startWithScan;
+
+  const AddCardModalView({
+    super.key,
+    this.contactToEdit,
+    this.prefillData,
+    this.startWithScan = false,
+  });
 
   /// 이 화면은 입력 필드가 많아 isScrollControlled 시트가 내용 높이만큼
   /// 자라나는데, iOS는 필드 한 줄 높이가 안드로이드보다 약간씩 커서(폰트
@@ -100,22 +117,53 @@ class AddCardModalView extends StatefulWidget {
   /// 최대 높이를 "명함 지갑" 화면의 제목 시작 위치(상태 표시줄 높이 + 그
   /// 화면과 같은 12px 여백)로 고정해, 내용이 아무리 길어도 시트 위쪽이 그
   /// 지점보다 올라가지 않게 한다 — 넘치는 내용은 내부 스크롤로 처리된다.
+  ///
+  /// ## 연속 등록 (globe2030님 요청, 2026-08-28)
+  ///
+  /// 저장하면 시트가 닫히고 명함 지갑으로 돌아갔다. 그래서 다음 장을 찍으려면
+  /// **머리글 오른쪽 위 버튼을 다시 눌러야** 했다 — globe2030님이 하루에
+  /// 아이폰 126장·폴드 190장을 등록하면서 그만큼 반복했다.
+  ///
+  /// 이제 저장 뒤 **"계속 찍기 / 그만하고 지갑으로"**를 한 번 묻고, 계속이면
+  /// 이 함수가 **같은 자리에서 새 등록 화면을 다시 연다**(촬영 화면까지 바로).
+  ///
+  /// 📌 **저장 경로는 한 줄도 안 바뀌었다.** 바뀐 것은 저장 뒤에 어디로
+  /// 가느냐뿐이다. "그만"은 예전과 똑같이 닫힌다.
+  ///
+  /// ⚠️ **묻지 않고 자동으로 카메라를 다시 여는 것은 하지 않는다.** 실수로
+  /// 계속 찍히는 상태에 갇히면 빠져나갈 길이 없다 — 2026-08-26 광고 동의
+  /// 오탭과 같은 유형의 위험이다.
   static Future<T?> show<T>(
     BuildContext context, {
     ContactModel? contact,
     ContactModel? prefillData,
-  }) {
-    final topInset = MediaQuery.of(context).padding.top;
-    return showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height - topInset - 12,
-      ),
-      builder: (_) =>
-          AddCardModalView(contactToEdit: contact, prefillData: prefillData),
-    );
+  }) async {
+    var startWithScan = false;
+    while (true) {
+      final topInset = MediaQuery.of(context).padding.top;
+      final result = await showModalBottomSheet<Object?>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height - topInset - 12,
+        ),
+        builder: (_) => AddCardModalView(
+          contactToEdit: contact,
+          prefillData: prefillData,
+          startWithScan: startWithScan,
+        ),
+      );
+      if (result is! _ContinueScanning) return result as T?;
+      // 이어서 열기 전에 화면이 아직 살아 있는지 본다. 지갑 화면이 사라진
+      // 뒤에 열면 어디에도 안 붙은 시트가 된다.
+      if (!context.mounted) return null;
+      // 두 번째부터는 촬영 화면으로 바로 들어간다. 미리 채울 값은 첫 장에만
+      // 해당하므로 넘기지 않는다 — 여기서부터는 빈 명함이다.
+      prefillData = null;
+      contact = null;
+      startWithScan = true;
+    }
   }
 
   @override
@@ -512,6 +560,15 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     // 편집 중인 기존 명함이 주소 지오코딩을 모두 실패했는지 비동기로 확인해
     // 주소 필드 아래 안내를 띄운다(P1-25). 신규 등록/OCR 프리필은 아직 저장·
     // 재계산 전이라 대상이 아니다.
+    // 연속 등록에서 넘어온 경우 열자마자 촬영 화면을 띄운다.
+    // ⚠️ 첫 프레임 뒤에 부른다 — 시트가 아직 안 그려진 상태에서 라우트를
+    //    밀어 올리면 시트가 반쯤 그려진 채로 남는다.
+    if (widget.startWithScan) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _performOcrScan(isFromCamera: true);
+      });
+    }
+
     final editing = widget.contactToEdit;
     if (editing != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -3033,7 +3090,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       context.read<WalletViewModel>().addContact(contact);
     }
 
-    Navigator.pop(context);
+    // 새 명함을 등록한 직후에만 "계속 찍을지"를 묻는다(연속 등록).
+    // 수정은 한 건짜리 작업이라 물을 이유가 없다.
+    //
+    // ⚠️ **묻는 것은 저장이 끝난 뒤다.** 저장 자체는 위에서 이미 끝났으므로,
+    // 여기서 무엇을 고르든 명함은 남는다.
+    var keepScanning = false;
+    if (!_isEditing) {
+      keepScanning = await _askKeepScanning(contact.name) ?? false;
+      if (!mounted) return;
+    }
+
+    Navigator.pop(context, keepScanning ? const _ContinueScanning() : null);
+
+    // 계속 찍는 중이면 축하 스낵바를 띄우지 않는다 — 다음 촬영 화면이 바로
+    // 올라오므로 가려지거나, 촬영 화면 위에 얹혀 방해만 된다.
+    if (keepScanning) return;
 
     // 여기서는 이미 모달을 닫았으므로(위 pop) 폼 내부 배너가 아니라 바깥
     // (명함 지갑 화면)의 ScaffoldMessenger를 찾아가야 스낵바가 뜬다.
@@ -3045,6 +3117,50 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               : '🎉 ${contact.name} 님의 명함이 등록되었습니다!',
         ),
         backgroundColor: AppColors.accent,
+      ),
+    );
+  }
+
+  /// 저장 직후 "계속 찍을지"를 묻는다. 취소(바깥 탭)면 null → 그만둔 것으로 본다.
+  ///
+  /// ⚠️ **「그만하고 지갑으로」가 항상 보여야 한다.** 실수로 계속 찍히는
+  /// 상태에 갇히면 빠져나갈 길이 없다. 그래서 두 버튼을 같은 무게로 두고,
+  /// 바깥을 눌러 닫아도 "그만"이 되게 한다(안 되는 쪽으로 안전하게).
+  ///
+  /// 📌 이름을 함께 보여 준다 — 방금 무엇이 저장됐는지 확인하는 자리이기도
+  /// 하다. 예전에는 이 확인을 스낵바가 했는데, 계속 찍으면 스낵바는 다음
+  /// 화면에 가려 안 보인다.
+  Future<bool?> _askKeepScanning(String savedName) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          '$savedName 님의 명함을 등록했어요',
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+            fontSize: 17,
+          ),
+        ),
+        content: const Text(
+          '이어서 다음 명함을 찍을까요?',
+          style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text(
+              '그만하고 지갑으로',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('계속 찍기'),
+          ),
+        ],
       ),
     );
   }
