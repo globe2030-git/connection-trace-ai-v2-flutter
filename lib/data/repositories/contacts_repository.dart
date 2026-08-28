@@ -719,39 +719,41 @@ class ContactsRepository extends ChangeNotifier {
     }
   }
 
-  /// 같은 전화번호로 이미 등록된 명함을 찾는다. 없으면 null.
-  ///
-  /// 같은 사람 명함을 두 번 스캔하면 그대로 두 건이 쌓이는 문제(P1-40)를 저장
-  /// 직전에 잡기 위한 것. [excludeId]를 주면 그 명함은 제외한다(편집 시 자기 자신).
-  ///
-  /// ⚠️ **휴대폰 칸 하나만 본다.** 넓게 보려면 [findDuplicate]를 쓴다 — 이
-  /// 함수는 기존 호출부를 위해 남겨 둔 좁은 판정이다.
-  ContactModel? findByPhone(String phone, {String? excludeId}) =>
-      findDuplicate(phone: phone, excludeId: excludeId)?.contact;
-
   /// 같은 사람으로 볼 만한 명함을 찾는다. 없으면 null.
   ///
-  /// ## 무엇끼리 맞춰 보는가 (2026-08-26 사용자 확정)
+  /// ## 규칙 — **이름 + 휴대폰**이 둘 다 같을 때만 (2026-08-29 사용자 확정, 추가 577)
   ///
-  /// | 축 | 규칙 |
-  /// |---|---|
-  /// | **휴대폰** | 휴대폰끼리만 |
-  /// | **이메일** | 완전 일치 |
-  /// | **이름 + 회사** | 양쪽 다 **번호가 없을 때만**, 보조로 |
+  /// 예전에는 셋이었다. ① 휴대폰만 같으면 ② 이메일 완전일치 ③ 양쪽 다 번호가
+  /// 없을 때 이름+회사. **하나로 좁혔다.**
   ///
-  /// 🚨 **사무실·직통·팩스는 판정에 쓰지 않는다.** 사용자 지적: *"대표번호는
-  /// 같은 사람이 많아서 안 돼."* 회사 대표번호는 그 회사 사람 모두의 명함에
-  /// 같이 인쇄되므로, 그것으로 사람을 맞추면 **남남을 같은 사람으로 본다.**
+  /// ⭐ **얻는 것**: 회사 **대표번호**를 함께 쓰는 두 사람이 더 이상 한 명으로
+  /// 안 묶인다. 지금까지 ①에 걸려 묶였고, **실제로 흔한 경우**다.
   ///
-  /// 📌 **중복을 놓치는 것보다 엉뚱한 사람을 합치라고 권하는 것이 더 나쁘다** —
-  /// 전자는 두 건이 쌓일 뿐이지만 후자는 **데이터를 섞는다.**
+  /// 🚨 **잃는 것 둘 — 나중에 *"왜 중복이 안 잡히지?"* 가 나오면 여기다.**
   ///
-  /// ⚠️ 이메일도 공용 주소(`info@…`)가 있어, **이미 명함 둘 이상에 쓰인
-  /// 이메일은 개인 주소로 보지 않는다.** 짐작하지 않고 데이터에서 센다 —
-  /// 진짜 중복은 기존 명함 한 건에만 있으므로 이 그물에 안 걸린다.
+  /// ```
+  /// ① 이메일만 같은 경우를 놓친다        (이름이나 휴대폰이 다르면 못 잡는다)
+  /// ② 휴대폰이 없는 명함끼리는 검사가 아예 안 돈다
+  ///    예전에는 ③이 잡아 줬는데 그 경로가 사라졌다
+  /// ```
+  ///
+  /// 📌 ②는 **드물지 않다** — 사무실 번호만 인쇄된 명함이 있다. 그래서
+  /// [canCheckDuplicate]로 **검사가 돌았는지 아닌지**를 물을 수 있게 했다.
+  /// 결과가 `null`인 것만으로는 *"중복이 없다"*와 *"검사를 못 했다"*를 못 가른다.
+  ///
+  /// ⚠️ **좁히는 방향은 이 파일이 원래 갖고 있던 원칙과 같다** — *"중복을
+  /// 놓치는 것보다 엉뚱한 사람을 합치라고 권하는 것이 더 나쁘다."* 전자는 두
+  /// 건이 쌓일 뿐이지만 후자는 **데이터를 섞는다.**
+  ///
+  /// 📌 [isSafeToMergeAutomatically](추가 572)와는 층이 다르다 — 저쪽은
+  /// *"합쳐도 잃을 것이 없나"*이고 이 함수는 *"같은 사람으로 볼 만한가"*다.
+  /// **이 함수가 걸러 낸 쌍 중에서** 저쪽 조건까지 통과한 것만 자동으로
+  /// 정리할 수 있다.
   DuplicateMatch? findDuplicate({
     required String phone,
     String? email,
+    String? officePhone,
+    String? directPhone,
     String? name,
     String? company,
     String? excludeId,
@@ -759,6 +761,8 @@ class ContactsRepository extends ChangeNotifier {
     _contacts,
     phone: phone,
     email: email,
+    officePhone: officePhone,
+    directPhone: directPhone,
     name: name,
     company: company,
     excludeId: excludeId,
@@ -773,62 +777,70 @@ class ContactsRepository extends ChangeNotifier {
     List<ContactModel> contacts, {
     required String phone,
     String? email,
+    String? officePhone,
+    String? directPhone,
     String? name,
     String? company,
     String? excludeId,
   }) {
-    final mobile = normalizePhone(phone);
-    final mail = _normalizeEmail(email ?? '');
     final who = _normalizeName(name ?? '');
-    final org = _normalizeName(company ?? '');
+    if (who.isEmpty) return null;
 
-    final sharedEmails = _sharedEmails(contacts, excludeId: excludeId);
+    final mobile = normalizePhone(phone);
+    final others = <String>{
+      normalizePhone(officePhone ?? ''),
+      normalizePhone(directPhone ?? ''),
+      _normalizeEmail(email ?? ''),
+    }..removeWhere((v) => v.isEmpty);
 
     DuplicateMatch? weak;
     for (final c in contacts) {
       if (c.id == excludeId) continue;
+      if (_normalizeName(c.name) != who) continue;
 
-      if (mobile.isNotEmpty && normalizePhone(c.phone) == mobile) {
-        return DuplicateMatch(c, DuplicateMatchField.mobile);
-      }
-      if (mail.isNotEmpty &&
-          _normalizeEmail(c.email) == mail &&
-          !sharedEmails.contains(mail)) {
-        return DuplicateMatch(c, DuplicateMatchField.email);
+      final theirMobile = normalizePhone(c.phone);
+      if (mobile.isNotEmpty && theirMobile == mobile) {
+        return DuplicateMatch(c, DuplicateMatchField.nameAndMobile);
       }
 
-      // 보조 축 — 번호가 **양쪽 다 없을 때만** 본다. 번호가 있는데 안 맞았다면
-      // 그건 "다른 사람"이라는 신호이므로, 이름이 같다고 뒤집지 않는다
-      // (동명이인이 그대로 걸린다).
-      if (weak == null &&
-          mobile.isEmpty &&
-          normalizePhone(c.phone).isEmpty &&
-          who.isNotEmpty &&
-          org.isNotEmpty &&
-          _normalizeName(c.name) == who &&
-          _normalizeName(c.company) == org) {
-        weak = DuplicateMatch(c, DuplicateMatchField.nameAndCompany);
+      // 약한 축은 **휴대폰으로 판정할 수 없을 때만** 본다. 양쪽 다 휴대폰이
+      // 있는데 안 맞았다면 그건 "다른 사람"이라는 신호다 — 사무실 번호가
+      // 같다고 뒤집지 않는다(같은 회사 동명이인이 그대로 걸린다).
+      if (weak != null) continue;
+      if (mobile.isNotEmpty && theirMobile.isNotEmpty) continue;
+      final theirOthers = <String>{
+        normalizePhone(c.officePhone ?? ''),
+        normalizePhone(c.directPhone ?? ''),
+        _normalizeEmail(c.email),
+      }..removeWhere((v) => v.isEmpty);
+      if (others.intersection(theirOthers).isNotEmpty) {
+        weak = DuplicateMatch(c, DuplicateMatchField.nameAndOtherContact);
       }
     }
     return weak;
   }
 
-  /// 이미 명함 **둘 이상**에 쓰인 이메일 — 공용 주소로 본다.
-  static Set<String> _sharedEmails(
-    List<ContactModel> contacts, {
-    String? excludeId,
+  /// **중복 검사를 할 수 있는 명함인가**(2026-08-29, 추가 577).
+  ///
+  /// 🚨 규칙이 「이름 + 휴대폰」이므로 **둘 중 하나라도 없으면 검사가 아예 안
+  /// 돈다.** 그런데 결과가 `null`이면 부르는 쪽에서는 *"중복이 없다"*와
+  /// *"검사를 못 했다"*가 **똑같아 보인다.**
+  ///
+  /// 📌 명함에 휴대폰이 없는 경우는 **드물지 않다**(사무실 번호만 인쇄된
+  /// 명함). 그때 중복 검사가 **조용히 안 도는 것**을 코드가 스스로 알 수
+  /// 있어야 한다 — 이 함수가 그 답을 준다.
+  static bool canCheckDuplicate({
+    String? name,
+    String? phone,
+    String? officePhone,
+    String? directPhone,
+    String? email,
   }) {
-    final count = <String, int>{};
-    for (final c in contacts) {
-      if (c.id == excludeId) continue;
-      final e = _normalizeEmail(c.email);
-      if (e.isEmpty) continue;
-      count[e] = (count[e] ?? 0) + 1;
-    }
-    return {
-      for (final e in count.entries)
-        if (e.value >= 2) e.key,
-    };
+    if (_normalizeName(name ?? '').isEmpty) return false;
+    return normalizePhone(phone ?? '').isNotEmpty ||
+        normalizePhone(officePhone ?? '').isNotEmpty ||
+        normalizePhone(directPhone ?? '').isNotEmpty ||
+        _normalizeEmail(email ?? '').isNotEmpty;
   }
 
   /// 이름·회사 비교용 — 공백을 없애고 소문자로. 표기 흔들림(`(주)` 앞뒤 공백,
@@ -925,15 +937,23 @@ class ContactsRepository extends ChangeNotifier {
 /// 화면이 이유를 말해 줄 수 있어야 한다 — *"같은 전화번호"*라고만 하면
 /// **이메일이 같아서 걸린 경우에 거짓말이 된다.**
 enum DuplicateMatchField {
-  /// 휴대폰 칸끼리 같다.
-  mobile,
+  /// **이름과 휴대폰이 둘 다 같다** — 2026-08-29부터 이것 하나뿐이다(추가 577).
+  ///
+  /// 예전에는 `mobile`·`email`·`nameAndCompany` 셋이 있었다. 규칙을 「이름 +
+  /// 휴대폰」으로 좁히면서 나머지가 만들어지지 않게 됐고, **만들어지지 않는
+  /// 값을 남겨 두면 화면이 그것을 처리하는 척하게 된다.**
+  nameAndMobile,
 
-  /// 번호도 이메일도 없어 **이름과 회사가 같은 것**만 보고 걸렀다. 확신이
-  /// 낮은 신호이므로 화면이 그렇게 말해야 한다.
-  nameAndCompany,
-
-  /// 이메일이 같다.
-  email,
+  /// **이름은 같은데 휴대폰으로는 판정할 수 없어**, 사무실·직통 전화나
+  /// 이메일이 같은 것을 보고 걸렀다(추가 577의 B안).
+  ///
+  /// 📌 휴대폰이 없는 명함이 실제로 생긴다 — 2026-08-26에 「휴대폰·사무실
+  /// 전화·이메일 중 하나」로 필수 조건이 바뀌었기 때문이다. 그 명함들을
+  /// 검사에서 통째로 빼면 **중복이 조용히 쌓인다.**
+  ///
+  /// ⚠️ **확신이 낮은 신호다** — 회사 대표번호나 공용 이메일을 함께 쓰는
+  /// 동명이인이면 남남이 걸린다. **화면이 그렇게 말해야 한다.**
+  nameAndOtherContact,
 }
 
 class DuplicateMatch {
@@ -945,9 +965,8 @@ class DuplicateMatch {
   /// 화면 문장에 끼워 쓰는 사유. **"~한 명함" 앞에 붙는 꼴**로 통일했다 —
   /// 두 다이얼로그가 문장 모양이 달라서, 명사형으로 두면 한쪽이 깨진다.
   String get reason => switch (field) {
-    DuplicateMatchField.mobile => '휴대폰 번호가 같은',
-    DuplicateMatchField.email => '이메일 주소가 같은',
-    DuplicateMatchField.nameAndCompany =>
-      '이름과 회사가 같은(전화번호가 없어 확실하지는 않은)',
+    DuplicateMatchField.nameAndMobile => '이름과 휴대폰이 같은',
+    DuplicateMatchField.nameAndOtherContact =>
+      '이름과 연락처가 같은(휴대폰이 없어 확실하지는 않은)',
   };
 }

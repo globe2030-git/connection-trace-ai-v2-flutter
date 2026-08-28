@@ -3244,6 +3244,10 @@ class _AddCardModalViewState extends State<AddCardModalView> {
     return context.read<WalletViewModel>().findDuplicate(
       phone: _phoneController.text.trim(),
       email: _emailController.text.trim(),
+      // 휴대폰이 없는 명함도 검사받을 수 있게 함께 넘긴다(추가 577 B안).
+      // 안 넘기면 그 명함들은 **검사가 통째로 안 돌고 중복이 조용히 쌓인다.**
+      officePhone: _officePhoneController.text.trim(),
+      directPhone: _directPhoneController.text.trim(),
       name: _nameController.text.trim(),
       company: _companyController.text.trim(),
     );
