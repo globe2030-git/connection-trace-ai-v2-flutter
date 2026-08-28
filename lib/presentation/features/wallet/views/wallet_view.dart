@@ -11,7 +11,6 @@ import '../../../../data/models/group_model.dart' show kGroupsFeatureEnabled;
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../common/collapsing_list_header.dart';
 import '../../../common/contact_avatar.dart';
-import '../../../navigation/main_tab_screen.dart';
 import '../view_models/groups_view_model.dart';
 import '../view_models/wallet_view_model.dart';
 import '../../briefing/views/briefing_overlay_view.dart';
@@ -48,6 +47,15 @@ class _WalletViewState extends State<WalletView> {
   // 누르면 각 행에 체크박스가 뜨고 하단에 "N개 삭제" 바가 나온다. 과거 "목록에
   // 삭제 버튼을 두지 않는다"는 결정(2026-08-10)과 부딪히지 않도록, 삭제 UI는
   // 이 모드에 들어갔을 때만 드러난다.
+  //
+  // ⚠️ 예전엔 이 모드에 들어갈 때 `MainTabScreen.hideFab`을 켜서 명함 등록
+  // FAB을 숨겼다(2026-08-28, FAB이 하단에 떠 있던 동안). 명함 등록이 다시
+  // 탭 바 목적지("등록")로 바뀌면서 그 신호는 지웠다 — **직접 확인한
+  // 이유**: 이 화면(`WalletView`)은 자체 `Scaffold`가 있고 `_buildDeleteBar`
+  // (아래)는 그 안 `Column`의 평범한 마지막 자식이라, 실제 탭 바
+  // (`main_tab_screen.dart`의 `bottomNavigationBar`) 바로 위에 나란히
+  // 놓일 뿐 겹치지 않는다 — FAB처럼 `Stack`으로 그 위에 떠서 가리는
+  // 방식이 아니었다. 겹칠 일이 없으니 숨길 신호도 필요 없다.
   bool _selectionMode = false;
   final Set<String> _selectedIds = {};
 
@@ -56,10 +64,6 @@ class _WalletViewState extends State<WalletView> {
       _selectionMode = true;
       _selectedIds.clear();
     });
-    // 선택 모드의 "N개 삭제" 바가 화면 하단 가운데(_buildDeleteBar)에
-    // 뜨는 동안은 같은 자리의 명함 등록 FAB을 숨긴다 — 안 그러면 FAB이
-    // 그 버튼을 가린다(main_tab_screen.dart의 hideFab 문서 참고).
-    MainTabScreen.hideFab.value = true;
   }
 
   void _exitSelectionMode() {
@@ -67,7 +71,6 @@ class _WalletViewState extends State<WalletView> {
       _selectionMode = false;
       _selectedIds.clear();
     });
-    MainTabScreen.hideFab.value = false;
   }
 
   void _toggleSelected(String id) {
@@ -364,11 +367,12 @@ class _WalletViewState extends State<WalletView> {
   /// 제거).** 예전엔 이 자리(머리글 오른쪽 위)와 주변 화면의 같은 자리에
   /// 각각 하나씩, 자리·모양을 맞춰 두 벌 있었다(2026-08-12 결정). 그런데
   /// globe2030님이 실사용(하루 아이폰 126장·폴드 190장 등록)에서 "위에
-  /// 있어서 불편하다"고 하셨고, 한 손(엄지) 조작으로는 화면 하단이 낫다는
-  /// 판단에 따라 **main_tab_screen.dart의 FAB(하단 바 가운데 도킹) 하나로
-  /// 합쳤다.** 두 곳에 남기지 않은 이유: 같은 동작이 위·아래 두 곳에
-  /// 있으면 "이전 습관대로 위쪽을 계속 누르는" 경우가 남아 정작 옮긴
-  /// 효과가 옅어진다. 설계 근거는
+  /// 있어서 불편하다"고 하셨다. 같은 날 하단 FAB(가운데 도킹 → 오른쪽
+  /// 아래)을 거쳐 지금은 **`main_tab_screen.dart`의 하단 탭 바 4번째
+  /// 목적지("등록") 하나로 합쳤다** — globe2030님이 처음부터 "탭 바"를
+  /// 뜻하셨다는 것을 다시 확인해 주셨다. 두 곳에 남기지 않은 이유: 같은
+  /// 동작이 위·아래 두 곳에 있으면 "이전 습관대로 위쪽을 계속 누르는"
+  /// 경우가 남아 정작 옮긴 효과가 옅어진다. 설계 근거는
   /// docs/planning/specs/card-add-button-placement-2026-08-28.md.
   ///
   /// 다만 **빈 지갑 상태의 "첫 명함 등록" 버튼(아래 `_WalletEmptyState`,
@@ -384,7 +388,8 @@ class _WalletViewState extends State<WalletView> {
     // 고를 것이 없다. 스와이프 삭제는 그대로 두고, 이 버튼으로 다건 선택
     // 삭제에 들어간다. 명함이 하나도 없으면 이 Row는 빈 채로 그려진다
     // (mainAxisSize.min이라 자리를 차지하지 않는다) — 그 상태의 등록
-    // 진입점은 FAB와 `_WalletEmptyState`의 "첫 명함 등록" 버튼이 맡는다.
+    // 진입점은 하단 탭 바의 "등록"과 `_WalletEmptyState`의 "첫 명함 등록"
+    // 버튼이 맡는다.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -563,11 +568,13 @@ class _WalletViewState extends State<WalletView> {
     final list = ScrollablePositionedList.builder(
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
-      // 하단 여백 24 → 80(2026-08-28). main_tab_screen.dart의 FAB(명함
-      // 등록)가 `centerDocked`라 하단 바 경계에 반쯤 걸쳐 뜬다 — FAB
-      // 반지름(28)만큼 목록 위로 겹치므로, 그대로 두면 마지막 명함 행이
-      // FAB에 가려진다. 반지름 28 + 그림자·여유를 더해 넉넉히 80으로 뒀다.
-      padding: EdgeInsets.only(bottom: 80, right: showIndexBar ? 22 : 0),
+      // ⚠️ 2026-08-28 하루 동안 이 값이 24 → 80 → 96 → (지금) 24로
+      // 왔다갔다 했다 — 전부 명함 등록 FAB(하단에 떠서 목록 위를 가리던)
+      // 때문이었다. 지금은 FAB이 없고 탭 바 목적지("등록")로 바뀌었다 —
+      // 탭 바는 `Scaffold.bottomNavigationBar`라 body(이 목록)와 자리를
+      // 나눠 쓸 뿐 위에 겹쳐 뜨지 않으므로, 마지막 행을 가릴 것이 없다.
+      // 원래 값(24)으로 되돌린다.
+      padding: EdgeInsets.only(bottom: 24, right: showIndexBar ? 22 : 0),
       itemCount: contacts.length,
       itemBuilder: (context, index) {
         final contact = contacts[index];
@@ -615,6 +622,14 @@ class _WalletViewState extends State<WalletView> {
     return Stack(
       children: [
         list,
+        // ⚠️ 이 인덱스 바도 FAB이 있던 동안(centerDocked·endFloat 두 시도
+        // 모두) `bottom`을 96까지 올렸었다 — FAB이 이 화면 오른쪽 아래
+        // 모서리와 같은 자리를 썼기 때문이다. 확인해 보니 지금은 `bottom:
+        // 0`, 즉 손댄 적 없는 원래 값 그대로다 — FAB 관련 수정은 전부
+        // main_tab_screen.dart의 FAB 자체를 되돌리는 과정에서 이미 걷어
+        // 냈고(PR #632로 분리), 이 화면은 그 되돌림 이후 상태에서
+        // 시작했다. 지금(탭 바)은 FAB이 아예 없으니 다시 올릴 이유도
+        // 없다 — 그대로 0으로 둔다.
         Positioned(
           top: 0,
           bottom: 0,

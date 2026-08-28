@@ -30,15 +30,12 @@ class MainTabScreen extends StatefulWidget {
   /// [tabRequest]에 요청을 넣는다. 호출부가 notifier를 직접 만지지 않게 감싼다.
   static void openTab(int index) => tabRequest.value = index;
 
-  /// 명함 등록 FAB을 잠시 숨겨야 할 때 켜는 신호(2026-08-28).
-  ///
-  /// **왜 필요한가**: 명함 지갑의 다건 선택 삭제 모드(F-06)가 켜지면
-  /// 화면 맨 아래에 폭 전체짜리 "N개 삭제" 바가 뜬다(`wallet_view.dart`
-  /// `_buildDeleteBar`). FAB은 `centerDocked`라 그 바로 위, 같은 가로
-  /// 중앙에 얹힌다 — 그대로 두면 FAB이 삭제 버튼 한가운데를 가린다.
-  /// `tabRequest`와 같은 패턴(정적 `ValueNotifier`)으로 화면이 이 셸에
-  /// 신호를 보낸다.
-  static final ValueNotifier<bool> hideFab = ValueNotifier<bool>(false);
+  // ⚠️ 명함 등록 진입점의 자리는 2026-08-28 하루에 세 번 바뀌었다 — 지금
+  // 이 아래 `NavigationBar`(4번째 목적지 "등록")가 최종 형태다. 이전
+  // 시도(FAB, `centerDocked`→`endFloat`)와 그 사이 있었던 `hideFab`
+  // 신호는 여기서 완전히 걷어냈다 — 탭 목적지로 가면서 더는 필요 없다
+  // (아래 build() 주석에 이유를 적어 둔다). 되돌릴 자리는
+  // PR #632(오른쪽 아래 FAB, 미병합)에 남아 있다.
 
   /// 테스트 전용: 실제 화면(주변/명함/설정) 대신 가벼운 대역 화면을 주입한다.
   ///
@@ -98,17 +95,12 @@ class _MainTabScreenState extends State<MainTabScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     MainTabScreen.tabRequest.addListener(_handleTabRequest);
-    MainTabScreen.hideFab.addListener(_handleHideFabChanged);
-    // 이 화면이 다시 만들어질 때(예: 테스트, 핫리로드) 이전 세션이 남긴
-    // 값이 그대로 있으면 FAB이 이유 없이 숨어 있는 것처럼 보인다.
-    MainTabScreen.hideFab.value = false;
   }
 
   @override
   void dispose() {
     _exitArmTimer?.cancel();
     MainTabScreen.tabRequest.removeListener(_handleTabRequest);
-    MainTabScreen.hideFab.removeListener(_handleHideFabChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -121,9 +113,60 @@ class _MainTabScreenState extends State<MainTabScreen>
     MainTabScreen.tabRequest.value = null;
   }
 
-  void _handleHideFabChanged() {
-    if (!mounted) return;
-    setState(() {});
+  // "등록"이 끼어드는 자리(0=주변, 1=명함, 2=등록, 3=설정) — 실제 화면이
+  // 아니라 모달을 여는 동작이라 [_screens]/[IndexedStack]에는 대응하는
+  // 화면이 없다.
+  static const int _addDestinationIndex = 2;
+
+  /// 실제 화면 인덱스(0=주변, 1=명함, 2=설정) → `NavigationBar` 목적지
+  /// 인덱스. "등록"이 설정 바로 앞에 끼어들어서 설정만 한 칸 밀린다.
+  int _destinationIndexForScreen(int screenIndex) =>
+      screenIndex >= _addDestinationIndex ? screenIndex + 1 : screenIndex;
+
+  /// `NavigationBar`가 목적지를 고를 때마다 불린다. "등록" 자리를 고르면
+  /// **탭 선택 상태를 바꾸지 않고** 모달만 연다 — 눌러도 원래 있던 탭
+  /// (주변이든 명함이든)에 그대로 남아야 한다(globe2030님 지시,
+  /// 2026-08-28). `selectedIndex`에 [_addDestinationIndex]가 들어갈 일이
+  /// 없어서(아래에서 setState를 안 한다) `NavigationBar`도 그 자리를
+  /// "선택됨"으로 그리지 않는다 — 별도 처리 없이 저절로 지켜진다.
+  void _handleDestinationSelected(int destinationIndex) {
+    if (destinationIndex == _addDestinationIndex) {
+      AddCardModalView.show(context);
+      return;
+    }
+    final screenIndex = destinationIndex > _addDestinationIndex
+        ? destinationIndex - 1
+        : destinationIndex;
+    // '주변' 탭을 누르면 그 위에 떠 있던 AI 대화 가이드 오버레이를 닫아
+    // 첫 화면으로 돌아온다. IndexedStack이라 이미 주변에 있는 상태에서
+    // 탭을 다시 눌러도 _currentIndex가 그대로여서 오버레이가 남아 있던
+    // 문제를 고친다(사용자 제보: 주변 → AI 가이드 → 주변이 안 돌아옴).
+    if (screenIndex == MainTabScreen.nearbyTabIndex) {
+      context.read<RadarViewModel>().closeBriefing();
+    }
+    setState(() => _currentIndex = screenIndex);
+  }
+
+  /// "등록" 목적지의 아이콘 — 나머지 셋(주변·명함·설정)과 다르게 보이도록
+  /// 강조색 원형 배지로 그린다. 이 목적지는 [_handleDestinationSelected]가
+  /// 절대 "선택됨"으로 만들지 않으므로, 다른 셋처럼 선택 시에만 색이
+  /// 진해지는 방식으로는 평생 흐린 색으로 남는다 — 그러면 "동작"이 아니라
+  /// "죽은 탭"처럼 보인다. 그래서 선택 여부와 무관하게 항상 강조색을
+  /// 준다. 크기는 28px(다른 아이콘 24px보다 살짝 큼)로 시선을 끌되,
+  /// FAB만큼 튀지 않게 억제했다 — 인스타그램·유튜브의 가운데 강조 탭
+  /// 정도가 기준(globe2030님 재확인 지시, 2026-08-28).
+  Widget _buildAddDestinationIcon() {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: const BoxDecoration(
+        color: AppColors.accent,
+        shape: BoxShape.circle,
+      ),
+      child: const Center(
+        child: AppIcon(AppIconId.addCard, color: Colors.white, size: 16),
+      ),
+    );
   }
 
   @override
@@ -202,68 +245,65 @@ class _MainTabScreenState extends State<MainTabScreen>
       child: Scaffold(
         body: IndexedStack(index: _currentIndex, children: _screens),
         // 명함 등록 진입점을 "주변"·"명함" 두 화면의 머리글(화면 오른쪽 위)
-        // 대신 하단 바 가운데로 옮긴다(globe2030님 결정, 2026-08-28 —
-        // "한장 한장 할때도 연속으로 할때도 명함추가 버튼이 위에 있어서
-        // 불편해. … 하단의 설정 옆에 있으면 좋겠다"). 원인은 한 손(엄지)
-        // 조작 — 화면 오른쪽 위는 큰 화면(폴드 등)에서 엄지가 닿기 어렵고,
-        // 하단은 항상 닿는다. 설계 문서:
+        // 대신 하단 탭 바로 옮긴다(globe2030님 결정, 2026-08-28). 원인은
+        // 한 손(엄지) 조작 — 화면 오른쪽 위는 큰 화면(폴드 등)에서 엄지가
+        // 닿기 어렵고, 하단은 항상 닿는다. 설계 문서:
         // docs/planning/specs/card-add-button-placement-2026-08-28.md.
         //
-        // `NavigationBar`의 세 목적지("주변"·"명함"·"설정")에 네 번째
-        // 항목으로 끼워 넣지 않고 `FloatingActionButton`으로 띄운 이유:
-        // 저 셋은 눌러서 "머무는 곳"(선택 상태가 남는다)인데, 명함 등록은
-        // 눌러서 모달을 열고 끝나면 닫히는 "동작"이라 성격이 다르다. FAB는
-        // 모양 자체가 달라(떠 있고, 선택 상태가 없다) 탭인지 동작인지
-        // 헷갈릴 일이 없다 — 표준 Material 관습이라 학습 비용도 없다.
+        // ⚠️ **이 형태(4번째 탭)가 나오기까지 같은 날 세 번 바뀌었다 —
+        // 다음에 이 화면을 다시 만질 사람을 위해 순서를 남긴다.**
+        // 1) 처음엔 `NavigationBar`의 세 목적지에 끼워 넣지 않고
+        //    `FloatingActionButton`(`centerDocked`, 하단 바 가운데 도킹)을
+        //    띄웠다 — "저 셋은 눌러서 머무는 곳(선택 상태가 남는다)인데
+        //    명함 등록은 동작이라 성격이 다르다"는 판단이었다.
+        // 2) 실기기(폴드, 빌드 04db06a)에서 결함이 났다 — **이 탭 바는
+        //    목적지가 3개라 가운데 자리에 이미 "명함" 탭이 있었다.**
+        //    `centerDocked`는 가운데가 비는 짝수(2·4) 탭에 쓰는 위치인데
+        //    탭 개수를 안 세고 골라서, "명함" 탭 아이콘이 FAB에 완전히
+        //    가려졌다. `endFloat`(오른쪽 아래)로 옮겨 대응했다(PR #632,
+        //    미병합으로 보존 — 되돌릴 자리로 남겨 뒀다).
+        // 3) globe2030님께 다시 여쭤보니 **원래 뜻이 "설정 탭 옆"을
+        //    문자 그대로 말씀하신 것**이었다 — ⓐ(오른쪽 아래)는 그
+        //    표현과의 거리를 이쪽이 판단해서 고른 것이었는데, 실제 뜻은
+        //    ⓒ(탭 자체를 4개로)였다. 그래서 지금 이 형태로 다시 왔다.
         //
-        // "설정" 탭에서는 숨긴다 — globe2030님 원문은 "명함 지갑이던
-        // 주변이던"이지 설정 화면까지 포함하지 않았고, 설정 화면에 명함
-        // 등록 동작이 떠 있는 것은 맥락상 어색하다.
+        // **교훈**: `FloatingActionButtonLocation.centerDocked`는 "가운데에
+        // 예쁘게 뜬다"가 아니라 "가운데 자리를 실제로 차지한다"는 뜻이다
+        // — 다음에 이 위젯을 쓸 때는 먼저 탭(또는 그 자리에 이미 있는 것)
+        // 개수부터 센다. 그리고 사용자의 위치 표현("설정 옆")은 이쪽이
+        // 판단으로 대신 읽지 말고, 여러 후보가 있으면 실물을 보여주고
+        // 정하는 편이 빠르다 — 이번에도 논리가 아니라 화면으로 정했다.
         //
-        // [MainTabScreen.hideFab]이 켜져 있을 때도 숨긴다 — 명함 지갑의
-        // 다건 선택 삭제 모드가 이 자리(하단 가운데)에 폭 전체짜리
-        // "N개 삭제" 바를 띄우는데, FAB을 그대로 두면 그 버튼을 가린다.
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        floatingActionButton:
-            _currentIndex == MainTabScreen.settingsTabIndex ||
-                MainTabScreen.hideFab.value
-            ? null
-            : FloatingActionButton(
-                heroTag: 'add_card_fab',
-                tooltip: '명함 등록',
-                backgroundColor: AppColors.accent,
-                foregroundColor: Colors.white,
-                onPressed: () => AddCardModalView.show(context),
-                child: const AppIcon(
-                  AppIconId.addCard,
-                  color: Colors.white,
-                  size: 24,
-                ),
-              ),
+        // "등록" 목적지는 [_addDestinationIndex] 자리에 있고, 고르면
+        // [_handleDestinationSelected]가 화면을 바꾸지 않고 모달만 연다.
         bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) {
-            // '주변' 탭을 누르면 그 위에 떠 있던 AI 대화 가이드 오버레이를 닫아
-            // 첫 화면으로 돌아온다. IndexedStack이라 이미 주변에 있는 상태에서
-            // 탭을 다시 눌러도 _currentIndex가 그대로여서 오버레이가 남아 있던
-            // 문제를 고친다(사용자 제보: 주변 → AI 가이드 → 주변이 안 돌아옴).
-            if (index == 0) {
-              context.read<RadarViewModel>().closeBriefing();
-            }
-            setState(() => _currentIndex = index);
-          },
-          destinations: const [
-            NavigationDestination(
+          selectedIndex: _destinationIndexForScreen(_currentIndex),
+          onDestinationSelected: _handleDestinationSelected,
+          destinations: [
+            const NavigationDestination(
               icon: AppIcon(AppIconId.nearbyPeople),
               selectedIcon: AppIcon(AppIconId.nearbyPeople),
               label: '주변',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: AppIcon(AppIconId.cardWallet),
               selectedIcon: AppIcon(AppIconId.cardWallet),
               label: '명함',
             ),
+            // 라벨은 "등록"으로 뒀다("추가"도 후보였다) — 이 동작을 이미
+            // 앱 전체가 "명함 등록"이라 불러왔다(모달 제목·툴팁·저장
+            // 완료 스낵바가 전부 이 말을 쓴다). 탭 라벨만 "추가"로 부르면
+            // 같은 동작에 두 말이 붙어 오히려 헷갈린다. 폭이 좁아 2글자로만
+            // 썼다 — 탭 4개일 때 하나당 폭은 폴드 접힌 화면 기준 실측
+            // 411.4dp ÷ 4 = 102.8dp(`adb shell dumpsys display` 실측,
+            // 2026-08-28)뿐이라 "명함 등록"(4글자)은 줄바꿈·잘림 위험이
+            // 있다.
             NavigationDestination(
+              icon: _buildAddDestinationIcon(),
+              label: '등록',
+              tooltip: '명함 등록',
+            ),
+            const NavigationDestination(
               icon: AppIcon(AppIconId.settings),
               selectedIcon: AppIcon(AppIconId.settings),
               label: '설정',
