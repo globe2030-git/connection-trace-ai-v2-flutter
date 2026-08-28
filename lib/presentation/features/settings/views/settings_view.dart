@@ -1215,6 +1215,28 @@ class _CardPhotoBackupStatusRow extends StatefulWidget {
 class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
   CardPhotoBackupSummary? _summary;
 
+  /// 서버에 실제로 있는 사진 수. **아직 못 물어봤으면 `null`**이다.
+  ///
+  /// ## 🚨 왜 서버에도 물어보나 (2026-08-28)
+  ///
+  /// 이 줄은 기기 안 장부(`shared_preferences`)만 보고 *"백업 104장 · 기기를
+  /// 바꿔도 복원됩니다"* 라고 말했다. 그런데 **서버를 실제로 조회해 보니
+  /// 0개였다.** 장부는 「완료」인데 서버에는 없다.
+  ///
+  /// ⚠️ **없는 것보다 「있다고 잘못 말하는 것」이 나쁘다.** 사진이 안 보이면
+  /// 이용자가 알지만, 백업이 안 된 것은 **기기를 잃은 뒤에야** 안다.
+  ///
+  /// 📌 그래서 **문구를 흐리지 않고 사실을 하나 더 보여 준다.** 맞는 기기
+  /// (아이폰 실측 126/126)에서는 두 숫자가 같게 뜨고, 어긋난 기기에서는
+  /// 그 자리에서 드러난다.
+  ///
+  /// ⚠️ **왜 어긋나는지는 아직 모른다.** 원인을 찾는 것과 별개로 **거짓말부터
+  /// 멈추는 것**이 이 변경이다.
+  int? _serverCount;
+
+  /// 서버 조회가 실패했나(네트워크 없음 등). 실패와 「0개」는 다르다.
+  bool _serverCheckFailed = false;
+
   @override
   void initState() {
     super.initState();
@@ -1241,8 +1263,17 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
         ? await CardPhotoQuotaService().cachedOrDefault()
         : await CardPhotoQuotaService().fetch(uid);
     final map = await CardPhotoBackupStateService().load();
+    // 서버에 실제로 몇 개가 있는지 물어본다. 실패해도 화면을 막지 않는다.
+    Set<String>? onServer;
+    if (uid != null) {
+      onServer = await CardPhotoBackupService().listSyncedContactIds(uid);
+    }
     if (!mounted) return;
-    setState(() => _summary = summarize(map, quota));
+    setState(() {
+      _summary = summarize(map, quota);
+      _serverCount = onServer?.length;
+      _serverCheckFailed = uid != null && onServer == null;
+    });
   }
 
   @override
@@ -1252,8 +1283,38 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
 
     // ⚠️ 손실만 말하지 않는다. **무엇이 되는지**를 먼저 말한다 — 숫자만 보여
     // 주면 "내 사진이 위험한가?"로 읽힌다.
+    // 🚨 **서버와 어긋나면 그것부터 말한다**(2026-08-28).
+    //
+    // 실측: 한 기기가 장부에 「백업 104장」이라고 적어 두고 *"기기를 바꿔도
+    // 복원됩니다"* 라고 말하는데 **서버에는 0개**였다. 다른 기기는 126장이
+    // 실제로 올라가 있었다. **장부만 보면 둘을 구분할 수 없다.**
+    //
+    // ⚠️ 원인은 아직 모른다. 그래도 **모른다는 것이 「안전합니다」라고 말할
+    // 이유는 되지 않는다** — 사진이 안 보이면 이용자가 알지만, 백업이 안 된
+    // 것은 **기기를 잃은 뒤에야** 안다.
+    final mismatch =
+        _serverCount != null && s.synced > 0 && _serverCount != s.synced;
+
     final String subtitle;
-    if (s.isFull) {
+    if (mismatch) {
+      // ⚠️ 내역은 **어긋날 때만** 보여 준다. 맞는 기기에서 숫자를 늘리면
+      // 읽을 것만 많아진다.
+      //
+      // 🚨 `summarize()` 는 failed·quotaExceeded 를 세는데 **화면이 synced 만
+      // 썼다.** 그래서 실패 건수가 기기 안에 있는데 **아무도 볼 수 없었다** —
+      // 값이 없어서가 아니라 보여 주지 않아서 몰랐다(2026-08-28).
+      final detail = [
+        if (s.failed > 0) '실패 ${s.failed}',
+        if (s.quotaExceeded > 0) '한도초과 ${s.quotaExceeded}',
+      ].join(' · ');
+      subtitle =
+          '이 기기 기록 ${s.synced}장 · 서버 확인 $_serverCount장 · 어긋납니다'
+          '${detail.isEmpty ? '' : ' ($detail)'}\n'
+          '기기를 바꾸면 서버에 있는 것만 복원됩니다';
+    } else if (_serverCheckFailed) {
+      // 조회 실패와 「0개」는 다르다 — 없다고 단정하지 않는다.
+      subtitle = '백업 ${s.synced}/${s.quota}장 · 서버 확인은 못 했습니다';
+    } else if (s.isFull) {
       subtitle =
           '백업 ${s.synced}/${s.quota}장 · 한도에 닿아 새 사진은 '
           '백업되지 않습니다. 기기를 바꾸면 복원되지 않습니다';
@@ -1267,7 +1328,9 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
       icon: AppIcon(
         AppIconId.aiDataInfo,
         size: 22,
-        color: s.needsAttention ? AppColors.destructive : AppColors.accentText,
+        color: (s.needsAttention || mismatch)
+            ? AppColors.destructive
+            : AppColors.accentText,
       ),
       title: '명함 사진 백업',
       subtitle: subtitle,
