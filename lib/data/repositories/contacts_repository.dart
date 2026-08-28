@@ -431,20 +431,32 @@ class ContactsRepository extends ChangeNotifier {
 
   /// [relinkMissingCardImagePaths]의 순수 매칭 로직 — 단위 테스트로 고정한다.
   ///
-  /// `cardImagePath`가 없는 명함에 한해 [existingPathsById](contactId → 기기
-  /// 암호문 파일 경로)에 같은 id가 있으면 경로를 채운다. id가 없으면(정말
-  /// 이미지가 없는 명함) 그대로 null을 유지한다. 이미 경로가 있는 명함은
-  /// 건드리지 않는다(로컬에서 방금 등록해 경로가 확실한 경우를 덮어써
-  /// 사고 나지 않도록).
+  /// [existingPathsById](contactId → 기기 암호문 파일 경로)에 같은 id가
+  /// 있으면 그 경로를 쓴다. id가 없으면(정말 이미지가 없는 명함) 그대로 둔다.
+  ///
+  /// ## 🚨 예전에는 "이미 경로가 있으면 건드리지 않는다"였다 (2026-08-28, 추가 554)
+  ///
+  /// 그 판단의 전제는 **"저장된 경로는 맞다"**였다. 로컬에서 방금 등록한
+  /// 명함을 덮어써 사고 나지 않게 하려던 것이다. **그 전제가 iOS에서
+  /// 깨진다** — 저장하는 것이 절대경로인데 iOS 문서 폴더 경로에는 **앱
+  /// 컨테이너 UUID가 들어 있어 앱을 다시 깔면 바뀐다.** Android는 안 바뀐다.
+  ///
+  /// ✅ **실물로 갈렸다**: 같은 코드가 도는데 폴드는 옛 명함까지 사진이
+  /// 보이고 아이폰은 안 보였다. **파일은 멀쩡히 있었다** — 서버 업로드는
+  /// 저장된 경로를 안 쓰고 id로 경로를 다시 만들기 때문에 잘 됐고,
+  /// **화면만 비어 있었다.**
+  ///
+  /// 📌 **덮어써도 안전하다.** [existingPathsById]는 **실제로 있는 파일만**
+  /// 담고 있고, 저장 규칙(`docsDir/contact_card_<id>.enc`)이 같으므로 방금
+  /// 등록한 명함은 **같은 값으로** 덮인다(= 바뀌지 않는다).
   @visibleForTesting
   static List<ContactModel> relinkCardImagePaths(
     List<ContactModel> contacts,
     Map<String, String> existingPathsById,
   ) {
     return contacts.map((c) {
-      if (c.cardImagePath != null) return c;
       final path = existingPathsById[c.id];
-      if (path == null) return c;
+      if (path == null || path == c.cardImagePath) return c;
       return c.copyWith(cardImagePath: path);
     }).toList();
   }
@@ -467,7 +479,10 @@ class ContactsRepository extends ChangeNotifier {
   Future<bool> relinkMissingCardImagePaths() async {
     final uid = _uid;
     if (uid == null) return false;
-    if (_contacts.every((c) => c.cardImagePath != null)) return false;
+    // ⚠️ 예전에는 **경로가 다 차 있으면 여기서 끝냈다**(IO 1회를 아끼려고).
+    // 그런데 낡은 경로도 "차 있는" 것이라, 아이폰에서는 고칠 기회가 아예
+    // 오지 않았다(추가 554). 목록이 비었을 때만 건너뛴다.
+    if (_contacts.isEmpty) return false;
 
     var existing = await _contactImageService.findAllExistingCardImagePaths();
 
@@ -475,8 +490,10 @@ class ContactsRepository extends ChangeNotifier {
     // 재연결할 대상이 없으니 예전에는 여기서 끝났고, 사진은 영영 돌아오지
     // 않았다(명함 텍스트만 복원되는 상태). 서버에 사본이 있으면 내려받아
     // 되살린다(2026-08-15, 추가 218).
+    // ⚠️ 기준은 **기기에 파일이 있느냐**다. 저장된 경로가 있는지가 아니다 —
+    // 낡은 경로를 들고 있는 명함도 파일은 없을 수 있다(추가 554).
     final missingIds = _contacts
-        .where((c) => c.cardImagePath == null && !existing.containsKey(c.id))
+        .where((c) => !existing.containsKey(c.id))
         .map((c) => c.id)
         .toList();
     if (missingIds.isNotEmpty) {

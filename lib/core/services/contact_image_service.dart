@@ -360,19 +360,52 @@ class ContactImageService {
 
   /// 암호화된 명함 이미지를 복호화해 바이트로 돌려준다. 파일이 없거나(다른
   /// 기기에서 복원된 경우 등) 복호화 실패면 null.
+  ///
+  /// ## 🚨 저장된 경로는 시간이 지나면 틀린 경로가 된다 (2026-08-28, 추가 554)
+  ///
+  /// [saveEncryptedCardImage]는 **절대경로**를 명함에 적어 둔다
+  /// (`${docsDir.path}/contact_card_<id>.enc`). 그런데 **iOS의 문서 폴더
+  /// 경로에는 앱 컨테이너 UUID가 들어 있어 앱을 다시 깔면 바뀐다.**
+  /// Android는 `/data/user/0/<패키지>/...`라 안 바뀐다.
+  ///
+  /// ✅ **실물로 갈렸다**: 같은 코드가 도는데 **폴드는 옛 명함까지 사진이
+  /// 보이고 아이폰은 안 보였다.** 화면에는 「스캔한 명함」 머리글만 남고
+  /// 그림 자리가 비었다 — 못 읽으면 그림만 사라지게 짜여 있어서다.
+  ///
+  /// 📌 **파일은 멀쩡히 있었다.** 서버 업로드 경로는 저장된 경로를 안 쓰고
+  /// [findAllExistingCardImagePaths]로 **명함 id에서 경로를 다시 만든다** —
+  /// 그래서 업로드는 되는데 화면만 비는, 갈라진 상태가 됐다.
+  ///
+  /// 그래서 [contactId]를 주면 **파일이 없을 때 id로 경로를 다시 찾는다.**
+  /// 이미 있던 [findExistingCardImagePath]를 쓴다 — 새 규칙을 만들면 저장
+  /// 규칙과 어긋날 자리가 하나 더 생긴다.
+  ///
+  /// ⚠️ [contactId]를 안 주면 예전과 똑같이 동작한다(그냥 null).
   Future<Uint8List?> loadDecryptedCardImage({
     required String uid,
     required String path,
+    String? contactId,
   }) async {
     final cached = _decryptedCache[path];
     if (cached != null) return cached;
     try {
-      final file = File(path);
-      if (!file.existsSync()) return null;
+      var file = File(path);
+      if (!file.existsSync()) {
+        // 낡은 경로다. 명함 id를 알면 지금 문서 폴더에서 다시 찾는다.
+        final repaired = contactId == null
+            ? null
+            : await findExistingCardImagePath(contactId);
+        if (repaired == null) return null;
+        final again = _decryptedCache[repaired];
+        if (again != null) return again;
+        file = File(repaired);
+      }
       final encrypted = await file.readAsBytes();
       final key = await _keyService.getOrCreateUserKey(uid);
       final plain = await DataCryptoService.decryptBytes(encrypted, key);
-      _decryptedCache[path] = plain;
+      // ⚠️ 캐시 키는 **실제로 읽은 경로**다. 낡은 경로로 캐시하면 다음에도
+      // 없는 파일을 먼저 찾는다.
+      _decryptedCache[file.path] = plain;
       return plain;
     } catch (e) {
       debugPrint('명함 이미지 복호화 실패: ${e.runtimeType}');

@@ -48,12 +48,29 @@ void main() {
       expect(result.single.cardImagePath, isNull);
     });
 
-    test('이미 경로가 있는 명함은 맵에 다른 값이 있어도 덮어쓰지 않는다', () {
+    // 🚨 **뒤집힌 기대다**(2026-08-28, 추가 554). 예전에는 *"이미 경로가
+    // 있으면 덮어쓰지 않는다"*였고, 그 전제는 **"저장된 경로는 맞다"**였다.
+    // **iOS에서 그 전제가 깨진다** — 문서 폴더 경로에 앱 컨테이너 UUID가
+    // 들어 있어 앱을 다시 깔면 바뀐다. 실물에서 **폴드는 보이고 아이폰은
+    // 안 보였다.**
+    //
+    // 📌 덮어써도 안전한 이유: 맵은 **실제로 있는 파일만** 담고, 저장 규칙이
+    // 같으므로 방금 등록한 명함은 **같은 값으로** 덮인다(아래 테스트).
+    test('⭐ 이미 경로가 있어도 실제 파일 위치가 다르면 지금 경로로 바꾼다', () {
       final result = ContactsRepository.relinkCardImagePaths(
         [contact(id: 'c1', cardImagePath: '/local/original.enc')],
         {'c1': '/docs/contact_card_c1.enc'},
       );
-      expect(result.single.cardImagePath, '/local/original.enc');
+      expect(result.single.cardImagePath, '/docs/contact_card_c1.enc');
+    });
+
+    test('같은 경로면 객체를 바꾸지 않는다 — 방금 등록한 명함은 그대로다', () {
+      final input = [contact(id: 'c1', cardImagePath: '/docs/contact_card_c1.enc')];
+      final result = ContactsRepository.relinkCardImagePaths(
+        input,
+        {'c1': '/docs/contact_card_c1.enc'},
+      );
+      expect(identical(result.single, input.single), isTrue);
     });
 
     test('여러 명함 중 매칭되는 것만 골라 연결한다', () {
@@ -112,7 +129,12 @@ void main() {
       },
     );
 
-    test('경로 없는 명함이 하나도 없으면 디렉터리 조회 자체를 건너뛴다(성능)', () async {
+    // 🚨 **이 기대도 뒤집혔다**(2026-08-28, 추가 554). 예전에는 경로가 다
+    // 차 있으면 **디렉터리 조회 1회를 아끼려고** 그냥 끝냈다. 그런데 **낡은
+    // 경로도 "차 있는" 것**이라, 아이폰에서는 **고칠 기회가 아예 오지
+    // 않았다.** 아낀 IO 1회의 대가가 "사진이 안 보이는데 원인을 모르는
+    // 상태"였다.
+    test('⭐ 경로가 다 차 있어도 디렉터리를 확인한다 — 낡은 경로일 수 있다', () async {
       seedLocalContacts([contact(id: 'c1', cardImagePath: '/local/a.enc')]);
       final fakeImages = _FakeContactImageService({});
       final repo = ContactsRepository(contactImageService: fakeImages);
@@ -122,8 +144,9 @@ void main() {
 
       final changed = await repo.relinkMissingCardImagePaths();
 
+      // 기기에 파일이 없으므로 바뀐 것은 없다 — 그래도 **확인은 했다.**
       expect(changed, isFalse);
-      expect(fakeImages.callCount, 0);
+      expect(fakeImages.callCount, 1);
     });
 
     test('기기에 파일이 하나도 없으면(빈 맵) 변경 없이 끝난다', () async {
