@@ -2001,10 +2001,49 @@ class OcrScannerService {
     final trimmed = company.trim().replaceFirst(RegExp(r'^[)\]}·|]+\s*'), '');
     final m = RegExp(r'^([A-Za-z]{1,2})\s+(.{2,})$').firstMatch(trimmed);
     if (m == null) return trimmed;
+    final head = m.group(1)!;
     final rest = m.group(2)!.trim();
     // 뒤가 한글이어야 한다. 영문 회사명(`SK telecom`)의 앞 토큰은 이름이다.
     if (!RegExp(r'[가-힣]').hasMatch(rest)) return trimmed;
-    return rest;
+
+    // 🚨 **두 글자 브랜드는 회사명의 일부다**(2026-08-29, globe2030님 제보).
+    //
+    // 예전에는 앞의 영문 1~2글자를 무조건 뗐다. 그래서 국내 대기업 이름이
+    // 통째로 잘렸다 — **`GS 스포츠` → `스포츠`, `SK 텔레콤` → `텔레콤`,
+    // `LG 전자` → `전자`.** 붙여 쓴 `GS스포츠`는 멀쩡했다.
+    //
+    // ✅ **100장으로 재 봤다**(`ocr_measure_mlkit_v2_2026-08-23.tsv`):
+    // 그냥 끄면 **3장이 바뀌는데 하나는 나빠졌다** — `SK SK 텔레콤`처럼
+    // **로고와 회사명이 둘 다 SK**인 줄에서 기존 규칙이 중복을 걷어내고
+    // 있었다. 그래서 **끄지 않고 갈랐다.**
+    //
+    // ```
+    // SK SK 텔레콤   앞 글자가 뒤에서 되풀이된다  → 뗀다(중복 로고)
+    // GS 스포츠      되풀이되지 않는다            → 둔다(브랜드)
+    // O 알로이스     한 글자                      → 뗀다(로고 오인식)
+    // ```
+    if (head.length < 2) return rest; // 한 글자는 로고 오인식으로 본다
+
+    // 앞 글자가 뒤에서 되풀이된다 — 로고와 회사명이 같은 경우(`SK SK 텔레콤`).
+    if (rest.toUpperCase().startsWith(head.toUpperCase())) return rest;
+
+    // 회사 접미사가 있고 **접미사 말고도 이름이 남으면** 앞 글자는 로고다
+    // (`GO 선호라이팅 (주)` → `선호라이팅 (주)`). 접미사밖에 없으면 앞 글자가
+    // 회사명 자체다(`SK 주식회사`).
+    // ⚠️ 접미사는 **괄호 형태나 온전한 낱말**만 본다. 예전 초안에서
+    //    `(주|재|유|사)`를 맨글자로 찾았더니 **「주식회사」의 글자까지 지워**
+    //    `SK 주식회사`가 `주식회사`로 잘렸다.
+    final core = rest
+        .replaceAll(RegExp(r'[(（]\s*(주|재|유|사)\s*[)）]'), '')
+        .replaceAll(
+          RegExp(r'주식회사|유한회사|재단법인|사단법인|㈜|Inc\.?|Co\.?|Ltd\.?', caseSensitive: false),
+          '',
+        )
+        .replaceAll(RegExp(r'[\s.,]'), '');
+    final hasSuffix = core.length != rest.replaceAll(RegExp(r'[\s.,]'), '').length;
+    if (hasSuffix && core.length >= 2) return rest;
+
+    return trimmed;
   }
 
   /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
