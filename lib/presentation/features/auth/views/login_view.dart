@@ -141,6 +141,10 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   Widget build(BuildContext context) {
+    // 로그아웃 뒤에도 남는 값이라(설계:
+    // docs/planning/specs/login-recent-provider-2026-08-29.md) 로그인 화면을
+    // 열 때마다 최신값을 구독한다.
+    final lastProvider = context.watch<AuthRepository>().lastProvider;
     return Scaffold(
       backgroundColor: AppColors.bgBase,
       body: SafeArea(
@@ -186,6 +190,7 @@ class _LoginViewState extends State<LoginView> {
                 provider: SnsAuthProvider.google,
                 isLoading: _loadingProvider == SnsAuthProvider.google,
                 isDisabled: _loadingProvider != null || !_ageConfirmed,
+                isRecent: lastProvider == SnsAuthProvider.google,
                 onPressed: () => _signIn(SnsAuthProvider.google),
               ),
               // Apple 로그인이 지원되지 않는 플랫폼(Android 등)에서는 버튼을
@@ -203,6 +208,7 @@ class _LoginViewState extends State<LoginView> {
                     provider: p,
                     isLoading: _loadingProvider == p,
                     isDisabled: _loadingProvider != null || !_ageConfirmed,
+                    isRecent: lastProvider == p,
                     onPressed: () => _signIn(p),
                   ),
                 ],
@@ -212,6 +218,7 @@ class _LoginViewState extends State<LoginView> {
                   provider: SnsAuthProvider.apple,
                   isLoading: _loadingProvider == SnsAuthProvider.apple,
                   isDisabled: _loadingProvider != null || !_ageConfirmed,
+                  isRecent: lastProvider == SnsAuthProvider.apple,
                   onPressed: () => _signIn(SnsAuthProvider.apple),
                 ),
               ],
@@ -346,11 +353,16 @@ class _SnsButton extends StatelessWidget {
   final bool isDisabled;
   final VoidCallback onPressed;
 
+  /// 지난번에 이 수단으로 로그인에 성공했으면 true — 「최근」 배지를 그린다.
+  /// 설계: docs/planning/specs/login-recent-provider-2026-08-29.md §3.
+  final bool isRecent;
+
   const _SnsButton({
     required this.provider,
     required this.isLoading,
     required this.isDisabled,
     required this.onPressed,
+    this.isRecent = false,
   });
 
   /// 제공자가 정한 버튼 색.
@@ -375,13 +387,31 @@ class _SnsButton extends StatelessWidget {
     final isAvailable = provider.isAvailable;
     final brand = _brandColor;
     final official = OfficialButtonArt.of(provider);
+    final Widget button;
     if (official != null) {
-      return OfficialSocialButton(
+      button = OfficialSocialButton(
         art: official,
         isLoading: isLoading,
         onPressed: isDisabled ? null : onPressed,
       );
+    } else {
+      button = _buildDefaultButton(isAvailable, brand);
     }
+    // 카카오·네이버는 공식 버튼 이미지를 통째로 쓰므로(브랜드 가이드가 다른
+    // 요소를 위에 얹는 것을 금지할 수 있어) 배지를 버튼 **이미지 위**가
+    // 아니라 버튼을 감싸는 Stack의 여백에 그린다. 구글·애플도 같은 위치에
+    // 그려 두 종류의 버튼이 시각적으로 다르게 보이지 않게 한다.
+    if (!isRecent) return button;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        button,
+        const Positioned(top: -8, right: 10, child: _RecentBadge()),
+      ],
+    );
+  }
+
+  Widget _buildDefaultButton(bool isAvailable, Color? brand) {
     return SizedBox(
       height: 52,
       child: OutlinedButton(
@@ -419,6 +449,36 @@ class _SnsButton extends StatelessWidget {
                   ),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// 「최근」배지 — 강조하지 않게, 옅게. 다른 버튼을 고르기 어려워 보이면
+/// 안 된다는 요구(globe2030님, 설계 §3)에 따라 accent 계열 색을 쓰지 않는다.
+/// 탭 대상이 아니다 — 버튼 전체가 이미 탭 대상이다.
+class _RecentBadge extends StatelessWidget {
+  const _RecentBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.bgBase,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.borderSubtle),
+        ),
+        child: const Text(
+          '최근',
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textMuted,
+            height: 1,
+          ),
+        ),
       ),
     );
   }

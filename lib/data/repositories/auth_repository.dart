@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../core/services/google_auth_gateway.dart';
@@ -36,6 +37,18 @@ class AuthException implements Exception {
 class AuthRepository extends ChangeNotifier {
   static const _sessionKey = 'auth_session_v1';
 
+  /// 로그인 화면에서 "최근" 배지로 보여줄, 지난번에 성공한 로그인 수단 하나.
+  ///
+  /// ⚠️ **`_sessionKey`(위, secure storage)와 일부러 분리된 값이다.** `signOut()`은
+  /// `_sessionKey`를 지우지만 이 값은 지우지 않는다 — 로그아웃 뒤에도 "최근"을
+  /// 보여주는 것이 이 값의 존재 이유다(설계: docs/planning/specs/login-recent-provider-2026-08-29.md).
+  /// 반대로 계정 삭제([deleteFirebaseAccountAndLocalSession])에서는 지운다 —
+  /// 없어진 계정으로 이용자를 유도하면 안 되기 때문이다.
+  ///
+  /// `shared_preferences`(평문)를 쓰는 이유: 값이 provider 이름 문자열
+  /// 하나뿐이라 개인정보가 아니다. `flutter_secure_storage`를 쓸 이유가 없다.
+  static const _lastProviderKey = 'last_login_provider_v1';
+
   final FlutterSecureStorage _secureStorage;
 
   /// 웹뷰에 남은 카카오·네이버 세션 쿠키를 지우는 함수.
@@ -50,6 +63,15 @@ class AuthRepository extends ChangeNotifier {
   String? _displayName;
   String? _email;
   String? _photoUrl;
+  SnsAuthProvider? _lastProvider;
+
+  /// [_loadLastProvider]의 비동기 읽기가 끝나기 전에 로그인/로그아웃/계정삭제로
+  /// [_lastProvider]가 먼저 바뀌면, 늦게 끝난 읽기가 그 값을 다시 덮어써
+  /// 버리는 경합이 생길 수 있다(생성자에서 읽기를 시작한 직후 곧바로 쓰기가
+  /// 일어나는 경우 — 실사용에선 거의 없지만 테스트에서 실제로 재현됐다).
+  /// 쓰기가 있을 때마다 올려서, 읽기가 끝났을 때 그 사이 쓰기가 있었으면
+  /// 읽은 값을 버린다.
+  int _lastProviderWriteVersion = 0;
 
   AuthRepository({
     FlutterSecureStorage? secureStorage,
@@ -57,6 +79,7 @@ class AuthRepository extends ChangeNotifier {
   }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
        _clearWebSession = clearWebSession ?? clearSocialWebSession {
     _load();
+    _loadLastProvider();
   }
 
   bool get isLoading => _isLoading;
@@ -65,6 +88,11 @@ class AuthRepository extends ChangeNotifier {
   String? get displayName => _displayName;
   String? get email => _email;
   String? get photoUrl => _photoUrl;
+
+  /// 로그인 화면 "최근" 배지용 — 지난번 로그인 성공 수단. 활성 세션이 없어도
+  /// (로그아웃 상태여도) 값이 남아 있을 수 있다. 자세한 설명은 [_lastProviderKey]
+  /// 참고.
+  SnsAuthProvider? get lastProvider => _lastProvider;
 
   /// 명함/프로필 서버 백업·복원(backlog 추가 66)에 쓰는 Firebase Auth 계정
   /// 고유 ID. 기기 로컬 세션(`_isSignedIn` 등)과는 별개로, Firebase 쪽 로그인
@@ -126,6 +154,63 @@ class AuthRepository extends ChangeNotifier {
     return null;
   }
 
+  /// [_load]와 별개로 "최근 로그인 수단"을 읽는다. 활성 세션(`_sessionKey`)이
+  /// 없어도(로그아웃 상태여도) 이 값은 남아 있을 수 있어 따로 읽는다.
+  Future<void> _loadLastProvider() async {
+    final versionAtStart = _lastProviderWriteVersion;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 읽는 동안 로그인/로그아웃/계정삭제로 이미 값이 바뀌었으면, 늦게
+      // 도착한 이 값(더 오래된 값)으로 덮어쓰지 않는다.
+      if (_lastProviderWriteVersion != versionAtStart) return;
+      _lastProvider = _providerFromName(prefs.getString(_lastProviderKey));
+    } catch (e) {
+      debugPrint('Error loading last login provider: $e');
+    } finally {
+      if (_lastProviderWriteVersion == versionAtStart) notifyListeners();
+    }
+  }
+
+  /// [lastProvider]를 기록한다 — [completeSignIn]에서만 부른다. 게스트 로그인
+  /// ([signInAsGuest])은 이 경로를 타지 않아 "최근"으로 기록되지 않는다.
+  Future<void> _saveLastProvider(SnsAuthProvider provider) async {
+    _lastProviderWriteVersion++;
+    _lastProvider = provider;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_lastProviderKey, provider.name);
+    } catch (e) {
+      debugPrint('Error saving last login provider: $e');
+    }
+  }
+
+  /// 로그인 성공 공통 처리. Google·Apple·카카오/네이버 세 경로가 각자
+  /// 필드를 세팅하고 세션을 저장하는 코드를 똑같이 반복하고 있었는데, 그
+  /// 중 하나가 "최근 로그인 수단 기록"을 빠뜨리는 사고를 막기 위해 한
+  /// 곳으로 모았다. `@visibleForTesting`인 이유: 실제 SNS 로그인 세
+  /// 경로는 전부 Firebase Auth/Functions 네트워크 호출을 거쳐 `flutter
+  /// test`에서 직접 부를 수 없다(Firebase 앱 초기화가 없어 예외가 남).
+  /// 이 메서드는 세 경로가 인증에 성공한 뒤 실제로 실행하는 코드와 동일한
+  /// 코드이므로, 이걸 직접 호출해 검증하는 것이 "성공 시 무엇이 저장되는가"를
+  /// 확인하는 정확한 방법이다.
+  @visibleForTesting
+  Future<void> completeSignIn(
+    SnsAuthProvider provider, {
+    String? displayName,
+    String? email,
+    String? photoUrl,
+  }) async {
+    _provider = provider;
+    _displayName = displayName;
+    _email = email;
+    _photoUrl = photoUrl;
+    _isSignedIn = true;
+    notifyListeners();
+    await _persist();
+    await _saveLastProvider(provider);
+  }
+
   Future<void> signInWithGoogle() async {
     await GoogleAuthGateway.ensureInitialized();
     final GoogleSignInAccount account;
@@ -151,13 +236,12 @@ class AuthRepository extends ChangeNotifier {
     } catch (e) {
       debugPrint('Firebase Auth 로그인 실패(로컬 로그인은 계속 진행): $e');
     }
-    _provider = SnsAuthProvider.google;
-    _displayName = account.displayName;
-    _email = account.email;
-    _photoUrl = account.photoUrl;
-    _isSignedIn = true;
-    notifyListeners();
-    await _persist();
+    await completeSignIn(
+      SnsAuthProvider.google,
+      displayName: account.displayName,
+      email: account.email,
+      photoUrl: account.photoUrl,
+    );
   }
 
   /// 카카오·네이버 로그인.
@@ -246,13 +330,12 @@ class AuthRepository extends ChangeNotifier {
     }
 
     final user = cred.user;
-    _provider = provider;
-    _displayName = user?.displayName;
-    _email = user?.email;
-    _photoUrl = user?.photoURL;
-    _isSignedIn = true;
-    notifyListeners();
-    await _persist();
+    await completeSignIn(
+      provider,
+      displayName: user?.displayName,
+      email: user?.email,
+      photoUrl: user?.photoURL,
+    );
   }
 
   Future<void> signInWithApple() async {
@@ -330,15 +413,14 @@ class AuthRepository extends ChangeNotifier {
     // 이름을 이번에 못 받았으면(재로그인) Firebase에 저장돼 있던 이전 값을
     // fallback으로 쓴다. 그마저 없으면 "애플 사용자" 같은 이름을 지어내지
     // 않고 null로 둔다 — 화면이 이름 없음을 알아서 처리해야 한다.
-    _displayName = resolvedName ?? user?.displayName;
     // Hide My Email로 받은 @privaterelay.appleid.com 릴레이 주소도 정상적인
     // 이메일 값이므로 그대로 저장한다.
-    _email = credential.email ?? user?.email;
-    _photoUrl = user?.photoURL;
-    _provider = SnsAuthProvider.apple;
-    _isSignedIn = true;
-    notifyListeners();
-    await _persist();
+    await completeSignIn(
+      SnsAuthProvider.apple,
+      displayName: resolvedName ?? user?.displayName,
+      email: credential.email ?? user?.email,
+      photoUrl: user?.photoURL,
+    );
 
     // App Store 요구(계정 삭제 시 Apple 토큰 폐기, P1-38): 서버가 나중에
     // 폐기할 수 있도록 authorization_code를 보내 refresh_token으로 교환·보관
@@ -627,6 +709,28 @@ class AuthRepository extends ChangeNotifier {
       await _secureStorage.delete(key: _sessionKey);
     } catch (e) {
       debugPrint('Error clearing auth session after account deletion: $e');
+    }
+    // 계정 자체가 없어졌으므로 "최근"으로 안내하면 안 된다(로그아웃과 달리
+    // 여기서는 지운다 — docs/planning/specs/login-recent-provider-2026-08-29.md §4-3).
+    await clearLastProviderForAccountDeletion();
+  }
+
+  /// 계정 삭제([deleteFirebaseAccountAndLocalSession])에서만 부른다 — 삭제된
+  /// 계정을 "최근"으로 안내하면 없어진 계정으로 이용자를 유도하는 꼴이 된다.
+  /// `@visibleForTesting`인 이유: [deleteFirebaseAccountAndLocalSession] 자체는
+  /// 첫 줄이 `FirebaseAuth.instance`라 Firebase 앱 초기화가 없는 `flutter
+  /// test`에서는 부를 수 없다(예외가 던져진다) — 그래서 이 메서드만 따로
+  /// 떼어 검증한다(Firebase를 건드리지 않는 순수 로컬 정리이므로 가능하다).
+  @visibleForTesting
+  Future<void> clearLastProviderForAccountDeletion() async {
+    _lastProviderWriteVersion++;
+    _lastProvider = null;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_lastProviderKey);
+    } catch (e) {
+      debugPrint('Error clearing last login provider: $e');
     }
   }
 
