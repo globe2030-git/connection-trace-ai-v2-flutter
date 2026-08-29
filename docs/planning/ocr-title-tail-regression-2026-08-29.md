@@ -56,8 +56,20 @@ afcbb1a  #683  (그대로)
 
 - **원문 286장**: 기기(`fc382dd`) 일괄 스캔 결과. `빌드` 칸이 `9ca5788` 단일.
   **저장소 밖**에 둔다(제3자 개인정보) — `connection-sense-assets/명함데이터/`.
+- **기준선**: `connection-sense-assets/명함데이터/scan_result_기기_수정전_2026-08-29.tsv`
+  (287줄 = 286장 + 머리글, 권한 600). **고치기 전 상태**라 전후 대조의 자가 된다.
 - **재현**: 그 TSV 와 정답지를 `test/ocr_accuracy_score_test.dart` 에 먹인다.
   기기가 없어도 된다 — 원문을 지금 파서에 다시 먹이는 채점기다.
+
+  ```bash
+  TSV=…/scan_result_기기_수정전_2026-08-29.tsv \
+  TRUTH=…/ocr_truth.tsv \
+  flutter test test/ocr_accuracy_score_test.dart
+  ```
+
+- **기기에서 다시 뽑아야 한다면** `tool/ocr_review/README.md` 의
+  「릴리스 빌드에서 재는 법」을 볼 것. 세 곳에서 막히고 **셋 다 화면에는 원인이
+  안 뜬다** — 폴더 권한, 표 파일 권한, 관리자 잠금(버전 7번 탭).
 - **회귀 검사**: 위 세 장을 검사로 잠근다. 지금은 잠겨 있지 않다.
 
 ## ⚠️ 함께 봐야 할 것 — 정답지가 이 자를 왜곡한다

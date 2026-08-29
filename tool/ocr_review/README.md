@@ -48,11 +48,69 @@ open tool/ocr_review/index.html
    (`원문` 칸이 있어야 한다. 없으면 앱이 낡은 빌드다)
 2. 기기에서 TSV와 이미지를 꺼낸다
 
+   ### ⚠️ 아래는 **debug 빌드에서만** 통한다 — 릴리스는 다르다 (2026-08-29)
+
+   릴리스 빌드는 `run-as` 가 막혀 **앱 내부 폴더에 손이 닿지 않는다.** 그래서
+   표본을 넣지도, 결과를 꺼내지도 못한다. 2026-08-29 에 폴드에서 실제로
+   막혔고, 그날 알아낸 절차를 아래 「릴리스 빌드에서 재는 법」에 적어 둔다.
+   **테스터에게 나가는 것도 릴리스이므로 앞으로는 그쪽이 기본이다.**
+
+
    ```bash
    ADB=~/Library/Android/sdk/platform-tools/adb
    PKG=com.connectiontrace.connection_trace_ai_flutter
    $ADB exec-out run-as $PKG cat app_flutter/card_samples/scan_result.tsv > scan_result.tsv
    ```
+
+### 릴리스 빌드에서 재는 법 (2026-08-29 실측)
+
+세 곳에서 막힌다. **순서대로 풀어야 한다.**
+
+```bash
+ADB=adb
+PKG=com.connectiontrace.connection_trace_ai_flutter
+DIR=/sdcard/Android/data/$PKG/files/card_samples
+```
+
+**① 표본을 앱 전용 외부 폴더에 넣는다** — 내부 폴더는 못 쓰므로 여기로 넣는다.
+일괄 스캔은 내부를 먼저 보고, 비어 있으면 이쪽을 본다.
+
+```bash
+$ADB shell "mkdir -p $DIR"
+$ADB push /어디/명함들/. "$DIR/"
+```
+
+**② 폴더 권한을 연다.** `adb push` 로 만든 폴더는 **`shell` 소유라 앱이 못
+읽는다.** 화면에는 *"읽을 수 있는 이미지가 없습니다"* 만 뜨고 원인은 안
+보인다 — 파일은 분명히 거기 있는데 안 읽힌다.
+
+```bash
+$ADB shell "chmod 777 $DIR"
+```
+
+**③ 표 파일 자리를 미리 만들어 둔다.** 앱이 만든 파일은 `660`(앱 소유)이라
+`adb pull` 이 **`Permission denied`** 로 막힌다. 빈 파일을 `666` 으로 먼저
+만들어 두면 앱이 그 파일을 **덮어쓰기만** 하므로 권한이 유지된다.
+
+```bash
+$ADB shell "touch $DIR/scan_result.tsv && chmod 666 $DIR/scan_result.tsv"
+# 앱에서 「저장」을 누른 뒤
+$ADB pull "$DIR/scan_result.tsv" .
+```
+
+⚠️ **관리자 도구는 앱 버전을 7번 눌러야 열린다**(설정 맨 아래). 앱을 다시
+띄우면 잠금이 되돌아간다.
+
+📌 **표가 이 폴더에 떨어지는 것은 2026-08-29 이후 빌드부터다**(PR #692).
+그전 빌드는 스캔을 어디서 했든 표를 **앱 내부에만** 썼다 — 주석은 *"이미지와
+같은 폴더에 쓴다"* 였는데 코드가 안 따라가고 있었다. 낡은 빌드로 재려 하면
+표가 안 나오니 빌드 해시를 먼저 확인할 것.
+
+⚠️ **끝나면 표본을 지운다.** 명함은 제3자 개인정보다.
+
+```bash
+$ADB shell "rm -rf $DIR"
+```
 
 3. `index.html`을 열고 **TSV 불러오기** → **이미지 폴더** 선택
 4. 한 장씩 확인한다
