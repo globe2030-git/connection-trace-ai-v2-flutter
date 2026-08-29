@@ -1086,6 +1086,28 @@ class OcrScannerService {
     // "Head of R&D Dept. Ko Byoung Ho"(7단어)는 여기서 떨어진다.
     final words = s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (words.isEmpty || words.length > 4) return false;
+
+    // 🚨 **조직·부서 낱말이 들어 있으면 사람 이름이 아니다**(2026-08-29,
+    //    52장 실측). `Innovation Team`·`Marketing Division`이 **「영문 낱말
+    //    2~4개」라는 조건만으로 통과**해 이름 칸에 들어갔다.
+    //
+    // ⚠️ **빈 칸이 낫다.** 이름 칸에 부서명이 들어가면 **채워진 것처럼 보여**
+    //    이용자가 못 알아챈다 — *"가짜 데이터를 만들지 않는다"*와 같은 자리다.
+    if (words.any(
+      (w) => _orgWords.contains(
+        w.toLowerCase().replaceAll(RegExp(r"[.'-]"), ''),
+      ),
+    )) {
+      return false;
+    }
+
+    // 🚨 **소문자로 시작하는 영문 구절은 슬로건이다.** 실측에서
+    //    `more than the most`가 이름 칸에 들어갔다. 사람 이름은 낱말마다
+    //    대문자로 시작한다.
+    if (words.length >= 3 && words.every((w) => RegExp(r'^[a-z]').hasMatch(w))) {
+      return false;
+    }
+
     return words.every((w) => RegExp(r"^[A-Za-z][A-Za-z.'-]*$").hasMatch(w));
   }
 
@@ -1688,9 +1710,27 @@ class OcrScannerService {
     return null;
   }
 
+  /// **조직 단위**를 가리키는 영문 낱말 — 회사명이 아니라 부서다.
+  ///
+  /// ⚠️ [_orgWords]보다 **좁다.** 저쪽은 사람 이름을 가리는 목록이라
+  /// `Solutions`·`Systems`·`Technologies`가 들어 있는데, **그런 낱말은 회사
+  /// 이름에 흔하다**(`ABC Solutions Inc`). 회사명을 가릴 때 그 목록을 쓰면
+  /// **멀쩡한 회사명이 부서로 밀린다.**
+  static const _orgUnitWords = {
+    'team', 'division', 'department', 'dept', 'unit', 'section',
+    'headquarters', 'branch',
+  };
+
   static bool _looksLikeDeptOrTagline(String line) {
     final trimmed = line.trim();
-    final endsWithDeptSuffix = _departmentSuffixes.any(trimmed.endsWith);
+    // 🚨 `Global Sales Division`처럼 **영문 조직 단위**로 끝나는 줄은 부서다
+    //    (2026-08-29). 예전에는 그 줄이 **이름 칸에 들어가는 바람에** 회사명
+    //    자리를 안 뺏었을 뿐이고, 이름 규칙을 고치자 회사명으로 흘러갔다.
+    final hasOrgUnitWord = trimmed
+        .split(RegExp(r'\s+'))
+        .any((w) => _orgUnitWords.contains(w.toLowerCase().replaceAll(RegExp(r"[.'-]"), '')));
+    final endsWithDeptSuffix =
+        hasOrgUnitWord || _departmentSuffixes.any(trimmed.endsWith);
     // 슬로건/캐치프레이즈는 문장 형태라 공백으로 나눈 단어 수가 많은
     // 편이다("국민 맞춤형 복지를 실현하는 디지털 플랫폼 전문기관" = 7단어).
     // 회사명은 보통 짧아서 이 기준으로 어느 정도 구분된다.
@@ -1874,6 +1914,24 @@ class OcrScannerService {
   /// 못 가른다(2026-08-20 실측 결론). 그래서 이 값은 **후보가 여럿일 때
   /// 우선순위를 정하는 데만** 쓴다. 후보가 하나뿐이면 이 값과 무관하게
   /// 그대로 쓴다.
+  /// 조직·부서를 가리키는 영문 낱말. **하나라도 들어 있으면 사람 이름이
+  /// 아니다**(2026-08-29, 52장 실측).
+  ///
+  /// 🚨 `Innovation Team`·`Marketing Division`이 **「대문자로 시작하는 두
+  /// 낱말」이라는 조건만으로 사람 이름으로 통과**해 이름 칸에 들어갔다.
+  ///
+  /// ⚠️ **빈 칸이 낫다.** 이름 칸에 부서명이 들어가면 **채워진 것처럼 보여**
+  /// 이용자가 못 알아챈다 — 이 저장소의 *"가짜 데이터를 만들지 않는다"*와
+  /// 같은 자리다.
+  static const _orgWords = {
+    'team', 'teams', 'division', 'department', 'dept', 'group', 'center',
+    'centre', 'office', 'unit', 'lab', 'labs', 'institute', 'solution',
+    'solutions', 'marketing', 'sales', 'innovation', 'consulting',
+    'partners', 'technologies', 'systems', 'service', 'services',
+    'management', 'research', 'development', 'studio', 'holdings',
+    'ventures', 'capital', 'company', 'corporation',
+  };
+
   static bool _looksLikeEnglishPersonName(String line) {
     if (_hasHangul(line)) return false;
     final words = line
@@ -1882,6 +1940,13 @@ class OcrScannerService {
         .where((w) => w.isNotEmpty)
         .toList();
     if (words.length < 2 || words.length > 4) return false;
+    if (words.any(
+      (w) => _orgWords.contains(
+        w.toLowerCase().replaceAll(RegExp(r"[.'-]"), ''),
+      ),
+    )) {
+      return false;
+    }
     return words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w));
   }
 
@@ -2044,6 +2109,83 @@ class OcrScannerService {
     if (hasSuffix && core.length >= 2) return rest;
 
     return trimmed;
+  }
+
+  /// **`/`·`|` 로 묶여 들어온 직함을 가른다**(2026-08-29, 52장 실측).
+  ///
+  /// ## 무엇이 문제였나
+  ///
+  /// 명함은 `직함 / 부서`나 `직함 / 영문직함`처럼 인쇄되는 일이 흔한데,
+  /// **그 줄을 통째로 직함 칸에 넣고 있었다.**
+  ///
+  /// ```
+  /// 부사장 / R&D Center
+  /// 부장 / 정보안전부 / Department Manager
+  /// 대표 ceo / HEE-JUNG J##
+  /// ```
+  ///
+  /// ✅ **실측(52장, globe2030님 명함)**: 직함 칸은 **100% 채워졌는데 19장이
+  /// 이상**했고, **그중 10장이 이 모양**이었다. 🚨 **채움률로는 안 보이는
+  /// 결함**이다 — 이 저장소가 예전에 빠졌던 함정(추가 198)과 같다.
+  ///
+  /// 📌 그리고 **부서 칸은 21%만 차 있었다** — 잘려 나간 조각 상당수가
+  /// 부서였다.
+  ///
+  /// ## 규칙
+  ///
+  /// ```
+  /// 직함 키워드가 있는 첫 조각      → 직함
+  /// 부서처럼 보이는 조각            → 부서(비어 있을 때만)
+  /// 나머지                         → 버린다
+  /// ```
+  ///
+  /// ⚠️ **직함 키워드가 아무 조각에도 없으면 손대지 않는다.** 가르다가
+  /// 멀쩡한 값을 잃는 쪽이 더 나쁘다.
+  static ({String title, String? department}) _splitTitleSegments(
+    String title,
+  ) {
+    if (!RegExp(r'[/|]').hasMatch(title)) return (title: title, department: null);
+    final parts = title
+        .split(RegExp(r'\s*[/|]\s*'))
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (parts.length < 2) return (title: title, department: null);
+
+    final titleParts = parts
+        .where((p) => _titleKeywords.any((k) => _containsCi(p, k)))
+        .toList();
+    if (titleParts.isEmpty) return (title: title, department: null);
+
+    // 🚨 **한글 직함이 둘 이상이면 가르지 않는다** — `이사|본부장`처럼 직급과
+    //    직책을 나란히 찍은 명함이다. 하나만 남기면 **한쪽을 잃는다.**
+    //
+    // ⚠️ 영문은 다르다 — `대표이사 / CEO`는 **같은 직함의 두 표기**이므로
+    //    한글 쪽만 남긴다.
+    if (titleParts.where((p) => RegExp(r'[가-힣]').hasMatch(p)).length >= 2) {
+      return (title: title, department: null);
+    }
+
+    final head = titleParts.first;
+
+    // ⚠️ 부서 판정을 **이 자리에서만** 넓힌다. `_departmentSuffixes`는 줄
+    //    전체를 가릴 때 쓰는 목록이라 `정보안전부`·`영업부`·`기술지원팀`처럼
+    //    흔한 부서명이 안 걸린다. 여기서는 **이미 「직함 / …」으로 묶여 온
+    //    조각**이라 부서일 가능성이 훨씬 높다.
+    //
+    // ✅ 실측(52장): 넓히기 전에는 부서가 11 → 12장밖에 안 늘었다. 버려진
+    //    조각 대부분이 이 모양이었다.
+    bool deptLike(String p) =>
+        p.length >= 2 &&
+        (_departmentSuffixes.any(p.endsWith) ||
+            RegExp(r'(부|팀|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(p)) &&
+        !_titleKeywords.any((k) => _containsCi(p, k));
+
+    final dept = parts.firstWhere(
+      (p) => p != head && deptLike(p),
+      orElse: () => '',
+    );
+    return (title: head, department: dept.isEmpty ? null : dept);
   }
 
   /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
@@ -3482,6 +3624,18 @@ class OcrScannerService {
               .trim();
         }
       }
+    }
+
+    // 🚨 `/`·`|` 로 묶여 들어온 직함을 마지막에 가른다(2026-08-29, 52장 실측).
+    //    52장 중 직함이 이상한 19장의 **절반이 이 모양**이었고, 잘려 나간
+    //    조각 상당수가 **부서**였다(부서 채움률은 21%였다).
+    //
+    // ⚠️ **여기서 한다.** 앞에서 가르면 그 뒤의 검사들이 조각난 값을 보고
+    //    다르게 움직인다 — 지금 잘 되는 것을 흔들지 않으려면 마지막이 안전하다.
+    final split = _splitTitleSegments(title);
+    title = split.title;
+    if (department.isEmpty && split.department != null) {
+      department = split.department!;
     }
 
     final rawText = lines.join('\n');

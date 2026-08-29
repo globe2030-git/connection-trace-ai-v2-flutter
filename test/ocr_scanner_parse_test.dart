@@ -735,12 +735,14 @@ void main() {
     OcrScanResult parseH(List<({String text, double height})> lines) =>
         OcrScannerService.parseLinesForTestingWithHeights(lines);
 
+    // ⚠️ **대역을 바꿨다**(2026-08-29). 예전에는 첫 줄 대역으로
+    //    `Global Sales Division`을 썼는데, 이제 **조직 낱말이 든 줄은 이름
+    //    후보에서 빠진다**(52장 실측 — `Marketing Division`이 이름 칸에
+    //    들어갔다). 이 검사의 뜻은 *"큰 글자가 이긴다"*이므로 **대역만**
+    //    사람 이름 모양으로 바꾼다.
     test('규칙으로 이름을 못 찾은 경우, 가장 크게 인쇄된 줄을 이름으로 고른다', () {
-      // 영문 이름이라 한글 이름 규칙에 안 걸리고, 직함/회사 키워드도 없어
-      // 예전이면 leftover 맨 앞("Global Sales Division")이 이름이 됐다.
-      // 이름 "John Smith"가 훨씬 큰 글자이므로 그쪽을 골라야 한다.
       final r = parseH([
-        (text: 'Global Sales Division', height: 20),
+        (text: 'Anna Marie Lee', height: 20),
         (text: 'John Smith', height: 44),
         (text: 'some tagline here', height: 18),
       ]);
@@ -750,19 +752,20 @@ void main() {
 
     test('높이 정보가 없으면(=0) 기존대로 맨 앞 줄을 이름으로 쓴다 — 회귀 방지', () {
       final r = parseH([
-        (text: 'Global Sales Division', height: 0),
+        (text: 'Anna Marie Lee', height: 0),
         (text: 'John Smith', height: 0),
       ]);
-      expect(r.name, 'Global Sales Division');
+      expect(r.name, 'Anna Marie Lee');
       expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
     });
 
     test('가장 큰 줄이 맨 앞 줄보다 눈에 띄게 크지 않으면 기존 동작 유지', () {
+      // 대역 교체 이유는 위 검사 주석 참고(2026-08-29).
       final r = parseH([
-        (text: 'Global Sales Division', height: 30),
+        (text: 'Anna Marie Lee', height: 30),
         (text: 'John Smith', height: 31),
       ]);
-      expect(r.name, 'Global Sales Division');
+      expect(r.name, 'Anna Marie Lee');
       expect(r.parseShape?.nameSource, OcrNameSource.leftoverFallback);
     });
 
@@ -1247,7 +1250,14 @@ void main() {
         'M.010-8506-0115 E.skhong@sportslg.com',
       ]);
       expect(r.name, '홍승권');
-      expect(r.title, contains('디지털'));
+      // ⚠️ **기대를 고쳤다**(2026-08-29). 예전에는 `디지털 커뮤니케이션 파트 /
+      //    책임`이 **통째로 직함 칸**에 들어갔고 이 검사는 그것을 지키고 있었다.
+      //    지금은 `/`로 묶여 온 직함을 갈라 **직함 `책임` · 부서 `디지털
+      //    커뮤니케이션 파트`**로 나눈다 — 명함에 인쇄된 뜻 그대로다.
+      //    이 검사의 본래 목적(부서명이 이름 자리를 뺏지 않는지)은 위
+      //    `expect(r.name, '홍승권')`이 그대로 지킨다.
+      expect(r.title, '책임');
+      expect(r.department, contains('디지털'));
     });
   });
 
@@ -1754,7 +1764,14 @@ void main() {
     test('한글이 섞인 약한 폴백은 그대로 쓴다 — 회귀 확인', () {
       final r = parse(['디지털 커뮤니케이션 파트 / 책임', '(주)한빛정보기술']);
       // '책임'이 직함 키워드라 titleLine으로 바로 잡힌다 — 폴백 경로가 아니다.
-      expect(r.title, contains('디지털'));
+      // ⚠️ **기대를 고쳤다**(2026-08-29). 예전에는 `디지털 커뮤니케이션 파트 /
+      //    책임`이 **통째로 직함 칸**에 들어갔고 이 검사는 그것을 지키고 있었다.
+      //    지금은 `/`로 묶여 온 직함을 갈라 **직함 `책임` · 부서 `디지털
+      //    커뮤니케이션 파트`**로 나눈다 — 명함에 인쇄된 뜻 그대로다.
+      //    이 검사의 본래 목적(부서명이 이름 자리를 뺏지 않는지)은 위
+      //    `expect(r.name, '홍승권')`이 그대로 지킨다.
+      expect(r.title, '책임');
+      expect(r.department, contains('디지털'));
     });
 
     test('키워드 목록에 없는 정상 영문 직함(Title Case)은 막지 않는다', () {
