@@ -737,6 +737,18 @@ class OcrScannerService {
   // 회사명 자리를 차지했다. 부서명 흔한 접미사로 끝나는 줄만 후순위로
   // 미룬다("팀"/"실"/"국"/"처" 같은 짧은 접미사는 정상적인 회사명 끝
   // 글자와도 우연히 겹칠 수 있어 긴 접미사부터 확인).
+  /// 정부 부처 이름 — **부서 칸에 들어가면 안 된다**(2026-08-29, 실측).
+  ///
+  /// 명함에 인증·수상 배지로 찍혀 있다(`③산업통상자원부`,
+  /// `G 중소벤처기업부`). 「…부」로 끝나 부서처럼 보이지만 그 사람의 소속이
+  /// 아니다.
+  static const _ministryNames = [
+    '기획재정부', '교육부', '과학기술정보통신부', '외교부', '통일부',
+    '법무부', '국방부', '행정안전부', '문화체육관광부', '농림축산식품부',
+    '산업통상자원부', '보건복지부', '환경부', '고용노동부', '여성가족부',
+    '국토교통부', '해양수산부', '중소벤처기업부',
+  ];
+
   static const _departmentSuffixes = [
     '사업본부',
     '기획실',
@@ -1815,6 +1827,16 @@ class OcrScannerService {
     // 이름과 형태가 같아 구별이 안 되므로, 다른 후보가 없으면 그대로 쓴다.
     bool notPersonName(String l) => !_looksLikeEnglishPersonName(l);
 
+    // 🚨 **`A | B`처럼 조직을 나란히 적은 줄은 회사 이름이 아니다**
+    //    (2026-08-29, 실측). 후원사·계열사를 한 줄에 적은 것이지 그 사람의
+    //    소속 하나를 가리키지 않는다.
+    //
+    // ✅ 실물: `FC서울프로축구단 | GS칼텍스서울kiXx배구단`이 회사 칸에
+    //    들어갔다. **같은 명함 8번째 줄에 `GS 스포츠`가 있었다.**
+    //
+    // ⚠️ **버리지 않고 뒤로 민다** — 다른 후보가 없으면 이것이라도 쓴다.
+    bool notPairedOrgs(String l) => !RegExp(r'\S\s*[|｜]\s*\S').hasMatch(l);
+
     // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄
     // (+사람 이름 모양이 아닌 것을 먼저 본다).
     var idx = leftover.indexWhere(
@@ -1822,8 +1844,18 @@ class OcrScannerService {
           !_looksLikeDeptOrTagline(l) &&
           !_looksLikeLogoNoise(l) &&
           _looksLikeCompanyName(l) &&
-          notPersonName(l),
+          notPersonName(l) &&
+          notPairedOrgs(l),
     );
+    if (idx == -1) {
+      idx = leftover.indexWhere(
+        (l) =>
+            !_looksLikeDeptOrTagline(l) &&
+            !_looksLikeLogoNoise(l) &&
+            _looksLikeCompanyName(l) &&
+            notPersonName(l),
+      );
+    }
     if (idx == -1) {
       idx = leftover.indexWhere(
         (l) =>
@@ -2194,6 +2226,26 @@ class OcrScannerService {
           words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w))) {
         return true;
       }
+    }
+
+    // 🚨 **쉼표로 끊긴 순수 영문 줄은 직함이 아니라 슬로건이다**(2026-08-29,
+    //    실측). 명함 위쪽 슬로건이 직함 칸에 들어갔다 —
+    //    `Soulor deoud, FC SEDUL`(「Soul of Seoul, FC SEOUL」의 오독).
+    //
+    // ⚠️ **조건을 「순수 영문에 직함 낱말이 없으면」으로 잡았다가 되물렸다.**
+    //    그러면 `Business Development`·`Brand Experience`처럼 **키워드 목록에
+    //    없는 정상 영문 직함**까지 지운다 — 이 저장소에는 그것을 지키는 검사가
+    //    이미 있고(「키워드 목록에 없는 정상 영문 직함(Title Case)은 막지
+    //    않는다」), 그 검사가 잡아냈다.
+    //
+    // 📌 남은 갈림길은 **쉼표**다. 직함은 한 덩어리로 인쇄되고, 쉼표로 끊기는
+    //    영문 줄은 슬로건이거나 회사명이 뒤에 붙은 것이다. 위쪽에서 이미
+    //    쉼표 2개 이상과 `Lastname, Firstname`을 걸러 왔는데, 이 줄은 쉼표가
+    //    하나뿐이라 그 사이로 빠져나왔다.
+    if (!_hasHangul(t) &&
+        t.contains(',') &&
+        !_titleKeywords.any((k) => _containsCi(t, k))) {
+      return true;
     }
 
     // 기관·회사 이름이 통째로 들어온 경우.
@@ -3802,6 +3854,47 @@ class OcrScannerService {
       //    실측에서 로고 글씨(ARENA FITNESS)가 이름 자리를 차지한 채
       //    진짜 한글 이름을 막고 있었다.
       if (name.isEmpty || !_hasHangul(name)) name = tailSplit.name!;
+    }
+
+    // 🚨 **부서가 한 줄로 따로 있으면 아예 못 쓰고 있었다**(2026-08-29, 실측).
+    //
+    // ```
+    // 마케팅팀 (한 줄)  →  부서 [] · 직함 [마케팅팀]   ← 직함으로 먹히거나 버려짐
+    // ```
+    //
+    // 부서 채움률이 낮았던 큰 이유가 이것이다. 회사·직함·이름으로 쓰이지 않고
+    // 남은 줄 중에 **부서 모양**이 있으면 부서로 쓴다.
+    //
+    // ⚠️ **이미 정한 값은 건드리지 않는다.** 회사로 고른 줄, 이름, 직함은
+    //    제외하고 본다 — `무지개청소년 센터`처럼 회사면서 센터로 끝나는
+    //    이름을 부서로 끌어오면 안 된다.
+    if (department.isEmpty) {
+      for (final l in leftover) {
+        final t = l.trim();
+        if (t.isEmpty || t.length > 20) continue;
+        if (t == company || t == name || t == title) continue;
+        // ⚠️ 글머리 기호로 시작하는 줄은 **인증·수상 배지**다(실측에서
+        //    `•산업통상자원부`가 부서로 들어왔다). 부서가 아니다.
+        if (RegExp(r'^[•·※▪◦①-⑳-]').hasMatch(t)) continue;
+        // ⚠️ **정부 부처는 그 사람의 부서가 아니다.** 인증·수상 배지에
+        //    찍혀 있다(실측: `③산업통상자원부`, `G 중소벤처기업부`).
+        if (_ministryNames.any(t.endsWith)) continue;
+        if (!_hasHangul(t)) continue;
+        if (t.contains('|')) continue;
+        final isDeptShape =
+            _departmentSuffixes.any(t.endsWith) ||
+            RegExp(r'(팀|부|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(t);
+        if (!isDeptShape) continue;
+        if (_titleKeywords.any((k) => _containsCi(t, k))) continue;
+        // ⚠️ **법인 표기가 붙어 있으면 회사다.** `주식회사 디엠지그룹`이
+        //    「그룹」으로 끝나 부서로 끌려 들어왔다(정답 대비 실측).
+        if (RegExp(r'\(주\)|\(유\)|주식회사|유한회사|사단법인|재단법인')
+            .hasMatch(t)) {
+          continue;
+        }
+        department = t;
+        break;
+      }
     }
     if (department.isEmpty && split.department != null) {
       department = split.department!;
