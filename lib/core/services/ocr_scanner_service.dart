@@ -1979,7 +1979,27 @@ class OcrScannerService {
     )) {
       return false;
     }
-    return words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w));
+    if (words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w))) return true;
+
+    // 🚨 **전부 대문자로 인쇄한 영문 이름**(2026-08-29, 기기 제보).
+    //
+    // ```
+    // 명함 줄   전영환 YOUNGWHAN CHUN
+    // 회사 칸   YOUNGWHAN CHUN          ← 같은 줄의 영문 이름이 회사가 됐다
+    // ```
+    //
+    // ⚠️ **`LG CNS` 를 사람 이름으로 읽으면 안 된다.** 갈림길은 **낱말 길이**다
+    //    — 회사 약자는 짧고(`LG`·`CNS`·`SK`), 사람 이름은 길다
+    //    (`YOUNGWHAN`·`CHUN`). 그래서 **모든 낱말이 3자 이상이고 그중 하나가
+    //    5자 이상**일 때만 사람 이름으로 본다.
+    //
+    // 📌 이 판정은 **버리는 것이 아니라 미루는 것**이다. 다른 후보가 없으면
+    //    그대로 회사로 쓴다 — 위 주석의 원칙 그대로다.
+    if (words.every((w) => RegExp(r'^[A-Z][A-Z.-]{2,}$').hasMatch(w)) &&
+        words.any((w) => w.replaceAll(RegExp(r'[^A-Z]'), '').length >= 5)) {
+      return true;
+    }
+    return false;
   }
 
   /// 회사명으로 정한 값에서 **앞뒤에 붙은 군더더기**를 뗀다.
@@ -1989,8 +2009,61 @@ class OcrScannerService {
   /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
   /// 갑자기 다른 값으로 바뀌지 않는다.**
   static String _tidyCompany(String company) => _restoreCorpParen(
-    _stripCompanyTitleTail(_stripCompanyLogoPrefix(company)),
+    _stripCompanyTitleTail(
+      _stripCompanyLogoPrefix(_stripOrphanContactLabel(company)),
+    ),
   );
+
+  /// 회사명에 딸려 온 **주인 잃은 연락처 라벨**을 뗀다 (2026-08-29, 기기 제보).
+  ///
+  /// ## 증상
+  ///
+  /// globe2030님이 폴드에서 명함 한 장을 스캔하고 *"회사명에 fax가 딸려
+  /// 들어가네"* 라고 알려 주셨다.
+  ///
+  /// ```
+  /// 명함 줄   RAUM   fax 031-###-####
+  /// 회사 칸   RAUM fax          ← 번호는 뗐는데 라벨이 남았다
+  /// ```
+  ///
+  /// ## 원인
+  ///
+  /// 전화·팩스 번호는 앞 단계에서 뽑아 가는데, **그 자리에 있던 라벨은 줄에
+  /// 남는다.** `_isContactLabelResidue` 가 그런 줄을 버리기는 하지만 그건
+  /// **글자가 거의 안 남는 줄**만이다 — `RAUM fax` 는 `RAUM` 이 남아 살아남고,
+  /// 라벨을 단 채로 회사 칸까지 간다.
+  ///
+  /// 🚨 **맥에서는 안 보이던 결함이다.** 맥 Vision 은 `RAUM` 과 `fax …` 를
+  /// 다른 줄로 가르는데 기기 ML Kit 은 한 줄로 묶는다. **줄 나눔이 다르면
+  /// 다른 결함이 나온다** — 실기기로 되재야 하는 이유가 이것이다.
+  ///
+  /// ## ⚠️ 조건이 규칙의 절반이다
+  ///
+  /// 라벨을 그냥 지우면 **멀쩡한 회사명이 잘린다.** 추가 178·180 에서 반복해
+  /// 겪은 함정이다(`SK telecom` 의 `tel`). 그래서 둘 중 하나일 때만 뗀다.
+  ///
+  /// - **끝에 붙어 있다** — `RAUM fax`
+  /// - **번호가 빠져나간 자국(공백 두 칸 이상)이 있다** — `tel  fax  RAUM`
+  ///
+  /// 📌 `Tel Aviv Trading` 처럼 라벨이 **말 가운데 정상적으로 든** 이름은 둘 중
+  /// 어느 조건에도 안 걸린다. 떼고 나서 글자가 2자 미만이면 원래 값을 돌려준다.
+  static String _stripOrphanContactLabel(String company) {
+    final hasGap = RegExp(r'\s{2,}').hasMatch(company);
+    final tailLabel = RegExp(
+      r'[\s|]+(TEL|FAX|PHONE|MOBILE|E-?MAIL|DIRECT|DIR|HP|CP)[.:]?$',
+      caseSensitive: false,
+    );
+    var s = company;
+    var prev = '';
+    while (prev != s) {
+      prev = s;
+      s = s.replaceFirst(tailLabel, '');
+    }
+    if (hasGap) s = s.replaceAll(_contactLabelPattern, ' ');
+    s = s.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
+    final letters = s.replaceAll(RegExp(r'[^가-힣A-Za-z]'), '');
+    return letters.length >= 2 ? s : company;
+  }
 
   /// OCR이 놓친 **여는 괄호를 되살린다** (`주)어디` → `(주)어디`, 추가 340).
   ///
@@ -2204,6 +2277,16 @@ class OcrScannerService {
   /// ⚠️ **멀쩡한 영문 직함은 건드리지 않는다** — `Deputy general manager`,
   /// `Team Leader`, `선임 Architect`는 그대로 둔다. 길이로 자르면 이것들이
   /// 죽는다.
+  /// `_containsCi` 의 **낱말 경계판**.
+  ///
+  /// 부분 문자열로 보면 `ceonitios` 가 `CEO` 에 걸리고 `Development` 가 `Dev`
+  /// 에 걸린다. 직함 키워드 매칭 전반을 바꾸면 지금 잘 되는 것이 흔들리므로,
+  /// **경계가 필요한 자리에서만** 이것을 쓴다.
+  static bool _containsWordCi(String haystack, String needle) => RegExp(
+    '(?<![A-Za-z])${RegExp.escape(needle)}(?![A-Za-z])',
+    caseSensitive: false,
+  ).hasMatch(haystack);
+
   static bool _isNotTitle(String title) {
     final t = title.trim();
     if (t.isEmpty) return false;
@@ -2246,6 +2329,32 @@ class OcrScannerService {
         t.contains(',') &&
         !_titleKeywords.any((k) => _containsCi(t, k))) {
       return true;
+    }
+
+    // 🚨 **로고 글씨가 직함 칸에 든다**(2026-08-29, 기기 제보).
+    //    `GI T ceonitios` · `GIT Clenikloeo` — 회사 로고를 OCR이 반쯤 읽은 것이다.
+    //
+    // 갈림길은 **전부 대문자인 토막**이다. 로고는 약자를 대문자로 박아 두고
+    // (`GIT`·`GI T`), 사람이 쓰는 영문 직함은 그러지 않는다
+    // (`Business Development`·`Brand Experience`).
+    //
+    // ⚠️ 직함 낱말이 하나라도 있으면 손대지 않는다 — `IT Manager`·`CEO Office`
+    //    처럼 대문자 약자로 시작하는 **정상 직함**이 있다.
+    //
+    // 🚨 **여기서는 낱말 경계로 본다.** `_containsCi` 는 부분 문자열이라
+    //    `ceonitios` 안의 `ceo` 에 걸린다 — 초안이 실제로 그래서 안 돌았고,
+    //    이 파일이 :1897 주석에 이미 적어 둔 함정이었다.
+    if (!_hasHangul(t) && !_titleKeywords.any((k) => _containsWordCi(t, k))) {
+      final words = t
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      final hasAllCapsToken = words.any(
+        (w) =>
+            RegExp(r'^[A-Z]{2,}$').hasMatch(w) ||
+            RegExp(r'^[A-Z]$').hasMatch(w),
+      );
+      if (words.length >= 2 && hasAllCapsToken) return true;
     }
 
     // 기관·회사 이름이 통째로 들어온 경우.
