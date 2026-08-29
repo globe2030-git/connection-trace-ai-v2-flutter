@@ -44,6 +44,22 @@ class _BatchRow {
 
 class _OcrBatchScanViewState extends State<OcrBatchScanView> {
   final List<_BatchRow> _rows = [];
+
+  /// **표를 어느 폴더에 쓸 것인가** — 방금 스캔한 이미지가 있던 그 폴더다.
+  ///
+  /// 🚨 2026-08-29에 여기서 막혔다. 바로 아래 [_saveAsTsvFile] 주석은 예전부터
+  /// *"이미지와 같은 폴더에 `scan_result.tsv`로 써 둔다"* 고 적혀 있었는데,
+  /// **코드는 늘 앱 내부 문서 폴더에만 썼다.** 둘이 어긋난 채로 남아 있었다.
+  ///
+  /// 내부 폴더에 이미지를 넣을 수 있을 때는 티가 안 났다 — 넣은 곳과 쓴 곳이
+  /// 같았기 때문이다. **릴리스 빌드에서는 `run-as`가 막혀 내부 폴더에 손을 못
+  /// 대므로 이미지를 외부 폴더(`Android/data/…/files/card_samples`)로 넣는데,
+  /// 그러면 표만 내부에 떨어져 꺼낼 길이 사라진다.** 공유 시트에는 기기 안에
+  /// 저장하는 항목이 없어(내보내는 앱들뿐) 실제로 길이 없었다.
+  ///
+  /// ⚠️ 그러니 이건 편의 기능이 아니라 **측정을 가능하게 하는 조건**이다.
+  /// 기기 인식을 재려면 표가 기기 밖으로 나와야 하고, 그 유일한 통로가 이것이다.
+  Directory? _scannedDir;
   bool _running = false;
   int _done = 0;
   int _total = 0;
@@ -99,6 +115,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
               .toList()
             ..sort((a, b) => a.path.compareTo(b.path));
       if (images.isNotEmpty) {
+        _scannedDir = dir;
         await _runScan(images.map((f) => XFile(f.path)).toList());
         return;
       }
@@ -179,11 +196,22 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
   /// `scan_result.tsv`로 써 둔다. 맥에서는
   /// `adb shell run-as <패키지> cat app_flutter/card_samples/scan_result.tsv`로
   /// 그대로 읽을 수 있다.
+  /// 표를 쓸 폴더. **방금 스캔한 이미지가 있던 폴더**를 우선한다([_scannedDir]).
+  ///
+  /// 갤러리에서 골라 스캔했거나 아직 안 스캔했으면 그 폴더가 없으므로, 예전처럼
+  /// 앱 내부 문서 폴더로 떨어진다. **되던 경로를 바꾸지 않는다.**
+  Future<Directory> _tsvDir() async {
+    final scanned = _scannedDir;
+    if (scanned != null && scanned.existsSync()) return scanned;
+    final docs = await getApplicationDocumentsDirectory();
+    final dir = Directory('${docs.path}/card_samples');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    return dir;
+  }
+
   Future<void> _saveAsTsvFile() async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final dir = Directory('${docs.path}/card_samples');
-      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final dir = await _tsvDir();
       final file = File('${dir.path}/scan_result.tsv');
       file.writeAsStringSync(_buildTsv());
       _toast('저장했습니다: ${file.path}');
@@ -203,9 +231,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
   /// 하고, 앱이 목적지를 정하지 않는다.
   Future<void> _shareTsv({required bool withImages}) async {
     try {
-      final docs = await getApplicationDocumentsDirectory();
-      final dir = Directory('${docs.path}/card_samples');
-      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final dir = await _tsvDir();
       final tsv = File('${dir.path}/scan_result.tsv');
       tsv.writeAsStringSync(_buildTsv());
 
