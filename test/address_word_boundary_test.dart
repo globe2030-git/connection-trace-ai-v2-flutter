@@ -34,13 +34,12 @@ void main() {
         '서울시 마포구 월드컵로 240 서울월드컵경기장',
         'mobile 010-0000-0000',
       ]);
-      expect(r.address, isNotNull);
       expect(
-        r.address!.contains('축구단'),
+        r.address.contains('축구단'),
         isFalse,
         reason: '「프로」의 로, 「축구단」의 구에 걸려 회사 줄이 주소가 됐다',
       );
-      expect(r.address!.contains('마포구'), isTrue);
+      expect(r.address.contains('마포구'), isTrue);
     });
 
     test('「프로」만 있는 줄은 주소가 아니다', () {
@@ -49,7 +48,7 @@ void main() {
         '서울프로덕션',
         '010-0000-0000',
       ]);
-      expect(r.address ?? '', isEmpty, reason: '주소로 보면 안 된다');
+      expect(r.address, isEmpty, reason: '주소로 보면 안 된다');
     });
   });
 
@@ -87,7 +86,7 @@ void main() {
         '경기도 성남시 분당구, 판교로 235',
         '010-0000-0000',
       ]);
-      expect(r.address, isNotNull);
+      expect(r.address, isNotEmpty);
     });
   });
 }
