@@ -1521,6 +1521,49 @@ class OcrScannerService {
     return value;
   }
 
+  /// **마침표를 쉼표로 읽은 이메일을 되살린다**(2026-08-29, 사용자 제보).
+  ///
+  /// ## 무엇이 문제였나
+  ///
+  /// 이메일 정규식은 `…@도메인.최상위`처럼 **마침표**를 요구한다. 그런데
+  /// 인식기가 **`.` 을 `,` 로 읽으면**(`hong@company,co,kr`) 정규식에 아예 안
+  /// 걸리고, 그러면 **이메일 칸이 빈 채로 저장된다.**
+  ///
+  /// 🚨 **「잘못 잘린」 것이 아니라 「없는 것으로 취급」된 것**이라 화면에도
+  /// 아무 흔적이 안 남는다 — 이용자는 인식기가 그 줄을 못 봤다고 생각한다.
+  ///
+  /// ✅ **실물(2026-08-29)**: globe2030님이 같은 명함을 **아이폰·폴드 양쪽에**
+  /// 넣었는데 **둘 다** 이메일을 못 읽어 수기로 넣으셨다. **기기 차이가 아니라
+  /// 인식기 공통**이라는 뜻이다.
+  ///
+  /// ## 되살리는 규칙
+  ///
+  /// **영숫자 사이에 낀 쉼표만** 마침표로 바꾼다. 그렇게 바꾼 결과가 **그 자체로
+  /// 완전한 이메일일 때만** 값으로 쓴다.
+  ///
+  /// ```
+  /// hong@company,co,kr   →  hong@company.co.kr     되살린다
+  /// hong,gil@x,com       →  hong.gil@x.com         되살린다
+  /// a@b.com, 02-1234     →  뒤 쉼표는 영숫자 사이가 아니라 안 건드린다
+  /// ```
+  ///
+  /// ⚠️ **끝에 붙은 쉼표·마침표는 지운 뒤 본다** — `a@b.com,`처럼 문장부호로
+  /// 붙는 경우가 흔한데, 그걸 마침표로 바꾸면 `a@b.com.`이 되어 되레 깨진다.
+  ///
+  /// 되살릴 수 없으면 `null`. **짐작해서 채우지 않는다.**
+  @visibleForTesting
+  static String? repairCommaEmail(String token) {
+    final trimmed = token.trim().replaceAll(RegExp(r'[.,;:]+$'), '');
+    if (!trimmed.contains('@')) return null;
+    if (_fullEmailPattern.hasMatch(trimmed)) return null; // 이미 멀쩡하다
+    final repaired = trimmed.replaceAllMapped(
+      RegExp(r'(?<=[A-Za-z0-9]),(?=[A-Za-z0-9])'),
+      (_) => '.',
+    );
+    if (repaired == trimmed) return null;
+    return _fullEmailPattern.hasMatch(repaired) ? repaired : null;
+  }
+
   /// 한글(음절 또는 자모)이 하나라도 들어 있는지. 로고 판별에서 한글 후보를
   /// 건드리지 않기 위해 쓴다.
   static bool _hasHangul(String s) => RegExp(r'[가-힣ㄱ-ㆎ]').hasMatch(s);
@@ -2189,6 +2232,19 @@ class OcrScannerService {
         email = _stripEmailLabelPrefix(rawEmail);
         matchedRanges.add((emailMatch.start, emailMatch.end));
         matchedContactField = true;
+      } else if (email == null && line.contains('@')) {
+        // 🚨 정규식에 안 걸렸는데 `@`는 있다 — 인식기가 마침표를 쉼표로 읽은
+        //    경우가 여기다(2026-08-29 사용자 제보). 되살릴 수 있으면 되살린다.
+        for (final token in line.split(RegExp(r'\s+'))) {
+          if (!token.contains('@')) continue;
+          final repaired = repairCommaEmail(token);
+          if (repaired == null) continue;
+          email = _stripEmailLabelPrefix(repaired);
+          final at = line.indexOf(token);
+          if (at >= 0) matchedRanges.add((at, at + token.length));
+          matchedContactField = true;
+          break;
+        }
       }
       // 홈페이지. ⚠️ **이메일을 먼저 처리한 뒤에 본다** — 순서가 바뀌면
       // `www` 없이 도메인만 있는 이메일 뒷부분과 겹칠 여지가 생긴다.
