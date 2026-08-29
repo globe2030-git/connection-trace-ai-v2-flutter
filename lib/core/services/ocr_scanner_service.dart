@@ -1086,6 +1086,28 @@ class OcrScannerService {
     // "Head of R&D Dept. Ko Byoung Ho"(7단어)는 여기서 떨어진다.
     final words = s.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
     if (words.isEmpty || words.length > 4) return false;
+
+    // 🚨 **조직·부서 낱말이 들어 있으면 사람 이름이 아니다**(2026-08-29,
+    //    52장 실측). `Innovation Team`·`Marketing Division`이 **「영문 낱말
+    //    2~4개」라는 조건만으로 통과**해 이름 칸에 들어갔다.
+    //
+    // ⚠️ **빈 칸이 낫다.** 이름 칸에 부서명이 들어가면 **채워진 것처럼 보여**
+    //    이용자가 못 알아챈다 — *"가짜 데이터를 만들지 않는다"*와 같은 자리다.
+    if (words.any(
+      (w) => _orgWords.contains(
+        w.toLowerCase().replaceAll(RegExp(r"[.'-]"), ''),
+      ),
+    )) {
+      return false;
+    }
+
+    // 🚨 **소문자로 시작하는 영문 구절은 슬로건이다.** 실측에서
+    //    `more than the most`가 이름 칸에 들어갔다. 사람 이름은 낱말마다
+    //    대문자로 시작한다.
+    if (words.length >= 3 && words.every((w) => RegExp(r'^[a-z]').hasMatch(w))) {
+      return false;
+    }
+
     return words.every((w) => RegExp(r"^[A-Za-z][A-Za-z.'-]*$").hasMatch(w));
   }
 
@@ -1688,9 +1710,27 @@ class OcrScannerService {
     return null;
   }
 
+  /// **조직 단위**를 가리키는 영문 낱말 — 회사명이 아니라 부서다.
+  ///
+  /// ⚠️ [_orgWords]보다 **좁다.** 저쪽은 사람 이름을 가리는 목록이라
+  /// `Solutions`·`Systems`·`Technologies`가 들어 있는데, **그런 낱말은 회사
+  /// 이름에 흔하다**(`ABC Solutions Inc`). 회사명을 가릴 때 그 목록을 쓰면
+  /// **멀쩡한 회사명이 부서로 밀린다.**
+  static const _orgUnitWords = {
+    'team', 'division', 'department', 'dept', 'unit', 'section',
+    'headquarters', 'branch',
+  };
+
   static bool _looksLikeDeptOrTagline(String line) {
     final trimmed = line.trim();
-    final endsWithDeptSuffix = _departmentSuffixes.any(trimmed.endsWith);
+    // 🚨 `Global Sales Division`처럼 **영문 조직 단위**로 끝나는 줄은 부서다
+    //    (2026-08-29). 예전에는 그 줄이 **이름 칸에 들어가는 바람에** 회사명
+    //    자리를 안 뺏었을 뿐이고, 이름 규칙을 고치자 회사명으로 흘러갔다.
+    final hasOrgUnitWord = trimmed
+        .split(RegExp(r'\s+'))
+        .any((w) => _orgUnitWords.contains(w.toLowerCase().replaceAll(RegExp(r"[.'-]"), '')));
+    final endsWithDeptSuffix =
+        hasOrgUnitWord || _departmentSuffixes.any(trimmed.endsWith);
     // 슬로건/캐치프레이즈는 문장 형태라 공백으로 나눈 단어 수가 많은
     // 편이다("국민 맞춤형 복지를 실현하는 디지털 플랫폼 전문기관" = 7단어).
     // 회사명은 보통 짧아서 이 기준으로 어느 정도 구분된다.
@@ -1874,6 +1914,24 @@ class OcrScannerService {
   /// 못 가른다(2026-08-20 실측 결론). 그래서 이 값은 **후보가 여럿일 때
   /// 우선순위를 정하는 데만** 쓴다. 후보가 하나뿐이면 이 값과 무관하게
   /// 그대로 쓴다.
+  /// 조직·부서를 가리키는 영문 낱말. **하나라도 들어 있으면 사람 이름이
+  /// 아니다**(2026-08-29, 52장 실측).
+  ///
+  /// 🚨 `Innovation Team`·`Marketing Division`이 **「대문자로 시작하는 두
+  /// 낱말」이라는 조건만으로 사람 이름으로 통과**해 이름 칸에 들어갔다.
+  ///
+  /// ⚠️ **빈 칸이 낫다.** 이름 칸에 부서명이 들어가면 **채워진 것처럼 보여**
+  /// 이용자가 못 알아챈다 — 이 저장소의 *"가짜 데이터를 만들지 않는다"*와
+  /// 같은 자리다.
+  static const _orgWords = {
+    'team', 'teams', 'division', 'department', 'dept', 'group', 'center',
+    'centre', 'office', 'unit', 'lab', 'labs', 'institute', 'solution',
+    'solutions', 'marketing', 'sales', 'innovation', 'consulting',
+    'partners', 'technologies', 'systems', 'service', 'services',
+    'management', 'research', 'development', 'studio', 'holdings',
+    'ventures', 'capital', 'company', 'corporation',
+  };
+
   static bool _looksLikeEnglishPersonName(String line) {
     if (_hasHangul(line)) return false;
     final words = line
@@ -1882,6 +1940,13 @@ class OcrScannerService {
         .where((w) => w.isNotEmpty)
         .toList();
     if (words.length < 2 || words.length > 4) return false;
+    if (words.any(
+      (w) => _orgWords.contains(
+        w.toLowerCase().replaceAll(RegExp(r"[.'-]"), ''),
+      ),
+    )) {
+      return false;
+    }
     return words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w));
   }
 
