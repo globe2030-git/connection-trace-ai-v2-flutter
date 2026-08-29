@@ -2111,6 +2111,50 @@ class OcrScannerService {
     return trimmed;
   }
 
+  /// **직함 끝에 붙어 온 이름을 떼어낸다**(2026-08-29, 94장 실측).
+  ///
+  /// ```
+  /// 종괄매니저 김지 홍    →  직함 「종괄매니저」 · 이름 「김지홍」
+  /// 파트너 변리사 김세진  →  직함 「파트너 변리사」 · 이름 「김세진」
+  /// ```
+  ///
+  /// 🚨 명함이 **직함과 이름을 한 줄에** 찍고, 게다가 **이름의 자간을 벌려**
+  /// 인쇄하면 인식기가 `김지`·`홍`으로 쪼갠다. 그 줄에 직함 키워드가 있어
+  /// **줄 전체가 직함 칸으로 먹혔고**, 이름은 영영 못 찾았다.
+  ///
+  /// ⚠️ **직함 키워드가 앞쪽에 있어야** 뗀다. `수석 연구원`처럼 뒤 토막이
+  /// 직함의 일부인 경우를 지키기 위해서다.
+  static ({String title, String? name}) _splitTrailingName(String title) {
+    final t = title
+        .split(RegExp(r'\s+'))
+        .where((x) => x.isNotEmpty)
+        .toList();
+    if (t.length < 2) return (title: title, name: null);
+    if (!t.every((x) => RegExp(r'^[가-힣]+$').hasMatch(x))) {
+      return (title: title, name: null);
+    }
+    for (var start = t.length - 1; start >= 1; start--) {
+      final tail = t.sublist(start).join();
+      if (tail.length < 2 || tail.length > 4) continue;
+      if (!_koreanNameRegExp.hasMatch(tail)) continue;
+      if (_isRejectedName(tail)) continue;
+      if (!_hangulNameLooksReal(tail)) continue;
+      // 🚨 **뒤 토막이 직함·부서 낱말이면 떼면 안 된다.** 초안이
+      //    `수석 연구원`을 직함 `수석` + 이름 `연구원`으로 쪼갰다.
+      //    테스트가 잡았다.
+      if (_titleKeywords.any((k) => _containsCi(tail, k))) continue;
+      if (_departmentSuffixes.any(tail.endsWith)) continue;
+      if (RegExp(r'(부|팀|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(tail)) {
+        continue;
+      }
+      final headTokens = t.sublist(0, start);
+      final head = headTokens.join();
+      if (!_titleKeywords.any((k) => _containsCi(head, k))) continue;
+      return (title: headTokens.join(' '), name: tail);
+    }
+    return (title: title, name: null);
+  }
+
   /// **직함이 아닌 것을 직함 칸에서 걷어낸다**(2026-08-29, 94장 실측).
   ///
   /// ## 무엇이 들어와 있었나
@@ -3224,6 +3268,53 @@ class OcrScannerService {
       // 났다(실제 명함 SSIS에서 확인된 회귀 — "국민"이 이름으로 잘못
       // 뽑힘). 로고 오인식 텍스트가 섞인 경우(한글+영문 혼용)만 노리는
       // 검사이므로, 한글이 아닌 문자가 섞여 있을 때만 시도한다.
+      // 🚨 **부서·직함 뒤에 자간을 벌려 인쇄한 이름**(2026-08-29, 94장 실측).
+      //
+      // ```
+      // 개발협력부 김수 진      →  이름 「김수진」
+      // 종괄매니저 김지 홍      →  이름 「김지홍」
+      // ```
+      //
+      // 위 검사는 **영문이 섞인 줄만** 보고(슬로건 오탐을 막으려고), 게다가
+      // **앞에서부터** 이어 붙인다. 그래서 **부서가 앞에 오는 이 모양**은
+      // 통째로 놓쳤다 — 94장에서 이름이 비거나 로고가 들어간 12장 중
+      // **세 장이 이것**이었다.
+      //
+      // ⚠️ **슬로건이 걸리지 않게 조건을 좁힌다** — 앞부분이 **부서 접미사나
+      // 직함 키워드**여야 하고, 뒤 토막을 이어 붙인 것이 **진짜 이름 모양**
+      // 이어야 한다. `국민 맞춤형 복지를…` 같은 문장은 앞부분이 부서·직함이
+      // 아니라 걸리지 않는다.
+      // ⚠️ **영문 후보가 이미 잡혀 있어도 본다.** 실측에서 로고 글씨
+      //    (`ARENA FITNESS`·`BIS`)가 **앞줄에서 먼저 이름 자리를 차지**해
+      //    뒤에 오는 진짜 한글 이름을 막고 있었다. 한국 명함에서 **한글 이름은
+      //    영문 후보보다 강한 근거**다.
+      if (nameLineStrong == null &&
+          (nameLineWeak == null || !_hasHangul(nameLineWeak))) {
+        final t = line
+            .split(_whitespaceSplitRegExp)
+            .where((x) => x.isNotEmpty)
+            .toList();
+        final allHangul = t.every((x) => RegExp(r'^[가-힣]+$').hasMatch(x));
+        if (t.length >= 2 && allHangul) {
+          for (var start = t.length - 1; start >= 1; start--) {
+            final tail = t.sublist(start).join();
+            if (tail.length < 2 || tail.length > 4) continue;
+            final head = t.sublist(0, start).join();
+            final headIsDeptOrTitle =
+                _departmentSuffixes.any(head.endsWith) ||
+                RegExp(r'(부|팀|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(head) ||
+                _titleKeywords.any((k) => _containsCi(head, k));
+            if (!headIsDeptOrTitle) continue;
+            if (!_koreanNameRegExp.hasMatch(tail)) continue;
+            if (_isRejectedName(tail)) continue;
+            if (!_hangulNameLooksReal(tail)) continue;
+            nameLineWeak = tail;
+            weakSource = OcrNameSource.mixedTokenLast;
+            break;
+          }
+        }
+      }
+
       final hasNonHangul = line.replaceAll(RegExp(r'[가-힣\s]'), '').isNotEmpty;
       if (nameLineStrong == null && nameLineWeak == null && hasNonHangul) {
         final tokens = line
@@ -3701,6 +3792,17 @@ class OcrScannerService {
     // 🚨 가른 **뒤에** 본다 — `부장 / 이주배경청소년지원재단.`처럼 묶여 온
     //    경우 가르기가 먼저 직함을 건져 낼 수 있다.
     if (_isNotTitle(title)) title = '';
+
+    // 🚨 직함 끝에 이름이 붙어 온 경우를 뗀다(2026-08-29). 이름 칸이 비어
+    //    있을 때만 옮긴다 — 이미 찾은 이름을 덮지 않는다.
+    final tailSplit = _splitTrailingName(title);
+    if (tailSplit.name != null) {
+      title = tailSplit.title;
+      // ⚠️ 비어 있을 때뿐 아니라 **영문 후보가 들어 있을 때도** 바꾼다.
+      //    실측에서 로고 글씨(ARENA FITNESS)가 이름 자리를 차지한 채
+      //    진짜 한글 이름을 막고 있었다.
+      if (name.isEmpty || !_hasHangul(name)) name = tailSplit.name!;
+    }
     if (department.isEmpty && split.department != null) {
       department = split.department!;
     }
