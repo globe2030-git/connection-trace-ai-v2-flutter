@@ -95,4 +95,39 @@ void main() {
       expect(src.contains("line.contains('@')"), isTrue);
     });
   });
+
+  group('🚨 정규식이 「부분적으로」 맞아 잘리는 경우 (globe2030님 재제보)', () {
+    // hong@company.co,kr → 정규식은 hong@company.co 까지 맞고 쉼표에서 멈춘다.
+    // 매칭이 "성공"했으므로 폴백이 안 돌고 .kr 이 잘린 채 저장됐다.
+    // ⚠️ 앞선 수정이 「완전히 실패했을 때만」 돌아서 이 경우를 못 잡았다 —
+    //    고친 것이 절반만 덮었다.
+    test('⭐ 마지막 마침표만 쉼표여도 되살린다', () {
+      expect(
+        OcrScannerService.repairCommaEmail('hong@company.co,kr'),
+        'hong@company.co.kr',
+      );
+    });
+
+    test('되살린 쪽이 더 길다 — 잘린 것보다 이것을 써야 한다', () {
+      final truncated = 'hong@company.co';
+      final repaired = OcrScannerService.repairCommaEmail('hong@company.co,kr');
+      expect(repaired!.length > truncated.length, isTrue);
+    });
+
+    test('🚨 뒤에 다른 값이 이어지면 되살리지 않는다', () {
+      // 'a@b.com, 02-1234' 는 공백이 있어 토막이 'a@b.com,' 이고,
+      // 끝 쉼표를 지우면 이미 멀쩡하므로 손댈 것이 없다.
+      expect(OcrScannerService.repairCommaEmail('a@b.com,'), isNull);
+    });
+  });
+
+  group('부르는 곳 — 부분 성공도 잡나', () {
+    test('매칭이 성공했을 때도 토막을 다시 본다', () {
+      final src = File(
+        'lib/core/services/ocr_scanner_service.dart',
+      ).readAsStringSync();
+      expect(src.contains('_tokenAround(line, emailMatch.start)'), isTrue);
+      expect(src.contains('repaired.length > rawEmail.length'), isTrue);
+    });
+  });
 }

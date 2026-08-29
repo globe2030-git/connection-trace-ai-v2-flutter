@@ -1521,6 +1521,24 @@ class OcrScannerService {
     return value;
   }
 
+  /// [index]가 걸쳐 있는 **공백으로 나뉜 토막**을 돌려준다.
+  ///
+  /// 정규식이 쉼표에서 멈춰 **잘린 이메일**을 물어 왔을 때, 그 자리의 **온전한
+  /// 토막**을 꺼내 되살리기 위해 쓴다.
+  static String? _tokenAround(String line, int index) {
+    if (index < 0 || index >= line.length) return null;
+    var start = index;
+    while (start > 0 && !RegExp(r'\s').hasMatch(line[start - 1])) {
+      start--;
+    }
+    var end = index;
+    while (end < line.length && !RegExp(r'\s').hasMatch(line[end])) {
+      end++;
+    }
+    final token = line.substring(start, end);
+    return token.isEmpty ? null : token;
+  }
+
   /// **마침표를 쉼표로 읽은 이메일을 되살린다**(2026-08-29, 사용자 제보).
   ///
   /// ## 무엇이 문제였나
@@ -2229,8 +2247,31 @@ class OcrScannerService {
       final emailMatch = emailRegExp.firstMatch(line);
       if (email == null && emailMatch != null) {
         final rawEmail = emailMatch.group(0)!.replaceAll(RegExp(r'\s+'), '');
-        email = _stripEmailLabelPrefix(rawEmail);
-        matchedRanges.add((emailMatch.start, emailMatch.end));
+        // 🚨 **정규식이 「부분적으로」 성공한 경우를 여기서 잡는다**
+        //    (2026-08-29, globe2030님 재제보).
+        //
+        //    `hong@company.co,kr` 처럼 **마지막 마침표만** 쉼표로 읽히면,
+        //    정규식은 `hong@company.co` 까지 맞고 **쉼표에서 멈춘다.** 매칭이
+        //    성공했으므로 아래 폴백이 돌지 않고, **`.kr` 이 잘린 채 저장된다.**
+        //
+        //    ⚠️ 앞서 넣은 복구(추가 589 이전)는 **정규식이 완전히 실패했을
+        //    때만** 돌아서 이 경우를 못 잡았다 — **고친 것이 절반만 덮었다.**
+        final around = _tokenAround(line, emailMatch.start);
+        final repaired = around == null ? null : repairCommaEmail(around);
+        final better = repaired != null && repaired.length > rawEmail.length
+            ? repaired
+            : rawEmail;
+        email = _stripEmailLabelPrefix(better);
+        if (better != rawEmail && around != null) {
+          final at = line.indexOf(around);
+          matchedRanges.add(
+            at >= 0
+                ? (at, at + around.length)
+                : (emailMatch.start, emailMatch.end),
+          );
+        } else {
+          matchedRanges.add((emailMatch.start, emailMatch.end));
+        }
         matchedContactField = true;
       } else if (email == null && line.contains('@')) {
         // 🚨 정규식에 안 걸렸는데 `@`는 있다 — 인식기가 마침표를 쉼표로 읽은
