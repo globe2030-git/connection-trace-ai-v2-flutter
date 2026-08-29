@@ -613,6 +613,16 @@ class OcrScannerService {
     // 걸려 회사명 줄이 통째로 직함이 됐다(직함이 먼저 검사되고 continue
     // 하므로 회사명은 빈 값이 된다). 같은 이유로 'PM'(PMP), 'Head'
     // (Headquarters)도 뺐다. 단어 하나로 자립하는 긴 표기만 남긴다.
+    //
+    // 🚨 **그런데 반대 방향으로도 물린다 — 목록이 아니라 「보는 쪽」이 문제다.**
+    //    2026-08-29에 `ceonitios`(로고 오독) 안의 `CEO`에 걸려, 로고를 걸러
+    //    내려던 규칙이 *"직함 낱말이 있다"*고 보고 **안 돌았다.**
+    //    ⚠️ 이 함정은 **이 주석에 이미 적혀 있었는데 그 자리에서 다시 밟았다.**
+    //    주석으로는 안 막힌다 — 그래서 잠근 검사 이름을 여기 적어 둔다.
+    //
+    //    잠근 검사: `test/device_reported_ocr_test.dart`
+    //              「🚨 직함 키워드는 **낱말 경계**로 본다」
+    //    경계가 필요한 자리에서는 `_containsCi` 대신 `_containsWordCi`를 쓴다.
     'Leader',
     'Tech Lead',
     'Design Lead',
@@ -1894,7 +1904,9 @@ class OcrScannerService {
   /// 이 자리는 직함 키워드(`_titleKeywords`)로도, 이름-직함 분리로도 못
   /// 찾았을 때 오는 **마지막 자리**다. `_titleKeywords`에는 `CEO`·`Director`·
   /// `Manager`처럼 흔한 영문 직함이 이미 들어 있고, 그 매칭은 줄 전체를 보는
-  /// `_containsCi`(부분 문자열, 대소문자 무시)라서 **그 단어를 포함하는 영문
+  /// `_containsCi`(부분 문자열, 대소문자 무시 — ⚠️ **경계가 필요하면
+  /// `_containsWordCi`를 쓴다**, `test/device_reported_ocr_test.dart` 참고)라서
+  /// **그 단어를 포함하는 영문
   /// 직함은 이미 titleLine으로 잡히고 이 폴백까지 내려오지 않는다**(`Sales
   /// Manager`가 실제로 그렇다). 그래서 이 폴백에 도달하는 순수 영문 줄은
   /// 두 갈래로 갈린다 — ① 키워드 목록에 없는 **정상 영문 직함**(`Business
