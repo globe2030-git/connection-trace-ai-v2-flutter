@@ -2111,6 +2111,61 @@ class OcrScannerService {
     return trimmed;
   }
 
+  /// **직함이 아닌 것을 직함 칸에서 걷어낸다**(2026-08-29, 94장 실측).
+  ///
+  /// ## 무엇이 들어와 있었나
+  ///
+  /// ```
+  /// Yang, Se Yeol · Sim, Jeongwoo          영문 이름(성, 이름)
+  /// 파트너 변리사 김세진 · Rim Sallem 림살렘   이름이 딸려 옴
+  /// ###, Itaewon-ro, Yongsan-gu            주소
+  /// 이주배경청소년지원재단.                   기관 이름
+  /// ```
+  ///
+  /// 🚨 **빈 칸이 낫다.** 직함 칸이 채워져 있으면 이용자는 **맞게 읽혔다고
+  /// 생각하고 넘어간다** — 이름 칸에서와 같은 판단이다.
+  ///
+  /// ⚠️ **멀쩡한 영문 직함은 건드리지 않는다** — `Deputy general manager`,
+  /// `Team Leader`, `선임 Architect`는 그대로 둔다. 길이로 자르면 이것들이
+  /// 죽는다.
+  static bool _isNotTitle(String title) {
+    final t = title.trim();
+    if (t.isEmpty) return false;
+
+    // 주소 — 도로명 영문 표기나 쉼표가 둘 이상 든 줄.
+    if (RegExp(r'-(ro|gil|gu|dong|si)\b', caseSensitive: false).hasMatch(t)) {
+      return true;
+    }
+    if (','.allMatches(t).length >= 2) return true;
+
+    // 영문 이름 표기 `Yang, Se Yeol` — 쉼표 하나 + 낱말이 전부 대문자 시작.
+    if (t.contains(',') && !_hasHangul(t)) {
+      final words = t
+          .replaceAll(',', ' ')
+          .split(RegExp(r'\s+'))
+          .where((w) => w.isNotEmpty)
+          .toList();
+      if (words.length >= 2 &&
+          words.length <= 4 &&
+          words.every((w) => RegExp(r"^[A-Z][a-z.'-]*$").hasMatch(w))) {
+        return true;
+      }
+    }
+
+    // 기관·회사 이름이 통째로 들어온 경우.
+    //
+    // ⚠️ **「연구원」은 넣으면 안 된다.** 기관 접미사이면서 동시에 직함이다 —
+    //    초안에 넣었더니 **`책임연구원`·`수석연구원`이 지워졌다**(94장
+    //    측정에서 잡았다). 기관 하나를 놓치는 것이 흔한 직함 둘을 잃는
+    //    것보다 낫다.
+    final bare = t.replaceAll(RegExp(r'[.\s·•]'), '');
+    if (RegExp(r'(재단|법인|협회|조합|공단|공사|주식회사)$').hasMatch(bare)) {
+      return true;
+    }
+
+    return false;
+  }
+
   /// **`/`·`|` 로 묶여 들어온 직함을 가른다**(2026-08-29, 52장 실측).
   ///
   /// ## 무엇이 문제였나
@@ -3634,6 +3689,9 @@ class OcrScannerService {
     //    다르게 움직인다 — 지금 잘 되는 것을 흔들지 않으려면 마지막이 안전하다.
     final split = _splitTitleSegments(title);
     title = split.title;
+    // 🚨 가른 **뒤에** 본다 — `부장 / 이주배경청소년지원재단.`처럼 묶여 온
+    //    경우 가르기가 먼저 직함을 건져 낼 수 있다.
+    if (_isNotTitle(title)) title = '';
     if (department.isEmpty && split.department != null) {
       department = split.department!;
     }
