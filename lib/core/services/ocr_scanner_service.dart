@@ -3508,8 +3508,26 @@ class OcrScannerService {
       // 실측에서 2장 나왔다(추가 183). 추가 178·180·182와 같은 부분 문자열
       // 함정의 네 번째 사례다.
       final lineWithoutContacts = _stripContacts(line);
+      // 🚨 **`그룹장` 의 `그룹` 이 회사 키워드에 걸린다**(2026-08-30, 실측).
+      //
+      // ```
+      // 임준석.그룹장/상무   →  줄 전체가 **회사 칸**으로 갔다
+      //                        (정답: 이름 「임준석」 · 직함 「그룹장/상무」)
+      // ```
+      //
+      // `그룹` 은 회사 키워드(`삼성그룹`)인데 **`그룹장` 은 직함**이다. 그래서
+      // 이 줄은 직함 키워드 매칭 자체를 건너뛰고 회사 후보로 흘러갔다.
+      //
+      // ⚠️ **이 파일이 반복해 겪은 부분 문자열 함정의 또 한 사례다** —
+      //    `SK telecom` 의 `tel`(추가 178·180), `.co.kr` 의 `Co.`(추가 183),
+      //    `ceonitios` 의 `ceo`(추가 592). **회사 낱말 뒤에 `장` 이 붙으면
+      //    그것은 사람의 직함이지 회사가 아니다.**
+      final lineForCompanyCheck = lineWithoutContacts.replaceAll(
+        RegExp(r'(그룹|본부|사업부|공사|공단)장'),
+        ' ',
+      );
       final isCompanyLine = _companyKeywords.any(
-        (k) => _containsCi(lineWithoutContacts, k),
+        (k) => _containsCi(lineForCompanyCheck, k),
       );
       final isQualificationLine = _qualificationMarkers.any(
         (k) => _containsCi(line, k),
@@ -4216,7 +4234,35 @@ class OcrScannerService {
         // ⚠️ **정부 부처는 그 사람의 부서가 아니다.** 인증·수상 배지에
         //    찍혀 있다(실측: `③산업통상자원부`, `G 중소벤처기업부`).
         if (_ministryNames.any(t.endsWith)) continue;
-        if (!_hasHangul(t)) continue;
+        // 🚨 **영문 조직 줄도 본다**(2026-08-30). `UX Group. Executive Leader`
+        //    처럼 **부서와 직함이 마침표로 이어진 영문 줄**이 있다. 예전에는
+        //    한글이 없으면 건너뛰어, 이 줄이 직함 줄로 안 잡히는 순간 부서를
+        //    통째로 잃었다.
+        //
+        // ⚠️ **조직 꼬리로 끝나는 앞부분만** 가져온다 — 뒤쪽(`Executive
+        //    Leader`)은 직함이다.
+        if (!_hasHangul(t)) {
+          final m = RegExp(
+            r'^(.{2,24}?(?:Center|Centre|Group|Team|Division|Dept|Department|'
+            r'Lab|Unit|Office))\.\s+\S',
+            caseSensitive: false,
+          ).firstMatch(t);
+          if (m == null) continue;
+          final head = m.group(1)!.trim();
+          if (head == company || head == name || head == title) continue;
+          // ⚠️ **`Head of R&D Dept.` 는 부서가 아니라 직함이다**(실측에서 2장이
+          //    부서 칸에 들어갔다). 조직 꼬리로 끝나도 **앞에 직함 낱말이
+          //    있으면** 그 사람의 자리를 말하는 것이다.
+          if (RegExp(
+            r'(?<![A-Za-z])(Head|Chief|Director|Manager|Leader|Officer|'
+            r'President|VP)(?![A-Za-z])',
+            caseSensitive: false,
+          ).hasMatch(head)) {
+            continue;
+          }
+          department = head;
+          break;
+        }
         // 🚨 **칸막이로 이어 적은 부서를 통째로 버리고 있었다**(2026-08-30, 실측).
         //
         // ```
