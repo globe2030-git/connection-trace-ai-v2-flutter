@@ -49,7 +49,7 @@ from _firebase_admin import (  # noqa: E402
     get_json_or_none,
 )
 
-PKG = "com.connectiontrace.connection_trace_ai_flutter"
+PKG = "com.creamhouse.connectionsense"
 PREFS = "shared_prefs/FlutterSharedPreferences.xml"
 ADB = os.path.expanduser("~/Library/Android/sdk/platform-tools/adb")
 

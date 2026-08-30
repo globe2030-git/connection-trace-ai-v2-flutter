@@ -22,6 +22,66 @@
           }
         },
         {
+          "client_id": "79345379389-hdmrmoack2229nei2rjt2nc89js3nffb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.connectiontrace.connection_trace_ai_flutter",
+            "certificate_hash": "419aee698162a44c1f8f2a108f0ff7e81039ead7"
+          }
+        },
+        {
+          "client_id": "79345379389-7bub5mulhdsth04uoca3pn9r7uina7kk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtFHkc59OhyTDrwpwyAlvwqbqYB4GBJBE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "79345379389-7bub5mulhdsth04uoca3pn9r7uina7kk.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "79345379389-3bhtgaqes5mqgiimj7guv34oqp7r5lfr.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.connectiontrace.connectionTraceAiFlutter"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:79345379389:android:1fd86a4b95f44c10182254",
+        "android_client_info": {
+          "package_name": "com.creamhouse.connectionsense"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "79345379389-l4a60929fiemeq3krqd64beie683ccat.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.creamhouse.connectionsense",
+            "certificate_hash": "419aee698162a44c1f8f2a108f0ff7e81039ead7"
+          }
+        },
+        {
+          "client_id": "79345379389-sqq0uk8rk9navtpnakqnlqseg0mvnebh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.creamhouse.connectionsense",
+            "certificate_hash": "5482f3fad5631bbc02f9ce6781ed2fc05e1fe3b9"
+          }
+        },
+        {
           "client_id": "79345379389-7bub5mulhdsth04uoca3pn9r7uina7kk.apps.googleusercontent.com",
           "client_type": 3
         }
