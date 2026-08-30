@@ -44,11 +44,25 @@ String company(String line) => OcrScannerService.parseLinesForTesting([
 ]).company;
 
 void main() {
+  // 🚨 **2026-08-30(추가 614): 값에서 띄어쓰기가 사라졌다. 취지는 그대로다.**
+  //
+  // 이 검사가 지키는 것은 *"`GS` 를 자르지 않는다"* 이고 **그것은 안 바뀌었다.**
+  // 바뀐 것은 **`GS 스포츠` 를 `GS스포츠` 로 붙인다**는 것뿐이다.
+  //
+  // 📌 **근거는 정답지다** — 190장 정답지가 이 둘을 **붙여** 적고 있다.
+  //
+  // ```
+  // IMG_4239   기기 「SK 텔레콤」   정답 「SK텔레콤」
+  // card2      기기 「GS 스포츠」   정답 「GS스포츠」
+  // ```
+  //
+  // ⚠️ **자른 것이 아니라 붙인 것이다.** 「스포츠」로 잘리던 제보 상황은 여전히
+  //    막혀 있다 — 아래 값이 `스포츠` 가 되면 그때가 회귀다.
   group('⭐ 두 글자 브랜드는 남긴다 — 실물 제보', () {
-    test('GS 스포츠', () => expect(company('GS 스포츠'), 'GS 스포츠'));
-    test('SK 텔레콤', () => expect(company('SK 텔레콤'), 'SK 텔레콤'));
-    test('LG 전자', () => expect(company('LG 전자'), 'LG 전자'));
-    test('DB 손해보험', () => expect(company('DB 손해보험'), 'DB 손해보험'));
+    test('GS 스포츠', () => expect(company('GS 스포츠'), 'GS스포츠'));
+    test('SK 텔레콤', () => expect(company('SK 텔레콤'), 'SK텔레콤'));
+    test('LG 전자', () => expect(company('LG 전자'), 'LG전자'));
+    test('DB 손해보험', () => expect(company('DB 손해보험'), 'DB손해보험'));
     test('붙여 쓴 것은 원래 멀쩡했다', () => expect(company('GS스포츠'), 'GS스포츠'));
   });
 
@@ -58,7 +72,8 @@ void main() {
     });
 
     test('로고와 회사명이 같으면 중복을 걷어낸다 — 100장 측정에서 나온 사례', () {
-      expect(company('SK SK 텔레콤'), 'SK 텔레콤');
+      // 중복을 걷어내는 것은 그대로이고, 남은 값의 띄어쓰기만 붙는다(위 참조).
+      expect(company('SK SK 텔레콤'), 'SK텔레콤');
     });
 
     test('회사 접미사가 있고 이름이 남으면 앞 글자는 로고다(추가 318)', () {

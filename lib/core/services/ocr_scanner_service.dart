@@ -1977,6 +1977,9 @@ class OcrScannerService {
       // **낱말이 둘 이상이면 밀지 않는다.** 재 보니 여기가 급소였다 —
       // `LG CNS`·`TWINS LG`·`LEWIS EXPERT` 는 **진짜 영문 회사명**인데
       // 함께 밀려 네 장을 잃었다.
+      // 낱말 사이에 쉼표·마침표가 낀 순수 영문은 로고 잡음이다
+      // (`Souloreoul, FC SEOUL` — 실제로는 `Soul of Seoul` 로고다).
+      if (RegExp(r'[A-Za-z][,.]\s').hasMatch(t)) return false;
       if (t.split(RegExp(r'\s+')).length != 1) return true;
       // 한 낱말이면서 **전부 대문자**일 때만 로고로 본다(`SAMSUNG`).
       return !RegExp(r'^[A-Z][A-Z0-9.&-]{2,}$').hasMatch(t);
@@ -2165,10 +2168,65 @@ class OcrScannerService {
   /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
   /// 갑자기 다른 값으로 바뀌지 않는다.**
   static String _tidyCompany(String company) => _restoreCorpParen(
-    _stripCompanyTitleTail(
-      _stripCompanyLogoPrefix(_stripOrphanContactLabel(company)),
+    _joinBrokenCompanySpaces(
+      _stripCompanyTitleTail(
+        _stripCompanyLogoPrefix(_stripOrphanContactLabel(company)),
+      ),
     ),
   );
+
+  /// 띄어쓰기 붙이기만 따로 부른다 — 지키기로 한 것(법인 표기·`(주) 잇팩`)을
+  /// 검사로 고정하기 위해서다. 명함을 지어내면 다른 규칙에 가려 안 보인다.
+  @visibleForTesting
+  static String joinBrokenCompanySpacesForTesting(String company) =>
+      _joinBrokenCompanySpaces(company);
+
+  /// **회사명 안에서 벌어진 띄어쓰기를 붙인다**(2026-08-30, 추가 614).
+  ///
+  /// 부서 쪽의 `_tidyDepartment` 와 같은 모양인데, 회사 칸에는 없었다.
+  ///
+  /// ```
+  /// 라움소프 트     →  라움소프트     (card_104)
+  /// 라움 소 프트    →  라움소프트     (card_114)
+  /// ```
+  ///
+  /// ⚠️ **한 글자 조각일 때만 붙인다.** 온전한 낱말 사이의 띄어쓰기는 명함에
+  /// 그렇게 인쇄된 것이다 — `주식회사 디엠지그룹` 을 붙이면 틀린다. 그리고
+  /// 정답지가 **띄어쓰기까지 그대로 요구하는 장이 있다**(`(주) 잇팩`).
+  static String _joinBrokenCompanySpaces(String company) {
+    final s = company.trim();
+    if (!_hasHangul(s)) return s;
+    // 법인 표기가 섞여 있으면 손대지 않는다 — 거기 띄어쓰기는 뜻이 있다.
+    if (RegExp(r'\(주\)|\(유\)|㈜|주식회사|유한회사|사단법인|재단법인').hasMatch(s)) {
+      return s;
+    }
+    // ⚠️ **정규식 되풀이로는 안 된다.** `라움 소 프트` 는 가운데가 한 글자라
+    //    앞뒤 어느 쪽으로 붙여도 다음 짝이 안 걸린다. **낱말 단위**로 본다.
+    final parts = s.split(RegExp(r'\s+'));
+    final out = <String>[];
+    // 📌 **한 글자를 붙였으면 그다음 조각도 붙인다.** 낱말 하나가 두 군데서
+    //    끊긴 것이라(`라움 소 프트`), 한 번만 붙이면 `라움소 프트` 로 남는다.
+    var justJoined = false;
+    for (final part in parts) {
+      final lone = part.length == 1 && RegExp(r'^[가-힣]$').hasMatch(part);
+      final followsBreak = justJoined && RegExp(r'^[가-힣]').hasMatch(part);
+      if ((lone || followsBreak) && out.isNotEmpty) {
+        out[out.length - 1] = '${out.last}$part';
+        justJoined = lone;
+      } else {
+        out.add(part);
+        justJoined = false;
+      }
+    }
+    final joined = out.join(' ');
+    // **영문 머리와 한글 사이의 공백**도 붙인다 — `SK 텔레콤` → `SK텔레콤`.
+    // 브랜드 접두는 회사명의 일부이고, 명함에는 붙여 인쇄돼 있다.
+    return joined.replaceFirstMapped(
+      RegExp(r'^([A-Za-z]{2,3})\s+([가-힣])'),
+      (m) => '${m[1]}${m[2]}',
+    );
+  }
+
 
   /// 부서 값에서 **벌어진 끝 음절**을 붙인다 (2026-08-30, 기기 채점 실측).
   ///
