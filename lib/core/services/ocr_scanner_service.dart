@@ -2598,7 +2598,27 @@ class OcrScannerService {
     //    아니다.** 건질 것이 없으면 손대지 않는다.
     if (depts.isEmpty) return (title: rawTitle, department: null);
 
-    return (title: head, department: depts.join(' / '));
+    // 🚨 **부서를 얻었을 때도 「직함의 나머지 반쪽」은 버리면 안 된다**
+    //    (2026-08-30, 두 자 대조 실측).
+    //
+    // ```
+    // 과장 / 정보안전부 / Section Manager
+    //   →  직함 「과장」 · 부서 「정보안전부」   ← Section Manager 를 버렸다
+    //   정답: 직함 「과장 / Section Manager」
+    // ```
+    //
+    // [추가 600] 은 **부서를 못 얻었을 때**만 원래 직함을 지키도록 고쳤다.
+    // 부서를 얻은 줄에서는 여전히 `head` 만 남기고 나머지를 버리고 있었다.
+    //
+    // 📌 **버릴 것과 남길 것을 가르는 근거는 「직함 낱말이 있는가」다.**
+    //    `Section Manager` 는 직함 낱말(`Manager`)을 갖고 있으니 **직함의
+    //    다른 표기**이고, `정보안전부` 는 부서다. 셋을 각자 제자리로 보낸다.
+    final otherTitles = titleParts.where((p) => p != head).toList();
+    final title2 = otherTitles.isEmpty
+        ? head
+        : ([head, ...otherTitles]).join(' / ');
+
+    return (title: title2, department: depts.join(' / '));
   }
 
   /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
