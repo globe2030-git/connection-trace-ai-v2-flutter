@@ -2026,6 +2026,40 @@ class OcrScannerService {
     ),
   );
 
+  /// 부서 값에서 **벌어진 끝 음절**을 붙인다 (2026-08-30, 기기 채점 실측).
+  ///
+  /// ```
+  /// 매니지드운영본부 매니지드운영 팀  →  …매니지드운영팀
+  /// ```
+  ///
+  /// ⚠️ **한 글자짜리 꼬리만** 붙인다. `사업 1팀` 의 `1팀` 은 두 글자라 그대로
+  /// 둔다 — 명함에 그렇게 인쇄돼 있다.
+  ///
+  /// ## 🚨 여기서 **하지 않는 것** — 재고 물렸다
+  ///
+  /// 처음에는 *"맨 앞에 붙은 영문 한 낱말을 뗀다"* 도 넣었다. 옆 칸의 영문
+  /// 이름(`Soon`)이 같은 줄로 읽힌 것을 치우려던 것이다. **재 보니 부서가
+  /// 65% → 57% 로 떨어졌다.**
+  ///
+  /// ```
+  /// ICT 사업본부        →  사업본부         ← 멀쩡한 부서를 깎았다
+  /// AI 아키텍처팀        →  아키텍처팀
+  /// Digital Business본부 →  Business본부
+  /// ```
+  ///
+  /// **영문 낱말이 부서 이름의 일부인 경우가 훨씬 많다.** 이름 조각 한둘을
+  /// 얻으려다 다섯을 잃는다. 그래서 넣지 않는다.
+  static String _tidyDepartment(String department) {
+    final s = department.trim();
+    if (s.isEmpty) return s;
+    return s
+        .replaceFirstMapped(
+          RegExp(r'(\S)\s+(팀|부|실|과|처|국)$'),
+          (m) => '${m[1]}${m[2]}',
+        )
+        .trim();
+  }
+
   /// 회사명에 딸려 온 **주인 잃은 연락처 라벨**을 뗀다 (2026-08-29, 기기 제보).
   ///
   /// ## 증상
@@ -2414,8 +2448,20 @@ class OcrScannerService {
   /// ⚠️ **직함 키워드가 아무 조각에도 없으면 손대지 않는다.** 가르다가
   /// 멀쩡한 값을 잃는 쪽이 더 나쁘다.
   static ({String title, String? department}) _splitTitleSegments(
-    String title,
+    String rawTitle,
   ) {
+    // 🚨 **영문 명함은 마침표를 칸막이로 쓴다**(2026-08-30, 실측).
+    //    `BX Center. Business Manager` · `UX Group. Executive Leader`.
+    //    ⚠️ **조직 꼬리 바로 뒤의 마침표만** 칸막이로 본다 — 그냥 `.` 을
+    //       가르면 약어(`Ph.D`)와 문장이 다 쪼개진다.
+    final title = rawTitle.replaceFirstMapped(
+      RegExp(
+        r'(?<![A-Za-z])(Center|Centre|Group|Team|Division|Dept|Department|'
+        r'Lab|Unit|Office)\.\s+',
+        caseSensitive: false,
+      ),
+      (m) => '${m[1]} | ',
+    );
     if (!RegExp(r'[/|]').hasMatch(title)) return (title: title, department: null);
     final parts = title
         .split(RegExp(r'\s*[/|]\s*'))
@@ -2453,11 +2499,44 @@ class OcrScannerService {
             RegExp(r'(부|팀|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(p)) &&
         !_titleKeywords.any((k) => _containsCi(p, k));
 
-    final dept = parts.firstWhere(
-      (p) => p != head && deptLike(p),
-      orElse: () => '',
+    // 🚨 **두 단계로 인쇄된 부서를 한 조각만 집고 있었다**(2026-08-30, 실측).
+    //
+    // ```
+    // 대리 / 구로지점 / 제1영업본부   →  부서 「제1영업본부」   ← 구로지점을 잃었다
+    // ```
+    //
+    // `firstWhere` 가 **먼저 걸리는 하나만** 가져갔다. 기기 채점에서 부서가
+    // 틀린 5장이 **전부 이 모양**이었다 — 회사의 조직 계층을 위에서 아래로
+    // 나란히 찍은 것이라, 한 조각만 남기면 **어느 부서인지 알 수 없어진다.**
+    //
+    // ⚠️ **조직 꼬리를 이 자리에서만 넓힌다.** `지점`·`지사`·`부문`·`연구소`는
+    //    줄 전체를 가릴 때 쓰기엔 위험한 낱말이지만, **이미 「직함 / …」으로
+    //    묶여 온 조각**이라 부서일 가능성이 훨씬 높다(위 `deptLike` 와 같은
+    //    이유다).
+    bool orgLike(String p) =>
+        p.length >= 2 &&
+        p.length <= 20 &&
+        !_titleKeywords.any((k) => _containsCi(p, k)) &&
+        (deptLike(p) ||
+            RegExp(r'(지점|지사|부문|사업부|연구소|본부|센터)$').hasMatch(p) ||
+            // ⚠️ 영문 조직 단위(`R&D Center`·`UX Group`)도 부서다. 실측에서
+            //    `부사장 / R&D Center` 가 통째로 버려졌다.
+            //
+            // 🚨 **`_orgUnitWords` 를 넓히지 않는다.** 그 목록은 회사 후보를
+            //    거르는 데도 쓰여서, `Center`·`Group` 을 넣으면 *"… Group"*
+            //    이라는 **회사명**이 부서로 끌려간다. 그래서 **이 자리에서만**
+            //    꼬리를 본다.
+            RegExp(
+              r'(?<![A-Za-z])(Center|Centre|Group|Team|Division|Dept|'
+              r'Department|Lab|Unit|Office)$',
+              caseSensitive: false,
+            ).hasMatch(p));
+
+    final depts = parts.where((p) => p != head && orgLike(p)).toList();
+    return (
+      title: head,
+      department: depts.isEmpty ? null : depts.join(' / '),
     );
-    return (title: head, department: dept.isEmpty ? null : dept);
   }
 
   /// 회사명 뒤에 붙은 **직함**을 뗀다 (`(주)제이투이 영업대표/부장` → `(주)제이투이`).
@@ -3924,22 +4003,75 @@ class OcrScannerService {
         final isDept = List<bool>.filled(tokens.length, false);
         String bareOf(String t) =>
             t.replaceAll(RegExp(r'^[|:/,.·]+|[|:/,.·]+$'), '');
+        // 🚨 **조직 계층을 나란히 찍은 명함에서 한 조각만 집고 있었다**
+        //    (2026-08-30, 기기 채점 실측). 부서가 틀린 5장이 **전부 이 모양**
+        //    이었다.
+        //
+        // ```
+        // 대리 / 구로지점 / 제1영업본부   →  부서 「제1영업본부」  ← 구로지점을 잃었다
+        // 팀장 서울사업팀 서울동부지사     →  부서 「서울사업팀」    ← 지사를 잃었다
+        // ```
+        //
+        // 원인이 둘이었다.
+        //
+        // ① **되짚기가 구분자에서 멈췄다** — `/` 는 `bareOf` 로 빈 문자열이
+        //    되는데 그때 `break` 했다. 구분자는 **넘어가야** 그 앞 조각까지
+        //    닿는다. 다만 **연달아 비면 멈춘다**(줄이 끊긴 것으로 본다).
+        // ② **앞으로만 갔다** — 상위 조직이 뒤에 오는 명함이 있다
+        //    (`서울사업팀 서울동부지사`). 조직 꼬리가 붙은 토큰이면 이어 간다.
+        //
+        // ⚠️ **조직 꼬리를 이 자리에서만 넓힌다.** `지사`·`지점`·`부문`은 줄
+        //    전체를 가릴 때 쓰기엔 위험하지만, **이미 부서 토큰에 잇닿아 있는
+        //    조각**이라 부서일 가능성이 훨씬 높다.
+        bool orgTail(String t) =>
+            RegExp(r'(지점|지사|부문|사업부|연구소|본부|센터)$').hasMatch(t);
         for (var i = 0; i < tokens.length; i++) {
           final bare = bareOf(tokens[i]);
           if (bare.isEmpty || !_departmentSuffixes.any(bare.endsWith)) continue;
           isDept[i] = true;
+          var blanks = 0;
           for (var j = i - 1; j >= 0 && !isDept[j]; j--) {
             final prev = bareOf(tokens[j]);
-            if (prev.isEmpty) break;
+            if (prev.isEmpty) {
+              if (++blanks >= 2) break; // 연달아 비면 줄이 끊긴 것이다
+              continue;
+            }
+            blanks = 0;
             if (_titleKeywords.any((k) => _containsCi(prev, k))) break;
             isDept[j] = true;
           }
+          blanks = 0;
+          for (var j = i + 1; j < tokens.length && !isDept[j]; j++) {
+            final next = bareOf(tokens[j]);
+            if (next.isEmpty) {
+              if (++blanks >= 2) break;
+              continue;
+            }
+            blanks = 0;
+            if (_titleKeywords.any((k) => _containsCi(next, k))) break;
+            // ⚠️ 뒤쪽은 **조직 꼬리가 있을 때만** 이어 간다 — 앞쪽과 달리
+            //    회사명·이름이 뒤따르는 줄이 흔하다.
+            if (!orgTail(next) && !_departmentSuffixes.any(next.endsWith)) {
+              break;
+            }
+            isDept[j] = true;
+          }
         }
+        // ⚠️ **부서 조각 사이의 구분자는 살린다.** 명함에 `구로지점 / 제1영업본부`
+        //    로 찍혀 있으면 `/` 까지가 그 사람이 받은 표기다 — 공백으로 바꾸면
+        //    **인쇄된 것과 다른 값**이 된다(정답지도 `/` 를 지운 것과 남긴 것을
+        //    구분해 적고 있다).
+        final first = isDept.indexOf(true);
+        final last = isDept.lastIndexOf(true);
         final deptTokens = <String>[];
         final restTokens = <String>[];
         for (var i = 0; i < tokens.length; i++) {
           if (isDept[i]) {
             deptTokens.add(bareOf(tokens[i]));
+          } else if (first >= 0 && i > first && i < last &&
+              bareOf(tokens[i]).isEmpty) {
+            // 부서 조각 **사이**에 낀 구분자다. 직함 쪽으로 보내지 않는다.
+            deptTokens.add(tokens[i]);
           } else {
             restTokens.add(tokens[i]);
           }
@@ -3992,7 +4124,9 @@ class OcrScannerService {
     if (department.isEmpty) {
       for (final l in leftover) {
         final t = l.trim();
-        if (t.isEmpty || t.length > 20) continue;
+        // ⚠️ **길이를 30자로 넓혔다**(2026-08-30, 실측). `DX사업본부 공공시스템부문
+        //    공공시스템2팀`(25자)처럼 계층을 다 적은 부서가 20자에서 잘렸다.
+        if (t.isEmpty || t.length > 30) continue;
         if (t == company || t == name || t == title) continue;
         // ⚠️ 글머리 기호로 시작하는 줄은 **인증·수상 배지**다(실측에서
         //    `•산업통상자원부`가 부서로 들어왔다). 부서가 아니다.
@@ -4001,24 +4135,91 @@ class OcrScannerService {
         //    찍혀 있다(실측: `③산업통상자원부`, `G 중소벤처기업부`).
         if (_ministryNames.any(t.endsWith)) continue;
         if (!_hasHangul(t)) continue;
-        if (t.contains('|')) continue;
-        final isDeptShape =
-            _departmentSuffixes.any(t.endsWith) ||
-            RegExp(r'(팀|부|실|과|처|국|센터|본부|그룹|파트)$').hasMatch(t);
-        if (!isDeptShape) continue;
-        if (_titleKeywords.any((k) => _containsCi(t, k))) continue;
+        // 🚨 **칸막이로 이어 적은 부서를 통째로 버리고 있었다**(2026-08-30, 실측).
+        //
+        // ```
+        // 매니지드운영본부 | 매니지드운영 팀   →  아무 칸에도 안 들어갔다
+        // 기술평가부문 | 기술인증평가단
+        // ```
+        //
+        // 예전에는 `|` 가 들어간 줄을 통째로 건너뛰었다 — `A | B` 가 **회사와
+        // 부서**인 경우를 막으려던 것이다. 그런데 **양쪽이 다 조직 단위면**
+        // 그건 한 부서를 두 단계로 적은 것이다.
+        //
+        // ⚠️ **한쪽이라도 조직 모양이 아니면 예전처럼 건너뛴다.**
+        bool deptShape(String x) =>
+            _departmentSuffixes.any(x.endsWith) ||
+            RegExp(
+              r'(팀|부|실|과|처|국|센터|본부|그룹|파트|연구소|부문|지사|지점)$',
+            ).hasMatch(x) ||
+            // ⚠️ `기술인증평가단`·`사업단` 은 부서다. 다만 **`재단` 은 회사**이므로
+            //    바로 앞 글자가 `재` 면 뺀다(`서울관광재단`).
+            RegExp(r'(?<!재)단$').hasMatch(x);
+        var candidate = t;
+        if (t.contains('|')) {
+          final parts = t
+              .split(RegExp(r'\s*\|\s*'))
+              .map((x) => x.trim())
+              .where((x) => x.isNotEmpty)
+              .toList();
+          if (parts.length < 2 || !parts.every(deptShape)) continue;
+          candidate = parts.join(' ');
+        }
+        if (!deptShape(candidate)) continue;
+        if (_titleKeywords.any((k) => _containsCi(candidate, k))) continue;
         // ⚠️ **법인 표기가 붙어 있으면 회사다.** `주식회사 디엠지그룹`이
         //    「그룹」으로 끝나 부서로 끌려 들어왔다(정답 대비 실측).
         if (RegExp(r'\(주\)|\(유\)|주식회사|유한회사|사단법인|재단법인')
             .hasMatch(t)) {
           continue;
         }
-        department = t;
+        department = candidate;
         break;
       }
     }
     if (department.isEmpty && split.department != null) {
       department = split.department!;
+    }
+
+    department = _tidyDepartment(department);
+
+    // 🚨 **상위 조직이 윗줄에 따로 찍힌 명함**(2026-08-30, 기기 채점 실측).
+    //
+    // ```
+    // 서울컨벤션뷰로            ← 이 줄을 통째로 잃고 있었다
+    // MICE지원팀 | 주임
+    // ```
+    //
+    // 부서를 집어 온 줄의 **바로 윗줄**이 조직 이름이면 그것까지가 부서다.
+    // 실측에서 이 모양이 셋이었다(`card_205`·`212`·`213`, 전부 서울관광재단).
+    //
+    // ⚠️ **바로 위 한 줄만 본다.** 더 올라가면 회사명·슬로건에 닿는다.
+    // ⚠️ **회사로 고른 줄은 절대 안 붙인다** — `서울관광재단`이 회사고
+    //    `서울컨벤션뷰로`는 그 안의 본부다. 둘을 섞으면 회사를 잃는다.
+    if (department.isNotEmpty) {
+      final idx = lines.indexWhere((l) => l.contains(department));
+      if (idx > 0) {
+        // ⚠️ **윗줄 끝에 로고가 붙어 오는 일이 잦다** — `서울컨벤션뷰로 PLUS
+        //    SEOUL` 처럼. 그래서 줄 전체가 아니라 **앞머리 한글 덩어리**를 본다.
+        final rawAbove = lines[idx - 1].trim();
+        final headMatch = RegExp(r'^[가-힣][가-힣\s]*').firstMatch(rawAbove);
+        final above = (headMatch?.group(0) ?? rawAbove).trim();
+        final aboveOrg =
+            above.length >= 2 &&
+            above.length <= 20 &&
+            _hasHangul(above) &&
+            RegExp(r'(뷰로|본부|사업부|부문|센터|연구소|지사|지점|단)$')
+                .hasMatch(above) &&
+            above != company &&
+            above != name &&
+            above != title &&
+            !department.contains(above) &&
+            !_titleKeywords.any((k) => _containsCi(above, k)) &&
+            !_ministryNames.any(above.endsWith) &&
+            !RegExp(r'\(주\)|\(유\)|주식회사|유한회사|사단법인|재단법인')
+                .hasMatch(above);
+        if (aboveOrg) department = '$above $department';
+      }
     }
 
     final rawText = lines.join('\n');
