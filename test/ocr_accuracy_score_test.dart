@@ -277,6 +277,15 @@ void main() {
         // ignore: avoid_print
         print('  … 외 ${wrong.length - 60}건');
       }
+      // 2026-08-30(추가 612): 화면에는 60건까지만 찍는다. 그런데 회사 칸 하나만
+      // 해도 틀린 것이 105건이라, 잘린 45건을 못 본 채로 "이런 모양이더라"를
+      // 판단할 뻔했다. WRONG_OUT을 주면 전부 파일로 받는다.
+      final out = Platform.environment['WRONG_OUT'] ?? '';
+      if (out.isNotEmpty) {
+        File(out).writeAsStringSync(wrong.join('\n'));
+        // ignore: avoid_print
+        print('틀린 것 전체 ${wrong.length}건 → $out');
+      }
     }
   });
 }

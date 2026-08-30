@@ -2312,6 +2312,10 @@ class OcrScannerService {
   /// `SSiS`·`KYWA`가 걸리고, "뒤에 한글"을 빼면 `SK telecom`이 걸린다.
   /// **넓히기 전에 반드시 다시 재라** — 근거는 `ocr_truth.tsv`(검수 99장)다.
   ///
+  /// 🚨 **위 문단은 2026-08-30에 실제로 다시 쟀다(추가 612). 아래를 먼저 읽어라.**
+  /// 상한은 **풀었고**, 대신 **뒤가 공공기관 이름일 때만** 뗀다. 위 경고가
+  /// 걱정한 `DMP`·`SK telecom` 은 그 조건에 안 걸려서 그대로 남는다.
+  ///
   /// 📌 그리고 이 규칙은 **로고를 "떼는" 것이 아니라 OCR 오독을 걷어내는
   /// 것**이다. 사용자 원칙(*"인쇄된 그대로"*)은 그대로다 — 그림 로고가 글자로
   /// 잘못 읽힌 것은 애초에 인쇄된 글자가 아니다.
@@ -2326,8 +2330,87 @@ class OcrScannerService {
   /// 둘 다 **원래도 틀린 값**이라 점수는 안 움직였지만(정답은 `LG CNS`),
   /// **조건이 잡아내지 못하는 모양이 있다는 증거**다. 표본이 늘면 이런 자리가
   /// 손해로 바뀔 수 있으니, 재측정 때 **얻고 잃는 것을 항상 함께 보라.**
+  /// 로고 떼기만 따로 부른다(2026-08-30, 추가 612).
+  ///
+  /// 📌 **명함 전체를 만들어 넣으면 이 규칙이 실제로 무엇을 하는지 안 보인다.**
+  /// `GS 스포츠` 는 회사 키워드가 없어 **회사 후보로 뽑히지도 않아서**, 검사가
+  /// 통과하든 실패하든 로고 규칙과는 상관이 없었다. 지켜야 할 것(브랜드 접두)을
+  /// 고정하려면 이 함수를 바로 불러야 한다.
+  @visibleForTesting
+  static String stripCompanyLogoPrefixForTesting(String company) =>
+      _stripCompanyLogoPrefix(company);
+
+  /// **윗줄이 회사로 고른 그 줄인지** 본다(2026-08-30, 추가 612).
+  ///
+  /// 🚨 **글자 완전일치로 보다가 조용히 빗나갔다.** 아래 부서 규칙에는
+  /// *"회사로 고른 줄은 절대 안 붙인다"* 는 방어가 `above != company` 로 들어
+  /// 있었는데, **회사 칸은 그 줄을 그대로 쓰지 않는다** — 로고를 떼고 꼬리를
+  /// 다듬어서 담는다. 그래서 같은 줄인데도 글자가 달라 방어가 새 나갔다.
+  ///
+  /// ```
+  /// 줄        KSPO국민체육진흥공단
+  /// 회사 칸   국민체육진흥공단        ← 로고를 뗐다
+  /// 결과      부서 = 「KSPO국민체육진흥공단 가치센터팀」  ← 회사가 부서로 딸려 왔다
+  /// ```
+  ///
+  /// 📌 **증상은 부서 칸에서 보였고 원인은 회사 칸에 있었다.** 두 장을 잃고서
+  /// 자국을 심어 보니, 부서는 처음부터 `가치센터팀` 으로 옳게 집혀 있었고
+  /// **그 뒤에 윗줄이 붙는 자리**가 범인이었다.
+  ///
+  /// 그래서 **띄어쓰기를 지우고 감싸는 관계까지** 본다. 다른 조직인
+  /// `서울컨벤션뷰로`(회사는 `서울관광재단`)는 어느 쪽으로도 안 걸린다.
+  static bool _isSameOrg(String line, String company) {
+    if (company.isEmpty || line.isEmpty) return false;
+    final a = line.replaceAll(RegExp(r'\s'), '');
+    final b = company.replaceAll(RegExp(r'\s'), '');
+    if (a.isEmpty || b.isEmpty) return false;
+    return a == b || a.endsWith(b) || b.contains(a);
+  }
+
   static String _stripCompanyLogoPrefix(String company) {
     final trimmed = company.trim().replaceFirst(RegExp(r'^[)\]}·|]+\s*'), '');
+
+    // 🚨 **190장 자에서 위 주석이 말한 「다시 잴 때」가 왔다**(2026-08-30, 추가 612).
+    //
+    // 위에서 `KYWA`·`SSiS` 를 **일부러 남겼다** — 99장 자에서는 그것이 옳았다.
+    // 그런데 표본이 190장으로 넓어지자 **같은 모양이 여섯 장** 나왔고, 정답지는
+    // 전부 **떼라**고 했다.
+    //
+    // ```
+    // KYWA 한국청소년활동진흥원  →  한국청소년활동진흥원
+    // KSPO국민체육진흥공단       →  국민체육진흥공단      (띄어쓰기가 없다)
+    // SSiS 한국사회보장정보원    →  한국사회보장정보원
+    // ```
+    //
+    // ⭐ **가르는 신호는 「앞이 몇 자냐」가 아니라 「뒤가 무엇이냐」였다.**
+    // 뒤가 **공공기관 이름 꼬리**로 끝나면 그 이름 자체가 온전한 회사명이고,
+    // 앞의 영문은 로고다. 이 조건이면 길이 상한을 풀어도 안전하다 —
+    // `GS 스포츠`·`SK 텔레콤`·`AXA 손해보험` 은 꼬리가 안 걸린다.
+    //
+    // ⚠️ **꼬리에 「보험」·「은행」·「전자」를 넣으면 안 된다.** 그것들은 앞의
+    //    영문이 **회사명의 일부**인 자리다(`AXA손해보험`·`NH농협손해보험`).
+    //    넣은 것은 **기관 이름 끝에만 붙는 것**뿐이다.
+    final mInst = RegExp(
+      r'^([A-Za-z][A-Za-z&.\-]{1,5})\s*([가-힣][가-힣0-9]*'
+      r'(?:진흥원|정보원|진흥공단|공단|공사|재단|연합회|협회|진흥회|공제회))',
+    ).firstMatch(trimmed);
+    if (mInst != null) {
+      return trimmed.substring(mInst.group(1)!.length).trim();
+    }
+
+    // **같은 로고가 두 번 찍힌다**(`LG LG CNS` → `LG CNS`).
+    //
+    // 아래 「앞 글자가 뒤에서 되풀이된다」 규칙이 이미 있는데, 그 규칙은 **뒤가
+    // 한글일 때만** 닿는다(`SK SK 텔레콤`). 회사명이 영문이면 그 앞에서 막혔다.
+    //
+    // ⚠️ **되풀이는 낱말 단위로 본다.** 그냥 앞자리만 보면 `CO Cosmetics` 의
+    //    `Cosmetics` 도 걸린다 — 뒤에 공백이나 끝이 와야 로고 중복이다.
+    final mDup = RegExp(
+      r'^([A-Za-z]{2,4})\s+(\1(?:\s|$).*)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (mDup != null) return mDup.group(2)!.trim();
+
     final m = RegExp(r'^([A-Za-z]{1,2})\s+(.{2,})$').firstMatch(trimmed);
     if (m == null) return trimmed;
     final head = m.group(1)!;
@@ -4500,7 +4583,7 @@ class OcrScannerService {
             _hasHangul(above) &&
             RegExp(r'(뷰로|본부|사업부|부문|센터|연구소|지사|지점|단)$')
                 .hasMatch(above) &&
-            above != company &&
+            !_isSameOrg(above, company) &&
             above != name &&
             above != title &&
             !department.contains(above) &&
