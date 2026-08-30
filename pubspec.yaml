@@ -21,7 +21,12 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 같은 빌드 번호를 두 번 받지 않고 "Redundant Binary Upload"(code 90189)로
 # 거부한다(2026-08-08 실제로 겪음). 앱 버전(1.0.0)은 그대로 두고 뒤 숫자만
 # 올리면 된다.
-version: 1.0.0+10
+#
+# 📌 **10 → 11 (2026-08-30)**: 안드로이드 패키지 ID 를 `com.creamhouse.connectionsense`
+# 로 바꾸면서 올렸다(추가 608). 새 패키지는 **기기에서 별개 앱**이라 빌드 번호를
+# 안 올려도 설치는 되지만, 그러면 **옛 앱과 새 앱이 둘 다 `1.0.0+10`** 이 되어
+# 로그와 문의에서 어느 쪽인지 갈리지 않는다. 이름·아이콘도 같다.
+version: 1.0.0+11
 
 environment:
   sdk: ^3.12.2
