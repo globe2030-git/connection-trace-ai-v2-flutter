@@ -1952,6 +1952,36 @@ class OcrScannerService {
       return !(hangulTail || latinTail);
     }
 
+    // 🚨 **고르기는 점수가 아니라 순서다**(2026-08-30, 자국 심어 실측).
+    //
+    // 아래 사슬은 `indexWhere` 라서 **줄 순서상 먼저 나온 것**을 집는다. 명함은
+    // 로고를 맨 위에 박으므로, **영문 로고가 한글 회사명보다 늘 먼저 온다.**
+    //
+    // ```
+    // card_123   후보 «SAMSUNG» «에스원»        →  SAMSUNG (정답 에스원)
+    // ```
+    //
+    // ⚠️ **「한글을 먼저 본다」로 뒤집으면 안 된다** — 정답이 영문인 명함이
+    //    실제로 있다(`Sovargen`·`ELANCER`·`911 COMPUTER`·`MILOTTIZ 현대백화점
+    //    천호점`). 그래서 **버리지 않고 뒤로 민다** — `notPersonName`·
+    //    `notPairedOrgs` 와 같은 방식이다.
+    //
+    // 📌 **뒤로 미는 것이 안전한 이유는 사슬이 이미 그물이기 때문이다.** 한글
+    //    후보가 없으면 1순위가 통째로 비고, **2순위가 예전 그대로 집는다.**
+    //    즉 **대안이 있을 때만** 순서가 바뀐다.
+    bool notBareEnglishLogo(String l) {
+      final t = l.trim();
+      if (RegExp(r'[가-힣]').hasMatch(t)) return true; // 한글이 있으면 로고가 아니다
+      // **두 번 박힌 것은 로고이면서 회사명이다**(`LEWIS EXPERT`, 추가 601).
+      if (repeated.contains(t)) return true;
+      // **낱말이 둘 이상이면 밀지 않는다.** 재 보니 여기가 급소였다 —
+      // `LG CNS`·`TWINS LG`·`LEWIS EXPERT` 는 **진짜 영문 회사명**인데
+      // 함께 밀려 네 장을 잃었다.
+      if (t.split(RegExp(r'\s+')).length != 1) return true;
+      // 한 낱말이면서 **전부 대문자**일 때만 로고로 본다(`SAMSUNG`).
+      return !RegExp(r'^[A-Z][A-Z0-9.&-]{2,}$').hasMatch(t);
+    }
+
     // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄
     // (+사람 이름 모양이 아닌 것을 먼저 본다).
     var idx = leftover.indexWhere(
@@ -1961,6 +1991,7 @@ class OcrScannerService {
           _looksLikeCompanyName(l) &&
           notPersonName(l) &&
           notPairedOrgs(l) &&
+          notBareEnglishLogo(l) &&
           notDeptShape(l),
     );
     if (idx == -1) {
