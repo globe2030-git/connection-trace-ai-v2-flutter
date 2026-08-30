@@ -1835,15 +1835,34 @@ Firebase     패키지명에 묶여 있어 같이 간다
 ⚠️ **개명 검토가 아직 열려 있다**(후보: 알음 · 말머리, `docs/marketing/app-name-research-2026-08-16.md`).
 **개명을 한다면 Android ID를 손볼 수 있는 마지막 기회가 스토어 등록 전이다.**
 
-**사용자가 정할 것**:
+✅ **정해졌다 — ⓑ 다**(2026-08-30 globe2030님 확정, [추가 608]).
+
+```
+패키지·번들 ID   com.creamhouse.connectionsense   양쪽 통일
+표시 이름        커넥션센스                        스토어·아이콘 아래
+```
+
+⭐ **넷 중 셋은 이미 돼 있다** — Android·iOS 표시 이름과 iOS 번들 ID. **남은 것은
+Android `applicationId` 하나**다(`android/app/build.gradle.kts:39`).
+
+🚨 **한글 패키지명은 애초에 불가능하다**(2026-08-30 원문 확인). Android 는
+`[a-zA-Z0-9_]`, Apple 은 DNS 규칙(RFC 1035)이라 **영문·숫자·점만 양쪽에 통한다.**
+**이름과 ID 는 별개다** — 스토어에 보이는 이름은 한글 그대로다.
+
+⬜ **아직 실행 안 했다.** 아래 「끌고 오는 것」 때문에 테스터 배포 주기와 맞춰야 한다.
+
+<details>
+<summary>정하기 전의 선택지 — 경위 기록용</summary>
 
 ```
 ⓐ 그대로 간다        지금 ID를 유지. 이름과 안 맞지만 동작에는 지장 없다
-ⓑ Android ID를 맞춘다  com.creamhouse.connectionsense 로 통일
+ⓑ Android ID를 맞춘다  com.creamhouse.connectionsense 로 통일   ← ✅ 이것으로 정해졌다
                      ⚠️ Firebase Android 앱을 새로 만들고 google-services.json 교체
                      ⚠️ 테스터는 기존 앱을 지우고 새로 깔아야 한다(데이터 소실)
 ⓒ 개명까지 함께       이름을 바꾼다면 ID도 그때 같이 정한다
 ```
+
+</details>
 
 📌 **ⓑ·ⓒ는 테스터 데이터를 지우는 일이라 가볍지 않다.** 그래서 *"등록 전에 아무 때나"*가
 아니라 **테스터 배포 주기와 맞춰야** 한다.
