@@ -2852,7 +2852,37 @@ class OcrScannerService {
     //
     // 📌 **가르기의 목적은 「부서를 건져 내는 것」이지 「직함을 줄이는 것」이
     //    아니다.** 건질 것이 없으면 손대지 않는다.
-    if (depts.isEmpty) return (title: rawTitle, department: null);
+    // 🚨 **되돌려 줄 때 로고 잔재까지 함께 돌아왔다**(2026-08-30, 하루 대조 실측).
+    //
+    // 위 규칙은 「부서를 못 얻으면 손대지 않는다」인데, **손대지 않으면 로고가
+    // 읽힌 조각도 그대로 남는다.**
+    //
+    // ```
+    // 주임 |·SEÓUL·U     →  「주임 |·SEÓUL·U」   정답 「주임」
+    // 차장 |:SEOUL·U     ·  과장 |:SEOUL·U  ·  본부장 | TS
+    // ```
+    //
+    // 서울관광재단 옛 디자인의 `I·SEOUL·U` 가 직함 뒤에 붙어 들어온다. **하루를
+    // 통째로 대조하기 전까지 어느 보고에도 안 나왔다** — 각 PR 이 자기 전후만
+    // 봤기 때문이다.
+    //
+    // 📌 **가르는 신호는 「길이」가 아니라 「한글도 직함 낱말도 없는가」다.**
+    //    `CEO`·`Section Manager` 는 직함 낱말을 갖고 있고, `공인중개사` 는
+    //    한글이다. `SEOUL·U`·`TS` 는 둘 다 아니다.
+    //
+    // ⚠️ **버리는 것은 이 자리(부서를 못 얻은 줄)뿐이다.** 부서를 얻은 줄에서는
+    //    아래 `otherTitles` 가 이미 직함 낱말로 거른다.
+    bool looksLikeLogoNoise(String p) =>
+        !RegExp(r'[가-힣]').hasMatch(p) &&
+        !_titleKeywords.any((k) => _containsCi(p, k));
+
+    if (depts.isEmpty) {
+      final kept = parts.where((p) => !looksLikeLogoNoise(p)).toList();
+      if (kept.isEmpty || kept.length == parts.length) {
+        return (title: rawTitle, department: null);
+      }
+      return (title: kept.join(' / '), department: null);
+    }
 
     // 🚨 **부서를 얻었을 때도 「직함의 나머지 반쪽」은 버리면 안 된다**
     //    (2026-08-30, 두 자 대조 실측).
