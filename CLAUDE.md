@@ -328,6 +328,27 @@ backlog 번호가 **세 번** 겹쳤고 F 상태표가 **세 줄** 실물과 달
 있고 기기는 못 되돌린다.** 그래서 기기가 더 무겁지만, 워크트리도 **알리지
 않으면 남의 미커밋 작업이 사라진다.**
 
+#### 워크트리에서는 `git checkout main` 이 안 된다 (2026-08-30 실측)
+
+본체가 `main` 을 잡고 있으므로 **다른 워크트리에서는 같은 브랜치를 두 번 체크아웃할
+수 없다.** 작업을 끝내고 브랜치를 반납할 때 이렇게 막힌다.
+
+```
+fatal: 'main' is already used by worktree at '/Volumes/X31/Claude/connection-trace-ai-v2-flutter'
+```
+
+**반납은 분리 상태로 한다:**
+
+```
+git -C <워크트리> fetch origin
+git -C <워크트리> checkout --detach origin/main    # ← main 이 아니라 --detach
+git -C <워크트리> branch -d <끝난-브랜치>
+```
+
+⚠️ **브랜치를 체크아웃한 채로 두면 그 브랜치는 아무도 못 지운다** — `gh pr merge
+--delete-branch` 도 *"used by worktree"* 로 실패한다(2026-08-29·30 두 번 겪음).
+**반납할 때 분리 상태로 두는 것까지가 반납이다.**
+
 ### ⚠️ 실기기도 워크트리처럼 배정받는다 (2026-08-16 사용자 확정)
 
 **기기를 쓰기 전에 PM에게 묻는다.** 파일보다 기기가 더 무겁다 — 워크트리는
