@@ -659,6 +659,22 @@ class OcrScannerService {
     caseSensitive: false,
   );
 
+  /// **시·도 이름이 진짜 주소의 시작인지.** 뒤에 공백·숫자·쉼표가 오거나
+  /// `특별시`·`광역시`·`도`·`시`·`군`·`구` 가 붙는다. `서울관광재단` 의 `관` 은
+  /// 그중 어느 것도 아니다.
+  static final _realProvinceStart = RegExp(
+    r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충청북도|충청남도|'
+    r'충북|충남|전라북도|전라남도|전북|전남|경상북도|경상남도|경북|경남|제주)'
+    r'(?=[\s\d,]|특별시|광역시|특별자치시|특별자치도|도|시|군|구|$)',
+  );
+
+  /// 시·도 이름이 시작되는 자리 — 회사·부서 이름이 시·도 이름으로 시작할 때
+  /// **뒤쪽의 진짜 주소부터 다시 맞춰 보려고** 쓴다.
+  static final _provinceHead = RegExp(
+    r'(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충청북도|충청남도|'
+    r'충북|충남|전라북도|전라남도|전북|전남|경상북도|경상남도|경북|경남|제주)',
+  );
+
   static const _companyKeywords = [
     '주식회사',
     '(주)',
@@ -3149,9 +3165,48 @@ class OcrScannerService {
 
       // 광역시/도로 시작하는 주소를 먼저 보고, 없으면 "시/군/구 + 로/길 +
       // 숫자" 형태(도/시 생략 주소)로 보완한다.
+      // 🚨 **부서 이름이 주소로 잡힌다**(2026-08-30, 코드에 자국을 남겨 찾음).
+      //
+      // ```
+      // 서울컨벤션뷰로   ← 「서울」로 시작하고 「로」로 끝난다 → 주소로 인식
+      // ```
+      //
+      // 그 줄이 **주소 칸을 차지해 버려서**, 진짜 주소 줄은 갈 곳이 없어
+      // 「5층」이 들어 있다는 이유로 **상세주소에 통째로** 들어갔다.
+      // **한 줄 때문에 주소·상세주소·우편번호 세 칸이 함께 틀렸다.**
+      //
+      // 📌 **가르는 근거는 숫자다.** 진짜 주소에는 건물번호나 우편번호가
+      //    있고(`…청계천로85`·`03190`), 조직 이름에는 없다.
+      // ⚠️ **시·도 이름이 진짜 주소의 시작인지도 본다.** `서울관광재단` 은
+      //    `서울` 로 시작해서 거기서부터 매칭됐다 — 주소 칸에
+      //    `서울관광재단 03190` 이 들어갔다. 진짜 주소는 시·도 뒤에 공백·숫자가
+      //    오거나 `특별시`·`광역시`·`도`·`시`·`군`·`구` 가 붙는다.
+      Match? provinceMatch = addressRegExp.firstMatch(line);
+      if (provinceMatch != null &&
+          _realProvinceStart.matchAsPrefix(line, provinceMatch.start) == null) {
+        for (final p in _provinceHead.allMatches(line)) {
+          if (_realProvinceStart.matchAsPrefix(line, p.start) == null) continue;
+          final m = addressRegExp.matchAsPrefix(line, p.start);
+          if (m != null) {
+            provinceMatch = m;
+            break;
+          }
+        }
+        final pm = provinceMatch;
+        if (pm == null ||
+            _realProvinceStart.matchAsPrefix(line, pm.start) == null) {
+          provinceMatch = null;
+        }
+      }
+      // ⚠️ **숫자는 줄 전체에서 본다.** 매칭 구간만 보면 `13493 경기도 성남시
+      //    분당구 대왕판교로`(우편번호가 매칭 **앞**에 있고 건물번호는 **다음
+      //    줄**에 있다) 같은 줄이 통째로 떨어져 나간다 — 기존 검사가 그것을
+      //    잡아 줬다.
+      if (provinceMatch != null && !RegExp(r'\d').hasMatch(line)) {
+        provinceMatch = null;
+      }
       final addressMatch =
-          addressRegExp.firstMatch(line) ??
-          roadAddressNoProvinceRegExp.firstMatch(line);
+          provinceMatch ?? roadAddressNoProvinceRegExp.firstMatch(line);
       if (address == null && addressMatch != null) {
         // 주소 앞에 "06193 서울특별시..."처럼 우편번호(5자리)가 붙어 있으면
         // 뽑아낸다 — addressRegExp는 "서울" 등부터 매칭돼서 앞의 숫자는
