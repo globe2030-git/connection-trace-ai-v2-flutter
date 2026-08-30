@@ -36,7 +36,19 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.connectiontrace.connection_trace_ai_flutter"
+        // 🚨 **패키지 ID 를 iOS 번들과 통일한다**(2026-08-30 globe2030님 확정, 추가 608).
+        //
+        // ⚠️ **이 한 줄만 바꾸면 앱이 Firebase 에 못 붙는다.** `google-services.json`
+        //    에 등록된 `package_name` 과 다르면 초기화부터 실패한다 — 로그인도 안 된다.
+        //    콘솔에서 이 패키지로 Android 앱을 새로 등록하고 새 파일을 받아야 한다.
+        //
+        // ⚠️ **`namespace` 는 일부러 그대로 둔다.** 그것은 R 클래스·BuildConfig 의
+        //    자리이지 앱의 신원이 아니다. 함께 바꾸면 Kotlin 소스 경로까지 옮겨야
+        //    하는데, 얻는 것이 없다.
+        //
+        // 📌 **바뀌면 기기에서 별개의 앱이 된다** — 기존 설치본과 나란히 깔리고
+        //    데이터는 안 넘어온다. 그래서 「다음 테스터 배포 때」로 잡았다.
+        applicationId = "com.creamhouse.connectionsense"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
