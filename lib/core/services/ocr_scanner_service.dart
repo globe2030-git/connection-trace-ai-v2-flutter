@@ -4286,7 +4286,7 @@ class OcrScannerService {
     final companyFromKeyword = companyLine;
     // ⚠️ 두 갈래(키워드 확정 · leftover 고르기)가 여기서 합쳐진다. 회사명
     // 다듬기는 **이 한 곳에서만** 한다 — 갈래마다 손보면 한쪽만 고쳐진다.
-    final company = _tidyCompany(
+    var company = _tidyCompany(
       companyFromKeyword ?? _pickCompanyFromLeftover(leftover) ?? '',
     );
     if (companyFromKeyword == null) {
@@ -4517,6 +4517,38 @@ class OcrScannerService {
     //    다르게 움직인다 — 지금 잘 되는 것을 흔들지 않으려면 마지막이 안전하다.
     final split = _splitTitleSegments(title);
     title = split.title;
+
+    // 🚨 **회사명이 직함 줄 한가운데 박혀 있는 명함**(2026-08-30, 추가 615).
+    //
+    // ```
+    // K.ACE LAB 케이스랩 개발실장     ← 로고 · 회사 · 직함이 한 줄이다
+    // ```
+    //
+    // ⭐ **이것은 「고르기」로는 못 닿는다.** 자국을 심어 보니 `케이스랩` 이
+    // `leftover` 에 **아예 오지 않았다** — 이 줄이 통째로 직함으로 잡혀서다.
+    // 그동안 회사 칸에는 엉뚱한 값이 들어갔다(`Hong Gyu, Park` · 주소 조각).
+    //
+    // ⚠️ **아주 좁게 건다.** 앞이 순수 영문이고, 그 뒤가 **한글 두 덩어리**이고,
+    // **마지막만** 직함 낱말일 때다. 하나라도 어긋나면 손대지 않는다.
+    //
+    // ⚠️ **키워드로 이미 회사를 찾았으면 덮지 않는다** — 그쪽이 근거가 세다.
+    final inTitle = RegExp(
+      r'^([A-Za-z][A-Za-z.&-]*(?:\s+[A-Za-z][A-Za-z.&-]*)*)\s+'
+      r'([가-힣]{2,10})\s+([가-힣]{2,10})$',
+    ).firstMatch(title);
+    if (inTitle != null && companySource != OcrCompanySource.keyword) {
+      final mid = inTitle.group(2)!;
+      final tail = inTitle.group(3)!;
+      final midIsDept = RegExp(
+        r'(팀|부|실|과|처|국|센터|본부|그룹|파트|연구소|부문|지사|지점|단)$',
+      ).hasMatch(mid);
+      if (!midIsDept &&
+          _titleKeywords.any((k) => _containsCi(tail, k)) &&
+          !_titleKeywords.any((k) => _containsCi(mid, k))) {
+        company = _tidyCompany(mid);
+        title = tail;
+      }
+    }
     // 🚨 가른 **뒤에** 본다 — `부장 / 이주배경청소년지원재단.`처럼 묶여 온
     //    경우 가르기가 먼저 직함을 건져 낼 수 있다.
     if (_isNotTitle(title)) title = '';
