@@ -1066,10 +1066,12 @@ async function loadAppUpdate() {
       <p class="hint">
         <code>https://play.google.com/store/apps/details?id=</code> 뒤에
         <b>패키지명</b>만 붙이면 됩니다. 예:
-        <code>https://play.google.com/store/apps/details?id=com.connectiontrace.connection_trace_ai_flutter</code>
-        <br>패키지명은 이미 정해져 있고 앞으로도 안 바뀝니다 —
-        <code>com.connectiontrace.connection_trace_ai_flutter</code>를 그대로
-        복사해 붙이면 끝입니다.
+        <code>https://play.google.com/store/apps/details?id=com.creamhouse.connectionsense</code>
+        <br>패키지명은 <code>com.creamhouse.connectionsense</code>입니다 —
+        그대로 복사해 붙이면 끝입니다.
+        <br>⚠️ 예전 안내에는 <code>com.connectiontrace.connection_trace_ai_flutter</code>가
+        적혀 있었습니다. 2026-08-30에 iOS 번들과 통일하면서 바뀌었으니,
+        <b>어딘가에 옛 주소를 적어 두셨다면 함께 고쳐 주세요.</b>
       </p>
       <p class="hint" style="color:var(--warn); background:var(--warn-soft); border-radius:8px; padding:10px 12px;">
         ⚠️ <b>베타 심사 중 주의</b>: 두 URL 모두 스토어에 <b>정식 공개(또는
