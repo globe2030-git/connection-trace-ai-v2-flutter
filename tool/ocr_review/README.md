@@ -58,7 +58,7 @@ open tool/ocr_review/index.html
 
    ```bash
    ADB=~/Library/Android/sdk/platform-tools/adb
-   PKG=com.connectiontrace.connection_trace_ai_flutter
+   PKG=com.creamhouse.connectionsense
    $ADB exec-out run-as $PKG cat app_flutter/card_samples/scan_result.tsv > scan_result.tsv
    ```
 
@@ -68,7 +68,7 @@ open tool/ocr_review/index.html
 
 ```bash
 ADB=adb
-PKG=com.connectiontrace.connection_trace_ai_flutter
+PKG=com.creamhouse.connectionsense
 DIR=/sdcard/Android/data/$PKG/files/card_samples
 ```
 

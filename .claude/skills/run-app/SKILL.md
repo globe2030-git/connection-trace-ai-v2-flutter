@@ -132,7 +132,7 @@ grep -nE "EXCEPTION|Unhandled|FlutterError|E/flutter|RenderFlex|overflow" "$LOG"
 - 기기 저장소 실물 덤프·서버 실물 조회 절차는 `tool/README.md`와
   `docs/planning/sessions/2026-08.md` "0-2"에 있다. 저장·복원 관련 변경은 화면만 보고
   끝내지 말고 여기까지 간다.
-- 앱 패키지명: `com.connectiontrace.connection_trace_ai_flutter`
+- 앱 패키지명: `com.creamhouse.connectionsense`
 
 ## 7. 안 될 때
 
