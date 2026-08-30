@@ -84,6 +84,24 @@ class AdConsentService {
   static const String _prefsEmail = 'ad_consent_email_v1';
   static const String _prefsPush = 'ad_consent_push_v1';
 
+  /// **미룬 시각**(밀리초). 답하지 않고 화면을 빠져나간 시각을 적어 둔다.
+  ///
+  /// 🚨 **서버가 아니라 기기에 둔다.** 이것은 동의 증적이 아니라 **언제 다시
+  /// 물을지**를 정하는 값이라, 서버에 올릴 이유가 없다. `firestore.rules` 의
+  /// `clientWritableUserFields()` 를 건드리지 않아도 되므로 조용히 거부될
+  /// 위험도 없다(위 주석 참고).
+  ///
+  /// ⚠️ 기기를 바꾸면 초기화된다 — **그게 맞다.** 새 기기에서는 한 번 묻는
+  /// 편이 낫고, 개인정보도 아니다(시각 하나뿐).
+  ///
+  /// 🚨 **계정마다 따로 적는다.** 처음에는 키 하나로 뒀는데, 그러면 **로그아웃
+  /// 하고 다른 계정으로 들어와도 안 묻는다** — 그 사람은 물어본 적이 없는데
+  /// 미룬 것으로 취급된다. `uid` 를 키에 넣어 가른다.
+  ///
+  /// ⚠️ **uid 를 그대로 키에 쓴다.** 개인정보가 아니고(제공자가 준 식별자),
+  /// 값도 시각 하나뿐이다 — 규약 4절이 금지하는 「개인정보 원문」이 아니다.
+  static String _prefsSnoozedAt(String uid) => 'ad_consent_snoozed_at_v1_$uid';
+
   /// `users/{uid}`의 필드명. `firestore.rules`의 `clientWritableUserFields()`에
   /// **같은 이름이 있어야** 쓰기가 통과한다.
   static const String _fieldEmail = 'adConsentEmail';
@@ -129,8 +147,58 @@ class AdConsentService {
   Future<bool> shouldAsk(String uid) async {
     final state = await fetch(uid);
     if (state == null) return false;
-    return !state.answered;
+    if (state.answered) return false;
+    return !await _isSnoozed(uid);
   }
+
+  /// **미루기로 한 기간이 아직 안 지났는가.**
+  ///
+  /// 🚨 **이 함수가 없을 때는 앱을 켤 때마다 동의 화면이 떴다**(2026-08-30,
+  /// globe2030님 지시로 실측). *"다음 로그인에 다시 기회가 온다"* 고 적혀
+  /// 있었는데, 실제로는 **답할 때까지 매번** 떴다 — 로그인이 유지돼 있어도
+  /// `auth_gate` 가 앱을 켤 때마다 이 판정을 하기 때문이다.
+  ///
+  /// ⚠️ **그건 「자유로운 동의」에서 멀어진다.** 답할 때까지 계속 뜨면
+  /// 이용자는 필수라고 느낀다 — 이 파일과 `auth_gate` 가 피하려던 바로 그
+  /// 자리다(시행령 §17①1호).
+  ///
+  /// 📌 **읽기에 실패하면 미루지 않은 것으로 본다**(= 묻는다). 못 묻는 쪽보다
+  /// 한 번 더 묻는 쪽이 낫다 — 동의 기회 자체가 사라지지는 않는다.
+  Future<bool> _isSnoozed(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final at = prefs.getInt(_prefsSnoozedAt(uid));
+      if (at == null) return false;
+      final elapsed = DateTime.now().millisecondsSinceEpoch - at;
+      return elapsed >= 0 && elapsed < snoozeDuration.inMilliseconds;
+    } catch (e) {
+      debugPrint('광고 수신 동의 미루기 조회 실패: ${e.runtimeType}');
+      return false;
+    }
+  }
+
+  /// **답하지 않고 넘어갔다**는 것을 적어 둔다.
+  ///
+  /// 답이 아니라 **미룸**이다. `adConsentAt`(서버) 은 건드리지 않으므로
+  /// **「답한 적 있다」로 굳지 않고**, [snoozeDuration] 이 지나면 다시 묻는다.
+  Future<void> snooze(String uid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        _prefsSnoozedAt(uid),
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      debugPrint('광고 수신 동의 미루기 저장 실패: ${e.runtimeType}');
+    }
+  }
+
+  /// 미룬 뒤 다시 묻기까지의 기간 (2026-08-30 globe2030님 확정: 30일).
+  ///
+  /// ⚠️ **줄이려면 근거를 함께 적어라.** 짧을수록 동의율은 오르지만 「필수처럼
+  /// 느껴지는」 쪽으로 간다. 30일은 **거의 안 보이는 쪽**을 고른 값이다.
+  @visibleForTesting
+  static const Duration snoozeDuration = Duration(days: 30);
 
   /// 이메일로 광고를 보내도 되는가. **모르면 안 된다.**
   Future<bool> canSendEmail(String uid) async =>

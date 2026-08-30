@@ -313,7 +313,34 @@ class _AdConsentViewState extends State<AdConsentView> {
                             ),
                     ),
                   ),
-                  const SizedBox(height: 11),
+                  const SizedBox(height: 4),
+                  // 🚨 **나가는 길이 둘인데 하나만 화면에 있었다**(2026-08-30,
+                  //    globe2030님 실기기 제보).
+                  //
+                  // ```
+                  // 화면에 있던 길   아무것도 안 고르고 「시작하기」 → 「거부」로 답이 기록된다
+                  // 화면에 없던 길   뒤로가기                     → 답 없이 넘어간다
+                  // ```
+                  //
+                  // 이용자는 뒤로가기를 **동의로 읽었다.** 그래서 그 길을
+                  // 화면에 올려 이름을 붙인다. 뒤로가기도 같은 처리를 한다.
+                  //
+                  // ⚠️ **「거부」와 다르다.** 이쪽은 답을 미루는 것이라
+                  //    30일 뒤 다시 묻는다.
+                  if (widget.dismissOnSubmit)
+                    TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => Navigator.of(context).maybePop(),
+                      child: const Text(
+                        '나중에 할게요',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 4),
                   Text(
                     // 하나도 안 골라도 진행된다는 것을 화면에서 말한다
                     // (시행령 §17①1호 · 법 §22⑤).
