@@ -3,7 +3,7 @@
 // ## 이 테스트가 막는 것
 //
 // **① 남의 주소로 코드가 새어 나가는 것.** 되돌아오는 주소를 `startsWith`로
-// 느슨하게 보면 `connection-sense.web.app.evil.com` 같은 주소가 통과한다.
+// 느슨하게 보면 `connectionsense.web.app.evil.com` 같은 주소가 통과한다.
 // 통과하면 **인가 코드가 공격자에게 넘어간다.**
 //
 // **② 다른 곳에서 시작된 응답을 받아들이는 것(CSRF).** `state`를 대조하지
@@ -20,18 +20,18 @@ void main() {
     test('제공자마다 경로가 다르다', () {
       expect(
         redirectUriFor(SocialProvider.kakao),
-        'https://connection-sense.web.app/oauth/kakao',
+        'https://connectionsense.web.app/oauth/kakao',
       );
       expect(
         redirectUriFor(SocialProvider.naver),
-        'https://connection-sense.web.app/oauth/naver',
+        'https://connectionsense.web.app/oauth/naver',
       );
     });
 
     test('우리 주소는 알아본다', () {
       expect(
         isRedirect(
-          Uri.parse('https://connection-sense.web.app/oauth/kakao?code=x'),
+          Uri.parse('https://connectionsense.web.app/oauth/kakao?code=x'),
           SocialProvider.kakao,
         ),
         isTrue,
@@ -42,7 +42,7 @@ void main() {
       test('호스트 뒤에 붙인 주소를 거른다', () {
         expect(
           isRedirect(
-            Uri.parse('https://connection-sense.web.app.evil.com/oauth/kakao'),
+            Uri.parse('https://connectionsense.web.app.evil.com/oauth/kakao'),
             SocialProvider.kakao,
           ),
           isFalse,
@@ -52,7 +52,7 @@ void main() {
       test('앞에 붙인 주소도 거른다', () {
         expect(
           isRedirect(
-            Uri.parse('https://evil.com/connection-sense.web.app/oauth/kakao'),
+            Uri.parse('https://evil.com/connectionsense.web.app/oauth/kakao'),
             SocialProvider.kakao,
           ),
           isFalse,
@@ -62,7 +62,7 @@ void main() {
       test('http는 거른다 — 평문으로 코드가 나간다', () {
         expect(
           isRedirect(
-            Uri.parse('http://connection-sense.web.app/oauth/kakao'),
+            Uri.parse('http://connectionsense.web.app/oauth/kakao'),
             SocialProvider.kakao,
           ),
           isFalse,
@@ -72,7 +72,7 @@ void main() {
       test('제공자가 다르면 거른다', () {
         expect(
           isRedirect(
-            Uri.parse('https://connection-sense.web.app/oauth/naver'),
+            Uri.parse('https://connectionsense.web.app/oauth/naver'),
             SocialProvider.kakao,
           ),
           isFalse,
@@ -82,7 +82,7 @@ void main() {
       test('경로가 더 깊으면 거른다', () {
         expect(
           isRedirect(
-            Uri.parse('https://connection-sense.web.app/oauth/kakao/extra'),
+            Uri.parse('https://connectionsense.web.app/oauth/kakao/extra'),
             SocialProvider.kakao,
           ),
           isFalse,
@@ -105,7 +105,7 @@ void main() {
 
     test('⭐ state가 다르면 코드를 받아들이지 않는다', () {
       final r = readRedirect(
-        Uri.parse('https://connection-sense.web.app/oauth/kakao?code=c&state=남의것'),
+        Uri.parse('https://connectionsense.web.app/oauth/kakao?code=c&state=남의것'),
         expectedState: '내것',
       );
       expect(r, isA<OauthFailed>());
@@ -113,7 +113,7 @@ void main() {
 
     test('state가 아예 없어도 거부한다', () {
       final r = readRedirect(
-        Uri.parse('https://connection-sense.web.app/oauth/kakao?code=c'),
+        Uri.parse('https://connectionsense.web.app/oauth/kakao?code=c'),
         expectedState: 'abc',
       );
       expect(r, isA<OauthFailed>());
@@ -123,7 +123,7 @@ void main() {
   group('되돌아온 주소 읽기', () {
     test('정상이면 코드를 준다', () {
       final r = readRedirect(
-        Uri.parse('https://connection-sense.web.app/oauth/kakao?code=c1&state=s1'),
+        Uri.parse('https://connectionsense.web.app/oauth/kakao?code=c1&state=s1'),
         expectedState: 's1',
       );
       expect(r, isA<OauthCode>());
@@ -133,7 +133,7 @@ void main() {
 
     test('코드가 비어 있으면 실패로 본다', () {
       final r = readRedirect(
-        Uri.parse('https://connection-sense.web.app/oauth/kakao?code=&state=s1'),
+        Uri.parse('https://connectionsense.web.app/oauth/kakao?code=&state=s1'),
         expectedState: 's1',
       );
       expect(r, isA<OauthFailed>());
@@ -143,7 +143,7 @@ void main() {
       test('access_denied 는 "취소"로 읽는다', () {
         final r = readRedirect(
           Uri.parse(
-            'https://connection-sense.web.app/oauth/kakao'
+            'https://connectionsense.web.app/oauth/kakao'
             '?error=access_denied&error_description=User+denied&state=s1',
           ),
           expectedState: 's1',
@@ -154,7 +154,7 @@ void main() {
       test('그 밖의 오류는 다시 시도하라고 안내한다', () {
         final r = readRedirect(
           Uri.parse(
-            'https://connection-sense.web.app/oauth/naver'
+            'https://connectionsense.web.app/oauth/naver'
             '?error=invalid_request&state=s1',
           ),
           expectedState: 's1',
@@ -169,7 +169,7 @@ void main() {
         // 올바르지 않다"고 뜨면 이용자는 고장으로 읽는다.
         final r = readRedirect(
           Uri.parse(
-            'https://connection-sense.web.app/oauth/kakao?error=access_denied',
+            'https://connectionsense.web.app/oauth/kakao?error=access_denied',
           ),
           expectedState: 's1',
         );
@@ -186,7 +186,7 @@ void main() {
       expect(u.queryParameters['state'], 'st');
       expect(
         u.queryParameters['redirect_uri'],
-        'https://connection-sense.web.app/oauth/kakao',
+        'https://connectionsense.web.app/oauth/kakao',
       );
     });
 

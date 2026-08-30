@@ -39,7 +39,36 @@ enum SocialProvider {
 /// 가로채서 코드를 꺼내고 창을 닫는다. 그래서 이 경로에 무언가를 올려 둘
 /// 필요가 없다 — 다만 **카카오·네이버 콘솔에 같은 값을 등록**해야 한다.
 /// 등록된 값과 한 글자라도 다르면 제공자가 거부한다.
-const String kOauthRedirectBase = 'https://connection-sense.web.app/oauth';
+///
+/// ## 🚨 웹 주소가 셋이다 — 하이픈 하나로 갈린다 (2026-08-30 globe2030님 확정)
+///
+/// ```
+/// connectionsense.web.app         사용자 홈페이지(랜딩) ← 대표. 여기로 통일했다
+/// connection-sense.web.app        법적 고지 4종
+/// connection-sense-admin.web.app  관리자 콘솔
+/// ```
+///
+/// ⚠️ **같은 파일 밖의 두 곳은 따라 바꾸지 마라.** 역할이 다르다 —
+/// `legal_document_view.dart` 는 **문서가 실제로 거기 있어서** 하이픈 있는
+/// 쪽이어야 하고, `address_search_view.dart` 는 **카카오 JS 도메인 등록이
+/// 그 값에 걸려 있다.** 셋을 「통일」한다고 함께 바꾸면 둘이 깨진다.
+///
+/// ## ⚠️ 바꿀 때는 콘솔에 「추가」가 먼저다
+///
+/// 이 값은 **앱 안에 박혀 나간다.** 콘솔에서 옛 값을 지우는 순간 **이미 깔린
+/// 빌드가 전부 거부당한다.** 그래서 순서가 있다.
+///
+/// ```
+/// ① 콘솔에 새 값을 추가한다 (옛 값은 남겨 둔다 — 둘 다 등록할 수 있다)
+/// ② 코드를 바꿔 새 빌드를 낸다
+/// ③ 옛 빌드가 사라진 뒤에 옛 값을 지운다 (급하지 않다)
+/// ```
+///
+/// ⚠️ **뿌리 주소(`https://connectionsense.web.app/`)로 잡으면 안 된다** —
+/// 거기에는 **진짜 랜딩 페이지가 있다.** 이 주소는 「가로채서 창을 닫는」
+/// 대상이라, 홈페이지 주소 자체가 그 대상이 되면 나중에 앱 안에서 홈페이지를
+/// 열 수 없다. **경로를 붙인 채로 둔다.**
+const String kOauthRedirectBase = 'https://connectionsense.web.app/oauth';
 
 String redirectUriFor(SocialProvider p) => '$kOauthRedirectBase/${p.name}';
 
@@ -120,7 +149,7 @@ class OauthFailed extends OauthOutcome {
 
 /// 웹뷰가 이동하려는 주소가 **우리 되돌아오는 주소**인지.
 ///
-/// ⚠️ **`startsWith`로 느슨하게 보면 안 된다.** `https://connection-sense.web.app.evil.com/oauth/kakao`
+/// ⚠️ **`startsWith`로 느슨하게 보면 안 된다.** `https://connectionsense.web.app.evil.com/oauth/kakao`
 /// 같은 주소가 통과한다. 호스트와 경로를 따로 확인한다.
 bool isRedirect(Uri uri, SocialProvider provider) {
   final target = Uri.parse(redirectUriFor(provider));
