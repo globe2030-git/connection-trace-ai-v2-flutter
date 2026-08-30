@@ -93,7 +93,14 @@ class AdConsentService {
   ///
   /// ⚠️ 기기를 바꾸면 초기화된다 — **그게 맞다.** 새 기기에서는 한 번 묻는
   /// 편이 낫고, 개인정보도 아니다(시각 하나뿐).
-  static const String _prefsSnoozedAt = 'ad_consent_snoozed_at_v1';
+  ///
+  /// 🚨 **계정마다 따로 적는다.** 처음에는 키 하나로 뒀는데, 그러면 **로그아웃
+  /// 하고 다른 계정으로 들어와도 안 묻는다** — 그 사람은 물어본 적이 없는데
+  /// 미룬 것으로 취급된다. `uid` 를 키에 넣어 가른다.
+  ///
+  /// ⚠️ **uid 를 그대로 키에 쓴다.** 개인정보가 아니고(제공자가 준 식별자),
+  /// 값도 시각 하나뿐이다 — 규약 4절이 금지하는 「개인정보 원문」이 아니다.
+  static String _prefsSnoozedAt(String uid) => 'ad_consent_snoozed_at_v1_$uid';
 
   /// `users/{uid}`의 필드명. `firestore.rules`의 `clientWritableUserFields()`에
   /// **같은 이름이 있어야** 쓰기가 통과한다.
@@ -141,7 +148,7 @@ class AdConsentService {
     final state = await fetch(uid);
     if (state == null) return false;
     if (state.answered) return false;
-    return !await _isSnoozed();
+    return !await _isSnoozed(uid);
   }
 
   /// **미루기로 한 기간이 아직 안 지났는가.**
@@ -157,10 +164,10 @@ class AdConsentService {
   ///
   /// 📌 **읽기에 실패하면 미루지 않은 것으로 본다**(= 묻는다). 못 묻는 쪽보다
   /// 한 번 더 묻는 쪽이 낫다 — 동의 기회 자체가 사라지지는 않는다.
-  Future<bool> _isSnoozed() async {
+  Future<bool> _isSnoozed(String uid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final at = prefs.getInt(_prefsSnoozedAt);
+      final at = prefs.getInt(_prefsSnoozedAt(uid));
       if (at == null) return false;
       final elapsed = DateTime.now().millisecondsSinceEpoch - at;
       return elapsed >= 0 && elapsed < snoozeDuration.inMilliseconds;
@@ -174,11 +181,11 @@ class AdConsentService {
   ///
   /// 답이 아니라 **미룸**이다. `adConsentAt`(서버) 은 건드리지 않으므로
   /// **「답한 적 있다」로 굳지 않고**, [snoozeDuration] 이 지나면 다시 묻는다.
-  Future<void> snooze() async {
+  Future<void> snooze(String uid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt(
-        _prefsSnoozedAt,
+        _prefsSnoozedAt(uid),
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {

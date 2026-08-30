@@ -359,7 +359,7 @@ class _AuthGateState extends State<AuthGate> {
       // 📌 **「답했다」로 적는 것이 아니다.** 서버의 `adConsentAt` 은 그대로
       //    비어 있어 30일 뒤에 다시 묻는다. 실수로 뒤로 누른 사람에게도
       //    기회가 남는다.
-      await service.snooze();
+      await service.snooze(uid);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

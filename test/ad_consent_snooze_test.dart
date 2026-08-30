@@ -19,7 +19,7 @@ void main() {
   });
 
   test('⭐ 미루면 기기에 시각이 남는다 — 서버가 아니다', () async {
-    await AdConsentService().snooze();
+    await AdConsentService().snooze('uid-A');
     final prefs = await SharedPreferences.getInstance();
     final keys = prefs.getKeys().where((k) => k.contains('snoozed'));
     expect(keys, hasLength(1));
@@ -29,7 +29,7 @@ void main() {
   test('🚨 미룸은 「답했다」가 아니다 — 동의·거부 값을 건드리지 않는다', () async {
     // 이것이 굳으면 30일 뒤에도 다시 안 묻고, 실수로 뒤로 누른 사람은
     // 영영 기회를 잃는다.
-    await AdConsentService().snooze();
+    await AdConsentService().snooze('uid-A');
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool('ad_consent_email_v1'), isNull);
     expect(prefs.getBool('ad_consent_push_v1'), isNull);
@@ -38,5 +38,14 @@ void main() {
   test('미루기 전에는 기기에 아무 기록이 없다', () async {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getKeys().where((k) => k.contains('snoozed')), isEmpty);
+  });
+
+  test('🚨 계정마다 따로 적는다 — 다른 계정은 물어본 적이 없다', () async {
+    // 키 하나로 두면 로그아웃하고 다른 계정으로 들어와도 안 묻는다.
+    // 그 사람은 물어본 적이 없는데 미룬 것으로 취급된다.
+    await AdConsentService().snooze('uid-A');
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getInt('ad_consent_snoozed_at_v1_uid-A'), isA<int>());
+    expect(prefs.getInt('ad_consent_snoozed_at_v1_uid-B'), isNull);
   });
 }
