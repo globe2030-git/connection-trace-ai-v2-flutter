@@ -651,6 +651,14 @@ class OcrScannerService {
   /// '노무사'·'세무사'·'회계사'는 **그 사람의 직함 자체**인 경우가 많아 뺐다.
   static const _qualificationMarkers = ['감리원', '감리사', '심사원', '기술사', '지도사'];
 
+  /// **회사에만 붙는 표기.** `연구소`·`그룹`·`센터` 같은 약한 낱말과 달리
+  /// 부서 이름에는 안 쓰인다.
+  static final _strongCompanyMarker = RegExp(
+    r'\(주\)|\(유\)|㈜|주\)|주식회사|유한회사|사단법인|재단법인|'
+    r'(?<![A-Za-z])(Inc|Corp|Corporation|Ltd|LLC)(?![A-Za-z])',
+    caseSensitive: false,
+  );
+
   static const _companyKeywords = [
     '주식회사',
     '(주)',
@@ -1876,6 +1884,42 @@ class OcrScannerService {
     // ⚠️ **버리지 않고 뒤로 민다** — 다른 후보가 없으면 이것이라도 쓴다.
     bool notPairedOrgs(String l) => !RegExp(r'\S\s*[|｜]\s*\S').hasMatch(l);
 
+    // 🚨 **부서 모양인 줄은 회사가 아니다**(2026-08-30, 두 자 대조 실측).
+    //
+    // ```
+    // MNO마케팅그룹 로밍마케팅팀        →  회사 칸   (정답 SK텔레콤)
+    // 기업부설연구소                    →  회사 칸   (정답 (주)그린아이티코리아)
+    // DT Optimization사업부 경영관리…   →  회사 칸   (정답 LG CNS)
+    // ```
+    //
+    // 오늘 부서 쪽에서 잰 모양들(조직 계층 꼬리·업무 이름 끝·영문 조직 단위)을
+    // **회사 후보 거르기에도** 쓴다.
+    //
+    // ⚠️ **법인 표기가 있으면 회사다** — `주식회사 디엠지그룹` 은 「그룹」으로
+    //    끝나도 회사다(어제 [추가 591] 에서 반대 방향으로 겪은 자리다).
+    //
+    // 📌 **버리지 않고 뒤로 민다.** 다른 후보가 없으면 이것이라도 쓴다 —
+    //    `notPersonName`·`notPairedOrgs` 와 같은 방식이다.
+    bool notDeptShape(String l) {
+      final t = l.trim();
+      if (t.isEmpty || t.length > 40) return true;
+      if (RegExp(r'\(주\)|\(유\)|㈜|주식회사|유한회사|사단법인|재단법인|'
+              r'Inc\.|Corp|Ltd')
+          .hasMatch(t)) {
+        return true; // 법인 표기가 있으면 회사다
+      }
+      final hangulTail = RegExp(
+        r'(팀|부|실|과|처|국|센터|본부|그룹|파트|연구소|부문|사업부|담당|'
+        r'마케팅|영업|기획|개발|지원|운영|관리|전략)$',
+      ).hasMatch(t);
+      final latinTail = RegExp(
+        r'(?<![A-Za-z])(Center|Centre|Group|Team|Division|Dept|Department|'
+        r'Lab|Unit|Office)$',
+        caseSensitive: false,
+      ).hasMatch(t);
+      return !(hangulTail || latinTail);
+    }
+
     // 1순위: 부서명·슬로건도 로고 잡음도 아니고, 회사명 모양인 줄
     // (+사람 이름 모양이 아닌 것을 먼저 본다).
     var idx = leftover.indexWhere(
@@ -1884,7 +1928,8 @@ class OcrScannerService {
           !_looksLikeLogoNoise(l) &&
           _looksLikeCompanyName(l) &&
           notPersonName(l) &&
-          notPairedOrgs(l),
+          notPairedOrgs(l) &&
+          notDeptShape(l),
     );
     if (idx == -1) {
       idx = leftover.indexWhere(
@@ -1892,7 +1937,8 @@ class OcrScannerService {
             !_looksLikeDeptOrTagline(l) &&
             !_looksLikeLogoNoise(l) &&
             _looksLikeCompanyName(l) &&
-            notPersonName(l),
+            notPersonName(l) &&
+            notDeptShape(l),
       );
     }
     if (idx == -1) {
@@ -1900,7 +1946,8 @@ class OcrScannerService {
         (l) =>
             !_looksLikeDeptOrTagline(l) &&
             !_looksLikeLogoNoise(l) &&
-            _looksLikeCompanyName(l),
+            _looksLikeCompanyName(l) &&
+            notDeptShape(l),
       );
     }
     // 2순위: 로고 잡음 조건만 완화한다(짧은 영문 브랜드명이 여기 걸린다).
@@ -1909,9 +1956,14 @@ class OcrScannerService {
         (l) =>
             !_looksLikeDeptOrTagline(l) &&
             _looksLikeCompanyName(l) &&
-            notPersonName(l),
+            notPersonName(l) &&
+            notDeptShape(l),
       );
     }
+    // ⚠️ **여기서부터는 부서 모양을 안 본다** — 조건을 통과하는 줄이 하나도
+    //    없으면 **부서처럼 보이는 줄이라도** 쓴다. 회사 칸을 비우는 것보다
+    //    낫다(`무지개청소년센터` 처럼 조직 이름으로 끝나는 **진짜 회사명**이
+    //    실제로 있다).
     if (idx == -1) {
       idx = leftover.indexWhere(
         (l) => !_looksLikeDeptOrTagline(l) && _looksLikeCompanyName(l),
@@ -3418,6 +3470,12 @@ class OcrScannerService {
     // ⭐ **로마자 성씨 신호**를 루프 전에 구해 둔다(추가 429). 이 신호는
     // "어떤 줄이 한글 2~4자다"보다 **강한 근거**라, 아래 `koreanStripped`가
     // 다른 줄을 먼저 집어가지 못하게 막는 데 쓴다.
+    // ⚠️ **루프 전에 구해 둔다** — 「이 줄이 회사인가」를 판단할 때 **명함
+    //    전체에 법인 표기가 있는지**가 근거가 된다(아래 `weakOnly`).
+    final hasStrongCompanyLine = lines.any(
+      (l) => _strongCompanyMarker.hasMatch(_stripContacts(l)),
+    );
+
     String? romanizedNameToken;
     for (final raw in lines) {
       final byRoman = _nameByRomanizedSurname(raw);
@@ -3526,9 +3584,31 @@ class OcrScannerService {
         RegExp(r'(그룹|본부|사업부|공사|공단)장'),
         ' ',
       );
-      final isCompanyLine = _companyKeywords.any(
-        (k) => _containsCi(lineForCompanyCheck, k),
-      );
+      // 🚨 **약한 회사 낱말만 있는 줄은, 같은 명함에 법인 표기가 있으면
+      //    회사가 아니다**(2026-08-30, 두 자 대조 실측).
+      //
+      // ```
+      // 기업부설연구소                →  회사 칸  (정답 (주)그린아이티코리아)
+      // MNO마케팅그룹 로밍마케팅팀      →  회사 칸  (정답 SK텔레콤)
+      // Production Support Group    →  회사 칸  (정답 현대제철주식회사)
+      // ```
+      //
+      // `연구소`·`그룹`·`센터` 는 회사 키워드다(`무지개청소년센터` 는 진짜
+      // 회사명이다). 그런데 **부서 이름도 같은 낱말로 끝난다.** 둘을 낱말만
+      // 보고는 못 가른다.
+      //
+      // 📌 **가르는 근거는 「같은 명함에 더 강한 표기가 있는가」다** —
+      //    `(주)`·`주식회사`·`Inc.` 는 **회사에만** 붙는다. 그런 줄이 따로
+      //    있으면 약한 낱말 줄은 부서 쪽이다.
+      //
+      // ⚠️ **더 강한 줄이 없으면 예전 그대로** 회사로 본다 — 법인 표기 없이
+      //    `…센터` 로만 된 회사가 실제로 있다.
+      final weakOnly =
+          !_strongCompanyMarker.hasMatch(lineForCompanyCheck) &&
+          _companyKeywords.any((k) => _containsCi(lineForCompanyCheck, k));
+      final isCompanyLine = weakOnly
+          ? !hasStrongCompanyLine
+          : _companyKeywords.any((k) => _containsCi(lineForCompanyCheck, k));
       final isQualificationLine = _qualificationMarkers.any(
         (k) => _containsCi(line, k),
       );
@@ -4283,9 +4363,20 @@ class OcrScannerService {
             // ⚠️ `기술인증평가단`·`사업단` 은 부서다. 다만 **`재단` 은 회사**이므로
             //    바로 앞 글자가 `재` 면 뺀다(`서울관광재단`).
             RegExp(r'(?<!재)단$').hasMatch(x);
-        var candidate = t;
-        if (t.contains('|')) {
-          final parts = t
+        // 🚨 **줄 앞에 로고 조각이 한두 글자 붙어 온다**(`0 기업부설연구소` —
+        //    올빼미 로고를 `0` 으로 읽었다).
+        //
+        // ⚠️ **이 규칙은 오늘 한 번 뺐다가 다시 넣었다.** 처음 넣었을 때는
+        //    숫자가 안 움직여서 *「재서 안 나온 규칙은 남기지 않는다」* 로
+        //    뺐다([추가 599]). 그런데 회사 고르기를 고치자(이 PR) **그 줄이
+        //    비로소 부서 후보까지 오게 됐고**, 그제야 효과가 생겼다.
+        //
+        // 📌 **조건이 바뀌면 다시 잰다** — 「그때 효과가 없었다」가 「지금도
+        //    없다」는 뜻은 아니다.
+        var t2 = t.replaceFirst(RegExp(r'^[^가-힣A-Za-z(]{1,2}\s+'), '');
+        var candidate = t2;
+        if (t2.contains('|')) {
+          final parts = t2
               .split(RegExp(r'\s*\|\s*'))
               .map((x) => x.trim())
               .where((x) => x.isNotEmpty)
