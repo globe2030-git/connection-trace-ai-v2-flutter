@@ -1417,6 +1417,29 @@ class OcrScannerService {
       return tokens[idx];
     }
 
+    // 🚨 **`(주)` 는 앞에도 뒤에도 붙는다 — 뒤만 보던 것을 고친다**
+    //    (2026-08-30, `card_02` 실물 확인).
+    //
+    // ```
+    // The DMP Company (주) TG360°   →  「Company (주)」   실물의 회사는 (주) TG360
+    // ```
+    //
+    // 이 함수는 **키워드 앞 토큰**을 회사명으로 봤다. `가나다 (주)` 처럼 뒤에
+    // 붙는 표기에는 맞지만, **`(주) 가나다` 처럼 앞에 붙는 표기**에서는 엉뚱한
+    // 낱말(여기서는 슬로건의 `Company`)을 집는다.
+    //
+    // 📌 **키워드 토큰에 이름이 붙어 있지 않고(`(주)` 홀로) 바로 뒤에 이름
+    //    같은 토큰이 있으면 그쪽을 쓴다.** 뒤에 아무것도 없으면 예전대로
+    //    앞을 본다(`가나다 (주)`).
+    bool looksLikeNameToken(String t) =>
+        RegExp(r'[A-Za-z가-힣]').hasMatch(t) &&
+        !RegExp(r'^(www\.|https?:)', caseSensitive: false).hasMatch(t) &&
+        !t.contains('@');
+
+    if (idx + 1 < tokens.length && looksLikeNameToken(tokens[idx + 1])) {
+      return '${tokens[idx]} ${tokens[idx + 1]}';
+    }
+
     var start = idx > 0 ? idx - 1 : idx;
     if (start > 0 && tokens[start].endsWith(',')) start -= 1;
     return tokens.sublist(start, idx + 1).join(' ');
@@ -2167,13 +2190,25 @@ class OcrScannerService {
   /// 골랐는데 앞뒤에 뭐가 붙어 있는 것"*이었다. 고르기를 다시 하는 것보다
   /// 훨씬 안전하다 — **이미 고른 값에서 빼기만 하므로, 못 고르던 것이
   /// 갑자기 다른 값으로 바뀌지 않는다.**
-  static String _tidyCompany(String company) => _restoreCorpParen(
-    _joinBrokenCompanySpaces(
-      _stripCompanyTitleTail(
-        _stripCompanyLogoPrefix(_stripOrphanContactLabel(company)),
+  static String _tidyCompany(String company) => _stripLogoOrnament(
+    _restoreCorpParen(
+      _joinBrokenCompanySpaces(
+        _stripCompanyTitleTail(
+          _stripCompanyLogoPrefix(_stripOrphanContactLabel(company)),
+        ),
       ),
     ),
   );
+
+  /// 회사명 끝에 붙은 **로고 장식 기호**를 뗀다 (`(주) TG360°` → `(주) TG360`).
+  ///
+  /// 📌 `card_02` 실물의 법인 표기는 `(주) TG360` 이고 `°` 는 로고의 원 표시다.
+  /// **글자가 아니라 그림에 가깝다.**
+  ///
+  /// ⚠️ **끝에 홀로 붙은 것만** 뗀다. 이름 안에 들어 있는 기호는 안 건드린다 —
+  /// `M&A` 의 `&` 처럼 이름의 일부인 기호가 있다.
+  static String _stripLogoOrnament(String company) =>
+      company.replaceFirst(RegExp(r'\s*[°ºˆ~]+$'), '').trim();
 
   /// 띄어쓰기 붙이기만 따로 부른다 — 지키기로 한 것(법인 표기·`(주) 잇팩`)을
   /// 검사로 고정하기 위해서다. 명함을 지어내면 다른 규칙에 가려 안 보인다.
