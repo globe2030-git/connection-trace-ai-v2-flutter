@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/services/ad_consent_service.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
+import '../widgets/consent_widgets.dart';
 
 /// 광고성 정보 수신 동의 화면(추가 472 · 시행 2026-09-15).
 ///
@@ -202,7 +203,7 @@ class _AdConsentViewState extends State<AdConsentView> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _OptionalBadge(),
+                    const OptionalBadge(),
                     const SizedBox(height: 13),
                     const Text(
                       // ⚠️ "새 소식"처럼 부르면 동의가 무효가 될 수 있다.
@@ -238,7 +239,7 @@ class _AdConsentViewState extends State<AdConsentView> {
                     const SizedBox(height: 18),
 
                     // ── ① 전제: 개인정보 이용 동의 (반드시 맨 위) ──
-                    _ConsentCard(
+                    ConsentCard(
                       child: _UseAgreementRow(
                         checked: _useAgreed,
                         onChanged: _busy ? null : _setUseAgreed,
@@ -251,20 +252,20 @@ class _AdConsentViewState extends State<AdConsentView> {
                     const SizedBox(height: 14),
 
                     // ── ② 매체: 위가 켜져야 열린다 ──
-                    _ConsentCard(
+                    ConsentCard(
                       child: Column(
                         children: [
                           if (_emailAvailable) ...[
-                            _ChannelRow(
+                            ChannelRow(
                               title: '이메일로 광고성 정보 받기',
                               subtitle: '가입하신 이메일 주소로 보내드려요',
                               checked: _email,
                               enabled: _useAgreed && !_busy,
                               onChanged: (v) => setState(() => _email = v),
                             ),
-                            const _RowDivider(),
+                            const RowDivider(),
                           ],
-                          _ChannelRow(
+                          ChannelRow(
                             title: '앱 알림으로 광고성 정보 받기',
                             subtitle: '휴대폰 알림으로 보내드려요',
                             checked: _push,
@@ -361,56 +362,10 @@ class _AdConsentViewState extends State<AdConsentView> {
   }
 }
 
-/// `[선택]` 배지. 시행령 §17④가 **선택할 수 있다는 사실을 명확히 표시**하도록
-/// 요구한다. 법무 회신은 이것을 **세 항목 전부에** 붙이라고 했다.
-class _OptionalBadge extends StatelessWidget {
-  const _OptionalBadge({this.dense = false});
-
-  final bool dense;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: dense ? 7 : 11,
-        vertical: dense ? 2 : 5,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.accentSoft,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '선택',
-        style: TextStyle(
-          fontSize: dense ? 10.5 : 11.5,
-          fontWeight: FontWeight.w700,
-          color: AppColors.accentText,
-        ),
-      ),
-    );
-  }
-}
-
-class _ConsentCard extends StatelessWidget {
-  const _ConsentCard({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.cardSurface,
-        border: Border.all(color: AppColors.borderSubtle),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(color: AppColors.cardShadow, blurRadius: 3, offset: Offset(0, 1)),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
+// ⚠️ `OptionalBadge`·`ConsentCard`·`RowDivider`·`ChannelRow`·`ConsentCheckbox`는
+// `../widgets/consent_widgets.dart`로 옮겼다(2026-08-31, 추가 632) —
+// `SignupConsentView`(⑨)가 같은 부품을 쓴다. 여기서 다시 정의하면 두 화면이
+// 어긋날 수 있다(consent_widgets.dart 파일 doc 참고).
 
 /// 전제가 되는 개인정보 이용 동의. **맨 위에 온다.**
 class _UseAgreementRow extends StatelessWidget {
@@ -440,7 +395,7 @@ class _UseAgreementRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _Box(checked: checked, enabled: onChanged != null),
+            ConsentCheckbox(checked: checked, enabled: onChanged != null),
             const SizedBox(width: 13),
             Expanded(
               child: Column(
@@ -448,7 +403,7 @@ class _UseAgreementRow extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const _OptionalBadge(dense: true),
+                      const OptionalBadge(dense: true),
                       const SizedBox(width: 6),
                       const Expanded(
                         child: Text(
@@ -555,111 +510,6 @@ class _Divider extends StatelessWidget {
         ),
         Expanded(child: Container(height: 1, color: AppColors.borderSubtle)),
       ],
-    );
-  }
-}
-
-class _RowDivider extends StatelessWidget {
-  const _RowDivider();
-
-  @override
-  Widget build(BuildContext context) => Container(
-        height: 1,
-        margin: const EdgeInsets.symmetric(horizontal: 15),
-        color: const Color(0xFFF0F2F5),
-      );
-}
-
-class _ChannelRow extends StatelessWidget {
-  const _ChannelRow({
-    required this.title,
-    required this.subtitle,
-    required this.checked,
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  final String title;
-  final String subtitle;
-  final bool checked;
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    // 잠긴 상태를 흐리게 보여 준다. 숨기지 않는 이유는, 무엇을 고를 수 있는지
-    // 먼저 보여야 위 항목에 동의할지 판단할 수 있기 때문이다.
-    return Opacity(
-      opacity: enabled ? 1 : 0.42,
-      child: InkWell(
-        onTap: enabled ? () => onChanged(!checked) : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
-          child: Row(
-            children: [
-              _Box(checked: checked, enabled: enabled),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const _OptionalBadge(dense: true),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Box extends StatelessWidget {
-  const _Box({required this.checked, required this.enabled});
-
-  final bool checked;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 23,
-      height: 23,
-      margin: const EdgeInsets.only(top: 1),
-      decoration: BoxDecoration(
-        color: checked ? AppColors.accent : AppColors.cardSurface,
-        border: checked
-            ? null
-            : Border.all(color: const Color(0xFFC9CFD9), width: 1.8),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: checked
-          ? const Icon(Icons.check, size: 15, color: Colors.white)
-          : null,
     );
   }
 }
