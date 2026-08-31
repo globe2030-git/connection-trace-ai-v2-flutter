@@ -1386,9 +1386,25 @@ card_05.png    정답_회사 = 「Production Support Group」 → 「현대제�
 ✅ **막아 뒀던 것이 풀린다**: 알림톡 ④ 재심사 걱정 없음 · **스토어 등록 가능** ·
 개인정보처리방침 v2.5 진행 가능 · 검색용 아이디 어긋남 해소.
 
-⬜ **도메인** — `connectionsense` 는 `.com`·`.co.kr`·`.kr` **셋 다 비어 있다**
-(`.kr` 둘은 KRNIC whois 확정). **이름이 정해진 지금이 잡을 때다.** 다만 지금은
-`.web.app` 무료 주소를 쓰고 있어 급하지는 않다.
+### ⬜ 도메인 — 후보 여덟을 재 뒀다 (2026-08-30, [추가 627])
+
+```
+                   .co.kr   .kr    .com
+connectionsense    ✅       ✅     ✅ 비어 있음    ← 이름과 일치. 셋 다 열림
+connectsense       ✅       ✅     ❌ dnsimple
+salesense          ✅       ✅     ❌ domaincontrol
+salessense         ✅       ✅     ❌ sedoparking(파킹)
+```
+
+⭐ **`.kr` 계열은 전부 열려 있다 — 도메인은 이름 결정의 제약이 아니었다.**
+갈리는 것은 `.com` 뿐이고, **`.com` 까지 비어 있는 것은 `connectionsense` 하나**다.
+
+⚠️ **근거를 갈라 둔다** — `.co.kr`·`.kr` 은 **KRNIC whois 공식 응답**이라 확정,
+**`.com` 은 NS 기준**이라 등록만 하고 네임서버를 안 건 경우를 놓친다.
+📌 **파킹(되팔이 매물)과 실사용(dnsimple)은 살 수 있느냐가 다르다.**
+
+**이름이 정해진 지금이 잡을 때다.** 다만 지금은 `.web.app` 무료 주소를 쓰고
+있어 급하지는 않다.
 
 <details>
 <summary>아래는 논의가 열려 있던 동안의 기록이다 — 경위 보관용</summary>
