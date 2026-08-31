@@ -1,4 +1,4 @@
-// 만 14세 확인을 안 했을 때 로그인 버튼이 「이유를 말하는가」 (추가 626).
+// 로그인 버튼이 눌리지 않을 때 「이유를 말하는가」 (추가 626, 갱신 추가 632).
 //
 // 🚨 **왜 있나**: 카카오·네이버 버튼은 **공식 브랜드 이미지를 통째로** 쓴다.
 // 그래서 눌리지 않는 상태에서도 **밝은 노랑·초록 그대로**이고, 이용자는
@@ -7,6 +7,13 @@
 // ⚠️ 이 저장소는 그 원칙을 이미 알고 있었다 — 로그인 화면 주석에
 // *"눌러도 안 되는 버튼을 두면 이용자는 고장으로 읽는다"* 가 있고 애플 버튼은
 // 그래서 아예 안 그린다. **그런데 이 자리에는 적용이 안 됐다.**
+//
+// 📌 **2026-08-31 갱신(추가 632)**: 만 14세 확인 체크박스가 로그인 화면에서
+// ⑨(SignupConsentView)로 옮겨가면서, 버튼이 눌리지 않는 유일한 이유가
+// "다른 로그인이 진행 중"으로 바뀌었다. 그래서 이 파일 이름은 낡았지만
+// (원래는 나이 확인 안내를 검증했다), **검증하는 불변식 자체(모든 버튼이
+// onBlockedTap을 넘기는가)는 여전히 유효**해 파일은 남기고 세 번째 테스트만
+// 새 패턴에 맞춰 고쳤다.
 import 'dart:io';
 
 import 'package:connection_trace_ai_flutter/data/models/sns_auth_provider.dart';
@@ -29,7 +36,7 @@ void main() {
         OfficialSocialButton(
           art: art,
           isLoading: false,
-          onPressed: null, // 만 14세 미확인 상태
+          onPressed: null, // 다른 로그인이 진행 중인 상태
           onBlockedTap: () => blocked++,
         ),
       ),
@@ -73,17 +80,24 @@ void main() {
         .readAsStringSync();
     // ⚠️ `_SnsButton(` 로 세면 **생성자 선언까지** 걸린다. 버튼을 만드는
     //    자리에만 있는 줄로 센다.
-    final buttons = RegExp(r'isDisabled: _loadingProvider != null \|\| !_ageConfirmed')
+    final buttons = RegExp(r'isDisabled: _loadingProvider != null,')
         .allMatches(src)
         .length;
-    final wired = RegExp(r'onBlockedTap: _promptAgeConfirm')
-        .allMatches(src)
-        .length;
+    final wired = RegExp(r'onBlockedTap: _promptBusy').allMatches(src).length;
     expect(
       wired,
       buttons,
       reason: '버튼을 만드는 자리 $buttons곳 중 $wired곳만 안내를 넘긴다',
     );
     expect(buttons, greaterThanOrEqualTo(3), reason: '버튼 자리를 못 찾았다');
+  });
+
+  test('⚠️ 만 14세 확인은 ⑨로 옮겨갔다 — 로그인 화면에 남아 있으면 안 된다', () {
+    // 2026-08-31(추가 632) 회귀 방지 — 병합 충돌 등으로 옛 코드가 되살아나면
+    // 여기서 잡힌다.
+    final src = File('lib/presentation/features/auth/views/login_view.dart')
+        .readAsStringSync();
+    expect(src.contains('_ageConfirmed'), isFalse);
+    expect(src.contains('_AgeConfirmRow'), isFalse);
   });
 }

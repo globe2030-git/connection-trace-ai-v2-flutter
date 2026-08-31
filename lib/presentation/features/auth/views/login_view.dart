@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
@@ -6,20 +7,29 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/services/ad_consent_service.dart';
 import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
+import '../../../common/legal_document_view.dart';
 import '../../../common/social_oauth_view.dart';
 import '../widgets/official_social_button.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
-import '../../../common/legal_document_view.dart';
+import 'email_signup_view.dart';
+import 'signup_consent_view.dart';
 
-/// 앱 진입을 막는 SNS 로그인 화면. Google은 기존 Gmail 연동에서 이미 쓰던
-/// google_sign_in을 그대로 재사용해 바로 동작하고, Apple은 iOS/macOS에서만
+/// 앱 진입을 막는 SNS·이메일 로그인 화면. Google은 기존 Gmail 연동에서 이미
+/// 쓰던 google_sign_in을 그대로 재사용해 바로 동작하고, Apple은 iOS/macOS에서만
 /// 정상 동작하는 버튼으로 보여준다(`SnsAuthProvider.apple.isAvailable` 참고 —
-/// Android에서는 버튼 자체를 렌더링하지 않는다). 카카오는 이번 범위에서
-/// 제외했다.
+/// Android에서는 버튼 자체를 렌더링하지 않는다).
+///
+/// ## 동의는 ⑨(SignupConsentView)로 통합됐다(2026-08-31, 추가 632)
+///
+/// 예전에는 만 14세 확인 체크박스가 이 화면에 있었다. 지금은 **어느 버튼을
+/// 눌러도 ⑨가 먼저 뜨고**, 필수 3종(만14세·약관·방침)을 그 화면에서 확인한다
+/// — 자세한 설계는
+/// `docs/planning/specs/email-signup-unified-consent-2026-08-31.md` 참고.
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
 
@@ -31,73 +41,24 @@ class _LoginViewState extends State<LoginView> {
   SnsAuthProvider? _loadingProvider;
   String? _errorMessage;
 
-  /// 만 14세 이상 확인. **체크해야 로그인 버튼이 눌린다.**
+  /// ⑨(`SignupConsentView`)에서 미리 골라 둔 동의값. **화면(이 State)이 살아
+  /// 있는 동안만** 메모리로 들고 있는다 — uid가 아직 없는 시점(OAuth/이메일
+  /// 계정 생성 전)에 받은 값이라 서버에 곧바로 쓸 수 없다.
   ///
-  /// ## 왜 있나
+  /// 🚨 **을) 화면 생존 동안 보유하는 방식이다**(설계 §2, 3차 왕복 확정).
+  /// OAuth가 취소/실패해도 이 값은 지우지 않는다 — 다른 소셜 버튼으로
+  /// 재시도해도 ⑨를 다시 안 띄운다. 재시도가 흔한 경로(비밀번호 오타·OAuth
+  /// 취소)인데 매번 다시 물으면 마찰이 크다.
   ///
-  /// 방침(`privacy-policy.html`)과 약관(`terms-of-service.html`) 세 군데가
-  /// **"만 14세 미만의 가입을 제한한다"**고 선언하고 있는데, 그것을 확인하는
-  /// 수단이 앱에 하나도 없었다(2026-08-25 실측: `lib/` 전체에 연령 확인 코드
-  /// 0건). **선언은 있고 뒷받침이 없는 상태**였고, 방침과 구현이 어긋나는 것
-  /// 자체가 리스크라는 것은 이 저장소가 BYOK 서술로 이미 겪었다.
+  /// 이 저장소에 이미 같은 패턴이 있다(`briefing_overlay_view.dart`의
+  /// `_consentedSelection`).
   ///
-  /// ⚠️ **광고 수신 동의를 켜면 제재의 성격이 바뀐다** — 만 14세 미만에게
-  /// 광고성 정보를 보내면 과태료가 아니라 **과징금(매출 3% 이하)**이다
-  /// (정보통신망법 §64조의2①2호, 추가 457 법률 조사).
-  ///
-  /// ## 왜 체크박스인가 — 생년월일을 받지 않는다
-  ///
-  /// 개인정보위 가이드라인이 권장하는 **자기 확인 체크**다. 검증은 아니지만
-  /// **물었고 이용자가 답했다는 기록**이 남는다. 무엇보다 **개인정보를 새로
-  /// 수집하지 않아서**, 최소수집을 위해 생년월일에서 연도를 뺀 기존 판단
-  /// (`my_profile_model.dart`의 `birthMonthDay`)과 부딪치지 않는다.
-  ///
-  /// ## 왜 광고 동의 화면이 아니라 여기인가
-  ///
-  /// 법률 조사(추가 457)의 판단이다 — **만 14세는 필수이고 광고는 선택**이라,
-  /// 한 화면에 섞으면 이용자가 *"다 체크해야 하는구나"*로 읽어 **선택 동의의
-  /// 자유가 흐려진다.** 그래서 가입 흐름에 둔다.
-  ///
-  /// ⚠️ **그런데 이 앱에는 가입 흐름이 따로 없다** — SNS 로그인뿐이라
-  /// **로그인 = 가입**이고 가입 화면이 존재하지 않는다. 그래서 로그인 화면이
-  /// 곧 가입 화면이고, 여기가 놓을 수 있는 유일한 자리다.
-  ///
-  /// 📌 **기억하지 않는다.** 로그인할 때마다 다시 묻는다 — 계정이 아니라
-  /// 기기에 기억하면 계정을 바꿔도 안 묻게 되고, 계정에 기억하려면 로그인이
-  /// 먼저여야 해서 순서가 꼬인다. 세션이 사실상 무기한이라 로그인 화면 자체를
-  /// 자주 보지 않으므로(추가 456) 매번 묻는 부담이 작다.
-  bool _ageConfirmed = false;
-
-  /// 만 14세 확인을 잠깐 강조한다. [_promptAgeConfirm] 이 켜고 몇 초 뒤 끈다.
-  bool _ageHighlight = false;
-
-  /// 🚨 **눌리지 않는 버튼이 이유를 말하게 한다**(2026-08-30, 추가 626).
-  ///
-  /// 카카오·네이버 버튼은 **공식 브랜드 이미지를 통째로** 쓰므로 비활성이어도
-  /// **밝은 노랑·초록 그대로**다. 이용자는 멀쩡해 보이는 버튼을 눌렀는데
-  /// 아무 일도 안 일어나는 것을 본다 — **고장으로 읽는다.**
-  ///
-  /// 📌 **막지 말고 말한다.** 로그인은 여전히 시작되지 않지만, **왜 안 되는지**
-  /// 는 알려 준다. 오늘 광고 동의에서 고친 것과 같은 원칙이다.
-  ///
-  /// ⚠️ **버튼을 흐리게 만들지 않았다** — 카카오·네이버는 버튼 가이드가 지정
-  /// 컬러를 못박고 있고, 투명도 조정이 허용되는지 **원문을 확인하지 않았다.**
-  /// 네이버는 사전 검수 항목이라 더 조심스럽다. **확인 전에는 손대지 않는다.**
-  void _promptAgeConfirm() {
-    if (_ageConfirmed) return;
-    setState(() => _ageHighlight = true);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        const SnackBar(
-          content: Text('만 14세 이상 확인에 체크해 주세요.'),
-          duration: Duration(seconds: 3),
-        ),
-      );
-    Future<void>.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _ageHighlight = false);
-    });
-  }
+  /// ⚠️ **어느 provider의 이메일 채널 규칙을 쓸지는 이 값에 저장해 두지
+  /// 않는다** — [_applyPendingConsent]를 부르는 자리마다 **실제로 로그인에
+  /// 성공한 provider**를 그때그때 넘긴다(설계 §1 끝부분 — 예: 네이버로 시작
+  /// → 취소 → 구글로 재시도하면, 처음 ⑨를 그렸던 provider가 아니라 실제로
+  /// 성공한 구글 기준으로 걸러야 한다).
+  ConsentChoice? _pendingConsent;
 
   Future<void> _signIn(SnsAuthProvider provider) async {
     setState(() {
@@ -123,6 +84,17 @@ class _LoginViewState extends State<LoginView> {
             provider,
             (target) => SocialOauthView.show(context, target),
           );
+        case SnsAuthProvider.email:
+          // 이메일은 `_startSignIn`이 EmailSignupView로 따로 보낸다 — 여기
+          // 도달하면 배선 오류다.
+          throw AuthException('이메일 로그인은 별도 화면에서 진행합니다.');
+      }
+      // 성공했으면(예외 없이 여기 도달) 미리 받아 둔 동의를 적용한다.
+      // Apple 취소처럼 예외 없이 조용히 반환되는 경로도 있으므로,
+      // firebaseUid로 실제 로그인 성공 여부를 다시 확인한다.
+      if (mounted) {
+        final uid = context.read<AuthRepository>().firebaseUid;
+        if (uid != null) unawaited(_applyPendingConsent(uid, provider));
       }
     } on AuthException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
@@ -137,6 +109,75 @@ class _LoginViewState extends State<LoginView> {
     } finally {
       if (mounted) setState(() => _loadingProvider = null);
     }
+  }
+
+  /// 소셜 버튼이든 "이메일로 시작하기"든, **처음 누르면 ⑨를 먼저 보여준다**
+  /// (설계 §1). 이미 ⑨를 통과했으면([_pendingConsent] != null) 다시 보여주지
+  /// 않고 곧바로 로그인/가입 흐름으로 넘어간다.
+  Future<void> _startSignIn(SnsAuthProvider provider) async {
+    if (_pendingConsent == null) {
+      final choice = await Navigator.of(context).push<ConsentChoice>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => SignupConsentView(provider: provider),
+        ),
+      );
+      if (!mounted) return;
+      if (choice == null) return; // 취소·뒤로가기 — 로그인 화면에 그대로 남는다
+      setState(() => _pendingConsent = choice);
+    }
+    if (provider == SnsAuthProvider.email) {
+      await _openEmailSignup();
+    } else {
+      await _signIn(provider);
+    }
+  }
+
+  Future<void> _openEmailSignup() async {
+    setState(() => _errorMessage = null);
+    final success = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const EmailSignupView(),
+      ),
+    );
+    if (success != true || !mounted) return;
+    final uid = context.read<AuthRepository>().firebaseUid;
+    if (uid != null) {
+      unawaited(_applyPendingConsent(uid, SnsAuthProvider.email));
+    }
+  }
+
+  /// [_pendingConsent]를 서버에 실제로 적용한다 — **계정이 실제로 만들어진
+  /// 뒤(uid를 확보한 뒤)에만** 부른다(설계 §2·§4).
+  ///
+  /// 🚨 **`context`를 쓰지 않는다.** 로그인 성공 직후 `AuthGate`가 위젯
+  /// 트리를 통째로 갈아 끼우므로, 이 함수 안에서 `context`나 `mounted`를
+  /// 확인하면 호출 자체가 취소될 수 있다 — `AuthRepository
+  /// ._storeAppleRefreshTokenOnServer`가 같은 이유로 같은 패턴을 쓴다.
+  Future<void> _applyPendingConsent(String uid, SnsAuthProvider provider) async {
+    final consent = _pendingConsent;
+    if (consent == null) return;
+    await AdConsentService().applyFreshSignupChoice(
+      uid: uid,
+      email: consent.adEmail,
+      push: consent.adPush,
+      emailChannelAvailable: adEmailChannelAvailable(provider),
+    );
+  }
+
+  /// 로그인이 진행 중이라 버튼이 눌리지 않을 때 이유를 말한다(2026-08-30,
+  /// 추가 626의 원칙 유지). 만 14세 게이트가 ⑨로 옮겨가면서, 이제 버튼이
+  /// 눌리지 않는 유일한 이유는 "다른 로그인이 진행 중"이다.
+  void _promptBusy() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('잠시만요, 로그인을 진행하고 있어요.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
   }
 
   /// 최초 로그인이라 내 명함이 아직 비어 있고 프로필 사진도 없으면, Google
@@ -210,21 +251,13 @@ class _LoginViewState extends State<LoginView> {
                 ),
               ),
               const SizedBox(height: 32),
-              _AgeConfirmRow(
-                checked: _ageConfirmed,
-                highlight: _ageHighlight,
-                onChanged: _loadingProvider != null
-                    ? null
-                    : (v) => setState(() => _ageConfirmed = v),
-              ),
-              const SizedBox(height: 20),
               _SnsButton(
                 provider: SnsAuthProvider.google,
                 isLoading: _loadingProvider == SnsAuthProvider.google,
-                isDisabled: _loadingProvider != null || !_ageConfirmed,
+                isDisabled: _loadingProvider != null,
                 isRecent: lastProvider == SnsAuthProvider.google,
-                onPressed: () => _signIn(SnsAuthProvider.google),
-                onBlockedTap: _promptAgeConfirm,
+                onPressed: () => _startSignIn(SnsAuthProvider.google),
+                onBlockedTap: _promptBusy,
               ),
               // Apple 로그인이 지원되지 않는 플랫폼(Android 등)에서는 버튼을
               // 아예 그리지 않는다 — 비활성 버튼으로 "준비 중"을 보여주는 건
@@ -240,10 +273,10 @@ class _LoginViewState extends State<LoginView> {
                   _SnsButton(
                     provider: p,
                     isLoading: _loadingProvider == p,
-                    isDisabled: _loadingProvider != null || !_ageConfirmed,
+                    isDisabled: _loadingProvider != null,
                     isRecent: lastProvider == p,
-                    onPressed: () => _signIn(p),
-                    onBlockedTap: _promptAgeConfirm,
+                    onPressed: () => _startSignIn(p),
+                    onBlockedTap: _promptBusy,
                   ),
                 ],
               if (SnsAuthProvider.apple.isAvailable) ...[
@@ -251,25 +284,70 @@ class _LoginViewState extends State<LoginView> {
                 _SnsButton(
                   provider: SnsAuthProvider.apple,
                   isLoading: _loadingProvider == SnsAuthProvider.apple,
-                  isDisabled: _loadingProvider != null || !_ageConfirmed,
+                  isDisabled: _loadingProvider != null,
                   isRecent: lastProvider == SnsAuthProvider.apple,
-                  onPressed: () => _signIn(SnsAuthProvider.apple),
-                  onBlockedTap: _promptAgeConfirm,
+                  onPressed: () => _startSignIn(SnsAuthProvider.apple),
+                  onBlockedTap: _promptBusy,
                 ),
               ],
-              // 약관규제법 제3조(명시 의무) 대응. 약관·방침 동의는 여전히
-              // **고지 문구 방식**이다 — 개인정보는 계약 이행에 필요한
-              // 최소분만 처리해 별도 동의가 필요 없고(개인정보 보호법
-              // 제15조 제1항 제4호), 위치·AI 전송은 각각 별도 동의 화면이
-              // 이미 있기 때문.
-              //
-              // ⚠️ 이 자리에 있던 *"선택 동의 항목(마케팅 수신 등)이 생기면
-              // 체크박스 방식으로 올려야 한다"*는 예고는 **2026-08-25에
-              // 현실이 됐다.** 다만 위에 올린 체크박스는 마케팅이 아니라
-              // **만 14세 확인**이다(필수 확인이라 성격이 다르다).
-              // 광고 수신 동의는 **별도 화면**으로 만들고 있다(추가 454) —
-              // 필수와 선택을 한 화면에 섞으면 선택 동의의 자유가 흐려진다는
-              // 법률 조사 판단(추가 457)에 따른 것이다.
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Divider(color: AppColors.borderSubtle, height: 1),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      '또는',
+                      style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                    ),
+                  ),
+                  const Expanded(
+                    child: Divider(color: AppColors.borderSubtle, height: 1),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: _loadingProvider != null
+                      ? null
+                      : () => _startSignIn(SnsAuthProvider.email),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: AppColors.cardSurface,
+                    side: const BorderSide(color: AppColors.borderSubtle),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.mail_outline,
+                        size: 20,
+                        color: AppColors.textPrimary,
+                      ),
+                      SizedBox(width: 10),
+                      Text(
+                        '이메일로 시작하기',
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // 약관규제법 제3조(명시 의무) 대응. 약관·방침 동의는 **⑨
+              // (SignupConsentView)의 체크박스**로 받고, 이 고지는 그와 별개로
+              // "명시" 의무를 채운다 — ⑨를 보지 않고 이탈하는 사람(예: 취소
+              // 후 로그인 화면만 보다 나가는 경우)도 이 화면은 보므로 최소
+              // 고지를 유지한다.
               const SizedBox(height: 20),
               _LegalNotice(),
               if (_errorMessage != null) ...[
@@ -300,94 +378,6 @@ class _LoginViewState extends State<LoginView> {
                 ),
               ],
               const Spacer(),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 만 14세 이상 확인 줄. 로그인 버튼 **위**에 둔다 — 체크해야 아래가 눌린다는
-/// 것이 순서로 보여야 한다.
-///
-/// 📌 기본값은 **꺼짐**이다. 미리 켜 두면 "물었다"고 할 수 없다.
-class _AgeConfirmRow extends StatelessWidget {
-  final bool checked;
-
-  /// `null`이면 누를 수 없다(로그인 진행 중).
-  final ValueChanged<bool>? onChanged;
-
-  /// 눌리지 않는 버튼을 누른 직후 잠깐 켜진다 — 시선을 여기로 데려온다.
-  final bool highlight;
-
-  const _AgeConfirmRow({
-    required this.checked,
-    required this.onChanged,
-    this.highlight = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = onChanged != null;
-    return Semantics(
-      checked: checked,
-      label: '만 14세 이상입니다. 필수 확인 항목입니다.',
-      child: InkWell(
-        // 글자를 눌러도 켜지게 한다 — 작은 네모만 노리게 하지 않는다.
-        onTap: enabled ? () => onChanged!(!checked) : null,
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: highlight ? AppColors.accent : Colors.transparent,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: checked,
-                  onChanged: enabled ? (v) => onChanged!(v ?? false) : null,
-                  activeColor: AppColors.accent,
-                  side: const BorderSide(
-                    color: AppColors.borderFunctional,
-                    width: 1.5,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textPrimary,
-                      height: 1.45,
-                    ),
-                    children: [
-                      const TextSpan(
-                        text: '[필수] ',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.accentText,
-                        ),
-                      ),
-                      const TextSpan(text: '만 14세 이상입니다'),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
         ),
@@ -438,9 +428,16 @@ class _SnsButton extends StatelessWidget {
   /// 들어오면 `_ProviderIcon`에서 갈아 끼운다.
   /// 구글·애플용 배경색. 카카오·네이버는 공식 버튼 이미지를 통째로 쓰므로
   /// 여기까지 오지 않는다(`_OfficialButtonArt.of` 참고).
+  // ⚠️ 이메일은 `_SnsButton`을 쓰지 않는다(로그인 화면에서 별도
+  // `OutlinedButton`으로 그린다) — 그래도 열거형 분기는 남김없이 적는다
+  // (위 소셜 아이콘 스위치와 같은 이유).
   Color? get _brandColor => switch (provider) {
-    SnsAuthProvider.google || SnsAuthProvider.apple => null,
-    SnsAuthProvider.kakao || SnsAuthProvider.naver => null,
+    SnsAuthProvider.google ||
+    SnsAuthProvider.apple ||
+    SnsAuthProvider.kakao ||
+    SnsAuthProvider.naver ||
+    SnsAuthProvider.email =>
+      null,
   };
 
   @override
@@ -588,7 +585,10 @@ class _ProviderIcon extends StatelessWidget {
           color: AppColors.accent,
         ),
       ),
-      SnsAuthProvider.kakao || SnsAuthProvider.naver => const SizedBox.shrink(),
+      SnsAuthProvider.kakao ||
+      SnsAuthProvider.naver ||
+      SnsAuthProvider.email =>
+        const SizedBox.shrink(),
     };
   }
 }
