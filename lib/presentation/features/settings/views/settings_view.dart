@@ -138,6 +138,10 @@ class _SettingsViewState extends State<SettingsView> {
                     onTap: () => MyProfileEditModalView.show(context),
                   ),
                   _AccountRow(auth: auth),
+                  // 이메일 가입인데 아직 인증 메일을 확인하지 않은 계정에만
+                  // 보인다(추가 632 §7). 소셜 로그인은 제공자가 이미 소유를
+                  // 확인한 주소를 주므로 이 행 자체가 안 뜬다.
+                  if (auth.needsEmailVerification) _EmailVerificationRow(auth: auth),
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.logout,
@@ -1000,6 +1004,81 @@ class _AccountRowState extends State<_AccountRow> with WidgetsBindingObserver {
               color: AppColors.textMuted,
               size: 20,
               semanticLabel: _revealed ? '이메일 가리기' : '이메일 전체 보기',
+            ),
+    );
+  }
+}
+
+/// 이메일 가입인데 아직 소유 확인(인증 메일 클릭)을 안 한 계정에게 보이는
+/// 배지 겸 재발송 버튼(추가 632, 2026-08-31 §7).
+///
+/// ⚠️ **인증을 완료해도 이 행이 즉시 사라지지 않는다.** `emailVerified`는
+/// Firebase가 로그인 시점에 캐시해 둔 값이라, 메일함에서 링크를 눌러도 이
+/// 화면이 그 사실을 실시간으로 알 방법이 없다 — 앱을 다시 켜거나 다시
+/// 로그인하면 새 값을 받아 사라진다. 번호 인증이 실질적인 신원 확인
+/// 역할을 대신하므로, 이 정도 지연을 이유로 실시간 갱신 장치를 더 만들지
+/// 않는다(마감 대응 범위 판단).
+class _EmailVerificationRow extends StatefulWidget {
+  const _EmailVerificationRow({required this.auth});
+
+  final AuthRepository auth;
+
+  @override
+  State<_EmailVerificationRow> createState() => _EmailVerificationRowState();
+}
+
+class _EmailVerificationRowState extends State<_EmailVerificationRow> {
+  bool _sending = false;
+
+  Future<void> _resend() async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await widget.auth.resendVerificationEmail();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('인증 메일을 다시 보냈어요. 받은 메일함(스팸함 포함)을 확인해 주세요.'),
+        ),
+      );
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요.')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingsRow(
+      icon: const Icon(
+        Icons.mark_email_unread_outlined,
+        color: AppColors.warningText,
+        size: 22,
+      ),
+      title: '이메일 인증 안 됨',
+      subtitle: '받은 메일함(스팸함 포함)에서 인증 메일을 확인해 주세요',
+      onTap: _sending ? null : _resend,
+      trailing: _sending
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Text(
+              '재발송',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.accentText,
+              ),
             ),
     );
   }

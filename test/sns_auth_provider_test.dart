@@ -41,4 +41,18 @@ void main() {
       expect(SnsAuthProvider.apple.unavailableReason, isNotNull);
     });
   });
+
+  group('SnsAuthProvider.email (추가 632)', () {
+    test('모든 플랫폼에서 항상 사용 가능하다 — 빌드 키가 필요 없다', () {
+      for (final platform in TargetPlatform.values) {
+        debugDefaultTargetPlatformOverride = platform;
+        expect(SnsAuthProvider.email.isAvailable, isTrue, reason: '$platform');
+        expect(SnsAuthProvider.email.unavailableReason, isNull);
+      }
+    });
+
+    test('socialProvider는 null이다 — social_oauth.dart 경로를 타지 않는다', () {
+      expect(SnsAuthProvider.email.socialProvider, isNull);
+    });
+  });
 }

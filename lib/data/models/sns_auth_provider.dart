@@ -14,13 +14,22 @@ enum SnsAuthProvider {
   google,
   apple,
   kakao,
-  naver;
+  naver,
+  /// 이메일+비밀번호 가입/로그인(추가 632, ⑧ EmailSignupView).
+  ///
+  /// ⚠️ **소셜 로그인이 아니다** — `socialProvider`가 `null`을 돌려주고
+  /// [signInWithSocial]이 아니라 `AuthRepository.signInOrSignUpWithEmail`을
+  /// 탄다. 그래도 이 enum에 넣은 이유는, 광고 동의(`adEmailChannelAvailable`)·
+  /// 「최근 로그인」배지 등 **provider 하나로 분기하는 자리가 이미 많아서**,
+  /// 별도 타입을 만들면 그 자리마다 이중 분기가 생기기 때문이다.
+  email;
 
   String get displayName => switch (this) {
     SnsAuthProvider.google => 'Google',
     SnsAuthProvider.apple => 'Apple',
     SnsAuthProvider.kakao => '카카오',
     SnsAuthProvider.naver => '네이버',
+    SnsAuthProvider.email => '이메일',
   };
 
   /// 지금 바로 로그인 가능한지.
@@ -42,6 +51,8 @@ enum SnsAuthProvider {
     // 고장으로 읽는다. 키 주입은 tool/build_app.sh 가 한다.
     SnsAuthProvider.kakao => social.isConfigured(social.SocialProvider.kakao),
     SnsAuthProvider.naver => social.isConfigured(social.SocialProvider.naver),
+    // 이메일은 Firebase Auth 기본 제공자라 빌드 키가 필요 없다 — 항상 가능.
+    SnsAuthProvider.email => true,
   };
 
   /// `social_oauth.dart` 쪽 제공자 값. 로그인 흐름을 부를 때 쓴다.
@@ -52,7 +63,8 @@ enum SnsAuthProvider {
   social.SocialProvider? get socialProvider => switch (this) {
     SnsAuthProvider.kakao => social.SocialProvider.kakao,
     SnsAuthProvider.naver => social.SocialProvider.naver,
-    SnsAuthProvider.google || SnsAuthProvider.apple => null,
+    SnsAuthProvider.google || SnsAuthProvider.apple || SnsAuthProvider.email =>
+      null,
   };
 
   String? get unavailableReason => switch (this) {
@@ -63,5 +75,6 @@ enum SnsAuthProvider {
     SnsAuthProvider.kakao || SnsAuthProvider.naver => isAvailable
         ? null
         : '$displayName 로그인은 이 빌드에서 준비되지 않았습니다.',
+    SnsAuthProvider.email => null,
   };
 }
