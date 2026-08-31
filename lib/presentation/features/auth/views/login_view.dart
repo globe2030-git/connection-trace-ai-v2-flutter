@@ -254,6 +254,7 @@ class _LoginViewState extends State<LoginView> {
                   isDisabled: _loadingProvider != null || !_ageConfirmed,
                   isRecent: lastProvider == SnsAuthProvider.apple,
                   onPressed: () => _signIn(SnsAuthProvider.apple),
+                  onBlockedTap: _promptAgeConfirm,
                 ),
               ],
               // 약관규제법 제3조(명시 의무) 대응. 약관·방침 동의는 여전히
@@ -402,7 +403,15 @@ class _SnsButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   /// 눌리지 않을 때 이유를 말할 자리. `OfficialSocialButton.onBlockedTap` 참고.
-  final VoidCallback? onBlockedTap;
+  ///
+  /// 🚨 **선택 인자로 뒀다가 애플 버튼에서 빠뜨렸다**(2026-08-31, globe2030님
+  /// 실기기 제보: *"애플 로그인만 알림이 나오지 않아"*). 버튼을 만드는 자리가
+  /// **셋으로 흩어져 있어서**(구글 · 카카오·네이버 루프 · 애플) 둘만 고치고
+  /// 하나를 놓쳤다. **자동 검사는 위젯 단위라 이 누락을 못 봤다.**
+  ///
+  /// 📌 **그래서 필수로 바꿨다** — 안 넘기면 컴파일이 안 된다. 새 제공자를
+  /// 더할 때도 똑같이 막힌다. **「잊지 말자」로 막지 않고 형으로 막는다.**
+  final VoidCallback onBlockedTap;
 
   /// 지난번에 이 수단으로 로그인에 성공했으면 true — 「최근」 배지를 그린다.
   /// 설계: docs/planning/specs/login-recent-provider-2026-08-29.md §3.
@@ -413,7 +422,7 @@ class _SnsButton extends StatelessWidget {
     required this.isLoading,
     required this.isDisabled,
     required this.onPressed,
-    this.onBlockedTap,
+    required this.onBlockedTap,
     this.isRecent = false,
   });
 
@@ -467,7 +476,7 @@ class _SnsButton extends StatelessWidget {
   Widget _buildDefaultButton(bool isAvailable, Color? brand) {
     // ⚠️ `OutlinedButton` 은 `onPressed: null` 이면 **탭 자체가 안 들어온다.**
     //    그래서 눌리지 않을 때만 바깥에서 탭을 받아 이유를 말한다.
-    if (isDisabled && onBlockedTap != null) {
+    if (isDisabled) {
       return GestureDetector(
         onTap: onBlockedTap,
         behavior: HitTestBehavior.opaque,
@@ -601,11 +610,25 @@ class _LegalNotice extends StatelessWidget {
       decorationColor: AppColors.accentText,
     );
 
+    // 🚨 **한글은 아무 글자에서나 줄이 바뀐다**(2026-08-31, globe2030님 실기기
+    //    제보: *"개인정보처리방에서 줄바꿈이 되어 어색해"*).
+    //
+    // 좁은 화면에서 **문서 이름 한가운데**가 갈렸다 — `개인정보처리방` / `침에`.
+    // 그 이름은 **약관·방침 화면과 글자까지 같아야** 이용자가 같은 것으로
+    // 알아본다(약관규제법 §3 명시 의무). **갈리면 다른 이름처럼 보인다.**
+    //
+    // 📌 **줄 바꿀 자리를 우리가 정한다.** 「계속하기를 누르면」 뒤에서 한 번
+    //    끊으면, 좁은 화면에서도 문서 이름 둘이 한 줄에 온전히 들어간다.
+    //    넓은 화면에서는 두 줄이 되지만 **가운데 정렬이라 자연스럽다.**
+    //
+    // ⚠️ **낱말 사이에 보이지 않는 문자를 넣는 방법은 쓰지 않았다** — 문서
+    //    이름이 다른 곳(`LegalDocument.title`)과 글자가 달라지고, 복사하면
+    //    이상한 값이 붙는다.
     return Text.rich(
       TextSpan(
         style: base,
         children: [
-          const TextSpan(text: '계속하기를 누르면 '),
+          const TextSpan(text: '계속하기를 누르면\n'),
           TextSpan(
             text: LegalDocument.terms.title,
             style: link,
