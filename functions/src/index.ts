@@ -261,6 +261,28 @@ const GEMINI_MODEL = "gemini-3.6-flash";
 // "global"은 절대 쓰면 안 된다 — 글로벌 엔드포인트는 리전 보장이 없어져
 // 이번 이전의 전제 자체가 깨진다. 서울(asia-northeast3)을 포기한 이유는 위
 // 파일 상단 주석 참고.
+//
+// ⚠️ 호스트 형식에 주의 — 두 형식이 있고 서로 다른 용도다. 헷갈려서 실제로
+// 한 번 틀렸다(2026-08-31, PR #747 이후 발견·후속 수정).
+//
+//   지역(locational) 엔드포인트:
+//     ${LOCATION}-aiplatform.googleapis.com
+//     (예: asia-northeast3-aiplatform.googleapis.com,
+//          us-central1-aiplatform.googleapis.com)
+//   관할권 멀티리전(jurisdictional multi-region) 엔드포인트:
+//     aiplatform.${LOCATION}.rep.googleapis.com
+//     (us/eu 둘뿐 — 우리가 쓰는 것은 이쪽이다. 아래 requestGemini() 참고.
+//      Google 공식 문서가 "Explicitly use the .rep. hostname for
+//      multi-region endpoints"라고 명시한다.)
+//
+// 이 둘을 혼동해 지역 엔드포인트 형식(${LOCATION}-aiplatform.googleapis.com)
+// 으로 조립하면 us라는 값 자체는 유효해 보여도 존재하지 않는 호스트
+// (us-aiplatform.googleapis.com)로 요청이 나가 AI 브리핑이 통째로 실패한다.
+// 원래 서울(asia-northeast3) 리전행을 전제로 지역 엔드포인트 형식을 쓴
+// 문서 절(vertex-seoul-region-research-2026-08-24.md 6-2절)이 있었는데,
+// 리전 결정이 us 멀티리전으로 바뀐 뒤에도 코드가 그 절을 그대로 참조해
+// 생긴 실수다 — 자동 검사(빌드·테스트)는 URL 문자열의 존재 여부를 검증하지
+// 않아 전부 통과했고, Google 문서 원문을 사람이 다시 대조해서만 잡혔다.
 const VERTEX_LOCATION = "us";
 
 // Firebase 프로젝트 ID. `.firebaserc`의 projects.default와 동일한 값을
@@ -389,7 +411,7 @@ async function requestGemini(
   accessToken: string,
   withThinkingLevel: boolean
 ): Promise<Response> {
-  const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${GEMINI_MODEL}:generateContent`;
+  const url = `https://aiplatform.${VERTEX_LOCATION}.rep.googleapis.com/v1/projects/${PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${GEMINI_MODEL}:generateContent`;
   return fetch(url, {
     method: "POST",
     headers: {
