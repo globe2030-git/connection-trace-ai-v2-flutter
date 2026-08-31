@@ -130,11 +130,26 @@ class OfficialSocialButton extends StatelessWidget {
   final bool isLoading;
   final VoidCallback? onPressed;
 
+  /// 🚨 **눌리지 않을 때 「왜 안 되는지」를 말할 자리**(2026-08-30, 추가 626).
+  ///
+  /// 카카오·네이버 버튼은 **공식 브랜드 이미지를 통째로** 쓴다. 그래서
+  /// [onPressed] 가 `null` 이어도 **밝은 노랑·초록 그대로**이고, 이용자는
+  /// 멀쩡해 보이는 버튼을 눌렀는데 **아무 일도 안 일어나는** 것을 본다.
+  ///
+  /// ⚠️ **이 파일이 이미 그 원칙을 알고 있었다** — 로그인 화면 주석에
+  /// *"눌러도 안 되는 버튼을 두면 이용자는 고장으로 읽는다"* 가 있고, 애플
+  /// 버튼은 그래서 **아예 안 그린다.** 그런데 이 자리에는 적용이 안 됐다.
+  ///
+  /// 📌 **막지 말고 말한다** — 오늘 광고 동의에서 고친 것과 같은 원칙이다.
+  /// 눌러도 로그인은 시작되지 않되, **왜 안 되는지는 알려 준다.**
+  final VoidCallback? onBlockedTap;
+
   const OfficialSocialButton({
     super.key,
     required this.art,
     required this.isLoading,
     required this.onPressed,
+    this.onBlockedTap,
   });
 
   @override
@@ -146,7 +161,7 @@ class OfficialSocialButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(art.radius),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: onPressed,
+          onTap: onPressed ?? onBlockedTap,
           child: Center(
             child: isLoading
                 ? SizedBox(
