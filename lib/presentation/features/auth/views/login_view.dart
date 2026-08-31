@@ -68,6 +68,37 @@ class _LoginViewState extends State<LoginView> {
   /// 자주 보지 않으므로(추가 456) 매번 묻는 부담이 작다.
   bool _ageConfirmed = false;
 
+  /// 만 14세 확인을 잠깐 강조한다. [_promptAgeConfirm] 이 켜고 몇 초 뒤 끈다.
+  bool _ageHighlight = false;
+
+  /// 🚨 **눌리지 않는 버튼이 이유를 말하게 한다**(2026-08-30, 추가 626).
+  ///
+  /// 카카오·네이버 버튼은 **공식 브랜드 이미지를 통째로** 쓰므로 비활성이어도
+  /// **밝은 노랑·초록 그대로**다. 이용자는 멀쩡해 보이는 버튼을 눌렀는데
+  /// 아무 일도 안 일어나는 것을 본다 — **고장으로 읽는다.**
+  ///
+  /// 📌 **막지 말고 말한다.** 로그인은 여전히 시작되지 않지만, **왜 안 되는지**
+  /// 는 알려 준다. 오늘 광고 동의에서 고친 것과 같은 원칙이다.
+  ///
+  /// ⚠️ **버튼을 흐리게 만들지 않았다** — 카카오·네이버는 버튼 가이드가 지정
+  /// 컬러를 못박고 있고, 투명도 조정이 허용되는지 **원문을 확인하지 않았다.**
+  /// 네이버는 사전 검수 항목이라 더 조심스럽다. **확인 전에는 손대지 않는다.**
+  void _promptAgeConfirm() {
+    if (_ageConfirmed) return;
+    setState(() => _ageHighlight = true);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('만 14세 이상 확인에 체크해 주세요.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _ageHighlight = false);
+    });
+  }
+
   Future<void> _signIn(SnsAuthProvider provider) async {
     setState(() {
       _loadingProvider = provider;
@@ -181,6 +212,7 @@ class _LoginViewState extends State<LoginView> {
               const SizedBox(height: 32),
               _AgeConfirmRow(
                 checked: _ageConfirmed,
+                highlight: _ageHighlight,
                 onChanged: _loadingProvider != null
                     ? null
                     : (v) => setState(() => _ageConfirmed = v),
@@ -192,6 +224,7 @@ class _LoginViewState extends State<LoginView> {
                 isDisabled: _loadingProvider != null || !_ageConfirmed,
                 isRecent: lastProvider == SnsAuthProvider.google,
                 onPressed: () => _signIn(SnsAuthProvider.google),
+                onBlockedTap: _promptAgeConfirm,
               ),
               // Apple 로그인이 지원되지 않는 플랫폼(Android 등)에서는 버튼을
               // 아예 그리지 않는다 — 비활성 버튼으로 "준비 중"을 보여주는 건
@@ -210,6 +243,7 @@ class _LoginViewState extends State<LoginView> {
                     isDisabled: _loadingProvider != null || !_ageConfirmed,
                     isRecent: lastProvider == p,
                     onPressed: () => _signIn(p),
+                    onBlockedTap: _promptAgeConfirm,
                   ),
                 ],
               if (SnsAuthProvider.apple.isAvailable) ...[
@@ -283,7 +317,14 @@ class _AgeConfirmRow extends StatelessWidget {
   /// `null`이면 누를 수 없다(로그인 진행 중).
   final ValueChanged<bool>? onChanged;
 
-  const _AgeConfirmRow({required this.checked, required this.onChanged});
+  /// 눌리지 않는 버튼을 누른 직후 잠깐 켜진다 — 시선을 여기로 데려온다.
+  final bool highlight;
+
+  const _AgeConfirmRow({
+    required this.checked,
+    required this.onChanged,
+    this.highlight = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -295,7 +336,14 @@ class _AgeConfirmRow extends StatelessWidget {
         // 글자를 눌러도 켜지게 한다 — 작은 네모만 노리게 하지 않는다.
         onTap: enabled ? () => onChanged!(!checked) : null,
         borderRadius: BorderRadius.circular(12),
-        child: Padding(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: highlight ? AppColors.accent : Colors.transparent,
+            ),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
           child: Row(
             children: [
@@ -353,6 +401,9 @@ class _SnsButton extends StatelessWidget {
   final bool isDisabled;
   final VoidCallback onPressed;
 
+  /// 눌리지 않을 때 이유를 말할 자리. `OfficialSocialButton.onBlockedTap` 참고.
+  final VoidCallback? onBlockedTap;
+
   /// 지난번에 이 수단으로 로그인에 성공했으면 true — 「최근」 배지를 그린다.
   /// 설계: docs/planning/specs/login-recent-provider-2026-08-29.md §3.
   final bool isRecent;
@@ -362,6 +413,7 @@ class _SnsButton extends StatelessWidget {
     required this.isLoading,
     required this.isDisabled,
     required this.onPressed,
+    this.onBlockedTap,
     this.isRecent = false,
   });
 
@@ -393,6 +445,7 @@ class _SnsButton extends StatelessWidget {
         art: official,
         isLoading: isLoading,
         onPressed: isDisabled ? null : onPressed,
+        onBlockedTap: isDisabled ? onBlockedTap : null,
       );
     } else {
       button = _buildDefaultButton(isAvailable, brand);
@@ -412,6 +465,19 @@ class _SnsButton extends StatelessWidget {
   }
 
   Widget _buildDefaultButton(bool isAvailable, Color? brand) {
+    // ⚠️ `OutlinedButton` 은 `onPressed: null` 이면 **탭 자체가 안 들어온다.**
+    //    그래서 눌리지 않을 때만 바깥에서 탭을 받아 이유를 말한다.
+    if (isDisabled && onBlockedTap != null) {
+      return GestureDetector(
+        onTap: onBlockedTap,
+        behavior: HitTestBehavior.opaque,
+        child: AbsorbPointer(child: _buildDefaultButtonInner(isAvailable, brand)),
+      );
+    }
+    return _buildDefaultButtonInner(isAvailable, brand);
+  }
+
+  Widget _buildDefaultButtonInner(bool isAvailable, Color? brand) {
     return SizedBox(
       height: 52,
       child: OutlinedButton(
