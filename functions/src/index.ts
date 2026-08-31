@@ -2,8 +2,8 @@
  * 커넥션센스 AI 브리핑 서버 프록시.
  *
  * BYOK(사용자가 직접 AI API 키 발급)가 비개발자에게 진입장벽이 너무 높다는
- * 피드백에 따라, 서버(이 함수)가 앱 운영사 소유의 Gemini 키로 대신 호출하는
- * 구조로 전환한다. 설계 근거·비용 추정·리스크는
+ * 피드백에 따라, 서버(이 함수)가 앱 운영사 소유의 Gemini 호출 권한으로 대신
+ * 호출하는 구조로 전환했다. 설계 근거·비용 추정·리스크는
  * docs/planning/server-setup-plan.md 14번 섹션, 실제 적용 결정은
  * docs/planning/backlog.md 추가 68 참고.
  *
@@ -11,10 +11,27 @@
  * Functions는 Spark 요금제에서 아예 실행되지 않음). 2026-08-07 Blaze 전환 후
  * asia-northeast3에 배포 완료됐다.
  *
+ * ⚠️ 2026-08-31: Gemini 호출 경로를 Google AI Studio(Developer API,
+ * generativelanguage.googleapis.com, API 키 인증)에서 Vertex AI(서비스 계정
+ * 인증, us 관할권 멀티리전)로 옮겼다. 이유·조사 경위는
+ * docs/planning/vertex-seoul-region-research-2026-08-24.md 참고 — 서울 리전
+ * (asia-northeast3)은 유일하게 쓸 수 있던 최신 모델(gemini-2.5-flash)이
+ * 2026-10-20 은퇴 예정이고 후속 3.x 세대 모델이 아예 배치되지 않아 포기했고,
+ * 대신 Gemini 3 세대부터 제공되는 us/eu 관할권 멀티리전(서울만큼 좁지는
+ * 않지만 지금까지의 "글로벌, 리전 통제 없음"보다는 훨씬 좁혀진 상태)으로
+ * 갔다. 모델은 gemini-3.6-flash 그대로 유지한다(아래 GEMINI_MODEL 참고) —
+ * 프롬프트·thinkingLevel·생성 파라미터가 전부 이 모델 기준으로 실측·조정된
+ * 상태라 모델을 내리면(2.5-flash) 그 튜닝을 다시 검증해야 하고, 게다가
+ * 2.5-flash는 곧 은퇴한다.
+ *
  * 반드시 지킬 것(카드 등록 후 실제 배포 전 재확인):
- * - GEMINI_API_KEY는 반드시 결제가 연결된 유료 등급 계정에서 발급할 것.
- *   무료 등급은 입력을 사람이 검수·모델 개선에 활용하는 정책이 있어,
- *   타인(사용자의 지인)의 개인정보를 그 등급으로 보내는 건 위험하다(14.2절).
+ * - Vertex AI 호출은 서비스 계정(ADC, Application Default Credentials)으로만
+ *   인증한다 — Cloud Functions 런타임이 자동으로 서비스 계정 자격증명을
+ *   주입하므로 별도 키 파일 관리가 필요 없다. API 키(Express mode)로 부르면
+ *   글로벌 엔드포인트로 빠져 리전 보장이 사라진다 — 이번 이전의 전제 자체가
+ *   깨진다(아래 getVertexAccessToken 참고). 학습 미사용 정책은 Vertex AI
+ *   쪽이 유·무료 등급 구분 없이 적용된다(옛 Developer API 무료 등급처럼
+ *   입력을 사람이 검수·모델 개선에 활용하는 위험이 없다).
  * - 원문 프롬프트/응답을 로그(console.log)에 남기지 않는다 — Cloud Logging은
  *   기본 30일 보관되므로 그대로 찍으면 의도치 않은 개인정보 장기 보관이 된다.
  * - 대화 내용 자체는 Firestore 등에 영구 저장하지 않는다. 호출량 카운터만
@@ -28,6 +45,7 @@ import {
 } from "firebase-functions/v2/firestore";
 import {sign as cryptoSign} from "crypto";
 import {defineSecret} from "firebase-functions/params";
+import {GoogleAuth} from "google-auth-library";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
 import {getFirestore, FieldValue} from "firebase-admin/firestore";
@@ -104,8 +122,6 @@ import {
 } from "./socialAuth";
 
 initializeApp();
-
-const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 // Sign in with Apple 토큰 폐기(P1-38)에 쓰는 Apple 개인키(.p8) 원문.
 // `firebase functions:secrets:set APPLE_SIGNIN_KEY`로 .p8 파일 내용을 넣는다
@@ -225,14 +241,33 @@ const MONTHLY_LIMIT = 100;
 //
 // 이 값은 **과금액이 아니라 최악의 경우를 묶는 천장**이다(과금은 실제 사용한
 // 토큰 기준). 다만 Gemini는 **사고(thinking) 토큰을 출력과 같은 단가로 과금**
-// 하므로($7.50/1M, 입력은 $1.50/1M), 모델이 마음껏 생각하면 이 천장까지 요금이
-// 오를 수 있다 — 2026-08-08 실측에서 사고 토큰이 회당 1,275~1,328개로 과금
-// 출력의 91%를 차지했다. 그래서 천장을 낮추는 대신 아래 THINKING_LEVEL로
-// 사고량 자체를 줄였고, 그 뒤 실측은 사고 0~590 / 출력 97~108이다.
-// 천장을 3000으로 남겨 두는 이유는 2026-08-07의 응답 잘림 버그 재발 방지다.
+// 하므로, 모델이 마음껏 생각하면 이 천장까지 요금이 오를 수 있다 — 2026-08-08
+// 실측에서 사고 토큰이 회당 1,275~1,328개로 과금 출력의 91%를 차지했다.
+// 그래서 천장을 낮추는 대신 아래 THINKING_LEVEL로 사고량 자체를 줄였고, 그
+// 뒤 실측은 사고 0~590 / 출력 97~108이다. 천장을 3000으로 남겨 두는 이유는
+// 2026-08-07의 응답 잘림 버그 재발 방지다.
+//
+// 단가(2026-08-31 ai.google.dev/gemini-api/docs/pricing +
+// docs.cloud.google.com/vertex-ai/generative-ai/pricing 양쪽 직접 확인,
+// gemini-3.6-flash 입력/출력): **$0.75 / $3.75 (2026-12-31까지 프로모션가)**,
+// **$1.50 / $7.50 (2027-01-01부터 정가)**. Vertex AI도 Developer API와 같은
+// 값이다 — us 관할권 멀티리전이라고 더 비싼 "리전 프리미엄"은 없다(가격표에
+// 리전 구분 열 자체가 없음).
 const MAX_OUTPUT_TOKENS = 3000;
 
 const GEMINI_MODEL = "gemini-3.6-flash";
+
+// Vertex AI 관할권 멀티리전. us 또는 eu만 유효하고(LOCATION을 그대로 씀),
+// "global"은 절대 쓰면 안 된다 — 글로벌 엔드포인트는 리전 보장이 없어져
+// 이번 이전의 전제 자체가 깨진다. 서울(asia-northeast3)을 포기한 이유는 위
+// 파일 상단 주석 참고.
+const VERTEX_LOCATION = "us";
+
+// Firebase 프로젝트 ID. `.firebaserc`의 projects.default와 동일한 값을
+// 하드코딩한다(이 파일의 APPLE_TEAM_ID 등과 같은 스타일) — Cloud Functions
+// v2가 자동 주입하는 런타임 환경변수(GCLOUD_PROJECT 등)에 기대는 대신,
+// URL 조립에 필요한 값을 코드에서 바로 보이게 둔다.
+const PROJECT_ID = "connection-sense";
 
 // F-07(재생성 다양성): 생성 파라미터. temperature/topP를 명시하지 않으면
 // 모델 기본값으로 도는데, 같은 프롬프트를 다시 넣으면 매번 거의 같은 안전한
@@ -314,19 +349,53 @@ interface GeminiUsage {
   totalTokenCount?: number;
 }
 
+// Vertex AI 인증 클라이언트. 모듈 스코프에 한 번만 만들어 warm start 사이에
+// 재사용한다 — 매 호출 새로 만들면 콜드스타트마다 인증 왕복(discovery +
+// 토큰 발급)이 추가된다.
+const vertexAuth = new GoogleAuth({
+  scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+});
+
+/**
+ * ADC(Application Default Credentials)로 Vertex AI 액세스 토큰을 가져온다.
+ * Cloud Functions 런타임이 자동으로 서비스 계정 자격증명을 주입하므로 키
+ * 파일을 따로 관리할 필요가 없다 — 단, 배포 전 그 서비스 계정에
+ * `roles/aiplatform.user`(또는 그에 준하는 IAM 역할)가 부여돼 있어야 한다
+ * (사용자 콘솔 작업, 이 함수가 대신할 수 없음).
+ */
+async function getVertexAccessToken(): Promise<string> {
+  const client = await vertexAuth.getClient();
+  const {token} = await client.getAccessToken();
+  if (!token) {
+    throw new Error("Vertex AI 액세스 토큰을 가져오지 못했습니다.");
+  }
+  return token;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// 429(혼잡) 재시도 전 고정 지연. 800~1200ms 범위에서 900ms로 정했다 — 근거는
+// 아래 callGemini 주석.
+const RETRY_DELAY_MS = 900;
+
 /**
  * Gemini에 한 번 요청한다. [withThinkingLevel]이 false면 thinkingLevel을
  * 아예 빼고 보낸다(아래 fallback 용도).
  */
 async function requestGemini(
   prompt: string,
-  apiKey: string,
+  accessToken: string,
   withThinkingLevel: boolean
 ): Promise<Response> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${VERTEX_LOCATION}/publishers/google/models/${GEMINI_MODEL}:generateContent`;
   return fetch(url, {
     method: "POST",
-    headers: {"content-type": "application/json"},
+    headers: {
+      "content-type": "application/json",
+      "authorization": `Bearer ${accessToken}`,
+    },
     body: JSON.stringify({
       contents: [{parts: [{text: prompt}]}],
       generationConfig: {
@@ -344,10 +413,10 @@ async function requestGemini(
 
 async function callGemini(
   prompt: string,
-  apiKey: string,
+  accessToken: string,
 ): Promise<{text: string; usage: GeminiUsage}> {
   let usedThinkingLevel = true;
-  let response = await requestGemini(prompt, apiKey, true);
+  let response = await requestGemini(prompt, accessToken, true);
 
   // thinkingLevel이 거부되면 그것 없이 한 번 더 보낸다.
   //
@@ -362,7 +431,26 @@ async function callGemini(
       body: bodyText.slice(0, 500),
     });
     usedThinkingLevel = false;
-    response = await requestGemini(prompt, apiKey, false);
+    response = await requestGemini(prompt, accessToken, false);
+  }
+
+  // 429(혼잡) 재시도. 2026-08-31 이전까지는 이 재시도가 아예 없었다 — 400만
+  // 재시도하고 그 외 실패(429 포함)는 바로 unavailable로 던졌다. us
+  // 멀티리전에서도 순간 혼잡이 없다는 보장은 없어 최소한의 안전장치를 둔다.
+  //
+  // **왜 지수 백오프나 여러 번이 아니라 "짧은 고정 지연 1회"인가**: 이 호출은
+  // 사용자가 화면에서 동기로 기다리는 채팅 UI다. Cloud Functions 타임아웃과
+  // 체감 지연을 함께 고려하면, 재시도를 늘릴수록 "느리게 성공"과 "빠르게
+  // 실패해 다시 눌러보게" 사이에서 전자 쪽으로 계속 밀리게 된다. 순간
+  // 혼잡이면 1회·짧은 지연으로 대부분 풀리고, 지속적인 쿼터 초과라면 여러
+  // 번 재시도해도 어차피 실패한다 — 그 경우는 지금처럼 즉시 에러로 알리는
+  // 편이 사용자에게 "잠시 후 다시 시도"를 더 빨리 안내한다.
+  if (response.status === 429) {
+    logger.warn("Gemini 429(혼잡) — 지연 후 1회만 재시도", {
+      delayMs: RETRY_DELAY_MS,
+    });
+    await delay(RETRY_DELAY_MS);
+    response = await requestGemini(prompt, accessToken, usedThinkingLevel);
   }
 
   if (!response.ok) {
@@ -748,7 +836,6 @@ async function maybeRecordActivationEvent(uid: string): Promise<void> {
 
 export const generateBriefing = onCall<GenerateBriefingRequest>(
   {
-    secrets: [geminiApiKey],
     region: "asia-northeast3",
     maxInstances: MAX_INSTANCES,
     // 유효한 App Check 토큰이 없는 호출을 원칙적으로 거부한다(2026-08-08 도입).
@@ -844,9 +931,10 @@ export const generateBriefing = onCall<GenerateBriefingRequest>(
         previousPoints,
         fieldKey,
       }, variationSeed);
+      const accessToken = await getVertexAccessToken();
       const {text: rawText, usage} = await callGemini(
         prompt,
-        geminiApiKey.value(),
+        accessToken,
       );
       const talkingPoints = parseTalkingPoints(rawText);
 
