@@ -8,10 +8,13 @@ import 'password_reset_view.dart';
 /// ⑧ 이메일+비밀번호 가입/로그인(추가 632, 2026-08-31).
 ///
 /// **로그인/가입을 가르는 화면을 따로 두지 않는다** — "계속하기"를 누르면
-/// `AuthRepository.signInOrSignUpWithEmail`이 로그인을 먼저 시도하고, 계정이
-/// 없으면(`user-not-found`) 그 안에서 가입으로 폴백한다. 이유는
-/// `docs/planning/specs/email-signup-unified-consent-2026-08-31.md` §7
-/// "갈래 UI" 판단 참고 — 존재 여부를 미리 물으면 그 자체가 열거 취약점이다.
+/// `AuthRepository.signInOrSignUpWithEmail`이 **가입을 먼저** 시도하고,
+/// 계정이 이미 있으면(`email-already-in-use`) 그 안에서 로그인으로
+/// 폴백한다(추가 636에서 순서를 뒤집었다 — 이메일 열거 방지가 켜진 프로젝트에서는
+/// signIn을 먼저 타면 `user-not-found`가 나오지 않아 가입 분기에 영원히
+/// 못 간다). 이유는 `docs/planning/specs/email-signup-unified-consent-2026-08-31.md`
+/// §7 "갈래 UI" 판단과 `AuthRepository.signInOrSignUpWithEmail`의 문서
+/// 주석 참고 — 존재 여부를 미리 물으면 그 자체가 열거 취약점이다.
 ///
 /// 이 화면은 **⑨(SignupConsentView)를 통과한 뒤에만** 뜬다 — `LoginView
 /// ._startSignIn`이 순서를 보장한다.

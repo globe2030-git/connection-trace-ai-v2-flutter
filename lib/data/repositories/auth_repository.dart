@@ -472,63 +472,63 @@ class AuthRepository extends ChangeNotifier {
     }
   }
 
-  /// 이메일+비밀번호로 로그인하거나(계정이 있으면), 없으면 새로 가입한다
-  /// (추가 632, §5-2).
+  /// 이메일+비밀번호로 가입하거나(계정이 없으면), 이미 있으면 로그인한다
+  /// (추가 632, §5-2 / 추가 636에서 순서를 뒤집었다).
   ///
-  /// ⚠️ **갈래 UI(로그인/가입 화면 분리)를 두지 않는다.** signIn을 먼저
-  /// 시도하고 `user-not-found`일 때만 가입으로 폴백한다. 이메일 존재 여부를
-  /// 미리 조회해 화면을 가르면, 그 조회 자체가 **"이 이메일로 가입한 사람이
-  /// 있는지"를 외부에 알려주는 열거(enumeration) 통로**가 된다 — Firebase의
-  /// 표준 패턴이 이미 이 문제를 피해 간다.
+  /// ⚠️ **갈래 UI(로그인/가입 화면 분리)를 두지 않는다** — 원칙은 추가 632와
+  /// 같다. 다만 **가입을 먼저 시도한다.** 이 프로젝트는 이메일 열거
+  /// 방지(email enumeration protection, `emailPrivacyConfig
+  /// .enableImprovedEmailPrivacy`)가 켜져 있는데, 이게 켜지면 signIn 실패는
+  /// 계정이 없든 비밀번호가 틀렸든 **전부 `invalid-credential`로 뭉쳐서만
+  /// 돌아온다** — `user-not-found`가 더 이상 나오지 않는다(2026-09-01 실기기
+  /// 제보로 발견: 새 이메일 가입 시도가 전부 "비밀번호가 올바르지 않습니다"로
+  /// 막혔다). signIn을 먼저 타면 가입 분기(`user-not-found`)에 영원히
+  /// 도달하지 못한다.
+  ///
+  /// 반대로 **가입(`createUserWithEmailAndPassword`)은 지금도 계정이 이미
+  /// 있으면 `email-already-in-use`를 분명히 돌려준다** — Google 공식 문서가
+  /// "Invalid sign-up cases continue to return EMAIL_EXISTS errors"라고
+  /// 명시한다(실측 확인:
+  /// https://docs.cloud.google.com/identity-platform/docs/admin/email-enumeration-protection
+  /// , 2026-09-01). 그래서 가입을 먼저 시도하고, 이미 있는 계정이면 그
+  /// 안에서 로그인으로 폴백하는 쪽으로 순서를 뒤집었다.
+  ///
+  /// `fetchSignInMethodsForEmail`로 존재 여부를 먼저 물어보는 방법은 쓰지
+  /// 않는다 — 같은 열거 방지 설정에서 그 API도 항상 빈 배열만 돌려줘 애초에
+  /// 못 쓴다(위 문서: "A list of sign-in methods ... is no longer returned").
+  /// 열거 방지 자체를 끄는 방법도 쓰지 않는다 — 서버 설정 변경은 배포
+  /// 성격이고, 끄면 계정 목록이 새어 나가 방침 ⑩(비밀번호 재설정에서
+  /// 가입 여부를 알려주지 않는다)과 정면으로 부딪친다.
+  ///
+  /// ⚠️ **왜 `flutter test`가 이 결함을 못 잡았나**: 이 메서드는
+  /// `fb_auth.FirebaseAuth.instance`를 직접 부른다 — 모킹 지점(DI 주입)이
+  /// 없어 `flutter test`에서는 애초에 이 메서드를 실행하는 테스트가 없다.
+  /// 즉 "목이 실물과 다른 값을 돌려줘서 속았다"가 아니라, **자동 테스트가
+  /// 이 경로 자체를 타지 않는다** — 실기기(또는 Firebase 프로젝트 실물
+  /// 설정)로만 드러나는 유형이다.
   Future<void> signInOrSignUpWithEmail(String email, String password) async {
     final trimmed = email.trim();
-    try {
-      final cred = await fb_auth.FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: trimmed, password: password);
-      await completeSignIn(
-        SnsAuthProvider.email,
-        displayName: cred.user?.displayName,
-        email: cred.user?.email ?? trimmed,
-        photoUrl: cred.user?.photoURL,
-      );
-      return;
-    } on fb_auth.FirebaseAuthException catch (e) {
-      switch (e.code) {
-        case 'user-not-found':
-          break; // 계정이 없다 — 아래에서 가입을 시도한다.
-        case 'wrong-password':
-        case 'invalid-credential':
-          throw AuthException(
-            '비밀번호가 올바르지 않습니다.',
-            offerPasswordReset: true,
-          );
-        case 'invalid-email':
-          throw AuthException('이메일 형식을 확인해 주세요.');
-        default:
-          debugPrint('이메일 로그인 실패: ${e.code}');
-          throw AuthException('로그인에 실패했어요. 다시 시도해 주세요.');
-      }
-    } catch (e) {
-      debugPrint('이메일 로그인 예외: $e');
-      throw AuthException('로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
-    }
 
-    // 계정이 없었다 — 새로 가입한다.
+    // 가입을 먼저 시도한다.
     final fb_auth.UserCredential cred;
     try {
       cred = await fb_auth.FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: trimmed, password: password);
     } on fb_auth.FirebaseAuthException catch (e) {
-      throw AuthException(switch (e.code) {
-        // ⚠️ 어떤 수단으로 이미 가입돼 있는지는 밝히지 않는다 — 계정 식별
-        // 매트릭스(추가 371)가 "이메일 자동 병합은 전 형태 금지"를 요구하므로
-        // 여기서 연결을 유도하지 않는다.
-        'email-already-in-use' =>
-          '이 이메일은 다른 방법으로 이미 가입돼 있어요. 다른 로그인 수단을 사용해 주세요.',
-        'weak-password' => '6자 이상의 비밀번호를 입력해 주세요.',
-        'invalid-email' => '이메일 형식을 확인해 주세요.',
-        _ => '가입에 실패했어요. 다시 시도해 주세요.',
-      });
+      switch (e.code) {
+        case 'email-already-in-use':
+          // 이미 있는 계정이다 — 로그인으로 폴백한다. 정상 경로다(가입
+          // 화면에 다시 오는 재방문 이용자는 대부분 여기를 탄다).
+          await _signInExistingEmailAccount(trimmed, password);
+          return;
+        case 'weak-password':
+          throw AuthException('6자 이상의 비밀번호를 입력해 주세요.');
+        case 'invalid-email':
+          throw AuthException('이메일 형식을 확인해 주세요.');
+        default:
+          debugPrint('이메일 가입 실패: ${e.code}');
+          throw AuthException('가입에 실패했어요. 다시 시도해 주세요.');
+      }
     } catch (e) {
       debugPrint('이메일 가입 예외: $e');
       throw AuthException('가입 중 문제가 발생했습니다. 다시 시도해 주세요.');
@@ -549,6 +549,54 @@ class AuthRepository extends ChangeNotifier {
       email: cred.user?.email ?? trimmed,
       photoUrl: cred.user?.photoURL,
     );
+  }
+
+  /// [signInOrSignUpWithEmail]에서 `email-already-in-use`를 받았을 때
+  /// 로그인으로 폴백한다(추가 636).
+  ///
+  /// ⚠️ **어떤 수단으로 이미 가입돼 있는지는 여기서도 밝히지 않는다** —
+  /// 계정 식별 매트릭스(추가 371)가 "이메일 자동 병합은 전 형태 금지"를
+  /// 요구한다. 열거 방지가 켜져 있어 "비밀번호가 틀렸다"와 "이 이메일은
+  /// SNS로 가입돼 비밀번호 자체가 없다"를 서버 응답만으로 구분할 수도 없다
+  /// (둘 다 `invalid-credential`) — 그래서 두 경우 모두 같은 일반 문구로
+  /// 답한다. 이전에는 "다른 방법으로 이미 가입돼 있어요"처럼 더 구체적인
+  /// 문구를 썼지만, 그 문구도 결국 수단을 밝히지 않았을 뿐 이 메서드에서
+  /// email-already-in-use는 더 이상 오류가 아니라 **정상 로그인 경로**가
+  /// 됐으므로 여기서는 쓰지 않는다.
+  Future<void> _signInExistingEmailAccount(
+    String trimmed,
+    String password,
+  ) async {
+    try {
+      final cred = await fb_auth.FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: trimmed, password: password);
+      await completeSignIn(
+        SnsAuthProvider.email,
+        displayName: cred.user?.displayName,
+        email: cred.user?.email ?? trimmed,
+        photoUrl: cred.user?.photoURL,
+      );
+    } on fb_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+        case 'user-not-found': // 이론상 여기서는 안 나오지만 방어적으로 처리
+          throw AuthException(
+            '비밀번호가 올바르지 않습니다.',
+            offerPasswordReset: true,
+          );
+        case 'invalid-email':
+          throw AuthException('이메일 형식을 확인해 주세요.');
+        case 'user-disabled':
+          throw AuthException('비활성화된 계정입니다. 고객센터에 문의해 주세요.');
+        default:
+          debugPrint('이메일 로그인 실패: ${e.code}');
+          throw AuthException('로그인에 실패했어요. 다시 시도해 주세요.');
+      }
+    } catch (e) {
+      debugPrint('이메일 로그인 예외: $e');
+      throw AuthException('로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
+    }
   }
 
   /// 비밀번호 재설정 메일을 보낸다(⑩ `PasswordResetView`, 추가 632 §5-3).
