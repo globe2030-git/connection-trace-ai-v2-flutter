@@ -7,6 +7,8 @@
 // ⚠️ 이 저장소는 그 원칙을 이미 알고 있었다 — 로그인 화면 주석에
 // *"눌러도 안 되는 버튼을 두면 이용자는 고장으로 읽는다"* 가 있고 애플 버튼은
 // 그래서 아예 안 그린다. **그런데 이 자리에는 적용이 안 됐다.**
+import 'dart:io';
+
 import 'package:connection_trace_ai_flutter/data/models/sns_auth_provider.dart';
 import 'package:connection_trace_ai_flutter/presentation/features/auth/widgets/official_social_button.dart';
 import 'package:flutter/material.dart';
@@ -56,5 +58,32 @@ void main() {
     await tester.pump();
     expect(pressed, 1);
     expect(blocked, 0, reason: '정상 로그인 경로에 안내가 끼면 안 된다');
+  });
+
+  test('🚨 로그인 화면의 모든 제공자 버튼이 안내를 넘긴다', () {
+    // globe2030님 실기기 제보로 잡힌 것: "애플 로그인만 알림이 나오지 않아."
+    //
+    // 🚨 **버튼을 만드는 자리가 셋으로 흩어져 있다** — 구글 · 카카오·네이버
+    // 루프 · 애플. 둘만 고치고 하나를 놓쳤고, **위젯 단위 검사는 그 누락을
+    // 못 봤다**(각 버튼은 멀쩡했다).
+    //
+    // 📌 **그래서 인자를 필수로 바꿨다.** 이 검사는 그 장치가 살아 있는지를
+    // 소스에서 직접 센다 — 새 제공자를 더하면 여기서 걸린다.
+    final src = File('lib/presentation/features/auth/views/login_view.dart')
+        .readAsStringSync();
+    // ⚠️ `_SnsButton(` 로 세면 **생성자 선언까지** 걸린다. 버튼을 만드는
+    //    자리에만 있는 줄로 센다.
+    final buttons = RegExp(r'isDisabled: _loadingProvider != null \|\| !_ageConfirmed')
+        .allMatches(src)
+        .length;
+    final wired = RegExp(r'onBlockedTap: _promptAgeConfirm')
+        .allMatches(src)
+        .length;
+    expect(
+      wired,
+      buttons,
+      reason: '버튼을 만드는 자리 $buttons곳 중 $wired곳만 안내를 넘긴다',
+    );
+    expect(buttons, greaterThanOrEqualTo(3), reason: '버튼 자리를 못 찾았다');
   });
 }
