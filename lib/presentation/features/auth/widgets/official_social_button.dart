@@ -106,7 +106,8 @@ class OfficialButtonArt {
       label: '네이버 로그인',
       spinner: Colors.white, // 초록 바탕 → 흰색
     ),
-    SnsAuthProvider.google || SnsAuthProvider.apple => null,
+    SnsAuthProvider.google || SnsAuthProvider.apple || SnsAuthProvider.email =>
+      null,
   };
 }
 
