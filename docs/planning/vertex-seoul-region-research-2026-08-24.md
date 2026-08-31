@@ -419,7 +419,19 @@ endpoint에 해당한다. **데이터 상주가 목적이면 API 키는 선택�
 
 ### 6-2. 엔드포인트 — 형식 확인됨
 
-에이전트가 `locations` REST 예제 원문에서 확인:
+> 🚨 **[2026-08-31 추가 경고] 이 절의 URL 형식은 서울(지역 엔드포인트) 전용이다
+> — us/eu 관할권 멀티리전에는 쓰면 안 된다.** 이 절 바로 아래 형식
+> (`${LOCATION}-aiplatform.googleapis.com`)은 서울행을 전제로 적은
+> **지역(locational) 엔드포인트** 형식이다. 리전 결정이 서울 → us 관할권
+> 멀티리전으로 바뀐 뒤 이 절을 그대로 코드에 옮기면서 실제로 결함이 났다
+> (PR #747 병합 후 발견·수정, backlog 추가 623). **us/eu로 갈 때 맞는 형식은
+> 3절(약 216줄)의 `aiplatform.<region>.rep.googleapis.com` — 관할권 멀티리전은
+> 그쪽 절을 볼 것.** 같은 문서 안에 서로 다른 전제로 쓰인 두 절이 있으니,
+> 리전 결정이 바뀌면 **참조할 절도 함께 바뀌어야 한다는 것**을 이 사고가
+> 보여준다.
+
+에이전트가 `locations` REST 예제 원문에서 확인(⚠️ 아래는 **서울 등 지역
+엔드포인트** 형식이다 — us/eu 관할권 멀티리전 형식은 3절 참고):
 
 ```
 https://${LOCATION}-aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/publishers/google/models/${MODEL_ID}:generateContent
