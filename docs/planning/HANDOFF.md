@@ -3273,6 +3273,28 @@ AI 프록시)은 전부 아직 미구현이며, "3. 해야 할 일"에 남은 �
 
 ## 2. 하고 있는 일
 
+### 🚧 2026-08-31 저녁 착수 — 이메일 가입 + 통합 동의 화면(⑨) (PM 점유 선언)
+
+- **마감: 2026-09-02(수) 저녁 테스터 배포 전.** globe2030님 지시, 스펙은
+  [`docs/planning/specs/email-signup-unified-consent-2026-08-31.md`](./specs/email-signup-unified-consent-2026-08-31.md)
+  (추가 632).
+- **점유 파일**: `lib/presentation/features/auth/views/login_view.dart` ·
+  `ad_consent_view.dart` · `ad_consent_notice_dialog.dart` · 신설
+  `signup_consent_view.dart`·`email_signup_view.dart`·`password_reset_view.dart` ·
+  `lib/core/services/ad_consent_service.dart` · `lib/data/repositories/auth_repository.dart` ·
+  `lib/data/models/sns_auth_provider.dart` · `test/login_age_guidance_test.dart`
+  (삭제 또는 재작성 예정).
+- ⚠️ **`ct-geo-notice`(4a·57 세션)에게 알린다** — 최근(PR #760·#762, 추가
+  628·630) 그 세션이 고친 `login_view.dart`의 만 14세 체크박스 UI가 이번
+  변경으로 **로그인 화면에서 사라지고 ⑨(신설 화면)로 옮겨간다.** 착수 전
+  워크트리 확인(2026-08-31 저녁): `git -C /Volumes/X31/Claude/ct-geo-notice
+  status` → clean, detached at `5d86ad18`(main과 동일) — 진행 중인 작업
+  없음 확인.
+- **`auth_gate.dart`는 손대지 않는다** — 휴대폰 인증·광고 동의 안전망 순서는
+  그대로 둔다(스펙 §6).
+- 기기(폴드·아이폰)는 **57 세션이 점유 중**이라고 들었다 — 실기기 검증
+  단계에 들어가기 전 반드시 재확인·조율할 것.
+
 ### 📌 2026-08-25 기준 실물 — **이 장을 읽기 전에 여기부터**
 
 ```
