@@ -48,7 +48,7 @@ import {defineSecret} from "firebase-functions/params";
 import {GoogleAuth} from "google-auth-library";
 import * as logger from "firebase-functions/logger";
 import {initializeApp} from "firebase-admin/app";
-import {getFirestore, FieldValue} from "firebase-admin/firestore";
+import {getFirestore, FieldValue, Timestamp} from "firebase-admin/firestore";
 import {getAuth} from "firebase-admin/auth";
 import {getStorage} from "firebase-admin/storage";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
@@ -82,6 +82,7 @@ import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
 import {
   Challenge,
   OTP_MAX_ATTEMPTS,
+  SEND_LEDGER_RETENTION_MS,
   SendLedger,
   TEST_PHONE_FIXED_CODE,
   decideSend,
@@ -107,6 +108,7 @@ import {
 } from "./purchases";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
+import {deletePhoneRecords} from "./phoneRecordCleanup";
 import {
   firebaseUserFields,
   isTesterAllowed,
@@ -1836,6 +1838,44 @@ export const onUserDeletedCleanup = onDocumentDeleted(
       });
     }
     // ────────── [삭제 기록(묘비) 정리] 끝 ──────────
+
+    // ────────── [번호 확인 기록 정리] 시작 ──────────
+    // 이 블록만 2026-09-01에 추가됐다. 로직 본체는 phoneRecordCleanup.ts에 있다.
+    //
+    // 🚨 이것은 정책 정리가 아니라 **결함 수정**이다. phoneOtpConfirm은
+    // "phoneAccounts의 uid가 지금 uid와 다르면 taken"으로 막는데, 탈퇴해도 이
+    // 문서가 남아 주인이 **이미 지워진 uid**로 남았다. 같은 번호로 다시
+    // 가입하면 새 uid와 달라 **본인 번호인데 영원히 막힌다.**
+    //
+    // ⭐ 아직 아무도 안 겪었다 — 번호 확인 게이트가 꺼져 있어(config/
+    // phoneVerification 문서 없음) 이 경로가 안 돈다. **켜기 전에 잡았다.**
+    //
+    // 🚨 phoneSendLedger는 **일부러 안 지운다.** 지우면 탈퇴→재가입으로 하루
+    // 5통 상한이 초기화된다 — firestore.rules가 그 장부를 서버에 둔 이유가
+    // 바로 그것이다("기기에 두면 앱을 지웠다 깔아서 상한을 초기화할 수 있다").
+    // 대신 보관 기간(SEND_LEDGER_RETENTION_MS)으로 지운다. 그래서 이 장부는
+    // 방침에 **"탈퇴 후에도 남는 것"으로 명시**해야 한다.
+    //
+    // ⚠️ 위 블록들과 같은 이유로 경계 주석을 둔다.
+    const phoneCleanup = await deletePhoneRecords(
+      db.collection("phoneAccounts").where("uid", "==", uid),
+      (phoneHashValue) =>
+        db.collection("phoneOtpChallenges").doc(phoneHashValue),
+      () => db.batch(),
+    );
+    if (phoneCleanup.errorType) {
+      logger.warn("탈퇴 사용자 번호 확인 기록 정리 실패", {
+        uid,
+        errorType: phoneCleanup.errorType,
+      });
+    } else if (phoneCleanup.deleted > 0) {
+      // 🚨 개수만 남긴다. 번호해시는 절대 로그에 담지 않는다.
+      logger.info("탈퇴 사용자 번호 확인 기록 정리", {
+        uid,
+        deleted: phoneCleanup.deleted,
+      });
+    }
+    // ────────── [번호 확인 기록 정리] 끝 ──────────
   },
 );
 
@@ -2706,7 +2746,14 @@ export const phoneOtpRequest = onCall<OtpRequestData>(
       const ledger = snap.exists ? (snap.data() as SendLedger) : null;
       const d = decideSend(ledger, now);
       if (!d.allowed) return d;
-      tx.set(ledgerRef, d.nextLedger);
+      // 🚨 expiresAt은 **Firestore TTL 정책이 읽는 필드**다. 장부는 탈퇴로
+      // 지우지 않으므로(지우면 재가입으로 상한이 초기화된다) 파기는 이
+      // 시각으로만 일어난다. ⚠️ TTL 정책을 켜기 전까지는 이 필드가 있어도
+      // 아무것도 안 지워진다 — 켜는 명령은 HANDOFF에 있다.
+      tx.set(ledgerRef, {
+        ...d.nextLedger,
+        expiresAt: Timestamp.fromMillis(now + SEND_LEDGER_RETENTION_MS),
+      });
       tx.set(challengeRef, {
         codeHash: otpCodeHash(code, salt),
         createdAt: now,

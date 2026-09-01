@@ -450,16 +450,25 @@ class _AuthGateState extends State<AuthGate> {
       if (_phoneCheckedForUid != uid) {
         _phoneCheckedForUid = uid;
         _phoneVerified = null;
-        // 🚨 **스위치를 먼저 본다.** 꺼져 있으면 인증 여부를 볼 필요도 없다.
+        // 🚨 **스위치와 범위를 먼저 본다.** 대상이 아니면 인증 여부를 볼
+        // 필요도 없다.
         //
-        // 이 순서가 중요하다 — 스위치가 꺼져 있는데 `phoneVerifiedAt`을 먼저
-        // 읽어 `false`로 두면, 나중에 누가 스위치 검사를 빼먹었을 때 곧바로
-        // 사람이 갇힌다. **꺼져 있으면 `true`로 둬서 「막을 이유가 없음」을
+        // 이 순서가 중요하다 — 대상이 아닌데 `phoneVerifiedAt`을 먼저 읽어
+        // `false`로 두면, 나중에 누가 앞 검사를 빼먹었을 때 곧바로 사람이
+        // 갇힌다. **대상이 아니면 `true`로 둬서 「막을 이유가 없음」을
         // 명시한다.**
+        final createdAt = auth.firebaseAccountCreatedAt;
         () async {
-          final enabled = await PhoneVerificationService.isGateEnabled();
+          final settings = await PhoneVerificationService.loadSettings();
           if (!mounted || _phoneCheckedForUid != uid) return;
-          if (!enabled) {
+          // 🚨 **스위치와 범위를 함께 본다.** 스위치만 보면 「신규 한정」이
+          // 말뿐이 된다 — `phoneVerifiedAt`은 기존 이용자에게 없으므로
+          // 켜는 순간 전원이 갇힌다(추가 645에서 고쳤다).
+          final inScope = PhoneVerificationService.isInScope(
+            settings: settings,
+            accountCreatedAt: createdAt,
+          );
+          if (!inScope) {
             setState(() => _phoneVerified = true);
             return;
           }
