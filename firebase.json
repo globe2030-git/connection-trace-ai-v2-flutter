@@ -58,7 +58,9 @@
       "trailingSlash": false,
       "ignore": [
         "**/.*",
-        "**/node_modules/**"
+        "**/node_modules/**",
+        "reviews/**",
+        "**/*.md"
       ],
       "redirects": [
         { "source": "/privacy", "destination": "/privacy-policy", "type": 301 },
