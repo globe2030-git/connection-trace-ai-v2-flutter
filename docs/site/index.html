@@ -49,6 +49,21 @@
      Cloudflare 계정을 찾으면 「도메인」 속성으로 옮기는 편이 낫다. -->
 <meta name="google-site-verification" content="WdAHsrsmeN7HTw11xdh2s5R1E2wyRMJd_Jg21F50PAI">
 
+<!-- 네이버 서치어드바이저 소유확인(2026-09-01, 추가 652). 위 구글 것과 같은 성질이다 —
+     🚨 지우면 확인이 풀린다.
+
+     ⚠️ 네이버는 `http` 와 `https` 를 **다른 사이트로 센다.** 처음에 둘 다
+     등록됐다가 `http` 쪽을 지웠다 — 우리 `http` 는 301 로 `https` 에 넘겨주므로
+     따로 관리할 것이 없고, 두면 보고서만 갈라진다.
+
+     📌 네이버 수집은 **14~16일** 걸린다. 구글보다 훨씬 느리므로 늦게 넣을수록
+     그만큼 늦게 걸린다.
+
+     📌 네이버는 HTML 파일 업로드를 권장한다고 적어 두지만, 메타 태그도 정식
+     방법이다. 배포 뒤에도 확인이 안 되면 그때 파일 방식
+     (`naverad….html` 을 이 폴더에 두는 것)으로 바꾸면 된다. -->
+<meta name="naver-site-verification" content="14231ee7e72dfd6ea1395f8da97df54ff14b3241">
+
 <!-- 구조화 데이터.
      🚨 **없는 것을 적지 않는다**(CLAUDE.md "가짜 데이터를 만들지 않는다").
      별점·설치 수·가격은 아직 실체가 없으므로 aggregateRating·offers 를
