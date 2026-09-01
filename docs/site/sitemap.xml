@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ⚠️ 지금 이 사이트에는 페이지가 하나뿐이다(index.html). 없는 주소를 미리
+  적으면 검색엔진이 404 를 받고, 그것이 쌓이면 사이트 평가가 내려간다.
+  **있는 것만 적는다.**
+
+  📌 법적 고지 넷(/privacy-policy 등)은 아직 이 사이트가 아니라
+  connection-sense.web.app 에 있다. 대표 도메인으로 옮기기로 정해지면
+  (추가 651) 그때 여기에 더한다.
+
+  ⚠️ lastmod 는 **내용이 실제로 바뀐 날**이어야 한다. 배포할 때마다 오늘로
+  바꾸면 검색엔진이 그 값을 믿지 않게 된다.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://connectionsense.co.kr/</loc>
+    <lastmod>2026-09-01</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>
