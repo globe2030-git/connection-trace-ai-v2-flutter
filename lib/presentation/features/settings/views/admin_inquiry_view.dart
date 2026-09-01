@@ -80,6 +80,7 @@ class _AdminInquiryManagementViewState
                       border: InputBorder.none,
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
+                            tooltip: '검색어 지우기',
                               icon: const Icon(Icons.clear, size: 18),
                               color: AppColors.textMuted,
                               onPressed: () {
@@ -642,6 +643,7 @@ class _AdminInquiryReplySheetState extends State<_AdminInquiryReplySheet> {
                     ),
                   ),
                   IconButton(
+                    tooltip: '닫기',
                     icon: const Icon(Icons.close, color: AppColors.textMuted),
                     onPressed: () => Navigator.pop(context),
                   ),

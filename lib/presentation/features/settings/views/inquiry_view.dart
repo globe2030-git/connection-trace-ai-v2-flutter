@@ -357,6 +357,7 @@ class _InquiryDetailViewState extends State<InquiryDetailView> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
+                    tooltip: '답장 보내기',
                     onPressed: _sending ? null : _sendReply,
                     icon: const Icon(Icons.send, color: AppColors.accentText),
                   ),

@@ -74,6 +74,7 @@ class _AiConnectionModalViewState extends State<AiConnectionModalView> {
                   ),
                   const Spacer(),
                   IconButton(
+                    tooltip: '닫기',
                     icon: const Icon(Icons.close, color: AppColors.textSecondary),
                     onPressed: () => Navigator.pop(context),
                   ),

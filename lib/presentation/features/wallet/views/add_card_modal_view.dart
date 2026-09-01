@@ -4524,6 +4524,7 @@ class _AddCardModalViewState extends State<AddCardModalView> {
               ),
             ),
           IconButton(
+            tooltip: '안내 닫기',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             icon: Icon(Icons.close, size: 16, color: color),

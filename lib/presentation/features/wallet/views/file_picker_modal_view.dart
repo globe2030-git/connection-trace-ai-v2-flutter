@@ -410,6 +410,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                   ],
                 ),
                 IconButton(
+                  tooltip: '닫기',
                   icon: const Icon(Icons.close, color: AppColors.textSecondary),
                   onPressed: () => Navigator.pop(context),
                 ),
@@ -451,6 +452,7 @@ class _FilePickerModalViewState extends State<FilePickerModalView> {
                       ),
                     ),
                     IconButton(
+                      tooltip: '닫기',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                       icon: const Icon(
