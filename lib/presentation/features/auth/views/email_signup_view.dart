@@ -18,6 +18,14 @@ import 'password_reset_view.dart';
 ///
 /// 이 화면은 **⑨(SignupConsentView)를 통과한 뒤에만** 뜬다 — `LoginView
 /// ._startSignIn`이 순서를 보장한다.
+///
+/// **비밀번호 확인 칸이 없다**(추가 640, 2026-08-31). 이 화면이 가입과
+/// 로그인을 겸하게 되면서(추가 636) "확인"은 로그인하는 사람에게는 뜻이
+/// 없어졌다 — 이미 정해 둔 비밀번호를 다시 입력해 맞는지 볼 이유가 없다.
+/// 가입인지 로그인인지는 화면에 들어가기 전에는 알 수 없고(이메일 열거
+/// 방지 때문에 서버에 미리 물을 수도 없다) 서로 다른 화면으로 가를 수도
+/// 없으므로, 확인칸 대신 "보기" 아이콘(`suffixIcon`)으로 오타를 눈으로
+/// 확인하게 한다.
 class EmailSignupView extends StatefulWidget {
   const EmailSignupView({super.key});
 
@@ -28,10 +36,8 @@ class EmailSignupView extends StatefulWidget {
 class _EmailSignupViewState extends State<EmailSignupView> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmController = TextEditingController();
 
   bool _obscurePassword = true;
-  bool _obscureConfirm = true;
   bool _busy = false;
   String? _errorMessage;
 
@@ -42,14 +48,12 @@ class _EmailSignupViewState extends State<EmailSignupView> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _confirmController.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-    final confirm = _confirmController.text;
 
     if (email.isEmpty || !email.contains('@')) {
       setState(() {
@@ -61,13 +65,6 @@ class _EmailSignupViewState extends State<EmailSignupView> {
     if (password.length < 6) {
       setState(() {
         _errorMessage = '6자 이상의 비밀번호를 입력해 주세요.';
-        _offerPasswordReset = false;
-      });
-      return;
-    }
-    if (password != confirm) {
-      setState(() {
-        _errorMessage = '비밀번호가 서로 달라요. 다시 확인해 주세요.';
         _offerPasswordReset = false;
       });
       return;
@@ -161,26 +158,6 @@ class _EmailSignupViewState extends State<EmailSignupView> {
                     ),
                     onPressed: () =>
                         setState(() => _obscurePassword = !_obscurePassword),
-                  ),
-                ),
-                enabled: !_busy,
-              ),
-              const SizedBox(height: 16),
-              _FieldLabel('비밀번호 확인'),
-              TextField(
-                controller: _confirmController,
-                obscureText: _obscureConfirm,
-                decoration: _inputDecoration('비밀번호를 한 번 더 입력해 주세요').copyWith(
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
-                      size: 20,
-                      color: AppColors.textMuted,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
                 enabled: !_busy,
