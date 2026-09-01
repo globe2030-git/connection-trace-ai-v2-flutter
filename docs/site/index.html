@@ -12,6 +12,61 @@
 <meta property="og:title" content="커넥션센스 — 근처에 왔을 때 내 명함첩이 먼저 알려줍니다">
 <meta property="og:description" content="받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.">
 <meta property="og:locale" content="ko_KR">
+
+<!-- 🚨 canonical 이 이 블록에서 제일 중요하다.
+     connectionsense.co.kr 과 connectionsense.web.app 이 **같은 사이트**라
+     본문이 한 바이트도 다르지 않다(sha256 확인). canonical 이 없으면
+     검색엔진이 둘 중 어느 쪽을 대표로 삼을지 스스로 고르는데, web.app 이
+     뽑히면 **대표 도메인을 세운 의미가 사라진다.** -->
+<link rel="canonical" href="https://connectionsense.co.kr/">
+
+<meta property="og:url" content="https://connectionsense.co.kr/">
+<!-- ⚠️ og:image 는 **절대 주소**여야 한다. 상대 경로는 카카오톡·슬랙이 못 읽는다. -->
+<meta property="og:image" content="https://connectionsense.co.kr/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="커넥션센스 — 근처에 왔을 때 내 명함첩이 먼저 알려줍니다">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="커넥션센스 — 근처에 왔을 때 내 명함첩이 먼저 알려줍니다">
+<meta name="twitter:description" content="받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.">
+<meta name="twitter:image" content="https://connectionsense.co.kr/og-image.png">
+
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+<!-- 구글 서치콘솔 소유확인(2026-09-01, 추가 652).
+     🚨 **지우면 소유확인이 풀린다.** 확인이 끝난 뒤에도 구글이 주기적으로 다시
+     본다 — "한 번 확인했으니 지워도 된다"가 아니다.
+
+     ⚠️ 「도메인」 속성(DNS TXT)이 아니라 **「URL 접두어」 속성**이다.
+     DNS 가 Cloudflare 에 있는데 그 계정을 못 찾아 TXT 를 넣을 수 없었다
+     (등록대행자는 닷네임코리아, 로그인 메일이 오지 않았다). 그래서 DNS 를
+     안 거치는 이 방식으로 돌렸다.
+
+     📌 그래서 이 태그가 덮는 것은 `https://connectionsense.co.kr/` 하나뿐이다.
+     `www.` 와 `connectionsense.web.app` 은 별도 속성이 된다 — 다만 위
+     canonical 이 apex 를 가리키므로 검색엔진은 어차피 apex 를 대표로 본다.
+     Cloudflare 계정을 찾으면 「도메인」 속성으로 옮기는 편이 낫다. -->
+<meta name="google-site-verification" content="WdAHsrsmeN7HTw11xdh2s5R1E2wyRMJd_Jg21F50PAI">
+
+<!-- 구조화 데이터.
+     🚨 **없는 것을 적지 않는다**(CLAUDE.md "가짜 데이터를 만들지 않는다").
+     별점·설치 수·가격은 아직 실체가 없으므로 aggregateRating·offers 를
+     넣지 않았다. 스토어에 올라가고 실제 값이 생기면 그때 더한다. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "커넥션센스",
+  "url": "https://connectionsense.co.kr/",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Android, iOS",
+  "inLanguage": "ko-KR",
+  "description": "받아 둔 명함의 회사 주소와 지금 내 위치를 견줍니다. 근처에 왔을 때 누구를 챙길지, 무슨 말로 시작할지까지 앱이 준비해 둡니다.",
+  "image": "https://connectionsense.co.kr/og-image.png"
+}
+</script>
+
 <link rel="stylesheet" href="site.css">
 </head>
 <body>
