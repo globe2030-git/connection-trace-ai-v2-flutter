@@ -107,6 +107,31 @@ void main() {
     });
   });
 
+  group('🚨 ⑨(통합 동의 화면)의 값을 언제 적용하나 — applyFreshSignupChoice', () {
+    // fetch/save는 Firestore 인스턴스가 필요해 여기서 못 덮는다(파일 상단
+    // 설명 참고) — 대신 저장 여부를 정하는 순수 판정만 떼어 고정한다
+    // (`AdConsentService.shouldApplyFreshSignupChoice`).
+    test('⭐ 이미 답한 계정이면 적용하지 않는다 — adConsentAt이 안 바뀐다', () {
+      const answered = AdConsentState(email: true, push: false, answered: true);
+      expect(
+        AdConsentService.shouldApplyFreshSignupChoice(answered),
+        isFalse,
+        reason: '재로그인한 기존 이용자가 ⑨를 무심코 다시 지나가도 예전 답을 덮으면 안 된다',
+      );
+    });
+
+    test('⭐ 아직 안 물은 계정이면 적용한다', () {
+      expect(
+        AdConsentService.shouldApplyFreshSignupChoice(AdConsentState.unasked),
+        isTrue,
+      );
+    });
+
+    test('읽기 실패(state == null)면 적용하지 않는다 — 모르면 안 건드린다', () {
+      expect(AdConsentService.shouldApplyFreshSignupChoice(null), isFalse);
+    });
+  });
+
   group('🚨 네이버 계정에는 이메일 채널을 보여주지 않는다', () {
     test('⭐ 네이버는 false — 그 이메일은 남의 것일 수 있다', () {
       expect(
@@ -128,10 +153,15 @@ void main() {
       );
     });
 
-    test('구글·애플·카카오는 보여준다', () {
+    test('구글·애플·카카오·이메일은 보여준다', () {
       expect(adEmailChannelAvailable(SnsAuthProvider.google), isTrue);
       expect(adEmailChannelAvailable(SnsAuthProvider.apple), isTrue);
       expect(adEmailChannelAvailable(SnsAuthProvider.kakao), isTrue);
+      expect(
+        adEmailChannelAvailable(SnsAuthProvider.email),
+        isTrue,
+        reason: '이메일 가입은 이용자가 직접 타이핑해 로그인에 쓰는 주소라 소유가 확실하다',
+      );
     });
   });
 }

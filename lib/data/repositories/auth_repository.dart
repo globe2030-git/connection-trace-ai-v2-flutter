@@ -23,7 +23,16 @@ class AuthException implements Exception {
   /// 구분해 재인증 절차로 안내하는 데 쓴다.
   final bool requiresReauth;
 
-  AuthException(this.message, {this.requiresReauth = false});
+  /// true면 이메일 로그인에서 비밀번호가 틀린 것(`wrong-password`/
+  /// `invalid-credential`) — 화면이 비밀번호 재설정(⑩) 링크를 보여줄
+  /// 근거로 쓴다(추가 632, §5-2).
+  final bool offerPasswordReset;
+
+  AuthException(
+    this.message, {
+    this.requiresReauth = false,
+    this.offerPasswordReset = false,
+  });
   @override
   String toString() => message;
 }
@@ -100,6 +109,22 @@ class AuthRepository extends ChangeNotifier {
   /// Firebase Auth 초기화 전에는 null이라 백업/복원 로직은 이 값이 있을
   /// 때만 동작해야 한다.
   String? get firebaseUid => fb_auth.FirebaseAuth.instance.currentUser?.uid;
+
+  /// 이메일 계정인데 아직 이메일 소유 확인(인증 메일 클릭)을 안 했는가
+  /// (추가 632, §7 — 설정 화면 배지·재발송 버튼용).
+  ///
+  /// ⚠️ **이메일이 아닌 계정은 항상 false다.** 소셜 로그인은 제공자가 이미
+  /// 소유를 확인한 주소를 준다(또는 애초에 이메일이 없다) — 이 앱이 따로
+  /// 확인할 것이 없다.
+  bool get needsEmailVerification {
+    if (_provider != SnsAuthProvider.email) return false;
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    // Firebase가 캐시해 둔 값이라 실제로는 인증됐는데 이 값만 낡았을 수
+    // 있다 — 그래도 설정 화면이 "재발송" 버튼을 보여주는 정도라 큰 문제는
+    // 없다. 최신값이 필요하면 호출자가 user.reload() 후 다시 읽는다.
+    return !user.emailVerified;
+  }
 
   /// 관리자 전용 화면(설정 → 관리자 1:1 문의 관리)을 **메뉴에 띄울지 말지**만
   /// 정하는 값이다. 실제 차단은 서버(`firestore.rules`의 `isAdmin()`)가 하며,
@@ -447,6 +472,173 @@ class AuthRepository extends ChangeNotifier {
     }
   }
 
+  /// 이메일+비밀번호로 가입하거나(계정이 없으면), 이미 있으면 로그인한다
+  /// (추가 632, §5-2 / 추가 636에서 순서를 뒤집었다).
+  ///
+  /// ⚠️ **갈래 UI(로그인/가입 화면 분리)를 두지 않는다** — 원칙은 추가 632와
+  /// 같다. 다만 **가입을 먼저 시도한다.** 이 프로젝트는 이메일 열거
+  /// 방지(email enumeration protection, `emailPrivacyConfig
+  /// .enableImprovedEmailPrivacy`)가 켜져 있는데, 이게 켜지면 signIn 실패는
+  /// 계정이 없든 비밀번호가 틀렸든 **전부 `invalid-credential`로 뭉쳐서만
+  /// 돌아온다** — `user-not-found`가 더 이상 나오지 않는다(2026-09-01 실기기
+  /// 제보로 발견: 새 이메일 가입 시도가 전부 "비밀번호가 올바르지 않습니다"로
+  /// 막혔다). signIn을 먼저 타면 가입 분기(`user-not-found`)에 영원히
+  /// 도달하지 못한다.
+  ///
+  /// 반대로 **가입(`createUserWithEmailAndPassword`)은 지금도 계정이 이미
+  /// 있으면 `email-already-in-use`를 분명히 돌려준다** — Google 공식 문서가
+  /// "Invalid sign-up cases continue to return EMAIL_EXISTS errors"라고
+  /// 명시한다(실측 확인:
+  /// https://docs.cloud.google.com/identity-platform/docs/admin/email-enumeration-protection
+  /// , 2026-09-01). 그래서 가입을 먼저 시도하고, 이미 있는 계정이면 그
+  /// 안에서 로그인으로 폴백하는 쪽으로 순서를 뒤집었다.
+  ///
+  /// `fetchSignInMethodsForEmail`로 존재 여부를 먼저 물어보는 방법은 쓰지
+  /// 않는다 — 같은 열거 방지 설정에서 그 API도 항상 빈 배열만 돌려줘 애초에
+  /// 못 쓴다(위 문서: "A list of sign-in methods ... is no longer returned").
+  /// 열거 방지 자체를 끄는 방법도 쓰지 않는다 — 서버 설정 변경은 배포
+  /// 성격이고, 끄면 계정 목록이 새어 나가 방침 ⑩(비밀번호 재설정에서
+  /// 가입 여부를 알려주지 않는다)과 정면으로 부딪친다.
+  ///
+  /// ⚠️ **왜 `flutter test`가 이 결함을 못 잡았나**: 이 메서드는
+  /// `fb_auth.FirebaseAuth.instance`를 직접 부른다 — 모킹 지점(DI 주입)이
+  /// 없어 `flutter test`에서는 애초에 이 메서드를 실행하는 테스트가 없다.
+  /// 즉 "목이 실물과 다른 값을 돌려줘서 속았다"가 아니라, **자동 테스트가
+  /// 이 경로 자체를 타지 않는다** — 실기기(또는 Firebase 프로젝트 실물
+  /// 설정)로만 드러나는 유형이다.
+  Future<void> signInOrSignUpWithEmail(String email, String password) async {
+    final trimmed = email.trim();
+
+    // 가입을 먼저 시도한다.
+    final fb_auth.UserCredential cred;
+    try {
+      cred = await fb_auth.FirebaseAuth.instance
+          .createUserWithEmailAndPassword(email: trimmed, password: password);
+    } on fb_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          // 이미 있는 계정이다 — 로그인으로 폴백한다. 정상 경로다(가입
+          // 화면에 다시 오는 재방문 이용자는 대부분 여기를 탄다).
+          await _signInExistingEmailAccount(trimmed, password);
+          return;
+        case 'weak-password':
+          throw AuthException('6자 이상의 비밀번호를 입력해 주세요.');
+        case 'invalid-email':
+          throw AuthException('이메일 형식을 확인해 주세요.');
+        default:
+          debugPrint('이메일 가입 실패: ${e.code}');
+          throw AuthException('가입에 실패했어요. 다시 시도해 주세요.');
+      }
+    } catch (e) {
+      debugPrint('이메일 가입 예외: $e');
+      throw AuthException('가입 중 문제가 발생했습니다. 다시 시도해 주세요.');
+    }
+
+    // 가입 직후 인증 메일 발송(추가 632, §7) — 실패해도 가입 자체는
+    // 유지한다. 번호 인증이 실질적인 신원 확인 역할을 대신하므로, 이메일
+    // 인증 실패로 가입을 막을 이유가 없다.
+    try {
+      await cred.user?.sendEmailVerification();
+    } catch (e) {
+      debugPrint('가입 직후 인증 메일 발송 실패: ${e.runtimeType}');
+    }
+
+    await completeSignIn(
+      SnsAuthProvider.email,
+      displayName: cred.user?.displayName,
+      email: cred.user?.email ?? trimmed,
+      photoUrl: cred.user?.photoURL,
+    );
+  }
+
+  /// [signInOrSignUpWithEmail]에서 `email-already-in-use`를 받았을 때
+  /// 로그인으로 폴백한다(추가 636).
+  ///
+  /// ⚠️ **어떤 수단으로 이미 가입돼 있는지는 여기서도 밝히지 않는다** —
+  /// 계정 식별 매트릭스(추가 371)가 "이메일 자동 병합은 전 형태 금지"를
+  /// 요구한다. 열거 방지가 켜져 있어 "비밀번호가 틀렸다"와 "이 이메일은
+  /// SNS로 가입돼 비밀번호 자체가 없다"를 서버 응답만으로 구분할 수도 없다
+  /// (둘 다 `invalid-credential`) — 그래서 두 경우 모두 같은 일반 문구로
+  /// 답한다. 이전에는 "다른 방법으로 이미 가입돼 있어요"처럼 더 구체적인
+  /// 문구를 썼지만, 그 문구도 결국 수단을 밝히지 않았을 뿐 이 메서드에서
+  /// email-already-in-use는 더 이상 오류가 아니라 **정상 로그인 경로**가
+  /// 됐으므로 여기서는 쓰지 않는다.
+  Future<void> _signInExistingEmailAccount(
+    String trimmed,
+    String password,
+  ) async {
+    try {
+      final cred = await fb_auth.FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: trimmed, password: password);
+      await completeSignIn(
+        SnsAuthProvider.email,
+        displayName: cred.user?.displayName,
+        email: cred.user?.email ?? trimmed,
+        photoUrl: cred.user?.photoURL,
+      );
+    } on fb_auth.FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+        case 'user-not-found': // 이론상 여기서는 안 나오지만 방어적으로 처리
+          throw AuthException(
+            '비밀번호가 올바르지 않습니다.',
+            offerPasswordReset: true,
+          );
+        case 'invalid-email':
+          throw AuthException('이메일 형식을 확인해 주세요.');
+        case 'user-disabled':
+          throw AuthException('비활성화된 계정입니다. 고객센터에 문의해 주세요.');
+        default:
+          debugPrint('이메일 로그인 실패: ${e.code}');
+          throw AuthException('로그인에 실패했어요. 다시 시도해 주세요.');
+      }
+    } catch (e) {
+      debugPrint('이메일 로그인 예외: $e');
+      throw AuthException('로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
+    }
+  }
+
+  /// 비밀번호 재설정 메일을 보낸다(⑩ `PasswordResetView`, 추가 632 §5-3).
+  ///
+  /// 🚨 **가입한 이메일인지 알려주지 않는다.** `user-not-found`도 성공했을
+  /// 때와 똑같이 조용히 반환한다 — 계정 존재 여부를 노출하면 그 자체가
+  /// 개인정보 유출(가입 사실)이 된다.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await fb_auth.FirebaseAuth.instance.sendPasswordResetEmail(
+        email: email.trim(),
+      );
+    } on fb_auth.FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') return;
+      if (e.code == 'invalid-email') {
+        // 존재 여부가 아니라 **입력한 문자열 자체의 형식 문제**라 이건
+        // 갈라도 열거 통로가 되지 않는다.
+        throw AuthException('이메일 형식을 확인해 주세요.');
+      }
+      debugPrint('비밀번호 재설정 메일 발송 실패: ${e.code}');
+      throw AuthException('메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+    } catch (e) {
+      debugPrint('비밀번호 재설정 예외: $e');
+      throw AuthException('메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+    }
+  }
+
+  /// 이메일 인증 메일을 다시 보낸다(설정 화면 "인증 안 됨" 배지의 재발송
+  /// 버튼, 추가 632 §7).
+  Future<void> resendVerificationEmail() async {
+    final user = fb_auth.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw AuthException('로그인 상태가 아닙니다. 다시 로그인해 주세요.');
+    }
+    try {
+      await user.sendEmailVerification();
+    } catch (e) {
+      debugPrint('인증 메일 재발송 실패: ${e.runtimeType}');
+      throw AuthException('메일을 보내지 못했어요. 잠시 후 다시 시도해 주세요.');
+    }
+  }
+
   String _sha256(String input) {
     return sha256.convert(utf8.encode(input)).toString();
   }
@@ -612,6 +804,16 @@ class AuthRepository extends ChangeNotifier {
         // 다시 로그인하는 것이 곧 재인증이다 — signInWithCustomToken 이
         // "최근 로그인" 시각을 갱신한다.
         await signInWithSocial(_provider!, openAuth);
+      case SnsAuthProvider.email:
+        // ⚠️ **범위 밖(추가 632 §7·마감 대응 지침)** — 비밀번호를 다시 입력받는
+        // 화면이 아직 없다. 계정 삭제가 "최근 로그인 아님"으로 막힌 이메일
+        // 계정은, 로그아웃 후 재로그인하면 Firebase 세션이 새로워져 이
+        // 조건 자체가 사라진다 — 그 우회로를 안내한다. 막다른 예외로 두지
+        // 않고 다음에 할 일을 알려 준다.
+        throw AuthException(
+          '보안을 위해 다시 로그인해야 합니다. 로그아웃한 뒤 이메일로 다시 '
+          '로그인하고, 계정 삭제를 다시 시도해 주세요.',
+        );
       case null:
         throw AuthException('재인증할 수 있는 로그인 수단이 없습니다. 다시 로그인해 주세요.');
     }

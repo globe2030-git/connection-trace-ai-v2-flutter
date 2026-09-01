@@ -290,6 +290,47 @@ class AdConsentService {
     }
   }
 
+  /// ⑨(`SignupConsentView`)에서 미리 골라 둔 값을, 계정이 실제로 만들어진 뒤
+  /// 적용한다(추가 632, `email-signup-unified-consent-2026-08-31.md` §4).
+  ///
+  /// 🚨 **이미 답한 계정이면 화면에서 고른 값을 버리고 아무것도 하지 않는다.**
+  /// ⑨는 uid를 모르는 시점(로그인/가입 전)에 뜨므로, 로그아웃 뒤 다시
+  /// 로그인한 **기존** 이용자도 이 화면을 다시 볼 수 있다 — 그때 예전 답을
+  /// 실수로 덮으면 안 된다. `shouldAsk`와 같은 보수적 판단(모르면 안
+  /// 건드린다)을 그대로 따른다.
+  ///
+  /// [emailChannelAvailable]은 호출 시점의 provider 기준으로 **부르는 쪽이**
+  /// 넘긴다 — [adEmailChannelAvailable]과 같은 판정을 이 함수 안에서 다시
+  /// 하지 않기 위해서다(그 함수는 provider를 몰라도 되게 만들어졌다).
+  Future<void> applyFreshSignupChoice({
+    required String uid,
+    required bool email,
+    required bool push,
+    required bool emailChannelAvailable,
+  }) async {
+    final state = await fetch(uid);
+    if (!shouldApplyFreshSignupChoice(state)) return;
+    await save(
+      uid: uid,
+      email: email && emailChannelAvailable,
+      push: push,
+      firstAnswer: true,
+    );
+  }
+
+  /// [applyFreshSignupChoice]의 핵심 판정만 뽑은 **순수 함수**(추가 632).
+  ///
+  /// 🚨 **"이미 답한 계정에게 ⑨를 다시 보여줘도 `adConsentAt`이 안 바뀐다"**는
+  /// 이 저장소가 가장 중요하게 지키라고 한 회귀 방지 지점이다. `fetch`/`save`는
+  /// Firestore 인스턴스가 있어야 해서 `flutter test`로 못 덮지만, **저장을
+  /// 할지 말지 정하는 이 판정 자체는 순수 로직**이라 여기서 떼어내 테스트로
+  /// 고정한다 — `state`를 안다고 가정하면 나머지는 입출력이 없다.
+  @visibleForTesting
+  static bool shouldApplyFreshSignupChoice(AdConsentState? state) {
+    // state == null(읽기 실패)이거나 이미 답한 계정이면 손대지 않는다.
+    return state != null && !state.answered;
+  }
+
   /// 계정 삭제·로그아웃 시 기기 캐시를 지운다.
   ///
   /// 남으면 같은 기기에서 다음 계정이 **앞 사람의 동의를 물려받는다.**
@@ -392,4 +433,8 @@ bool adEmailChannelAvailable(SnsAuthProvider? provider) => switch (provider) {
       SnsAuthProvider.apple ||
       SnsAuthProvider.kakao =>
         true,
+      // 이메일 가입은 이용자가 **직접 타이핑해 로그인에 쓰는 주소**라 —
+      // 네이버의 "연락처 이메일"과 반대로, 소유 확인이 필요 없을 만큼
+      // 확실하다(추가 632).
+      SnsAuthProvider.email => true,
     };
