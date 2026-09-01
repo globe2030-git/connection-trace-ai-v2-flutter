@@ -75,6 +75,47 @@ class _SignupConsentViewState extends State<SignupConsentView> {
     ).pop(ConsentChoice(adEmail: _adEmail, adPush: _adPush));
   }
 
+  /// 동의하지 않고 나간다.
+  ///
+  /// 🚨 **막지 않고 말해 준다.** 필수 동의를 안 하면 이용계약이 서지 않으므로
+  /// 서비스를 쓸 수 없는 것이 맞지만, **막아야 할 것은 「가입 진행」이지
+  /// 「화면을 벗어나는 것」이 아니다.** 나갈 길을 없애면 갇힌 것처럼 느껴지고,
+  /// 그것은 「자유로운 동의」와 어울리지 않는다(광고 동의에서 정한 원칙과 같다
+  /// — 추가 514·CLAUDE.md 4절).
+  ///
+  /// 📌 **이 화면에서 나가도 계정은 만들어지지 않는다** — 동의가 로그인보다
+  /// 먼저라 아직 uid 가 없다. 그런데 **화면이 그 사실을 말해 주지 않으면**
+  /// 사용자는 "가입이 된 건가?"를 알 수 없다. 광고 동의 사고가 정확히 그
+  /// 자리였다(로직은 맞았고 화면이 말해 주지 않은 것이 틀렸다).
+  Future<void> _cancel() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardSurface,
+        title: const Text('동의하지 않고 나갈까요?'),
+        content: const Text(
+          '필수 항목에 동의하지 않으면 커넥션센스를 이용하실 수 없습니다.\n\n'
+          '지금 나가시면 가입은 진행되지 않으며, 입력하신 내용도 저장되지 않습니다.',
+          style: TextStyle(fontSize: 13.5, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('계속 보기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              '나가기',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (leave == true && mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -224,6 +265,18 @@ class _SignupConsentViewState extends State<SignupConsentView> {
                     '동의하고 시작하기',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
+                ),
+              ),
+            ),
+            // 🚨 나가는 길을 화면에 둔다. 기기 뒤로가기로만 나갈 수 있으면
+            // "나가는 길이 둘인데 하나만 화면에 있는" 상태가 된다(추가 514).
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 0, 22, 16),
+              child: TextButton(
+                onPressed: _cancel,
+                child: const Text(
+                  '동의하지 않고 나가기',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
                 ),
               ),
             ),
