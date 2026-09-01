@@ -305,6 +305,308 @@ backlog 추가 151 참고 (1,000원 판매 → 부가세·수수료 제하고 �
 
 ---
 
+## 3-5. 🌐 도메인과 메일 — 2026-09-01에 한 것 전부
+
+> **왜 이 절이 있나**: 여기 적힌 것은 **코드가 아니라 콘솔·DNS 조작**이라
+> 저장소에 흔적이 남지 않는다. 이 문서가 유일한 기록이다. 도메인 갱신
+> (2027-09-01), 담당자 교체, 값이 깨졌을 때 **여기부터 본다.**
+
+### 3-5-0. 먼저 — 화면이 **셋**이고 서로 다르다
+
+가장 자주 헷갈리는 지점이다. **어느 도메인을 만지느냐에 따라 가는 곳이 다르다.**
+
+| 도메인 | DNS 관리 | 무엇에 쓰나 |
+|---|---|---|
+| `connectionsense.co.kr` 외 4개 | **닷네임코리아** (dotname.co.kr) | 홈페이지 · 인증 메일 발신 |
+| `creamhouse.net` | **DNSEver** (dnsever.com) | 회사 메일(Google Workspace) |
+| — | **Firebase 콘솔** | 위 값을 요구하고 확인하는 쪽 |
+
+⚠️ **네임서버가 가리키는 곳에서 DNS를 만진다.** 도메인을 산 곳이 아니다.
+`connectionsense.co.kr`은 닷네임코리아에서 사고 **NS도 그쪽(Cloudflare 위임)**이라
+닷네임코리아 화면에서 만진다.
+
+### 3-5-1. 등록한 도메인 다섯 (닷네임코리아, 2026-09-01 등록 / 2027-09-01 만료)
+
+| 도메인 | 퓨니코드 | 역할 |
+|---|---|---|
+| `connectionsense.co.kr` | — | **대표.** 홈페이지가 여기 뜬다 |
+| `connectsense.co.kr` | — | 대표로 리디렉션 |
+| `salesense.co.kr` | — | 대표로 리디렉션 |
+| `영업센스.kr` | `xn--zj4buzv2e3g.kr` | 대표로 리디렉션 |
+| `커넥션센스.kr` | `xn--b60b481anc16d556a.kr` | 대표로 리디렉션 |
+
+⚠️ **한글 도메인은 Firebase 콘솔에서 한글로는 안 받는다.** 퓨니코드로 넣어야 한다.
+등록업체 화면에서는 한글로 보인다.
+
+⚠️ **`salesense`는 `s`가 하나다**(`salessense` 아님). 틀리기 쉽다.
+
+### 3-5-2. 웹 — 홈페이지를 대표 도메인에 붙이기
+
+**Firebase Hosting에는 사이트가 셋 있다.** 붙일 곳을 잘못 고르면 엉뚱한 게 열린다.
+
+![Hosting 사이트 셋](images/domain-mail-setup-2026-09-01/10-hosting-three-sites.png)
+
+| 사이트 | 내용 | 소스 |
+|---|---|---|
+| `connection-sense` | 법적 고지(방침·약관) | `docs/legal` |
+| `connection-sense-admin` | 관리자 콘솔 | `docs/admin` |
+| **`connectionsense`** | **홍보 페이지** ← 대표 도메인은 여기 | `docs/site` |
+
+📌 **법적 고지 주소는 `connection-sense.web.app` 그대로 두는 것이 맞다.**
+앱·플레이콘솔·카카오·네이버에 이미 박혀 있어, 바꾸면 그 전부를 고쳐야 하고
+하나라도 빠지면 **방침을 볼 수 없는 상태**가 된다(보호법 §30② 「지속적 게재」).
+
+**절차**
+
+1. Hosting → `connectionsense` 사이트 → 「커스텀 도메인 추가」
+
+   ![도메인 추가 · 체크박스](images/domain-mail-setup-2026-09-01/11-add-domain-checkbox.png)
+
+   🚨 **대표 도메인은 체크하지 않는다.** 「기존 웹사이트로 리디렉션」을 켜면
+   대표가 다른 데로 튕겨 나간다. **나머지 넷에만 켠다.**
+
+2. Firebase가 값 둘을 준다 — **다섯 도메인 모두 같은 값**이다(TXT는 사이트를
+   가리키는 값이라 도메인마다 다르지 않다).
+
+   ![A · TXT 값](images/domain-mail-setup-2026-09-01/12-firebase-a-txt.png)
+
+3. 닷네임코리아 → **DNS 관리 → DNS 레코드 설정**
+
+   ![닷네임 메뉴](images/domain-mail-setup-2026-09-01/13-dotname-menu.png)
+
+   ⚠️ 「도메인 포워딩」이 아니다. 그건 주소를 튕겨보내는 것이라 Firebase 연결에 못 쓴다.
+
+   ![DNS 레코드 입력 화면](images/domain-mail-setup-2026-09-01/14-dotname-dns-form.png)
+
+   | 넣을 곳 | 서브도메인 | 값 |
+   |---|---|---|
+   | A 레코드 | (비움) | `199.36.158.100` |
+   | TXT 레코드 | (비움) | `hosting-site=connectionsense` |
+
+4. 🚨 **`www`는 A가 아니라 CNAME이다.**
+
+   ![ACME 404 오류](images/domain-mail-setup-2026-09-01/15-www-cname-error.png)
+
+   닷네임코리아 화면의 *"www 와 공란으로 2개 추가합니다"*는 **일반 안내**이고,
+   Firebase는 `www`를 CNAME으로 받는다. A로 넣으면 위처럼 **ACME 404**로 실패한다.
+   **등록업체의 안내와 Firebase의 요구는 다르다.**
+
+   | 넣을 곳 | 서브도메인 | 값 |
+   |---|---|---|
+   | CNAME | `www` | `connectionsense.web.app` (끝 점 없이) |
+
+   그리고 Firebase에도 `www.connectionsense.co.kr`을 **리디렉션 체크를 켜고** 추가한다.
+
+5. SSL 인증서 발급을 기다린다 — **실측 30분**(Firebase 안내는 최대 24시간).
+
+   ⚠️ **기다리는 동안 DNS를 건드리면 처음부터 다시 시작된다.**
+
+   ⚠️ **콘솔 표시가 실물보다 늦다.** 「인증서 발급 중」이라고 떠 있는데
+   `https`가 이미 200을 주는 일이 있었다. **재는 쪽을 믿는다.**
+
+   ```
+   curl -s -o /dev/null -w "%{http_code}" https://connectionsense.co.kr/
+   ```
+
+6. 완료 화면
+
+   ![도메인 여섯 연결됨](images/domain-mail-setup-2026-09-01/16-hosting-domains-done.png)
+
+   🚨 **리디렉션 대상 오타를 반드시 확인한다.** 실제로 `connectionse<b>e</b>nse.co.kr`로
+   오타가 들어가 존재하지 않는 주소로 보내고 있었다. **눈으로는 안 보인다** — 재야 한다.
+
+   ```
+   curl -s -o /dev/null -w "%{redirect_url}\n" https://connectsense.co.kr/
+   ```
+
+### 3-5-3. 메일 — 인증 메일이 스팸함으로 가던 문제
+
+**증상**: 가입 인증·비밀번호 재설정 메일이 **스팸함으로 갔다**(추가 639).
+
+**원인**: 발신이 `noreply@connection-sense.firebaseapp.com`이라 **우리 도메인과
+무관한 곳에서 온 메일**로 보였다.
+
+📌 **방향을 갈라서 이해해야 한다** — 이걸 혼동하면 "설정했는데 왜 그대로냐"가 된다.
+
+```
+받는 쪽(inbound)   포워딩 · MX      → 누가 우리에게 보낸 메일
+보내는 쪽(outbound) SPF · DKIM      → 우리가 남에게 보내는 메일  ← 스팸함은 여기
+```
+
+#### (가) 회사 도메인 `creamhouse.net` 정리 — 커넥션센스와 무관하게 해야 했던 것
+
+🚨 **SPF가 세 줄이었다.** SPF는 도메인에 **하나여야** 하고, 둘 이상이면 받는
+서버가 **검사를 통째로 건너뛴다.** 즉 회사에서 나가던 **모든 메일이 이미
+불리한 상태**였다.
+
+![고치기 전 SPF 세 줄](images/domain-mail-setup-2026-09-01/01-dnsever-spf-before.png)
+
+| 줄 | 판정 |
+|---|---|
+| `ip4:172.27.11.154` | 🚨 **사설 IP** — 인터넷에서 그 주소로 도착하는 메일은 **원리상 없다.** 아무 일도 안 하던 줄 |
+| `ip4:223.62.242.91` | SK텔레콤 대역 · 메일 포트 전부 닫힘. 안 쓰는 듯하나 확실치 않아 **품어서** 합쳤다 |
+| `include:_spf.google.com` | ✅ 실제로 쓰는 것(MX가 전부 구글) |
+
+**최종형 (DNSEver → 도메인 설명 텍스트(TXT) 관리)**
+
+```
+v=spf1 ip4:223.62.242.91 include:_spf.google.com include:_spf.firebasemail.com ~all
+```
+
+⚠️ **SPF는 조회 10회를 넘어도 무효가 된다.** 2026-09-01 실측 **5회**로 여유 있다.
+`include:`를 더할 때는 다시 재 볼 것.
+
+**DKIM (Google Workspace)** — 회사 메일에 서명을 붙인다.
+
+관리 콘솔 → 앱 → Google Workspace → Gmail → **이메일 인증**
+
+![DKIM 새 레코드 생성](images/domain-mail-setup-2026-09-01/02-google-dkim-generate.png)
+
+- 비트 길이 **2048**, 접두어 `google` 그대로.
+- ⚠️ **「새 레코드 생성」을 누를 때마다 열쇠가 새로 만들어진다.** 값을 DNS에 넣기
+  전에 다시 누르면 **DNS 값이 그 즉시 낡는다.** 2026-09-01에 세 번 겪었다.
+
+![DKIM 값](images/domain-mail-setup-2026-09-01/03-google-dkim-value.png)
+
+- 값이 **408자**로 길다. DNSEver는 **255자 넘는 값을 알아서 나눠 내보낸다**
+  (실측 확인 — 1024로 낮출 필요 없다).
+- DNSEver에 `google._domainkey`로 넣고 **「변경」을 눌러야 저장된다.**
+  목록에 보이는 것만으로는 안 나간다.
+
+![DNSEver TXT 목록](images/domain-mail-setup-2026-09-01/04-dnsever-txt-after.png)
+
+- DNS가 퍼진 뒤 콘솔에서 **「인증 시작」**.
+
+![DKIM 인증 완료](images/domain-mail-setup-2026-09-01/05-google-dkim-verified.png)
+
+⚠️ **DNSEver는 네임서버 다섯(ns43·75·84·231·259)에 순차 전파된다.**
+`ns43`·`ns231`이 **한 시간 넘게** 늦은 적이 있다. **한 서버만 보고 판정하지 말 것.**
+
+```
+for ns in ns43 ns75 ns84 ns231 ns259; do dig +short TXT google._domainkey.creamhouse.net @$ns.dnsever.com; done
+```
+
+#### (나) 발신 도메인 — **회사 것이 아니라 앱 것으로**
+
+⭐ 처음에는 `creamhouse.net`으로 잡았다가 **`connectionsense.co.kr`로 옮겼다.**
+
+| | `creamhouse.net` | **`connectionsense.co.kr`** |
+|---|---|---|
+| 브랜드 | 회사 도메인 · 앱 이름과 무관 | ✅ 앱 이름 그대로 |
+| 회사 메일 | SPF를 계속 건드려야 함 | ✅ 건드릴 일 없음 |
+| 답장 경로 | — | ✅ 포워딩이 이미 걸려 있음 |
+
+**절차** — Firebase 콘솔 → **Authentication** → 템플릿 → 「이메일 주소 인증」 연필
+→ 발신 주소 옆 **「도메인 직접 입력」**
+
+![커스텀 도메인 확인 진행 중](images/domain-mail-setup-2026-09-01/20-auth-domain-pending.png)
+
+⚠️ **호스팅이 아니라 Authentication이다.** 화면이 비슷해 헷갈린다.
+
+파란 띠의 **「안내」**를 누르면 값 넷이 나온다.
+
+![메일용 DNS 값 넷](images/domain-mail-setup-2026-09-01/21-auth-dns-values.png)
+
+| 유형 | 이름 | 값 |
+|---|---|---|
+| TXT | (비움) | `v=spf1 include:_spf.firebasemail.com ~all` |
+| TXT | (비움) | `firebase=connection-sense` |
+| CNAME | `firebase1._domainkey` | `mail-connectionsense-co-kr.dkim1._domainkey.firebasemail.com` |
+| CNAME | `firebase2._domainkey` | `mail-connectionsense-co-kr.dkim2._domainkey.firebasemail.com` |
+
+🚨 **Firebase는 SPF를 「추가」하라고 안내하지만, 이미 SPF가 있으면 「수정」해서
+한 줄에 합쳐야 한다.** 그대로 추가하면 두 줄이 되어 **SPF가 통째로 무효**가 된다.
+`connectionsense.co.kr`에는 SPF가 없었으므로 그냥 넣었다.
+
+![닷네임코리아 최종 상태](images/domain-mail-setup-2026-09-01/22-dotname-mail-records.png)
+
+- ⚠️ CNAME 값 끝의 점(`.`)은 **빼고** 넣는다.
+- ⚠️ 서브도메인 칸에 `.connectionsense.co.kr`을 붙이지 않는다 — 자동으로 붙는다.
+- ⚠️ `dkim1`↔`firebase1`, `dkim2`↔`firebase2` 숫자를 맞춘다.
+
+**확인은 실측 55분** 걸렸다(콘솔 안내는 최대 48시간).
+
+![완료 — 발신 주소가 바뀌었다](images/domain-mail-setup-2026-09-01/23-auth-done.png)
+
+#### (다) 결과 — 받은편지함으로 온다
+
+![실제로 받은 메일](images/domain-mail-setup-2026-09-01/24-mail-received.png)
+
+```
+발신자 이름   커넥션센스
+발신 주소     noreply@connectionsense.co.kr
+답장 주소     connectionsense@creamhouse.net
+제목·본문     %APP_NAME% → 「커넥션센스」로 자동 치환
+```
+
+📌 **`%APP_NAME%`은 프로젝트 「공개용 이름」을 쓴다**(프로젝트 이름이 아니다).
+설정 → 일반 → 공개 설정 → 공개용 이름 = **커넥션센스**. 그래서 **제목도 본문도
+손댈 필요가 없었다.**
+
+⚠️ **「이메일 주소 인증」과 「이메일 주소 변경」 템플릿의 본문은 수정할 수 없다**
+(구글이 스팸·피싱 악용을 막으려고 잠가 뒀다). **비밀번호 재설정만 수정 가능.**
+공개용 이름을 바꾸는 것이 본문까지 바꾸는 유일한 방법이다.
+
+⚠️ **템플릿 저장에는 횟수 제한이 있다.** 연달아 여러 개를 고치면
+*"현재 이 프로젝트에서는 이메일 템플릿 업데이트를 사용할 수 없습니다"*가 뜬다.
+시간이 지나면 풀린다.
+
+⚠️ **커스텀 도메인이 「확인 진행 중」인 동안에는 템플릿 저장이 막힌다.**
+화면은 저장된 것처럼 보이지만 서버에는 안 들어간다. **파란 띠의 「취소」를 눌러
+잠금을 풀고 저장한 뒤 다시 신청**하면 된다(DNS는 그대로 두면 재신청이 빠르다).
+
+#### (라) DMARC — SPF·DKIM 다음 단계
+
+**둘 다 있어도 DMARC가 없으면 절반만 한 것이다.** 받는 쪽에 *"검사가 실패하면
+어떻게 하라"*를 알려 주고, **사칭 시도를 보고서로 받는다.**
+
+**두 도메인 모두에 넣었다.**
+
+| 도메인 | 화면 | 호스트 이름 |
+|---|---|---|
+| `creamhouse.net` | DNSEver → TXT 관리 | `_dmarc` |
+| `connectionsense.co.kr` | 닷네임코리아 → TXT 레코드 | `_dmarc` |
+
+```
+v=DMARC1; p=none; rua=mailto:connectionsense@creamhouse.net
+```
+
+⚠️ **`p=none`은 아무것도 막지 않는다** — 보고만 받는 설정이라 메일이 차단될
+위험이 없다. 몇 주 지켜보고 문제가 없으면 그때 `p=quarantine` → `p=reject`로
+단계를 올린다. **처음부터 강하게 걸면 정상 메일이 막힌다.**
+
+⚠️ **호스트 이름에 `_dmarc`를 반드시 넣는다.** 비워 두면 루트 TXT에 들어가
+SPF 옆에 엉뚱한 줄이 생긴다.
+
+### 3-5-4. 값이 깨졌는지 한 번에 재는 법
+
+```bash
+D=connectionsense.co.kr    # 또는 creamhouse.net
+dig +short TXT $D | grep spf          # SPF — 반드시 한 줄
+dig +short TXT _dmarc.$D              # DMARC
+dig +short CNAME firebase1._domainkey.$D
+dig +short CNAME firebase2._domainkey.$D
+curl -s -o /dev/null -w "%{http_code}\n" https://$D/
+```
+
+⚠️ **공개 DNS(8.8.8.8)와 권한 네임서버가 다를 수 있다.** 확인이 안 되면
+권한 서버에 직접 물어본다.
+
+```bash
+for ns in $(dig +short NS $D); do dig +short TXT $D @$ns; done
+```
+
+### 3-5-5. ⬜ 아직 안 한 것
+
+| 항목 | 왜 | 언제 |
+|---|---|---|
+| 법적 고지를 대표 도메인으로 | 지금 `connection-sense.web.app` — 옮기면 앱·스토어·소셜 콘솔의 URL을 **전부** 고쳐야 한다 | 신중히, 한 번에 |
+| 비밀번호 재설정 화면 자체 제작 | Firebase 기본 화면이 새 비밀번호를 **한 번만** 받는다(추가 641·649) | 도메인이 섰으니 착수 가능 |
+| 작업 URL(`%LINK%`) 교체 | 지금 `connection-sense.firebaseapp.com/__/auth/action` | 위 화면을 만들 때 함께 |
+| `creamhouse.net`의 Firebase DKIM 제거 | 발신을 옮겨서 안 쓰인다. **다만 무해하고 SPF 조회도 여유 있어 급하지 않다** | 정리할 때 |
+
+---
+
 ## 4. 참고 — 이 프로젝트에서 쓰는 주소 전부
 
 **주의**: Firebase Blaze 결제, Google Cloud 결제, Google AI Studio(Gemini)
@@ -336,8 +638,12 @@ backlog 추가 151 참고 (1,000원 판매 → 부가세·수수료 제하고 �
 | Firebase — Authentication(로그인 방법) | https://console.firebase.google.com/project/connection-sense/authentication/providers | Apple 제공사 등록(P-3) |
 | Firebase — Authentication(사용자) | https://console.firebase.google.com/project/connection-sense/authentication/users | 계정 정리·인증 상태 확인 |
 | Firebase — App Distribution | https://console.firebase.google.com/project/connection-sense/appdistribution | Play 트랙 쓰기 전 임시 테스터 배포 |
-| Firebase — Hosting | https://console.firebase.google.com/project/connection-sense/hosting/sites | `legal`·`admin` 두 사이트 |
+| Firebase — Hosting | https://console.firebase.google.com/project/connection-sense/hosting/sites | **`legal`·`admin`·`site` 세 사이트**(2026-09-01 정정 — `site`가 홍보 페이지). 3-5-2 참고 |
 | **관리자 콘솔(운영)** | https://connection-sense-admin.web.app | 공지·1:1문의·법적문서 편집. `connectionsense@creamhouse.net`으로 **Google 계정 로그인** |
+| **홈페이지(공개)** | https://connectionsense.co.kr | 홍보 페이지. Firebase Hosting `site` 타겟(`docs/site`). 3-5-2 참고 |
+| 도메인 등록·DNS — 닷네임코리아 | https://www.dotname.co.kr | `connectionsense.co.kr` 외 4개. **웹·인증메일 DNS는 여기** |
+| 도메인 DNS — DNSEver | https://kr.dnsever.com | `creamhouse.net`(회사 메일). **위와 다른 곳이다** |
+| Google Workspace 관리 콘솔 | https://admin.google.com | 회사 메일 DKIM. 앱 → Google Workspace → Gmail → 이메일 인증 |
 | 법적 고지(공개) | https://connection-sense.web.app | 스토어 양식에 넣는 URL — 3-3 참고 |
 | 관리자 웹 콘솔(공지/문의/법적문서/경영리포트) | Firebase Hosting `admin` 타겟으로 배포 (`firebase deploy --only hosting:admin`) | |
 
