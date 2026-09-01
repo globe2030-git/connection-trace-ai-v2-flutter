@@ -305,6 +305,7 @@ class _AddressSearchViewState extends State<AddressSearchView> {
           ],
         ),
         leading: IconButton(
+          tooltip: '주소 검색 닫기',
           icon: const Icon(Icons.close),
           onPressed: () => Navigator.pop(context),
         ),

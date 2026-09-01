@@ -222,6 +222,7 @@ class _ManualCommLogModalViewState extends State<ManualCommLogModalView> {
                         ),
                       ),
                       IconButton(
+                        tooltip: '닫기',
                         icon: const Icon(
                           Icons.close,
                           color: AppColors.textSecondary,

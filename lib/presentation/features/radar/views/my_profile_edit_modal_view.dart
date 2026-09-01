@@ -667,6 +667,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
                         ],
                       ),
                       IconButton(
+                        tooltip: '닫기',
                         icon: const Icon(
                           Icons.close,
                           color: AppColors.textSecondary,
@@ -1019,6 +1020,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
               ),
             ),
           IconButton(
+            tooltip: '안내 닫기',
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             icon: Icon(Icons.close, size: 16, color: color),

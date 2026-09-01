@@ -1690,6 +1690,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
+                        tooltip: '닫기',
                         icon: const Icon(
                           Icons.close,
                           color: Colors.white,
@@ -1706,6 +1707,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         ),
                       ),
                       IconButton(
+                        tooltip: _isFlashOn ? '플래시 끄기' : '플래시 켜기',
                         icon: Icon(
                           _isFlashOn ? Icons.flash_on : Icons.flash_off,
                           color: _isFlashOn
@@ -2124,6 +2126,7 @@ class _CameraScanModalViewState extends State<CameraScanModalView>
                         child: SafeArea(
                           bottom: false,
                           child: IconButton(
+                            tooltip: '닫기',
                             icon: const Icon(
                               Icons.close,
                               color: Colors.white,

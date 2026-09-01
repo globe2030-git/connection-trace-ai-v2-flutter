@@ -437,6 +437,7 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
                         ),
                       ),
                       IconButton(
+                        tooltip: '브리핑 닫기',
                         icon: const Icon(
                           Icons.close,
                           color: AppColors.textPrimary,
