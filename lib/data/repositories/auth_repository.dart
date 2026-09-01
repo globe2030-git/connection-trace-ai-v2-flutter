@@ -110,6 +110,22 @@ class AuthRepository extends ChangeNotifier {
   /// 때만 동작해야 한다.
   String? get firebaseUid => fb_auth.FirebaseAuth.instance.currentUser?.uid;
 
+  /// 이 계정이 **만들어진 시각**(UTC). 번호 확인 게이트의 「신규 가입자만」을
+  /// 가르는 기준이다(추가 645).
+  ///
+  /// ⭐ **Firebase Auth 가 주는 값을 쓴다.** 계정이 생길 때 서버가 한 번
+  /// 찍고 그 뒤로 바뀌지 않으며, 기존 이용자에게도 **이미 들어 있다** —
+  /// 새로 필드를 만들면 그 전에 가입한 사람에게는 값이 없어서 소급이 안 된다.
+  ///
+  /// ⚠️ `users/{uid}.cohortWeek`을 쓰려다 그만두었다. 그 필드는 가입 시각이
+  /// 아니라 **「계측을 배포한 뒤 처음 로그인한 주차」**다(`index.ts`가
+  /// 없으면 그때 채운다). 기존 이용자가 오늘 로그인하면 **이번 주로 채워져
+  /// 신규로 보인다** — 막으려던 사람을 정확히 반대로 가른다.
+  ///
+  /// 🚨 **없으면 `null`이다.** 부르는 쪽은 모르는 것을 신규로 보면 안 된다.
+  DateTime? get firebaseAccountCreatedAt =>
+      fb_auth.FirebaseAuth.instance.currentUser?.metadata.creationTime;
+
   /// 이메일 계정인데 아직 이메일 소유 확인(인증 메일 클릭)을 안 했는가
   /// (추가 632, §7 — 설정 화면 배지·재발송 버튼용).
   ///

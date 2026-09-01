@@ -91,6 +91,81 @@ class PhoneVerificationService {
   /// 🚨 **끄는 쪽이 기본값이다.** 문서가 없어도, 필드가 없어도, 읽기에
   /// 실패해도 **안 막는다.** *"설정이 없으면 막는다"*가 되면 설정을 깜빡한
   /// 것이 사람을 가두는 일이 된다.
+  /// 게이트 설정 한 벌. `config/phoneVerification`을 **한 번만** 읽는다.
+  ///
+  /// - [enforce] — 스위치. 없으면 `false`(꺼짐).
+  /// - [enforceFrom] — **이 시각 이후에 만들어진 계정만** 대상이다.
+  ///   `null`이면 **범위를 모른다는 뜻이고, 그때는 아무도 안 막는다.**
+  ///
+  /// 🚨 **둘을 같은 문서에 둔 것이 설계다.** 갈라 두면 `enforce`만 만들고
+  /// `enforceFrom`을 빠뜨리는 사고가 나는데, 그러면 **기존 이용자 전원이
+  /// 인증 화면에 갇힌다** — 건너뛰기도 뒤로가기도 없어서 나갈 길이 없다.
+  static Future<({bool enforce, DateTime? enforceFrom})> loadSettings() async {
+    final off = (enforce: false, enforceFrom: null);
+    if (kDebugMode && _forceGateInDebug) {
+      // 검증용 강제 켜기는 **범위 제한 없이** 켠다 — 디버그 빌드에서만 산다.
+      return (enforce: true, enforceFrom: DateTime.utc(1970));
+    }
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('config')
+          .doc('phoneVerification')
+          .get();
+      final data = snap.data();
+      if (data == null) return off;
+      if (data['enforce'] != true) return off;
+      final raw = data['enforceFrom'];
+      final from = switch (raw) {
+        Timestamp t => t.toDate().toUtc(),
+        // 숫자로 넣는 실수도 받아 준다 — 콘솔에서 손으로 만드는 값이다.
+        final num ms => DateTime.fromMillisecondsSinceEpoch(
+          ms.toInt(),
+          isUtc: true,
+        ),
+        _ => null,
+      };
+      return (enforce: true, enforceFrom: from);
+    } catch (e) {
+      debugPrint('phoneVerification 설정 조회 실패: ${e.runtimeType}');
+      return off;
+    }
+  }
+
+  /// 이 계정이 게이트의 **대상인가** — 「신규 가입자만」의 실체.
+  ///
+  /// 🚨 **이 함수가 없으면 「신규 한정」은 말뿐이다.** 예전에는 게이트가
+  /// `phoneVerifiedAt` 유무만 봤는데, 그 필드는 **기존 이용자에게 없다.**
+  /// 그래서 스위치를 켜는 순간 기존 회원까지 전부 막혔다 — 방침에는
+  /// *"기존 회원의 처리 내용은 달라지지 않는다"*고 적혀 있었으므로,
+  /// 그대로 뒀으면 **켜는 순간 방침 위반**이 됐다(개인정보처리방침 30조 3항:
+  /// 방침과 실제가 다르면 정보주체에게 유리한 쪽이 적용된다).
+  ///
+  /// ⚠️ **판단이 서지 않으면 전부 「안 막는다」로 기운다.**
+  ///
+  /// ```
+  /// 스위치가 꺼져 있다        → 안 막는다
+  /// enforceFrom 이 없다        → 안 막는다   (범위를 모른다)
+  /// 계정 생성 시각을 모른다     → 안 막는다   (옛 계정일 수 있다)
+  /// 생성 시각이 기준보다 앞    → 안 막는다   (기존 회원)
+  /// ```
+  ///
+  /// 📌 **경계는 「기준 시각과 같으면 대상」이다.** 기준을 시행일 0시로 두면
+  /// 그날 0시 정각에 만들어진 계정이 신규가 된다.
+  static bool isInScope({
+    required ({bool enforce, DateTime? enforceFrom}) settings,
+    required DateTime? accountCreatedAt,
+  }) {
+    if (!settings.enforce) return false;
+    final from = settings.enforceFrom;
+    if (from == null) return false;
+    if (accountCreatedAt == null) return false;
+    return !accountCreatedAt.toUtc().isBefore(from.toUtc());
+  }
+
+  /// 🚨 **[loadSettings]의 스위치만 보는 옛 이름.** 범위 판정이 빠져 있으니
+  /// 게이트를 걸지 말지 정하는 데 이것만 써서는 안 된다 — [isInScope]와
+  /// 함께 봐야 한다.
+  @visibleForTesting
   static Future<bool> isGateEnabled() async {
     // 🚨 **디버그 빌드에서만 강제로 켤 수 있다.** 검증용이다.
     //
