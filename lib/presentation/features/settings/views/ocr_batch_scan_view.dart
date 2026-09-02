@@ -278,6 +278,11 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           '이름',
           '회사',
           '직함',
+          // 부서는 직함 칸에 넣지 않고 따로 뺀다(2026-08-19 사용자 확정,
+          // tool/ocr_review/split_department.py). 파서는 뽑고 있었는데
+          // **이 열이 없어 채점 도구가 부서를 아예 못 봤다** — 자리는
+          // score_matrix.py 의 ORDER 와 맞춘다(직함 다음, 휴대폰 앞).
+          '부서',
           '휴대폰',
           '사무실',
           '팩스',
@@ -313,6 +318,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.name ?? '(스캔 실패)',
           r?.company ?? '',
           r?.title ?? '',
+          r?.department ?? '',
           r?.phone ?? '',
           r?.officePhone ?? '',
           r?.fax ?? '',
