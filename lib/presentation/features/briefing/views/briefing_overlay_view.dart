@@ -11,11 +11,14 @@ import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/ai_usage_service.dart';
 import '../../../../core/services/pilot_events_service.dart';
 import '../../../../core/services/reconnect_priority_service.dart';
+import '../../../../core/app_version.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/error_report_draft.dart';
 import '../../../common/ai_usage_chip.dart';
 import '../../../../data/models/contact_model.dart';
 import '../../../../data/repositories/contacts_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
+import '../../settings/views/inquiry_view.dart';
 import '../../../common/call_picker_sheet.dart';
 import '../../../common/contact_avatar.dart';
 import '../../../common/glass_card.dart';
@@ -52,6 +55,13 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
   late List<String> _points;
   bool _isGenerating = false;
   String? _errorMessage;
+
+  // 실패를 1:1 문의로 넘길 때 실을 값(P2-11). 사람이 읽는 _errorMessage 와
+  // 따로 둔다 — 문구는 다듬느라 바뀌지만 코드는 안 바뀌어야 같은 원인끼리
+  // 묶인다. ⚠️ 예외 원문은 담지 않는다(무엇이 실려 오는지 우리가 못 정한다).
+  String? _errorCode;
+  String? _errorCodeLabel;
+  DateTime? _errorAt;
 
   // 이 화면(같은 상대방의 AI 브리핑을 보는 동안)을 여는 중에는 재동의 없이
   // "다시 시도"/새로고침이 되도록 최초 동의 결과를 들고 있는다. 화면을 닫았다
@@ -125,6 +135,9 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
     setState(() {
       _isGenerating = true;
       _errorMessage = null;
+      _errorCode = null;
+      _errorCodeLabel = null;
+      _errorAt = null;
     });
 
     try {
@@ -156,11 +169,42 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
         _errorMessage = e is AiBriefingException
             ? e.message
             : '대화 포인트를 생성하지 못했습니다: $e';
+        // 예외가 우리 것이 아니면 코드를 지어내지 않는다 — 분류되지 않았다고
+        // 그대로 적는다. 없는 분류를 만들면 문의를 묶을 때 사람을 속인다.
+        _errorCode = e is AiBriefingException ? e.code : 'ai-unknown';
+        _errorCodeLabel = e is AiBriefingException
+            ? e.codeLabel
+            : '분류되지 않은 실패';
+        _errorAt = DateTime.now();
       });
     }
     // 성공·실패와 무관하게 잔여 횟수를 다시 읽는다(서버가 호출을 셌을 수 있음).
     // latest에 방송돼 상단 칩과 홈·설정 칩이 함께 갱신된다.
     await AiUsageService.fetch();
+  }
+
+  /// 지금 난 오류를 1:1 문의로 넘긴다(P2-11).
+  ///
+  /// 제목·본문을 **채워만 두고 보내지 않는다.** 사용자가 읽고 고쳐서 직접
+  /// 보낸다. 🚨 본문에 **상대방(명함 주인) 정보는 넣지 않는다** — 받는 쪽이
+  /// 알아야 하는 것은 "어떤 실패였나"이지 "누구에게서 났나"가 아니다.
+  /// 정말 필요하면 그때 물으면 된다.
+  Future<void> _reportError() async {
+    const screenLabel = 'AI 대화 가이드';
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InquiryView(
+          initialSubject: buildErrorReportSubject(screenLabel),
+          initialMessage: buildErrorReportBody(
+            code: _errorCode ?? 'ai-unknown',
+            codeLabel: _errorCodeLabel ?? '분류되지 않은 실패',
+            screenLabel: screenLabel,
+            occurredAt: _errorAt ?? DateTime.now(),
+            appVersion: AppVersion.display,
+          ),
+        ),
+      ),
+    );
   }
 
   /// F-08 — "AI에 보낼 정보"를 다시 열어 보고 고친다.
@@ -669,15 +713,28 @@ class _BriefingOverlayViewState extends State<BriefingOverlayView>
                               ],
                             ),
                             const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: _generate,
-                              child: const Text(
-                                '다시 시도',
-                                style: TextStyle(
-                                  color: AppColors.accentText,
-                                  fontWeight: FontWeight.bold,
+                            Row(
+                              children: [
+                                TextButton(
+                                  onPressed: _generate,
+                                  child: const Text(
+                                    '다시 시도',
+                                    style: TextStyle(
+                                      color: AppColors.accentText,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                TextButton(
+                                  onPressed: _reportError,
+                                  child: const Text(
+                                    '이 오류 신고하기',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
