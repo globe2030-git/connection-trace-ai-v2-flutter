@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/services/account_bootstrap_service.dart';
+import '../../core/services/terms_consent_service.dart';
 import '../../core/services/ad_consent_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/repositories/auth_repository.dart';
@@ -113,6 +114,13 @@ class _AuthGateState extends State<AuthGate> {
     // 실패해도 로그인 자체를 막지 않는다(AccountBootstrapService 내부에서
     // 이미 모든 예외를 삼킴 — rebackupAllContacts류 부가호출과 동일 패턴).
     unawaited(AccountBootstrapService.call());
+
+    // 필수 동의(약관·방침·만 14세)를 못 남긴 채로 가입한 계정이 있으면 여기서
+    // 다시 시도한다(P1-17). 🚨 `firestore.rules` 에 필드가 추가·배포되기 전에
+    // 가입한 사람은 기록이 거부되는데, 재시도가 없으면 **그 사람들의 동의가
+    // 영영 안 남는다.** 위 부트스트랩과 같은 이유로 기다리지 않고 실패해도
+    // 로그인을 막지 않는다 — 동의는 이미 받았고 못 남긴 것은 우리 쪽 사정이다.
+    unawaited(TermsConsentService().retryPendingIfAny(uid));
 
     SharedPreferences prefs;
     try {

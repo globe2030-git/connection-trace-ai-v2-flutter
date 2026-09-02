@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/services/ad_consent_service.dart';
+import '../../../../core/services/terms_consent_service.dart';
 import '../../../../core/utils/image_file_cache.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../data/models/sns_auth_provider.dart';
@@ -164,6 +165,11 @@ class _LoginViewState extends State<LoginView> {
       push: consent.adPush,
       emailChannelAvailable: adEmailChannelAvailable(provider),
     );
+    // 필수 동의 3종(약관·방침·만 14세)은 ⑨에서 이미 받았지만 지금까지
+    // 아무 데도 안 남았다(P1-17). 광고 동의와 같은 자리에서 함께 남긴다.
+    // ⚠️ 실패해도 가입을 막지 않는다 — 동의는 이미 받았고, 못 남긴 것은
+    // 우리 쪽 사정이다. 대신 표시를 남겨 다음 실행에서 다시 시도한다.
+    await TermsConsentService().recordSignupConsent(uid);
   }
 
   /// 로그인이 진행 중이라 버튼이 눌리지 않을 때 이유를 말한다(2026-08-30,
