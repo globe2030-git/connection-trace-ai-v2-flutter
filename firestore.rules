@@ -581,6 +581,19 @@ service cloud.firestore {
         'adConsentAt',
         'adConsentChangedAt',
         'adConsentNotifiedAt',
+        // 필수 동의 3종(약관·개인정보처리방침·만 14세) 기록(P1-17).
+        // TermsConsentService 가 가입 직후 클라이언트에서 직접 쓴다 —
+        // 광고 동의와 같은 모양이다. ⚠️ 여기 빠뜨리면 쓰기가 **조용히**
+        // 거부되고, 화면은 「동의 완료」로 넘어간다. 위 accountSwitches 가
+        // 그렇게 빠져 있던 사례다.
+        // 🚨 시각이 둘인 이유: termsConsentAt 은 서버가 받은 때(신뢰값),
+        // termsConsentedAtDevice 는 사용자가 답한 때(참고값)다. 규칙 배포가
+        // 늦어 재시도로 들어오면 둘이 벌어지는데, 한 칸으로 합치면
+        // 「사용자가 늦게 동의했다」로 잘못 읽힌다.
+        // ⚠️ 지우지 않는다 — 동의 입증 자료다(adConsentAt 과 같은 원칙).
+        'termsConsentAt',
+        'termsConsentedAtDevice',
+        'termsConsentItems',
       ];
     }
 
