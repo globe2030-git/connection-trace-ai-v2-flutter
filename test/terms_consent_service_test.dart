@@ -89,13 +89,8 @@ void main() {
     // clientWritableUserFields() 에 필드가 없으면 **쓰기가 조용히 거부된다.**
     // accountSwitches 가 실제로 그렇게 빠져 있어 계정 전환 기록이 조용히
     // 실패하고 있던 전례가 이 저장소에 있다(firestore.rules 565~570행).
-    //
-    // ⚠️ 지금은 아직 규칙에 없다 — 코드와 규칙을 갈라 올리기로 했다
-    // (2026-09-02 globe2030님 결정). 그래서 이 테스트는 "있어야 한다"가
-    // 아니라 **"없으면 없다고 말한다"** 로 둔다. 규칙 PR 이 병합되면
-    // isFalse 를 isTrue 로 바꾸고 이 주석을 지운다.
 
-    test('현재 상태를 기록해 둔다 — 규칙에 아직 없다', () {
+    test('세 필드가 규칙 화이트리스트에 있다', () {
       final rules = File('firestore.rules').readAsStringSync();
       final start = rules.indexOf('clientWritableUserFields');
       expect(start, isNot(-1));
@@ -108,10 +103,10 @@ void main() {
       ].every((f) => block.contains("'$f'"));
       expect(
         has,
-        isFalse,
+        isTrue,
         reason:
-            '규칙에 필드가 들어왔다 — 규칙 PR 이 병합된 것이다. '
-            '이 테스트를 isTrue 로 뒤집고 위 주석을 지울 것',
+            '화이트리스트에서 빠지면 동의 기록이 조용히 거부되고 '
+            '화면은 「동의 완료」로 넘어간다',
       );
     });
 
