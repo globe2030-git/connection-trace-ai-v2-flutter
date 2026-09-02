@@ -278,6 +278,11 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           '이름',
           '회사',
           '직함',
+          // ⚠️ **부서는 파서가 뽑는데 이 표에 없어서 잴 수 없었다**(2026-09-02,
+          // 다른 세션의 정답지 대조에서 드러남 — 추가 658). `OcrScanResult`에는
+          // `department`가 있는데 여기만 빠져 있어 **부서만 교차 검증이 불가능한
+          // 칸**이었다. 뽑아 놓고 안 내보내면 없는 것과 같다.
+          '부서',
           '휴대폰',
           '사무실',
           '팩스',
@@ -313,6 +318,7 @@ class _OcrBatchScanViewState extends State<OcrBatchScanView> {
           r?.name ?? '(스캔 실패)',
           r?.company ?? '',
           r?.title ?? '',
+          r?.department ?? '',
           r?.phone ?? '',
           r?.officePhone ?? '',
           r?.fax ?? '',
