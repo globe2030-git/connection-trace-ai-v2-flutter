@@ -8,7 +8,22 @@ import '../../data/models/my_profile_model.dart';
 
 class AiBriefingException implements Exception {
   final String message;
-  AiBriefingException(this.message);
+
+  /// 1:1 문의 사전 채움에 싣는 오류 코드(P2-11). **사람이 읽는 [message]는
+  /// 문구를 다듬느라 바뀌지만 이 값은 안 바꾼다** — 문의가 쌓였을 때 같은
+  /// 원인끼리 묶는 것이 이 값의 유일한 일이다.
+  /// ⚠️ 문의 본문으로 서버에 저장되므로 **개인정보를 담지 않는다.**
+  final String code;
+
+  /// [code]를 사람이 읽게 옮긴 한 줄. 코드만 적으면 사용자가 자기가 무엇을
+  /// 보내는지 모른 채 보내게 된다.
+  final String codeLabel;
+
+  AiBriefingException(
+    this.message, {
+    this.code = 'ai-unknown',
+    this.codeLabel = '분류되지 않은 실패',
+  });
   @override
   String toString() => message;
 }
@@ -16,7 +31,12 @@ class AiBriefingException implements Exception {
 /// 서버 함수가 아직 배포되지 않았거나(`kAiServiceDeployed == false`) 함수를
 /// 찾지 못한 경우(`not-found`). 사용자가 할 수 있는 일이 없는 상태다.
 class AiServiceUnavailableException extends AiBriefingException {
-  AiServiceUnavailableException() : super('AI 브리핑 서비스 준비 중이에요. 곧 제공될 예정이에요.');
+  AiServiceUnavailableException()
+    : super(
+        'AI 브리핑 서비스 준비 중이에요. 곧 제공될 예정이에요.',
+        code: 'ai-unavailable',
+        codeLabel: 'AI 기능이 아직 켜지지 않음',
+      );
 }
 
 /// 서버는 살아 있는데 일시적으로 응답하지 못하는 경우(`unavailable`).
@@ -27,7 +47,11 @@ class AiServiceUnavailableException extends AiBriefingException {
 /// 잠시 후 되는 상황이므로 그렇게 말해야 한다.
 class AiServiceTemporarilyDownException extends AiBriefingException {
   AiServiceTemporarilyDownException()
-    : super('AI 서버가 잠시 응답하지 못하고 있어요. 잠시 후 다시 시도해 주세요.');
+    : super(
+        'AI 서버가 잠시 응답하지 못하고 있어요. 잠시 후 다시 시도해 주세요.',
+        code: 'ai-temporarily-down',
+        codeLabel: 'AI 서버가 일시적으로 응답하지 않음',
+      );
 }
 
 /// 앱 인증(App Check) 실패. 우리 앱임을 증명하지 못한 경우.
@@ -40,13 +64,16 @@ class AiAppCheckRejectedException extends AiBriefingException {
     : super(
         '앱 인증에 실패했어요. 앱을 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.\n'
         '계속 같은 문제가 생기면 설정 → 1:1 문의로 알려주세요.',
+        code: 'ai-appcheck-rejected',
+        codeLabel: '앱 인증(App Check) 실패',
       );
 }
 
 /// 서버가 하루/월 사용 한도 초과로 거절했을 때. 메시지는 서버
 /// (functions/src/index.ts의 HttpsError)가 준 안내문을 그대로 쓴다.
 class AiQuotaExceededException extends AiBriefingException {
-  AiQuotaExceededException(super.message);
+  AiQuotaExceededException(super.message)
+    : super(code: 'ai-quota-exceeded', codeLabel: 'AI 사용 한도에 도달');
 }
 
 /// 커넥션센스가 제공하는 AI로 상대방과의 대화 포인트를 생성한다.
@@ -141,7 +168,13 @@ class AiBriefingService {
       final points = (result.data['talkingPoints'] as List<dynamic>? ?? [])
           .map((e) => e.toString())
           .toList();
-      if (points.isEmpty) throw AiBriefingException('AI가 빈 응답을 반환했습니다.');
+      if (points.isEmpty) {
+        throw AiBriefingException(
+          'AI가 빈 응답을 반환했습니다.',
+          code: 'ai-empty-response',
+          codeLabel: 'AI가 빈 응답을 보냄',
+        );
+      }
       return points;
     } on FirebaseFunctionsException catch (e) {
       // 서버가 주는 코드별로 "사용자가 무엇을 할 수 있는지"가 다르다.
@@ -174,15 +207,27 @@ class AiBriefingService {
           throw AiQuotaExceededException(e.message ?? '사용 한도에 도달했어요.');
         default:
           // 남은 경우에도 영문이 새어 나가지 않게 우리 문구를 쓴다.
-          throw AiBriefingException('AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.');
+          throw AiBriefingException(
+            'AI 응답을 받지 못했어요. 잠시 후 다시 시도해 주세요.',
+            code: 'ai-server-error',
+            codeLabel: '분류되지 않은 서버 오류',
+          );
       }
     } on TimeoutException {
-      throw AiBriefingException('응답이 오지 않았어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.');
+      throw AiBriefingException(
+        '응답이 오지 않았어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.',
+        code: 'ai-timeout',
+        codeLabel: 'AI 응답이 제때 오지 않음',
+      );
     } catch (e) {
       // 통신이 아예 안 되는 경우 등 Functions 예외로 오지 않는 실패도 있다.
       // 여기서 막지 않으면 화면에 개발자용 예외 문자열이 그대로 나온다.
       debugPrint('AI 브리핑 실패: ${e.runtimeType}');
-      throw AiBriefingException('AI 가이드를 만들지 못했어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.');
+      throw AiBriefingException(
+        'AI 가이드를 만들지 못했어요. 통신 상태를 확인한 뒤 다시 시도해 주세요.',
+        code: 'ai-network',
+        codeLabel: '앱과 서버 사이 통신 실패',
+      );
     }
   }
 

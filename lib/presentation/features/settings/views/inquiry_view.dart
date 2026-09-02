@@ -8,7 +8,16 @@ import '../../../../data/repositories/inquiry_repository.dart';
 import '../../../common/glass_card.dart';
 
 class InquiryView extends StatefulWidget {
-  const InquiryView({super.key});
+  /// 오류 화면에서 넘어올 때 미리 채워 둘 제목·본문(P2-11).
+  ///
+  /// 기본값이 `null`이라 기존 호출부(`const InquiryView()`)는 그대로 둔다 —
+  /// `const` 생성이 깨지지 않도록 **객체를 기본값으로 두지 않는다.**
+  ///
+  /// 📌 채우기만 하고 **보내지는 않는다.** 사용자가 읽고 고쳐서 직접 보낸다.
+  final String? initialSubject;
+  final String? initialMessage;
+
+  const InquiryView({super.key, this.initialSubject, this.initialMessage});
 
   @override
   State<InquiryView> createState() => _InquiryViewState();
@@ -16,6 +25,30 @@ class InquiryView extends StatefulWidget {
 
 class _InquiryViewState extends State<InquiryView> {
   final _repo = InquiryRepository();
+
+  @override
+  void initState() {
+    super.initState();
+    // 사전 채움이 있으면 목록을 거치지 않고 작성 화면을 바로 연다 — 오류
+    // 화면에서 "신고하기"를 눌러 온 사람에게 목록을 먼저 보여주면, 방금
+    // 하려던 일을 한 번 더 찾아야 한다.
+    if (widget.initialSubject == null && widget.initialMessage == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthRepository>();
+      final uid = auth.firebaseUid;
+      // 로그인 전이면 열지 않는다. 이 화면이 이미 로그인 안내를 그린다.
+      if (uid == null) return;
+      _openCompose(
+        context,
+        uid,
+        auth.displayName ?? '',
+        auth.email ?? '',
+        subject: widget.initialSubject,
+        message: widget.initialMessage,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,8 +150,10 @@ class _InquiryViewState extends State<InquiryView> {
     BuildContext context,
     String uid,
     String userName,
-    String email,
-  ) async {
+    String email, {
+    String? subject,
+    String? message,
+  }) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -128,6 +163,8 @@ class _InquiryViewState extends State<InquiryView> {
         uid: uid,
         userName: userName,
         email: email,
+        initialSubject: subject,
+        initialMessage: message,
       ),
     );
   }
@@ -164,12 +201,16 @@ class _InquiryComposeSheet extends StatefulWidget {
   final String uid;
   final String userName;
   final String email;
+  final String? initialSubject;
+  final String? initialMessage;
 
   const _InquiryComposeSheet({
     required this.repo,
     required this.uid,
     required this.userName,
     required this.email,
+    this.initialSubject,
+    this.initialMessage,
   });
 
   @override
@@ -177,8 +218,12 @@ class _InquiryComposeSheet extends StatefulWidget {
 }
 
 class _InquiryComposeSheetState extends State<_InquiryComposeSheet> {
-  final _subjectController = TextEditingController();
-  final _messageController = TextEditingController();
+  late final _subjectController = TextEditingController(
+    text: widget.initialSubject ?? '',
+  );
+  late final _messageController = TextEditingController(
+    text: widget.initialMessage ?? '',
+  );
   bool _submitting = false;
 
   @override
