@@ -36,30 +36,51 @@ void main() {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
     test('처음에는 밀린 것이 없다', () async {
-      expect(await TermsConsentService().pendingUid(), isNull);
+      expect(await TermsConsentService().pendingCount(), 0);
+      expect(await TermsConsentService().pendingConsentedAt('uid-A'), isNull);
     });
 
-    test('⭐ 다른 계정으로 로그인하면 남의 문서에 쓰지 않고 표시만 지운다', () async {
+    test('🚨 밀린 표시에 「그때의 시각」이 함께 담긴다', () async {
+      // 시각을 안 담고 uid 만 담으면, 재시도가 성공한 시점의 시각이 남는다.
+      // 그러면 "동의 시각은 처음 동의한 때"라는 원칙이 깨진다 — 사흘 뒤에
+      // 규칙이 배포되면 동의 시각이 사흘 뒤로 기록된다.
       SharedPreferences.setMockInitialValues({
-        'terms_consent_pending_uid_v1': 'uid-A',
+        'terms_consent_pending_v2':
+            '{"uid-A":"2026-09-02T05:00:00.000Z"}',
+      });
+      final at = await TermsConsentService().pendingConsentedAt('uid-A');
+      expect(at, isNotNull);
+      expect(at!.toUtc().toIso8601String(), '2026-09-02T05:00:00.000Z');
+    });
+
+    test('⭐ 다른 계정으로 로그인해도 원래 계정의 몫을 지우지 않는다', () async {
+      // 지워 버리면 그 계정으로 돌아와도 다시 못 쓴다 — 그 사람의 동의가
+      // 영영 안 남는다.
+      SharedPreferences.setMockInitialValues({
+        'terms_consent_pending_v2':
+            '{"uid-A":"2026-09-02T05:00:00.000Z"}',
       });
       final svc = TermsConsentService();
-      expect(await svc.pendingUid(), 'uid-A');
-
-      // 계정 B 로 로그인한 상태에서 재시도가 돌면, A 의 기록을 B 가 대신
-      // 남기면 안 된다. 서버를 부르지 않고 표시만 지우는지 본다.
-      await svc.retryPendingIfAny('uid-B');
+      await svc.retryPendingIfAny('uid-B'); // 서버를 부르지 않는다
       expect(
-        await svc.pendingUid(),
-        isNull,
-        reason: '남의 uid 로 남은 표시는 지워야 다음 로그인마다 헛시도가 안 쌓인다',
+        await svc.pendingConsentedAt('uid-A'),
+        isNotNull,
+        reason: 'A 로 돌아왔을 때 다시 시도할 수 있어야 한다',
       );
     });
 
     test('밀린 것이 없으면 재시도는 아무 일도 하지 않는다', () async {
       // Firestore 를 부르지 않는다 — 부르면 테스트가 초기화 오류로 죽는다.
       await TermsConsentService().retryPendingIfAny('uid-A');
-      expect(await TermsConsentService().pendingUid(), isNull);
+      expect(await TermsConsentService().pendingCount(), 0);
+    });
+
+    test('표시가 깨져 있어도 로그인을 막지 않는다', () async {
+      SharedPreferences.setMockInitialValues({
+        'terms_consent_pending_v2': '이건 JSON 이 아니다',
+      });
+      expect(await TermsConsentService().pendingCount(), 0);
+      await TermsConsentService().retryPendingIfAny('uid-A');
     });
   });
 
@@ -80,12 +101,13 @@ void main() {
       expect(start, isNot(-1));
       final block = rules.substring(start, start + 2000);
 
-      final hasAt = block.contains("'${TermsConsentService.fieldConsentAt}'");
-      final hasItems = block.contains(
-        "'${TermsConsentService.fieldConsentItems}'",
-      );
+      final has = [
+        TermsConsentService.fieldConsentAt,
+        TermsConsentService.fieldConsentItems,
+        TermsConsentService.fieldConsentedAtDevice,
+      ].every((f) => block.contains("'$f'"));
       expect(
-        hasAt && hasItems,
+        has,
         isFalse,
         reason:
             '규칙에 필드가 들어왔다 — 규칙 PR 이 병합된 것이다. '
@@ -93,7 +115,7 @@ void main() {
       );
     });
 
-    test('서비스가 쓰는 필드는 둘뿐이다', () {
+    test('서비스가 쓰는 필드는 셋뿐이다', () {
       // 필드가 늘면 규칙도 함께 늘려야 한다. 늘어난 것을 여기서 알아챈다.
       final src = File(
         'lib/core/services/terms_consent_service.dart',
@@ -104,7 +126,7 @@ void main() {
           .toList();
       expect(
         fields,
-        ['termsConsentAt', 'termsConsentItems'],
+        ['termsConsentAt', 'termsConsentItems', 'termsConsentedAtDevice'],
         reason: '필드를 늘렸으면 firestore.rules 화이트리스트도 함께 늘려야 한다',
       );
     });
