@@ -35,7 +35,7 @@ $ADB devices
 | 기기 | ID | 쓰임 |
 |---|---|---|
 | SM F966N (갤럭시 폴드, USB) | `R3CY90SHN4F` | **기본 선택.** 배선이 안정적이고 `adb`로 저장소 덤프까지 된다 |
-| iPhone 16 Pro (**유선 USB**) | `00008140-001971541862201C` | iOS 특유 문제(키체인 잔존 등) 볼 때만. ⚠️ **`flutter run` 은 이 기기에 못 붙는다 — §2-1 을 볼 것** |
+| iPhone 16 Pro (**유선 USB**) | `00008140-001971541862201C` | iOS 특유 문제(키체인 잔존 등) 볼 때만. `flutter run` 으로 붙는다(2026-09-03 확인). 막히면 §2-1 |
 | macOS 데스크톱 | `macos` | 실기기가 없을 때. 카메라·명함 스캔은 확인 불가 |
 | Chrome (웹) | `chrome` | 레이아웃만 급히 볼 때. 네이티브 플러그인 대부분 안 돎 |
 
@@ -69,9 +69,7 @@ until grep -qE "Flutter run key commands|FAILURE|Gradle task .* failed|Error" "$
 - **테스터에게 줄 빌드는 이 방식으로 만들지 않는다.** debug 빌드에는 로그인
   화면에 "로그인 건너뛰기" 버튼이 그대로 보인다. 배포는 `tool/build_app.sh`.
 
-## 2-1. 🚨 아이폰은 이 경로로 하지 않는다 — `flutter run` 이 못 붙는다
-
-위 §2 의 `flutter run` 은 **갤럭시 폴드용**이다. **아이폰에서는 이 경로가 실패한다.**
+## 2-1. 아이폰이 `Error launching application` 으로 막히면 — Xcode 를 먼저 올린다
 
 ```
 Xcode build done.                    ← 빌드는 성공한다
@@ -80,26 +78,34 @@ Installing and launching...
 Error launching application on ... iPhone
 ```
 
-⚠️ **원인은 아직 확정되지 않았다**(추가 475 ②). 지금까지 **지워진** 것은 둘이다 —
-2026-09-03 에 **화면이 잠기지 않았고 유선인 상태**에서 같은 실패가 났으므로
-「잠금」도 「무선」도 아니다.
+✅ **2026-09-03 해결됐다 — Xcode 를 업데이트하니 `flutter run` 으로 앱이 떴다.**
+추가 475 ② 에 「원인 미상」으로 남아 있던 자리다. 확인 순서는 이랬다.
 
-📌 **살아 있는 후보: Xcode 가 기기의 iOS 를 지원하지 못하는 경우.** 컴파일은 되고
-**설치·실행에서만** 막히므로 증상이 맞고, 실패한 로그에도 `iOS 26` 이 언급됐다.
-2026-09-03 에 사용자가 Xcode 를 올려 경고가 사라진 상태이며, **`flutter run` 을
-다시 돌려 재보는 것이 남았다.** 🚨 **되면 이 절을 고치고, 안 되면 이 후보도 지운다
-— 어느 쪽이든 그 결과를 여기에 적는다.** 적지 않으면 다음 사람이 같은 곳에서
-같은 추측을 다시 한다.
+| 후보 | 어떻게 됐나 |
+|---|---|
+| 기기 잠금 | ❌ 지워졌다 — **화면이 잠기지 않은 상태**에서 같은 실패가 났다(사용자 확인) |
+| 무선 연결 | ❌ 지워졌다 — **유선(USB)** 이었다. 이 후보는 애초에 `flutter devices` 의 `wireless` 표시를 보고 한 세션이 단정한 추측이었다 |
+| **Xcode 가 기기의 iOS 를 지원 못 함** | ✅ **Xcode 를 올리니 앱이 떴다** |
 
-그리고 **원인을 찾기 전에도 되는 길이 있다.** 아래가 그것이다.
+⚠️ **실측한 것과 설명을 구분해 적는다**(CLAUDE.md 4장). **잰 것은 「Xcode 를
+올리니 됐다」** 하나다. *"Xcode 가 기기의 iOS 를 지원하지 못해서"* 는 그것을 설명하는
+가장 그럴듯한 이야기이고 — 컴파일은 되고 **설치·실행에서만** 막히는 증상과 맞고,
+실패 로그에 `iOS 26` 이 언급됐다 — **기제 자체를 직접 재지는 않았다.**
 
-🚨 **`debug` 빌드를 홈 화면에서 열면 죽는다.** 디버그 모드는 `flutter run` 툴링이
-붙어 있어야만 Flutter 엔진이 초기화되므로, 독립 실행하면
+📌 **그래서 다음에 또 막히면 Xcode 버전과 기기 iOS 버전을 먼저 맞춰 본다.**
+`xcodebuild -version` 과 기기의 설정 → 일반 → 정보를 같이 본다.
+
+### 그래도 남는 사실 — `debug` 빌드는 홈 화면에서 안 열린다
+
+이건 위 문제와 **별개이고 여전히 참이다.** 디버그 모드는 `flutter run` 툴링이 붙어
+있어야만 Flutter 엔진이 초기화되므로, 독립 실행하면
 `Cannot create a FlutterEngine instance in debug mode without Flutter tooling or Xcode`
 로 즉시 죽는다(`docs/planning/error-notes.md` 「증상 2」). 과거에 이걸 모르고 설치했다가
 **사용자가 *"앱이 죽어요"* 라고 알려 줘서** 알았다.
 
-**되는 길 — `profile` 빌드 + `devicectl`:**
+**그러므로 `flutter run` 을 끊고도 앱을 홈 화면에서 열어야 한다면** — 명령을 끊으면
+`flutter run` 으로 띄운 앱도 닫힌다 — `profile` 이나 `release` 로 빌드해 `devicectl`
+로 깐다:
 
 ```bash
 tool/build_app.sh ios profile                      # ① debug 아님
@@ -200,5 +206,5 @@ grep -nE "EXCEPTION|Unhandled|FlutterError|E/flutter|RenderFlex|overflow" "$LOG"
 | 스크린샷이 이미지로 안 읽힘 | 화면 ID 누락 | `-d <display-id>` 추가 |
 | 내부 화면이 까맣게 나옴 | 기기가 접혀 있음 | 커버 화면 ID로 찍거나 사용자에게 펴 달라고 요청 |
 | iPhone이 목록에 안 뜸 | 케이블·신뢰 설정·Xcode 연결 문제 | 케이블을 다시 꽂고 기기에서 「이 컴퓨터를 신뢰」를 확인. 안 되면 Android로 진행 |
-| iPhone에서 `Error launching application` | `flutter run` 이 앱에 못 붙는다(원인 미상) | **§2-1 의 profile + `devicectl` 경로로 간다.** 빌드가 성공했는지 먼저 본다 |
+| iPhone에서 `Error launching application` | **Xcode 가 기기 iOS 보다 낡았을 때 이렇게 된다**(2026-09-03 실측) | **Xcode 를 업데이트한다 → §2-1.** 빌드는 성공했는지(`Xcode build done`) 먼저 본다 |
 | Gradle 빌드 실패 | 캐시 문제가 잦다 | `flutter clean` 후 재시도 |
