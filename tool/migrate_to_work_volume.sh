@@ -61,11 +61,17 @@ ylw()  { printf '\033[33m%s\033[0m\n' "$*"; }
 hdr()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # 보고서를 파일로도 남긴다 — 조사 결과를 눈으로만 보면 다음에 또 조사해야 한다.
+#
+# 🚨 파일 이름에 **시각**을 넣는다. 날짜+단계만 쓰면 같은 날 두 번 돌릴 때 **나중
+#    실행이 앞 기록을 조용히 덮는다.** 2026-09-04 에 실제로 그랬다 — 전체 copy 로그가
+#    뒤이은 `--only` 실행에 덮여, 무엇이 복사됐는지 되짚을 수 없게 됐다.
+#    ⚠️ 덮어쓴 것은 「틀린 기록」이 아니라 **없어진 기록**이라 더 나쁘다.
 if [ -z "$REPORT" ]; then
+  STAMP="$(date +%Y-%m-%d_%H%M%S)"
   if [ -d "$DST" ] && [ -w "$DST" ]; then
-    REPORT="$DST/이전보고서_$(date +%Y-%m-%d)_${MODE}.txt"
+    REPORT="$DST/이전보고서_${STAMP}_${MODE}.txt"
   else
-    REPORT="$HOME/X31이전보고서_$(date +%Y-%m-%d)_${MODE}.txt"
+    REPORT="$HOME/X31이전보고서_${STAMP}_${MODE}.txt"
   fi
 fi
 
@@ -425,6 +431,9 @@ do_copy() {
     exit 1
   fi
 
+  # 🚨 건너뛴 것은 **마지막에 모아서** 보여준다. 긴 로그 중간의 노란 줄 한 줄은
+  #    읽히지 않는다 — 2026-09-04 에 그래서 「복사됐다」로 읽고 다음 단계로 갔다.
+  local SKIPPED=()
   local items=()
   local n
   for n in $(ls -A "$SRC" 2>/dev/null); do
@@ -451,7 +460,8 @@ do_copy() {
     echo ""
     echo "── $n"
     if [ -e "$DST/$n" ]; then
-      ylw "   이미 있다 — 덮어쓰지 않고 건너뛴다. 지우고 다시 돌리거나 --only 로 지정한다."
+      ylw "   이미 있다 — 덮어쓰지 않고 건너뛴다."
+      SKIPPED+=("$n")
       continue
     fi
     if ditto --noqtn "$SRC/$n" "$DST/$n"; then
@@ -462,11 +472,34 @@ do_copy() {
     fi
   done
 
+  if [ "${#SKIPPED[@]}" -gt 0 ]; then
+    hdr "🚨 건너뛴 항목 ${#SKIPPED[@]} 개 — 복사되지 않았다"
+    for n in "${SKIPPED[@]}"; do
+      printf '   ⚠️ %-38s (대상에 이미 있음)\n' "$n"
+    done
+    cat <<'EOS'
+
+   ⚠️ **「이미 있다」는 「같다」가 아니다.** 대상 쪽이 옛 클론이거나 다른 내용일 수
+      있다. 실제로 2026-09-04 에 이것을 놓쳐 **워크트리 5개와 push 안 된 브랜치
+      12개가 없는 복사본**을 「복사됐다」로 읽고 다음 단계로 갔다.
+
+   확인: 원본과 대상의 HEAD 를 나란히 본다
+     git -C <원본>/<이름> rev-parse HEAD
+     git -C <대상>/<이름> rev-parse HEAD
+
+   다시 옮기려면 — **지우지 말고 옆으로 밀어 둔다**
+     mv <대상>/<이름> <대상>/<이름>.이전_$(date +%Y-%m-%d)
+     tool/migrate_to_work_volume.sh copy --yes --only=<이름>
+EOS
+  fi
+
   hdr "다음 단계"
   cat <<'EOS'
    복사만 끝났다. 아직 **쓸 수 있는 상태가 아니다** — 절대경로가 박힌 것들이 남아 있다.
      tool/migrate_to_work_volume.sh repair
 EOS
+  [ "${#SKIPPED[@]}" -gt 0 ] && return 1
+  return 0
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
