@@ -657,9 +657,18 @@ do_verify() {
     #    경로 문자열을 바꾸기 때문이다(/Volumes/X31/Claude → /Volumes/Work, 길이가 다르다).
     #    2026-09-03 시험에서 이것으로 「2 바이트 다르다」가 떠 실패로 끝났다 —
     #    유실은 0건이었다. 그래서 **판정은 개수와 유실 목록으로 하고, 바이트는 참고**다.
-    if [ "$sc" != "$dc" ]; then
-      printf '%-30s %12s %12s %14s %14s  %s\n' "$n" "$sc" "$dc" "$sb" "$db" "🚨 개수가 다르다"
+    # 🚨 개수 차이는 **방향을 봐야 한다.** 2026-09-04 실물 이전에서 이걸 안 갈라
+    #    「🚨 개수가 다르다」가 7건 떴는데 **유실은 0건**이었다 — 차이가 전부
+    #    「복사본에 더 있는 것」이었고, repair 가 돌린 flutter pub get 이 만든
+    #    ephemeral·GeneratedPluginRegistrant·.plugin_symlinks·.swift_pm.lock 과
+    #    사용자가 Work 에서 git fetch 해 생긴 객체였다.
+    #    ⇒ **유실은 「원본에만 있는 것」뿐이다.** 대상에 더 있는 것은 유실이 아니다.
+    if [ "$sc" -gt "$dc" ]; then
+      printf '%-30s %12s %12s %14s %14s  %s\n' "$n" "$sc" "$dc" "$sb" "$db" "🚨 원본이 더 많다"
       bad=1
+    elif [ "$sc" -lt "$dc" ]; then
+      printf '%-30s %12s %12s %14s %14s  %s\n' "$n" "$sc" "$dc" "$sb" "$db" "⚠️ 대상에 더 있다"
+      byte_diff=1
     elif [ "$sb" != "$db" ]; then
       printf '%-30s %12s %12s %14s %14s  %s\n' "$n" "$sc" "$dc" "$sb" "$db" "⚠️ 바이트만 다름"
       byte_diff=1
@@ -669,9 +678,16 @@ do_verify() {
   done
 
   if [ "$byte_diff" -eq 1 ] && [ "$bad" -eq 0 ]; then
-    echo ""
-    echo "   ⚠️ 바이트만 다른 것은 repair 가 경로 문자열을 바꿨기 때문이다(길이가 달라진다)."
-    echo "      유실이 아니다. 아래 목록이 비어 있으면 통과다."
+    cat <<'EOS'
+
+   ⚠️ 위 ⚠️ 표시는 유실이 아니다. 옮기면 **반드시** 생기는 차이다:
+      · 바이트 — repair 가 워크트리 경로 문자열을 바꿔 글자 수가 달라진다
+      · 대상에 더 있는 것 — repair 가 돌린 flutter pub get 이 다시 만든 것들
+        (ios·macos·linux 의 ephemeral/·.plugin_symlinks/·.swift_pm.lock,
+         GeneratedPluginRegistrant, Generated.xcconfig, local.properties,
+         .flutter-plugins-dependencies), 그리고 새 볼륨에서 fetch 한 git 객체
+   ⇒ **판정은 「원본에만 있는 파일」로 한다.** 그것이 0건이면 통과다.
+EOS
   fi
 
   # ⚠️ 개수와 바이트가 같아도 「무엇이」 다른지는 안 나온다.
