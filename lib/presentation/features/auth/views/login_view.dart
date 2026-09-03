@@ -93,10 +93,26 @@ class _LoginViewState extends State<LoginView> {
       // 성공했으면(예외 없이 여기 도달) 미리 받아 둔 동의를 적용한다.
       // Apple 취소처럼 예외 없이 조용히 반환되는 경로도 있으므로,
       // firebaseUid로 실제 로그인 성공 여부를 다시 확인한다.
-      if (mounted) {
-        final uid = context.read<AuthRepository>().firebaseUid;
-        if (uid != null) unawaited(_applyPendingConsent(uid, provider));
-      }
+      //
+      // 🚨 **`mounted`로 감싸지 않는다.** 아래 [_applyPendingConsent]의 주석이
+      // 경고하는 바로 그것인데, 예전에는 **호출부가 그 경고를 그대로 어기고
+      // 있었다**(2026-09-03 실기기에서 잡음). 로그인이 성공하면 `AuthGate`가
+      // 위젯 트리를 통째로 갈아 끼우므로 이 지점에서 `mounted`는 **이미
+      // false**다 — 그래서 블록이 통째로 안 돌았고, **광고 동의도 필수 동의도
+      // 서버에 안 남았다.**
+      //
+      // 증상이 둘로 보였지만 뿌리는 하나였다:
+      //   ① ⑨에서 광고 동의를 골랐는데 로그인 뒤 옛 광고 동의 화면이 또 떴다
+      //      (`applyFreshSignupChoice`가 안 돌아 서버가 "안 물어봤다"로 봤다)
+      //   ② `termsConsentAt`이 계정 18개 중 0개였다(P1-17이 사실상 죽어 있었다)
+      //
+      // ⚠️ 재시도도 안 걸렸다 — `recordSignupConsent`가 **불리지도 않아서**
+      // 실패 표시조차 안 남았고, `retryPendingIfAny`는 표시가 있어야 돈다.
+      //
+      // 📌 `auth`는 이 함수 맨 위에서 이미 잡아 두었고, `firebaseUid`는
+      // `FirebaseAuth.instance`를 직접 읽으므로 **`context`가 필요 없다.**
+      final uid = auth.firebaseUid;
+      if (uid != null) unawaited(_applyPendingConsent(uid, provider));
     } on AuthException catch (e) {
       if (mounted) setState(() => _errorMessage = e.message);
     } catch (e) {
@@ -136,14 +152,20 @@ class _LoginViewState extends State<LoginView> {
 
   Future<void> _openEmailSignup() async {
     setState(() => _errorMessage = null);
+    // 🚨 화면을 띄우기 **전에** 잡아 둔다 — 아래에서 `context`를 다시 읽으면
+    // 소셜 경로와 같은 이유로 놓친다(위 [_signIn] 주석 참고).
+    final auth = context.read<AuthRepository>();
     final success = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => const EmailSignupView(),
       ),
     );
-    if (success != true || !mounted) return;
-    final uid = context.read<AuthRepository>().firebaseUid;
+    // ⚠️ `mounted`를 보지 않는다. 가입에 성공하면 `AuthGate`가 트리를 갈아
+    // 끼우므로 여기서 `mounted`가 false 일 수 있고, 그러면 동의가 안 남는다.
+    // 실패·취소(`success != true`)만 걸러 낸다.
+    if (success != true) return;
+    final uid = auth.firebaseUid;
     if (uid != null) {
       unawaited(_applyPendingConsent(uid, SnsAuthProvider.email));
     }

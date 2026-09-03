@@ -784,6 +784,9 @@ class _AdConsentRowState extends State<_AdConsentRow> {
           provider: context.read<AuthRepository>().provider,
           initialEmail: before.email,
           initialPush: before.push,
+          // 📌 `dismissOnSubmit` 은 기본값 `true` 라 넘기지 않는다 — 저장하면
+          //    닫힌다. 종전에는 기본이 `false` 라 **여기서 안 넘긴 탓에
+          //    저장은 되는데 화면이 안 닫혔다**(2026-09-03, 추가 671).
           submitLabel: '저장',
           footnote: '끄셔도 모든 기능을 그대로 쓰실 수 있어요',
           onSubmit: ({required email, required push}) async {
