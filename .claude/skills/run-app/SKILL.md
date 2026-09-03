@@ -35,12 +35,19 @@ $ADB devices
 | 기기 | ID | 쓰임 |
 |---|---|---|
 | SM F966N (갤럭시 폴드, USB) | `R3CY90SHN4F` | **기본 선택.** 배선이 안정적이고 `adb`로 저장소 덤프까지 된다 |
-| iPhone 16 Pro (무선) | `00008140-001971541862201C` | iOS 특유 문제(키체인 잔존 등) 볼 때만. 무선이라 느리고 끊긴다 |
+| iPhone 16 Pro (**유선 USB**) | `00008140-001971541862201C` | iOS 특유 문제(키체인 잔존 등) 볼 때만. ⚠️ **`flutter run` 은 이 기기에 못 붙는다 — §2-1 을 볼 것** |
 | macOS 데스크톱 | `macos` | 실기기가 없을 때. 카메라·명함 스캔은 확인 불가 |
 | Chrome (웹) | `chrome` | 레이아웃만 급히 볼 때. 네이티브 플러그인 대부분 안 돎 |
 
 기기 ID는 사람마다 다르므로 `flutter devices` 출력에서 실제 값을 쓴다.
 위 표의 ID는 이 저장소 주 개발자의 기기 값이다.
+
+🚨 **아이폰을 「무선」이라고 적어 두었던 것은 틀렸다 — 2026-09-03 사용자 확인으로
+유선(USB)이다.** 결론만 고치지 않고 경위를 남긴다(CLAUDE.md 4장): `flutter devices`
+가 아이폰을 `wireless` 로 분류한 것을 보고 **한 세션이 실행 실패의 원인을 *"무선이라서"*
+라고 단정**했고, PM 이 그대로 옮겨 적었다. 사용자 확인 결과 **처음부터 유선이었다**
+(추가 475 ②, 그 세션이 자진 정정). 📌 **그 틀린 라벨이 이 표에 남아 있어서 2026-09-03
+에 같은 오진이 한 번 더 나올 뻔했다** — 낡은 기록은 조용히 사람을 속인다.
 
 ## 2. 실행
 
@@ -61,6 +68,57 @@ until grep -qE "Flutter run key commands|FAILURE|Gradle task .* failed|Error" "$
 - 붙어 있는 동안 `r`(핫 리로드) / `R`(핫 리스타트) / `q`(종료)가 쓸 수 있다.
 - **테스터에게 줄 빌드는 이 방식으로 만들지 않는다.** debug 빌드에는 로그인
   화면에 "로그인 건너뛰기" 버튼이 그대로 보인다. 배포는 `tool/build_app.sh`.
+
+## 2-1. 🚨 아이폰은 이 경로로 하지 않는다 — `flutter run` 이 못 붙는다
+
+위 §2 의 `flutter run` 은 **갤럭시 폴드용**이다. **아이폰에서는 이 경로가 실패한다.**
+
+```
+Xcode build done.                    ← 빌드는 성공한다
+The Dart VM Service was not discovered after 60 seconds...
+Installing and launching...
+Error launching application on ... iPhone
+```
+
+⚠️ **원인은 아직 확정되지 않았다**(추가 475 ②). 지금까지 **지워진** 것은 둘이다 —
+2026-09-03 에 **화면이 잠기지 않았고 유선인 상태**에서 같은 실패가 났으므로
+「잠금」도 「무선」도 아니다.
+
+📌 **살아 있는 후보: Xcode 가 기기의 iOS 를 지원하지 못하는 경우.** 컴파일은 되고
+**설치·실행에서만** 막히므로 증상이 맞고, 실패한 로그에도 `iOS 26` 이 언급됐다.
+2026-09-03 에 사용자가 Xcode 를 올려 경고가 사라진 상태이며, **`flutter run` 을
+다시 돌려 재보는 것이 남았다.** 🚨 **되면 이 절을 고치고, 안 되면 이 후보도 지운다
+— 어느 쪽이든 그 결과를 여기에 적는다.** 적지 않으면 다음 사람이 같은 곳에서
+같은 추측을 다시 한다.
+
+그리고 **원인을 찾기 전에도 되는 길이 있다.** 아래가 그것이다.
+
+🚨 **`debug` 빌드를 홈 화면에서 열면 죽는다.** 디버그 모드는 `flutter run` 툴링이
+붙어 있어야만 Flutter 엔진이 초기화되므로, 독립 실행하면
+`Cannot create a FlutterEngine instance in debug mode without Flutter tooling or Xcode`
+로 즉시 죽는다(`docs/planning/error-notes.md` 「증상 2」). 과거에 이걸 모르고 설치했다가
+**사용자가 *"앱이 죽어요"* 라고 알려 줘서** 알았다.
+
+**되는 길 — `profile` 빌드 + `devicectl`:**
+
+```bash
+tool/build_app.sh ios profile                      # ① debug 아님
+xcrun devicectl list devices                       # ② UDID 확인
+xcrun devicectl device install app \
+  --device <UDID> build/ios/Profile-iphoneos/Runner.app   # ③ ⚠️ 경로 주의
+xcrun devicectl device process launch \
+  --device <UDID> com.creamhouse.connectionsense   # ④ 또는 홈 화면에서 아이콘을 누른다
+```
+
+**함정 둘** (추가 475 ②):
+
+| 무엇 | 어떻게 읽나 |
+|---|---|
+| `Build succeeded but the expected app … not found` | **빌드는 성공한 것이다.** profile 산출물이 `build/ios/iphoneos` 가 아니라 `build/ios/Profile-iphoneos` 에 나와서 그렇다. **실패로 읽으면 안 된다** |
+| `device was not unlocked` | 기기 잠금을 풀고 다시 `launch` 한다 |
+
+📌 `flutter clean` 은 습관적으로 돌리지 않는다 — `pod install` 부터 다시 돌아
+2026-09-03 에 **빌드만 376초**를 썼다. 코드만 고친 경우엔 그냥 다시 돌린다.
 
 ## 3. 화면 보기 (스크린샷)
 
@@ -141,5 +199,6 @@ grep -nE "EXCEPTION|Unhandled|FlutterError|E/flutter|RenderFlex|overflow" "$LOG"
 | `adb: command not found` | PATH에 없음 | 0절의 전체 경로 사용 |
 | 스크린샷이 이미지로 안 읽힘 | 화면 ID 누락 | `-d <display-id>` 추가 |
 | 내부 화면이 까맣게 나옴 | 기기가 접혀 있음 | 커버 화면 ID로 찍거나 사용자에게 펴 달라고 요청 |
-| iPhone이 목록에 안 뜸 | 무선 연결이 끊김 | 케이블 연결 요청, 또는 Android로 진행 |
+| iPhone이 목록에 안 뜸 | 케이블·신뢰 설정·Xcode 연결 문제 | 케이블을 다시 꽂고 기기에서 「이 컴퓨터를 신뢰」를 확인. 안 되면 Android로 진행 |
+| iPhone에서 `Error launching application` | `flutter run` 이 앱에 못 붙는다(원인 미상) | **§2-1 의 profile + `devicectl` 경로로 간다.** 빌드가 성공했는지 먼저 본다 |
 | Gradle 빌드 실패 | 캐시 문제가 잦다 | `flutter clean` 후 재시도 |
