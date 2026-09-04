@@ -40,6 +40,7 @@ ASSUME_YES=0
 DO_FETCH=0
 ONLY=()
 SYNC_REMOTE=""
+RELO_ROOT=""
 REPORT=""
 for arg in "$@"; do
   case "$arg" in
@@ -48,6 +49,7 @@ for arg in "$@"; do
     --out=*) REPORT="${arg#--out=}" ;;
     --only=*) IFS=',' read -r -a ONLY <<< "${arg#--only=}" ;;
     --remote=*) SYNC_REMOTE="${arg#--remote=}" ;;
+    --root=*) RELO_ROOT="${arg#--root=}" ;;
     *) echo "모르는 인자: $arg" >&2; exit 2 ;;
   esac
 done
@@ -510,6 +512,23 @@ do_repair() {
   hdr "③ 옮겨서 깨진 것 고치기"
   [ -d "$DST" ] || { red "대상이 없다: $DST"; exit 2; }
 
+  # 🚨 원본과 대상이 겹치면(한쪽이 다른 쪽 안에 있으면) 이 단계를 쓰면 안 된다.
+  #    문자열 치환이 **두 번 먹는다**: /Volumes/Work → /Volumes/Work/Claude 를
+  #    이미 고쳐진 파일에 또 적용하면 /Volumes/Work/Claude/Claude 가 된다.
+  #    그리고 「원본 무개변」검사도 뜻을 잃는다(원본이 대상을 품고 있으므로).
+  case "$DST/" in "$SRC/"*) OVERLAP=1 ;; *) OVERLAP=0 ;; esac
+  case "$SRC/" in "$DST/"*) OVERLAP=1 ;; esac
+  if [ "$OVERLAP" = 1 ]; then
+    red "🚨 원본과 대상이 겹친다 — repair 를 쓰면 안 된다."
+    red "   원본: $SRC"
+    red "   대상: $DST"
+    echo ""
+    echo "   같은 볼륨 안에서 폴더를 옮긴 경우다. 그때는 relocate 를 쓴다 —"
+    echo "   문자열을 치환하지 않고 **지금 있는 자리**를 기준으로 다시 잇는다:"
+    echo "     tool/migrate_to_work_volume.sh relocate --root=$DST"
+    exit 2
+  fi
+
   hdr "3-1. git worktree 경로 — 파일을 직접 고친다"
   cat <<EOS
    .git 파일과 .git/worktrees/*/gitdir 에 **절대경로**가 박혀 있다. 둘 다 고쳐야 한다.
@@ -763,6 +782,110 @@ EOS
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ④-b 자리 옮김 — **같은 볼륨 안에서** 폴더를 옮겼을 때
+
+# 왜 repair 와 따로 있나: repair 는 「옛 경로 → 새 경로」 문자열 치환이라
+# **한 번만** 맞다. 같은 볼륨 안에서 옮기면(/Volumes/Work → /Volumes/Work/Claude)
+# 새 경로가 옛 경로를 품고 있어 치환이 두 번 먹는다. relocate 는 치환하지 않고
+# **지금 파일들이 실제로 있는 자리**를 읽어 다시 잇는다. 그래서 몇 번 돌려도 같다.
+do_relocate() {
+  need_macos
+  hdr "④-b 자리 옮김 — 지금 있는 자리를 기준으로 다시 잇는다"
+  local ROOT="${RELO_ROOT:-$DST}"
+  [ -d "$ROOT" ] || { red "폴더가 없다: $ROOT"; exit 2; }
+  echo "   기준 폴더: $ROOT"
+
+  hdr "1. git worktree 다시 잇기"
+  cat <<'EOS'
+   🚨 여기서 `git worktree prune` 을 **먼저 돌리면 안 된다.** 옮긴 직후의 워크트리는
+      `prunable` 로 보이므로 **등록이 통째로 지워진다.** 반드시 repair 를 먼저 한다.
+
+   ⚠️ 그리고 이때의 `git worktree repair <새 경로>` 는 안전하다 — 2026-09-03 사고는
+      **옛 본체가 아직 살아 있을 때** 났다. 같은 볼륨 안에서 옮기면 옛 경로가
+      사라지므로 git 이 그리로 갈 수 없다(실측으로 확인: ".git file broken").
+EOS
+  local wt id main found n
+  while read -r wt; do
+    [ -z "$wt" ] && continue
+    # 이 워크트리가 어느 등록(id)을 쓰는지 — .git 파일의 마지막 경로 조각이 id 다
+    id="$(sed -n 's|^gitdir: ||p' "$wt/.git" 2>/dev/null | sed 's|/*$||' | awk -F/ '{print $NF}')"
+    [ -z "$id" ] && continue
+    # 그 id 를 가진 본체를 **지금 폴더 안에서** 찾는다(옛 경로는 안 믿는다)
+    found=""
+    while read -r main; do
+      [ -z "$main" ] && continue
+      if [ -d "$main/.git/worktrees/$id" ]; then found="$main"; break; fi
+    done < <(find "$ROOT" -maxdepth 3 -name .git -type d 2>/dev/null | while read -r g; do dirname "$g"; done | LC_ALL=C sort)
+    if [ -z "$found" ]; then
+      red "   🚨 ${wt#$ROOT/} — 짝이 되는 본체를 못 찾았다(등록 이름: $id)"
+      continue
+    fi
+    echo ""
+    echo "── ${wt#$ROOT/}  →  본체 ${found#$ROOT/}"
+    git -C "$found" worktree repair "$wt" 2>&1 | sed 's/^/   repair: /'
+  done < <(find "$ROOT" -maxdepth 3 -name .git -type f 2>/dev/null | while read -r f; do dirname "$f"; done | LC_ALL=C sort)
+
+  hdr "2. 결과 — 전부 지금 폴더를 가리켜야 한다"
+  local bad=0 p
+  while read -r p; do
+    [ -z "$p" ] && continue
+    [ -d "$p/.git" ] || continue
+    if git -C "$p" worktree list 2>/dev/null | tail -n +2 | grep -q .; then
+      echo "── ${p#$ROOT/}"
+      git -C "$p" worktree list 2>/dev/null | sed 's/^/   /'
+      if git -C "$p" worktree list 2>/dev/null | grep -qE 'prunable|^$'; then
+        red "   🚨 아직 prunable 이 남아 있다 — prune 하지 말고 사람에게 알린다."
+        bad=1
+      fi
+    fi
+  done < <(find "$ROOT" -maxdepth 3 -name .git -type d 2>/dev/null | while read -r g; do dirname "$g"; done | LC_ALL=C sort)
+
+  hdr "3. Flutter 캐시 — 옛 경로가 박혀 있다"
+  while read -r p; do
+    [ -z "$p" ] && continue
+    [ -e "$p/pubspec.yaml" ] || continue
+    echo ""
+    echo "── ${p#$ROOT/}"
+    rm -rf "$p/.dart_tool" "$p/.flutter-plugins-dependencies"
+    if command -v flutter >/dev/null 2>&1; then
+      (cd "$p" && flutter pub get 2>&1 | tail -2 | sed 's/^/   /')
+    else
+      ylw "   flutter 가 PATH 에 없다 — 나중에 'flutter pub get' 을 직접 돌린다."
+    fi
+  done < <(find "$ROOT" -maxdepth 3 -name pubspec.yaml -not -path '*/build/*' 2>/dev/null | while read -r f; do dirname "$f"; done | LC_ALL=C sort)
+
+  hdr "4. 개인정보 폴더 권한 · 심볼릭 링크"
+  local d
+  while read -r d; do
+    [ -z "$d" ] && continue
+    chmod 700 "$d" && echo "   700: ${d#$ROOT/}  (현재 $(stat -f '%Lp' "$d"))"
+  done < <(find "$ROOT" -maxdepth 3 -type d -name '명함데이터' 2>/dev/null)
+  local link newassets
+  link="$HOME/Downloads/커넥션센스"
+  mkdir -p "$HOME/Downloads" 2>/dev/null || true
+  newassets="$(find "$ROOT" -maxdepth 2 -type d -name 'connection-sense-assets' 2>/dev/null | head -1)"
+  if [ -n "$newassets" ]; then
+    if [ -L "$link" ] || [ ! -e "$link" ]; then
+      rm -f "$link"; ln -s "$newassets" "$link" && grn "   링크: $link → $newassets"
+    else
+      ylw "   $link 가 링크가 아니라 실제 폴더다 — 손대지 않는다."
+    fi
+  fi
+
+  hdr "5. iOS Pods"
+  echo "   Pods/ 와 xcconfig 에도 경로가 박혀 있다. iOS 를 빌드하기 전에 각 폴더에서:"
+  echo "     (cd ios && pod install)"
+
+  hdr "판정"
+  if [ "$bad" -eq 0 ]; then
+    grn "   ✅ 다시 이었다. 몇 번을 돌려도 결과가 같다(문자열을 치환하지 않는다)."
+  else
+    red "   🚨 위의 🚨 를 먼저 본다."
+    return 1
+  fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # ⑤ GitHub 동기화 — **밖으로 나가는 동작이다.** 기본은 계획만 보여준다.
 
 do_sync() {
@@ -908,6 +1031,7 @@ case "$MODE" in
   copy)   do_copy    2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   repair) do_repair  2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   verify) do_verify  2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
+  relocate) do_relocate 2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   sync)   do_sync    2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   *) cat >&2 <<'EOS'
 사용법: tool/migrate_to_work_volume.sh <단계> [옵션]
@@ -916,6 +1040,7 @@ case "$MODE" in
   copy     복사한다(X31 은 그대로). --yes 없으면 계획만 보여준다
   repair   옮겨서 깨진 절대경로를 고친다(worktree·.dart_tool·권한·링크)
   verify   원본과 대조한다
+  relocate 같은 볼륨 안에서 폴더를 옮겼을 때 다시 잇는다(--root=<폴더>)
   sync     새 볼륨에서 GitHub 과 맞춘다(계획만; --yes 로 실제 push)
 
 옵션
