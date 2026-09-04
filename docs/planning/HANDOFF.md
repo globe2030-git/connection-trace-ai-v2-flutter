@@ -381,7 +381,7 @@ React/Vite/Capacitor 프로토타입 저장소용이었다 — 이 Flutter 프�
     비용 근거는 [`app-rename-b-plan-cost-2026-08-16.md`](./app-rename-b-plan-cost-2026-08-16.md).
   - ⚠️ 그 대가로 패키지명은 **영원히** `com.connectiontrace.connection_trace_ai_flutter`
     로 남는다(옛 이름 잔재). 이용자에게 보이는 자리는 아니다.
-- **위치**: `/Volumes/X31/Claude/connection-trace-ai-v2-flutter`
+- **위치**: `/Volumes/Work/Claude/connection-trace-ai-v2-flutter`
   (2026-08-18에 내장 SSD `~/Claude/`에서 옮겼다 — 추가 299)
   - 같은 자리에 워크트리 3개가 붙어 있다: `-docs` · `-feature` · `-wallet`
     (`feat/ai-credit-wallet`). ⚠️ 점유 규칙은 CLAUDE.md 4-2절 —

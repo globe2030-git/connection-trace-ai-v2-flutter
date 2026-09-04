@@ -17,7 +17,7 @@ import re
 import sys
 import unicodedata
 
-A = '/Volumes/X31/Claude/connection-sense-assets/명함데이터/'
+A = '/Volumes/Work/Claude/connection-sense-assets/명함데이터/'
 SCRATCH = os.environ.get('SCRATCH', '')
 
 MODEL_FIELDS = ['이름', '회사', '직함', '휴대폰', '사무실', '이메일', '주소']

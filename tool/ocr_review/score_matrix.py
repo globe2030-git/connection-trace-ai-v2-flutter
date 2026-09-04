@@ -27,7 +27,7 @@ import re
 import sys
 import unicodedata
 
-A = '/Volumes/X31/Claude/connection-sense-assets/명함데이터/'
+A = '/Volumes/Work/Claude/connection-sense-assets/명함데이터/'
 SCRATCH = os.environ.get('SCRATCH', '')
 
 # (표시 이름, 파일, 키 칸, 낼 수 있는 칸)

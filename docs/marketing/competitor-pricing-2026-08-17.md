@@ -198,6 +198,6 @@ AI 회당 원가        3.29원  ($0.0023/회 실측, 2026-08-08)
 ## 관련
 
 - `connection-sense-assets/문서/커넥션센스_과금정산_논의자료_2026-08-17.docx` —
-  과금 논의 본문 (저장소 밖, `/Volumes/X31/Claude/` 아래)
+  과금 논의 본문 (저장소 밖, `/Volumes/Work/Claude/` 아래)
 - `card-photo-quota-recommendation-2026-08-16.md` — 사진 한도·원가
 - 추가 291

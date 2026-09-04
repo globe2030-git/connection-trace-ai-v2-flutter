@@ -12,7 +12,7 @@
 ## 0. 먼저 3분 — 상태 확인
 
 ```bash
-cd /Volumes/X31/Claude/connection-trace-ai-v2-flutter
+cd /Volumes/Work/Claude/connection-trace-ai-v2-flutter
 git fetch origin
 git log --oneline origin/main -1          # main이 얼마나 나갔나
 git status -sb                            # 내가 어느 브랜치인가
