@@ -178,13 +178,21 @@ under_repo() {
 }
 
 remote_kind() {
-  # 원격 URL 을 보고 GitHub / GitLab / 기타로 가른다.
+  # 원격 URL 을 보고 가른다.
   # 회사 GitLab 은 자체 호스팅일 수 있어 호스트명에 gitlab 이 없을 수도 있다 —
   # 그래서 **분류하지 못한 것은 「기타」로 그대로 보여 준다.** 숨기지 않는다.
+  #
+  # 🚨 「로컬 경로」와 「상대 경로」를 따로 가른다. 원격이 **다른 폴더**인 저장소가
+  #    실제로 있다(2026-09-04 Codex 트리에서 발견):
+  #      legacy-wpd → /Volumes/X31/Codex/Daily/2026-07-24/wpd
+  #    이런 원격은 **옮기면 끊긴다.** 그런데 「원격이 있다」로 보이므로
+  #    「원격에서 복구된다」로 잘못 읽히기 쉽다 — 그 폴더가 사라지면 아무것도 없다.
   case "$1" in
-    *github.com*) echo "GitHub" ;;
-    *gitlab*)     echo "GitLab" ;;
-    *)            echo "기타" ;;
+    *github.com*)          echo "GitHub" ;;
+    *gitlab*)              echo "GitLab" ;;
+    /*|file://*|~/*)       echo "로컬 경로" ;;
+    ./*|../*)              echo "상대 경로" ;;
+    *)                     echo "기타" ;;
   esac
 }
 
@@ -205,11 +213,32 @@ survey_repo() {
   echo "  HEAD      : $(git -C "$p" rev-parse --short HEAD 2>/dev/null || echo '?')"
 
   # ── 원격: GitHub / GitLab 비교의 출발점
-  local had_remote=0
+  # ⚠️ 변수 이름을 kind 로 두면 **위에서 정한 kind(본체/워크트리/베어)를 덮어쓴다.**
+  #    2026-09-04 에 실제로 그랬다 — 워크트리가 본체 취급을 받아 stash 를 다시 셌고,
+  #    본체의 「워크트리 N 개 딸려 있다」 줄이 통째로 사라졌다. 그래서 rkind 다.
+  local had_remote=0 rkind localpath_remote=0
   while read -r rname rurl _; do
     [ -z "${rname:-}" ] && continue
     had_remote=1
-    echo "  원격      : $rname → $rurl   [$(remote_kind "$rurl")]"
+    rkind="$(remote_kind "$rurl")"
+    echo "  원격      : $rname → $rurl   [$rkind]"
+    # 🚨 원격이 「다른 서버」가 아니라 「다른 폴더」인 경우 — 옮기면 끊긴다.
+    case "$rkind" in
+      "로컬 경로")
+        localpath_remote=1
+        case "$rurl" in
+          "$SRC"|"$SRC"/*|file://"$SRC"/*)
+            red "     🚨 이 원격은 **옮기려는 원본 안**을 가리킨다. 원본을 정리하면 끊긴다."
+            echo "        옮긴 뒤 새 자리로 바꾸려면:"
+            echo "          git -C ${p#$SRC/} remote set-url $rname ${rurl/#$SRC/$DST}" ;;
+          *)
+            ylw "     ⚠️ 이 원격은 **로컬 폴더**다. 그 폴더도 함께 옮겨야 유지된다."
+            echo "        지금 있나: $([ -e "${rurl#file://}" ] && echo 있다 || echo '🚨 없다 — 이미 끊겨 있다')" ;;
+        esac ;;
+      "상대 경로")
+        localpath_remote=1
+        ylw "     ⚠️ **상대 경로** 원격이다. 두 저장소가 같은 상대 위치로 함께 옮겨져야 유지된다." ;;
+    esac
   done < <(git -C "$p" remote -v 2>/dev/null | awk '$3=="(fetch)"')
   if [ "$had_remote" -eq 0 ]; then
     echo "  원격      : ⚠️ 없음 — 이 저장소는 **여기에만 있다**"
@@ -236,7 +265,11 @@ survey_repo() {
       echo "  🚨 미커밋  : $wdirty 건 — 이 워크트리의 변경"
       echo "  ⇒ 판정    : 🚨 미커밋 변경이 있다. 본체와 함께 옮긴다"
     else
-      echo "  ⇒ 판정    : ✅ 깨끗함 (브랜치·stash 는 본체 쪽에 함께 표시된다)"
+      if [ "$localpath_remote" -eq 1 ]; then
+        echo "  ⇒ 판정    : ⚠️ 깨끗하지만 **원격이 로컬 폴더**다 — 위 경고를 본다"
+      else
+        echo "  ⇒ 판정    : ✅ 깨끗함 (브랜치·stash 는 본체 쪽에 함께 표시된다)"
+      fi
     fi
     return 0
   fi
@@ -247,6 +280,9 @@ survey_repo() {
     echo "  ⇒ 판정    : 🔒 베어 저장소 — 원격 역할을 하고 있을 수 있다. 통째로 옮긴다"
     return 0
   fi
+
+  # 원격이 로컬 폴더면 「원격에서 복구된다」가 성립하지 않는다 — 위험으로 센다.
+  [ "$localpath_remote" -eq 1 ] && risky=1
 
   local dirty
   dirty="$(git -C "$p" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"

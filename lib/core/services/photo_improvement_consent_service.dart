@@ -114,7 +114,7 @@ class PhotoImprovementConsentService {
     try {
       final snap = await _db.collection('users').doc(uid).get();
       final remote = snap.data()?[_fieldConsent];
-      if (remote is! bool) return load();
+      if (remote is! bool) return await load();
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_prefsKey, remote);
       return remote;
