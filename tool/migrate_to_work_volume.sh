@@ -582,6 +582,17 @@ EOS
     rm -rf "$p/.dart_tool" "$p/.flutter-plugins-dependencies"
     if command -v flutter >/dev/null 2>&1; then
       (cd "$p" && flutter pub get 2>&1 | tail -3 | sed 's/^/   /')
+      # ⚠️ `flutter pub get` 은 **git 이 추적하는 파일을 고칠 수 있다** —
+      #    "Upgrading analysis_options.yaml to exclude build and platform
+      #    directories." 가 그것이다. 이전 때문에 생긴 변경인데 조용히 남으면
+      #    다음 사람이 「누가 고쳤지」를 좇게 된다. 그래서 여기서 이름을 댄다.
+      local dirty_now
+      dirty_now="$(git -C "$p" status --porcelain 2>/dev/null | awk '{print $2}' | grep -E 'analysis_options\.yaml|pubspec\.lock' || true)"
+      if [ -n "$dirty_now" ]; then
+        ylw "   ⚠️ pub get 이 추적 파일을 고쳤다 — 원치 않으면 되돌린다:"
+        echo "$dirty_now" | sed 's/^/        /'
+        echo "        git -C ${p#$DST/} checkout -- <파일>"
+      fi
     else
       ylw "   flutter 가 PATH 에 없다 — 나중에 'flutter pub get' 을 직접 돌린다."
     fi
