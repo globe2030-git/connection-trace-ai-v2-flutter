@@ -158,5 +158,68 @@ void main() {
       // 로그인 후 복호화를 시도하지만 실패 → 크래시 없이 빈 목록 유지.
       expect(repo.contacts, isEmpty);
     });
+
+    // 🚨 게스트(로그인 전)에는 명함을 **아예 저장하지 않는다.**
+    //
+    // 종전에는 `jsonEncode(jsonList)`를 그대로 넣어, 제3자 개인정보가
+    // 암호화되지 않는 `shared_preferences`에 평문으로 남았다.
+    // 릴리스에는 게스트 경로가 없지만(`kDebugMode` 가드), 개발·QA 기기에는
+    // 실물 명함이 들어 있어 거기에 평문이 쌓였다.
+    //
+    // 🚨 **아직 「옛 코드에서 깨지는지」를 확인하지 못했다.** 이 테스트를 쓴
+    // 세션은 원격 컨테이너라 flutter 가 없다. 이 저장소는 *"안 깨지면
+    // 아무것도 안 지키는 검사"* 로 두 번 데였으므로([추가 670·671]),
+    // **맥에서 아래를 한 번 돌려 확인할 것** — 확인하면 이 주석을 지운다.
+    //
+    //   1. contacts_repository.dart 의 `if (uid == null) { return; }` 를
+    //      `await prefs.setString(_storageKey, jsonEncode(jsonList)); return;`
+    //      로 잠깐 되돌린다
+    //   2. flutter test test/data_encryption_test.dart → 이 건이 실패해야 한다
+    //   3. 원복한다
+    test('🚨 게스트(로그인 전)에 명함을 더해도 저장소에 평문이 안 남는다', () async {
+      SharedPreferences.setMockInitialValues({});
+      final repo = ContactsRepository();
+      // setCurrentUid 를 부르지 않는다 = 로그인 전 상태.
+      repo.addContact(makeContact());
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('saved_contacts_v2');
+      // 아무것도 안 썼거나(null), 썼다면 최소한 평문은 아니어야 한다.
+      if (raw != null) {
+        expect(raw, isNot(contains('문정순')));
+        expect(raw, isNot(contains('010-0000-0000')));
+      }
+      // 메모리에는 남아 있어야 한다 — 화면이 비면 QA 가 결함으로 읽는다.
+      expect(repo.contacts, hasLength(1));
+    });
+
+    // 🚨 위 변경이 **레거시 마이그레이션을 깨뜨리지 않는지** 지킨다.
+    //
+    // 암호화 도입 전에 쌓인 평문이 기기에 남아 있을 수 있고,
+    // `_loadFromDisk` 가 그것을 읽어 **로그인 시점에 암호화해 다시 저장**한다.
+    // 게스트 저장을 막으면서 기존 값까지 지웠다면 그 데이터가 사라진다.
+    test('⭐ 게스트 저장을 막아도 레거시 평문은 지워지지 않고 로그인 때 암호화된다', () async {
+      final legacyJson = jsonEncode([makeContact().toJson()]);
+      SharedPreferences.setMockInitialValues({
+        'flutter.saved_contacts_v2': legacyJson,
+      });
+
+      final repo = ContactsRepository();
+      await Future.delayed(const Duration(milliseconds: 50));
+      // 로그인 전 — 읽어서 메모리에는 올라오고, 저장소의 값은 그대로 남는다.
+      expect(repo.contacts, hasLength(1));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('saved_contacts_v2'), isNotNull,
+          reason: '레거시 평문을 지우면 로그인 전에 데이터가 사라진다');
+
+      // 로그인하면 암호화되어 다시 저장된다(투명 마이그레이션).
+      await repo.setCurrentUid('owner-uid');
+      await Future.delayed(const Duration(milliseconds: 50));
+      final migrated = prefs.getString('saved_contacts_v2');
+      expect(migrated, isNotNull);
+      expect(migrated, isNot(contains('문정순')));
+      expect(repo.contacts, hasLength(1));
+    });
   });
 }
