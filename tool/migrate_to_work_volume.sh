@@ -960,9 +960,14 @@ EOS
 
     while read -r br; do
       [ -z "$br" ] && continue
-      up="$(git -C "$p" rev-parse --abbrev-ref --symbolic-full-name "${br}@{u}" 2>/dev/null)"
-      if [ -z "$up" ]; then
-        echo "   ▸ $br — 업스트림 없음  ⇒ git push -u $ghremote $br"
+      # 🚨 「업스트림」과 비교하면 안 된다. 이 저장소의 topic 브랜치들은 main 에서
+      #    갈라져 나와 **업스트림이 origin/main** 이다(origin/<브랜치이름> 이 아니다).
+      #    그대로 비교하면 main 을 pull 한 뒤 **12개 전부 「원격이 앞서 있다」로 막힌다** —
+      #    브랜치를 제 이름으로 올리는 것과는 아무 상관이 없는데도.
+      #    ⇒ 봐야 할 것은 **같은 이름의 원격 브랜치**다.
+      local rref="refs/remotes/$ghremote/$br"
+      if ! git -C "$p" show-ref --verify --quiet "$rref"; then
+        echo "   ▸ $br — 원격에 **같은 이름이 없다**  ⇒ git push -u $ghremote $br"
         planned=1
         if [ "$ASSUME_YES" -eq 1 ]; then
           if git -C "$p" push -u "$ghremote" "$br" 2>&1 | sed 's/^/       /'; then
@@ -973,13 +978,13 @@ EOS
         fi
         continue
       fi
-      ahead="$(git -C "$p" rev-list --count "${up}..${br}" 2>/dev/null || echo 0)"
-      behind="$(git -C "$p" rev-list --count "${br}..${up}" 2>/dev/null || echo 0)"
+      ahead="$(git -C "$p" rev-list --count "$ghremote/$br..$br" 2>/dev/null || echo 0)"
+      behind="$(git -C "$p" rev-list --count "$br..$ghremote/$br" 2>/dev/null || echo 0)"
       if [ "${ahead:-0}" -eq 0 ] && [ "${behind:-0}" -eq 0 ]; then
-        echo "   ▸ $br — $up 과 같다  ✅"
+        echo "   ▸ $br — $ghremote/$br 과 같다  ✅"
         continue
       fi
-      echo "   ▸ $br — $up 대비 앞섬 $ahead · 뒤짐 $behind"
+      echo "   ▸ $br — $ghremote/$br 대비 앞섬 $ahead · 뒤짐 $behind"
       if [ "${behind:-0}" -gt 0 ]; then
         # 🚨 갈라진 것을 push 로 밀어붙이면 남의 커밋이 사라진다. 사람이 판단한다.
         red "       🚨 원격이 앞서 있다 — 이 단계는 손대지 않는다."
