@@ -906,7 +906,7 @@ EOS
   #    GitHub 원격이 없어 전부 건너뛴 것이 「✅ 올릴 것이 없다」로 끝났다 —
   #    통과한 것이 아니라 **잴 것이 없었던 것**이다(CLAUDE.md).
   local p name rname rurl kind ghremote br up ahead behind
-  local planned=0 pushed=0 failed=0 checked=0 skipped=0 auth_fail=0
+  local planned=0 pushed=0 failed=0 checked=0 skipped=0 auth_fail=0 unknown=0
   while read -r p; do
     [ -z "$p" ] && continue
     [ -d "$p/.git" ] || continue                 # 본체에서만 — 워크트리는 refs 를 공유한다
@@ -938,7 +938,13 @@ EOS
       continue
     fi
     checked=$((checked+1))
-    echo "   원격      : $ghremote → $(git -C "$p" remote get-url "$ghremote" 2>/dev/null)"
+    local rurl_now defbr slug
+    rurl_now="$(git -C "$p" remote get-url "$ghremote" 2>/dev/null)"
+    echo "   원격      : $ghremote → $rurl_now"
+    # 기본 브랜치 이름(main/master)과 owner/repo — 병합 여부를 가리는 데 쓴다
+    defbr="$(git -C "$p" symbolic-ref --quiet --short "refs/remotes/$ghremote/HEAD" 2>/dev/null | sed "s|^$ghremote/||")"
+    [ -z "$defbr" ] && defbr=main
+    slug="$(printf '%s' "$rurl_now" | sed -e 's|^git@[^:]*:||' -e 's|^https://[^/]*/||' -e 's|\.git$||')"
 
     # 🚨 fetch 없이 비교하면 **마지막으로 받아 둔 상태**와 비교하게 된다.
     #    그 값은 남이 그 사이 올린 것을 못 본다(CLAUDE.md 「본 순간의 상태」).
@@ -973,14 +979,40 @@ EOS
       #    ⇒ 봐야 할 것은 **같은 이름의 원격 브랜치**다.
       local rref="refs/remotes/$ghremote/$br"
       if ! git -C "$p" show-ref --verify --quiet "$rref"; then
-        echo "   ▸ $br — 원격에 **같은 이름이 없다**  ⇒ git push -u $ghremote $br"
-        planned=1
-        if [ "$ASSUME_YES" -eq 1 ]; then
-          if git -C "$p" push -u "$ghremote" "$br" 2>&1 | sed 's/^/       /'; then
-            grn "       올렸다: $br"; pushed=1
-          else
-            red "       🚨 실패: $br"; failed=1
+        # 🚨 「원격에 같은 이름이 없다」를 「안 올라갔다」로 읽으면 안 된다.
+        #    **병합하고 지운 브랜치가 정확히 이 모양이다**(gh pr merge --delete-branch).
+        #    2026-09-04 실물에서 이렇게 보인 29개 중 **27개가 이미 병합된 것**이었다.
+        #    그대로 올렸으면 지운 브랜치 27개를 GitHub 에 되살릴 뻔했다.
+        #    ⇒ 「없다」를 확인 없이 말하지 않는다(CLAUDE.md).
+
+        # ① 기본 브랜치에 이미 들어 있나 (merge 커밋 방식이면 여기서 잡힌다)
+        if git -C "$p" merge-base --is-ancestor "$br" "$ghremote/$defbr" 2>/dev/null; then
+          echo "   ▸ $br — 이미 $ghremote/$defbr 에 들어 있다(병합됨)  ✅ 올릴 것 없음"
+          continue
+        fi
+        # ② squash 병합은 ①로 안 잡힌다 — 포지(GitHub)에 직접 묻는다
+        if [ -n "$slug" ] && command -v gh >/dev/null 2>&1; then
+          local prno
+          prno="$(gh pr list --repo "$slug" --head "$br" --state merged \
+                    --json number --jq '.[0].number' 2>/dev/null)"
+          if [ -n "${prno:-}" ]; then
+            echo "   ▸ $br — 이미 병합됨(PR #$prno)  ✅ 올릴 것 없음. 로컬 브랜치는 지워도 된다"
+            continue
           fi
+          echo "   ▸ $br — 원격에 없고 병합된 PR 도 없다  ⇒ git push -u $ghremote $br"
+          planned=1
+          if [ "$ASSUME_YES" -eq 1 ]; then
+            if git -C "$p" push -u "$ghremote" "$br" 2>&1 | sed 's/^/       /'; then
+              grn "       올렸다: $br"; pushed=1
+            else
+              red "       🚨 실패: $br"; failed=1
+            fi
+          fi
+        else
+          # ③ 확인할 방법이 없다. **모르는 것을 올리지 않는다** — --yes 여도.
+          red "   ▸ $br — 원격에 같은 이름이 없다. **병합 후 지운 브랜치일 수 있다.**"
+          red "        gh 가 없어 확인하지 못했다 — 확인 전에는 올리지 않는다."
+          unknown=1
         fi
         continue
       fi
@@ -1038,8 +1070,21 @@ EOS
     ylw "      survey 결과에서 각 저장소의 원격이 무엇인지 먼저 확인한다."
     return 1
   fi
+  if [ "$unknown" -eq 1 ]; then
+    cat <<'EOS'
+
+   🚨 원격에 같은 이름이 없는 브랜치를 **판정하지 못했다.**
+      「없다」는 「안 올라갔다」가 아니다 — **병합하고 지운 브랜치가 같은 모양**이다.
+      2026-09-04 실물에서 그렇게 보인 29개 중 27개가 이미 병합된 것이었다.
+
+   확인하는 법:
+     gh auth login          # 이 뒤에 sync 를 다시 돌리면 자동으로 가른다
+     또는 브랜치마다:  gh pr list --head <브랜치> --state merged
+EOS
+    return 1
+  fi
   if [ "$planned" -eq 0 ]; then
-    grn "   ✅ 검사한 $checked 개 모두 원격과 같다 — 올릴 것이 없다."
+    grn "   ✅ 검사한 $checked 개 모두 올릴 것이 없다(원격과 같거나 이미 병합됐다)."
   elif [ "$ASSUME_YES" -eq 1 ] && [ "$pushed" -eq 1 ]; then
     grn "   ✅ 올렸다. GitHub 에서 브랜치가 보이는지 눈으로 확인한다."
   else
