@@ -53,7 +53,7 @@ class CardPhotoQuotaService {
         return quota;
       }
       // 필드가 아직 없는 계정이 정상이다 — 기본값으로 시작한다.
-      return cachedOrDefault();
+      return await cachedOrDefault();
     } catch (e) {
       debugPrint('사진 한도 조회 실패: ${e.runtimeType}');
       return cachedOrDefault();
