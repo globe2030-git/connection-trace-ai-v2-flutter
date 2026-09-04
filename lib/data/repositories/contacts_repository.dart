@@ -724,8 +724,14 @@ class ContactsRepository extends ChangeNotifier {
         return;
       }
 
-      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
-      final decoded = await DataCryptoService.decryptJson(raw, key);
+      // 🚨 **키 하나가 아니라 「가진 키들」로 연다** (키링, 2026-09-04).
+      //
+      // 지금은 목록에 키가 하나뿐이라 **동작이 예전과 같다.** 바뀐 것은
+      // 모양이고, 나중에 한 사람이 계정을 둘 이상 갖게 되면
+      // [EncryptionKeyService.knownKeysFor]가 여러 개를 돌려주는 것만으로
+      // 여기가 그대로 동작한다 — 이 파일을 다시 고칠 일이 없다.
+      final keys = await _encryptionKeyService.knownKeysFor(uid);
+      final decoded = await DataCryptoService.decryptJsonWithAny(raw, keys);
       final jsonList = decoded['contacts'] as List<dynamic>? ?? const [];
       _contacts = jsonList
           .map((j) => ContactModel.fromJson(j as Map<String, dynamic>))
