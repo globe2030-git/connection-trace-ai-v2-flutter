@@ -134,12 +134,34 @@ void main() {
       expect(body.contains('for (final c in outcome.toPush)'), isFalse);
     });
 
-    test('「유지」를 고르면 표시하고, 「교체」를 고르면 비운다', () {
+    // 🚨 **2026-09-04: 「유지하고 계속 쓰기」가 없어졌다**(globe2030님 결정 —
+    //    *"로그인한 계정으로 데이터를 보이는 게 맞지 않냐"*). 계정 전환은 이제
+    //    언제나 교체이므로, `auth_gate` 는 표시를 **붙이지 않는다** — 새로
+    //    넘어오는 명함이 생기지 않기 때문이다.
+    //
+    // ⚠️ **그렇다고 이 파일의 보호를 걷어내면 안 된다.** 「유지」를 없앤 것은
+    //    앞으로의 일이고, **이미 「유지」로 넘어온 명함을 가진 기기는 실물로
+    //    존재한다**(2026-08-28 실측: 폴드 103건 · 아이폰 195건). 그 기기들은
+    //    새 빌드를 깔아도 그 명함을 그대로 갖고 있고, 새 계정 서버로 새면
+    //    **제3자 개인정보가 남의 계정으로 나간다.**
+    //
+    // 📌 그 보호는 `contacts_repository` 의 **소급 표시**가 한다(바로 아래
+    //    테스트). 표시를 붙이는 자리가 `auth_gate` 에서 그쪽 하나로 줄었을
+    //    뿐, 규칙 자체는 그대로다.
+    test('🚨 「유지」 갈래는 없어졌고, 「교체」의 비우기는 남아 있다', () {
       final src = File(
         'lib/presentation/common/auth_gate.dart',
       ).readAsStringSync();
-      expect(src.contains('CarriedOverContactsService().markAll'), isTrue);
-      expect(src.contains('CarriedOverContactsService().clear()'), isTrue);
+      expect(
+        src.contains('CarriedOverContactsService().markAll'),
+        isFalse,
+        reason: '「유지」가 없으므로 새로 표시를 붙일 일이 없다',
+      );
+      expect(
+        src.contains('CarriedOverContactsService().clear()'),
+        isTrue,
+        reason: '교체하면 비운다 — 안 비우면 자기 명함을 서버에 안 올린다(추가 556)',
+      );
     });
 
     test('소급 표시가 동기화 앞에서 한 번 돈다 — 없으면 정작 샌 기기에 안 듣는다', () {
