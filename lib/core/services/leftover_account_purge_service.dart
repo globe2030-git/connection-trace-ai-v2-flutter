@@ -47,6 +47,7 @@ import 'encryption_key_service.dart';
 /// 이것을 예약에 넣으면 **B가 그 사이에 저장한 자기 프로필 사진을 30일 뒤에
 /// 지워버린다.** [schedule]과 [_purgeOne] 양쪽에서 막는다 — 한쪽이 뚫려도
 /// 다른 쪽이 잡게 이중으로 둔다.
+
 class LeftoverAccountPurgeService {
   LeftoverAccountPurgeService({
     ContactImageService? imageService,
@@ -126,18 +127,35 @@ class LeftoverAccountPurgeService {
     await cancelFor(uid);
   }
 
-  /// 예약된 uid 목록과 각 예정 시각. 설정 화면이 「이전 계정 데이터」 행을
-  /// 그릴 때 쓴다(법무 검토 ③-(나): 다이얼로그는 한 번 지나가면 다시 볼 수
-  /// 없으므로, 유예 중임을 계속 볼 수 있는 자리가 있어야 한다).
-  Future<Map<String, DateTime>> pendingSchedules() async {
+  /// 대기 중인 예약 전부. 설정 화면이 「이전 계정 데이터」 행을 그릴 때 쓴다
+  /// (법무 검토 ③-(나): **다이얼로그는 한 번 지나가면 다시 볼 수 없으므로**,
+  /// 유예 중임을 계속 볼 수 있는 자리가 있어야 한다).
+  ///
+  /// 📌 **장수까지 돌려준다** — 법무 검토 ③ 요소 2 가 *"무엇이 지워지는지
+  /// (이 기기의 명함 N장·사진 M장)"* 를 요구한다. 「데이터가 있습니다」로는
+  /// 이용자가 무엇을 잃는지 가늠할 수 없다.
+  Future<List<PendingLeftoverPurge>> pending() async {
     final book = await _load();
-    final out = <String, DateTime>{};
+    final out = <PendingLeftoverPurge>[];
     book.forEach((uid, entry) {
       final at = _readScheduledAt(entry);
-      if (at != null) out[uid] = at;
+      if (at == null) return;
+      out.add(
+        PendingLeftoverPurge(
+          uid: uid,
+          scheduledAt: at,
+          contactIds: _readContactIds(entry),
+        ),
+      );
     });
+    out.sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
     return out;
   }
+
+  /// 예약된 uid 와 각 예정 시각만 필요한 곳을 위한 얇은 겉면.
+  Future<Map<String, DateTime>> pendingSchedules() async => {
+    for (final p in await pending()) p.uid: p.scheduledAt,
+  };
 
   /// 만기가 지난 예약을 실행한다. 지운 계정 수를 돌려준다.
   ///
@@ -263,4 +281,27 @@ class LeftoverAccountPurgeService {
       debugPrint('이전 계정 삭제 예약 저장 실패: ${e.runtimeType}');
     }
   }
+}
+
+
+/// 아직 지우지 않은 이전 계정 하나의 예약.
+class PendingLeftoverPurge {
+  const PendingLeftoverPurge({
+    required this.uid,
+    required this.scheduledAt,
+    required this.contactIds,
+  });
+
+  /// 이전 계정의 uid. ⚠️ **화면에 그대로 보여 주지 않는다** — 이용자에게
+  /// 아무 의미가 없는 값이고, 그렇다고 이메일을 보여 줄 수도 없다(우리가
+  /// 가진 것은 uid 뿐이다).
+  final String uid;
+
+  /// 이 시각이 지나면 지운다(UTC).
+  final DateTime scheduledAt;
+
+  /// 지울 명함 id 들. 길이가 곧 「사진 몇 장」이다.
+  final List<String> contactIds;
+
+  int get photoCount => contactIds.length;
 }
