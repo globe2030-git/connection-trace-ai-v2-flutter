@@ -607,7 +607,7 @@ class _SettingsViewState extends State<SettingsView> {
                         builder: (_) => OpenSourceNoticeView(
                           applicationName: '커넥션센스',
                           applicationVersion: AppVersion.versionOnly,
-                          applicationLegalese: '© 2026 크림하우스주식회사',
+                          applicationLegalese: '© 2026 크림하우스 주식회사',
                         ),
                       ),
                     ),
