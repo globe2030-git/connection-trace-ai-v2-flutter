@@ -1093,6 +1093,100 @@ EOS
   return 0
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑥ 병합된 로컬 브랜치 정리 — **확인된 것만** 지운다
+
+do_prune_branches() {
+  need_macos
+  hdr "⑥ 병합된 로컬 브랜치 정리"
+  local ROOT="${RELO_ROOT:-$DST}"
+  [ -d "$ROOT" ] || { red "폴더가 없다: $ROOT"; exit 2; }
+
+  cat <<'EOS'
+   🚨 브랜치를 지우는 것은 되돌리기 번거롭다. 그래서 **기본은 계획만** 보여준다.
+      실제로 지우려면 --yes 를 붙인다.
+   ⚠️ 지우는 것은 **커밋이 원격 기본 브랜치에 이미 들어 있다고 확인된 것뿐**이다.
+      확인 못 한 것은 그대로 둔다 — 「모르면 안 지운다」.
+   📌 지울 때 커밋 해시를 함께 찍는다. 되살리려면: git branch <이름> <해시>
+EOS
+
+  local p name ghremote rname rurl rurl_now defbr slug cur held br sha prno
+  local del_n=0 keep_n=0 wt_n=0
+  while read -r p; do
+    [ -z "$p" ] && continue
+    [ -d "$p/.git" ] || continue
+    [ "$(git -C "$p" rev-parse --is-bare-repository 2>/dev/null)" = "true" ] && continue
+    name="${p#$ROOT/}"
+    ghremote=""
+    while read -r rname rurl _; do
+      [ -z "${rname:-}" ] && continue
+      if [ -n "$SYNC_REMOTE" ]; then
+        [ "$rname" = "$SYNC_REMOTE" ] && ghremote="$rname"
+      else
+        [ "$(remote_kind "$rurl")" = "GitHub" ] && [ -z "$ghremote" ] && ghremote="$rname"
+      fi
+    done < <(git -C "$p" remote -v 2>/dev/null | awk '$3=="(fetch)"')
+    [ -z "$ghremote" ] && continue
+
+    echo ""
+    echo "▪ $name"
+    if ! GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -oBatchMode=yes' \
+         git -C "$p" fetch --quiet "$ghremote" 2>/dev/null; then
+      red "   fetch 실패 — 낡은 값으로는 지우지 않는다. 건너뛴다."
+      continue
+    fi
+    rurl_now="$(git -C "$p" remote get-url "$ghremote" 2>/dev/null)"
+    defbr="$(git -C "$p" symbolic-ref --quiet --short "refs/remotes/$ghremote/HEAD" 2>/dev/null | sed "s|^$ghremote/||")"
+    [ -z "$defbr" ] && defbr=main
+    slug="$(printf '%s' "$rurl_now" | sed -e 's|^git@[^:]*:||' -e 's|^https://[^/]*/||' -e 's|\.git$||')"
+    cur="$(git -C "$p" branch --show-current 2>/dev/null)"
+    # 🚨 워크트리가 잡고 있는 브랜치는 지울 수 없다(git 이 거부한다). 미리 가른다.
+    held="$(git -C "$p" worktree list --porcelain 2>/dev/null | awk '/^branch /{print $2}' | sed 's|^refs/heads/||')"
+
+    while read -r br; do
+      [ -z "$br" ] && continue
+      [ "$br" = "$defbr" ] && continue
+      [ "$br" = "$cur" ] && { echo "   · $br — 지금 서 있는 브랜치라 건너뛴다"; continue; }
+      if printf '%s\n' "$held" | grep -qx -- "$br"; then
+        ylw "   ⚠️ $br — 워크트리가 잡고 있다. 먼저 워크트리를 정리해야 지울 수 있다"
+        wt_n=$((wt_n+1)); continue
+      fi
+      sha="$(git -C "$p" rev-parse --short "$br" 2>/dev/null)"
+      # ① 기본 브랜치의 조상인가
+      if git -C "$p" merge-base --is-ancestor "$br" "$ghremote/$defbr" 2>/dev/null; then
+        echo "   🗑 $br ($sha) — $ghremote/$defbr 에 들어 있다"
+        del_n=$((del_n+1))
+        [ "$ASSUME_YES" -eq 1 ] && git -C "$p" branch -D "$br" >/dev/null 2>&1 \
+          && grn "      지웠다. 되살리려면: git branch $br $sha"
+        continue
+      fi
+      # ② squash 병합 — 포지에 묻는다
+      if [ -n "$slug" ] && command -v gh >/dev/null 2>&1; then
+        prno="$(gh pr list --repo "$slug" --head "$br" --state merged \
+                  --json number --jq '.[0].number' 2>/dev/null)"
+        if [ -n "${prno:-}" ]; then
+          echo "   🗑 $br ($sha) — PR #$prno 로 병합됨"
+          del_n=$((del_n+1))
+          [ "$ASSUME_YES" -eq 1 ] && git -C "$p" branch -D "$br" >/dev/null 2>&1 \
+            && grn "      지웠다. 되살리려면: git branch $br $sha"
+          continue
+        fi
+      fi
+      ylw "   🔒 $br ($sha) — 병합을 확인하지 못했다. **그대로 둔다**"
+      keep_n=$((keep_n+1))
+    done < <(git -C "$p" for-each-ref --format='%(refname:short)' refs/heads 2>/dev/null)
+  done < <(find "$ROOT" -maxdepth 3 -name .git -type d 2>/dev/null | while read -r g; do dirname "$g"; done | LC_ALL=C sort)
+
+  hdr "판정"
+  echo "   지울 것 $del_n 개 · 그대로 둘 것 $keep_n 개 · 워크트리가 잡은 것 $wt_n 개"
+  if [ "$ASSUME_YES" -ne 1 ] && [ "$del_n" -gt 0 ]; then
+    ylw "   실제로 지우려면 --yes 를 붙인다."
+  elif [ "$ASSUME_YES" -eq 1 ]; then
+    grn "   ✅ 정리했다. 위의 해시로 언제든 되살릴 수 있다."
+  fi
+  return 0
+}
+
 # 🚨 tee 로 보고서를 남기면 **파이프가 실패를 삼킨다**(CLAUDE.md 4-2 와 같은 뿌리).
 #    그리고 뒤에 오는 echo 두 줄이 상태를 다시 0 으로 덮는다. 2026-09-03 시험에서
 #    verify 가 「🚨 어긋남이 있다」를 찍고도 **종료코드 0** 으로 끝났다 — 자동화에
@@ -1105,6 +1199,7 @@ case "$MODE" in
   verify) do_verify  2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   relocate) do_relocate 2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   sync)   do_sync    2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
+  prune-branches) do_prune_branches 2>&1 | tee "$REPORT"; rc=${PIPESTATUS[0]} ;;
   *) cat >&2 <<'EOS'
 사용법: tool/migrate_to_work_volume.sh <단계> [옵션]
 
@@ -1114,6 +1209,7 @@ case "$MODE" in
   verify   원본과 대조한다
   relocate 같은 볼륨 안에서 폴더를 옮겼을 때 다시 잇는다(--root=<폴더>)
   sync     새 볼륨에서 GitHub 과 맞춘다(계획만; --yes 로 실제 push)
+  prune-branches  병합이 확인된 로컬 브랜치를 지운다(계획만; --yes 로 실제 삭제)
 
 옵션
   --yes            copy 를 실제로 실행
