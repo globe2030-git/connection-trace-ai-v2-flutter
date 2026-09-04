@@ -1,4 +1,5 @@
 import '../../core/services/card_photo_backup_state.dart';
+import '../../core/utils/identical_contacts.dart';
 import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -291,8 +292,51 @@ class ContactsRepository extends ChangeNotifier {
       if (fromLocal) toPush.add(candidate);
     }
 
-    merged.sort((a, b) => _updatedAtOf(b).compareTo(_updatedAtOf(a)));
-    return (merged: merged, toPush: toPush);
+    final folded = _foldIdentical(merged);
+    folded.sort((a, b) => _updatedAtOf(b).compareTo(_updatedAtOf(a)));
+    return (merged: folded, toPush: toPush);
+  }
+
+  /// **두 기기가 같은 사람을 각각 등록한 것**을 하나로 접는다 (추가 572 판정기 연결).
+  ///
+  /// ## 왜 여기인가
+  ///
+  /// 위 병합은 **id로만** 맞춘다. 기기마다 등록하면 id가 달라 **둘 다
+  /// 살아남는다.** 삭제 전파(tombstone)는 제대로 있는데 **중복 합치기가
+  /// 없었다** — 판정기([isSafeToMergeAutomatically])는 2026-08-29에 만들어져
+  /// 있었지만 **`lib/` 안에서 부르는 곳이 0건**이었다(2026-09-04 실측).
+  ///
+  /// 📌 **사고가 아니라 정상 경로다** — 폰과 태블릿을 같이 쓰면 그냥 일어난다.
+  ///
+  /// ## 🚨 서버는 건드리지 않는다 — 접는 것은 **이 기기가 보는 목록**뿐이다
+  ///
+  /// 판정기 머리말이 정확히 경고한다: *"동기화는 아무도 안 보는 자리다 —
+  /// 거기서 자동으로 합치면 잃어도 모른다."* 그래서 [toPush]에 손대지 않는다.
+  ///
+  /// ```
+  /// 서버        원본 둘이 그대로 남는다   → 판정이 틀렸어도 되돌릴 수 있다
+  /// 이 기기      하나로 접혀 보인다
+  /// 다른 기기    각자 같은 규칙으로 접는다 → 결과가 같다(사전순이라 결정적)
+  /// ```
+  ///
+  /// ⭐ **멱등하다.** 다음 동기화에서 서버 원본이 다시 내려와도 또 접힌다.
+  ///
+  /// ⚠️ **지우는 것은 사람이 보는 화면에서 해야 한다.** 여기서 지우면 판정이
+  /// 틀렸을 때 되돌릴 방법이 없다.
+  static List<ContactModel> _foldIdentical(List<ContactModel> items) {
+    final out = <ContactModel>[];
+    for (final c in items) {
+      var foldedInto = false;
+      for (var i = 0; i < out.length; i++) {
+        if (isSafeToMergeAutomatically(out[i], c)) {
+          out[i] = mergeIdentical(out[i], c);
+          foldedInto = true;
+          break;
+        }
+      }
+      if (!foldedInto) out.add(c);
+    }
+    return out;
   }
 
   /// 다기기 동기화(P1-39 A안) — [mergeSync]를 서버 데이터에 적용한다.
@@ -696,10 +740,60 @@ class ContactsRepository extends ChangeNotifier {
       // 복호화 실패(위변조/키 불일치 등)를 포함해 어떤 이유로든 로드에
       // 실패하면 크래시하지 않고 빈 목록으로 시작한다.
       debugPrint('Error loading saved contacts: $e');
+      // 🚨 **여기서 멈춰 있었다** (2026-09-04에 찾음).
+      //
+      // 크래시를 막은 판단 자체는 옳다. 그런데 `debugPrint`는 **릴리스에서
+      // 아무 데도 안 나온다** — 화면은 그냥 비어 있고 아무 말도 하지 않는다.
+      // `data_crypto_service.dart:9`가 이미 경고해 둔 그대로다: *"조용히 빈
+      // 데이터로 넘어가면 사용자가 「명함이 다 사라졌다」고 오해할 수 있다."*
+      //
+      // 🚨 **그리고 오해로 끝나지 않는다.** 빈 목록인 채로 명함을 하나라도
+      // 추가하면 [_saveToDisk]가 돌아 **못 읽은 암호문을 덮어쓴다.** 그때는
+      // 되돌릴 방법이 없다 — 실제로 이런 순서로 일어날 수 있다.
+      //
+      // ```
+      // ① 재설치 등으로 기기의 키가 없다
+      // ② 서버에서 키를 못 받는다(네트워크) → 새 키가 발급된다
+      // ③ 기존 암호문이 안 열린다 → 빈 목록
+      // ④ 명함을 하나 추가한다 → 저장이 돌아 새 키로 덮어쓴다
+      // ⑤ 🚨 명함이 진짜로 사라진다
+      // ```
+      //
+      // ⭐ **그래서 「못 읽었다」를 기억하고, 그동안 저장을 막는다.** 못 읽은
+      // 것은 못 읽은 채로 두는 것이 낫다 — 암호문이 남아 있으면 다음에
+      // 키가 돌아왔을 때 열린다.
+      _localReadFailed = true;
+      notifyListeners();
     }
   }
 
+  // 로컬 저장분을 못 읽었다 — 위 catch 참고. 화면이 이 사실을 말해야 하고,
+  // 그동안 저장이 원본을 덮어쓰면 안 된다.
+  bool _localReadFailed = false;
+
+  /// **기기에 저장된 명함을 열지 못했다.**
+  ///
+  /// 🚨 참이면 **명함이 없는 것이 아니라 못 읽은 것**이다. 화면은 둘을 다르게
+  /// 말해야 한다 — 빈 목록과 같은 모양으로 보여주면 이용자는 *"명함이 다
+  /// 사라졌다"* 고 읽는다.
+  ///
+  /// 📌 이 상태에서는 [_saveToDisk]가 **아무것도 쓰지 않는다.** 암호문을
+  /// 그대로 남겨 둬야 나중에 키가 돌아왔을 때 열 수 있다.
+  bool get localReadFailed => _localReadFailed;
+
   Future<void> _saveToDisk() async {
+    // 🚨 **못 읽은 상태에서는 쓰지 않는다** (2026-09-04, [localReadFailed]).
+    //
+    // 여기서 쓰면 **열지 못한 암호문을 덮어쓴다.** 지금 `_contacts`는 빈
+    // 목록이거나 그 뒤에 더한 몇 장뿐이라, 덮는 순간 원래 명함이 사라진다.
+    // 못 읽은 채로 두면 다음에 키가 돌아왔을 때 열린다.
+    //
+    // ⚠️ **조용히 넘어가지 않는다** — 화면이 [localReadFailed]로 그 사실을
+    // 말하고 있어야 한다. 안 그러면 "저장했는데 안 남는" 것으로 보인다.
+    if (_localReadFailed) {
+      debugPrint('로컬 저장분을 못 읽은 상태라 저장을 건너뛴다 — 덮어쓰기 방지');
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = _contacts.map((c) => c.toJson()).toList();
