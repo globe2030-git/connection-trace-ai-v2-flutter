@@ -247,7 +247,7 @@ class _AdConsentViewState extends State<AdConsentView> {
                     const SizedBox(height: 9),
                     const Text(
                       // 전송자 명칭을 밝힌다(안내서 p.12).
-                      '커넥션센스(크림하우스주식회사)가 보내는 새 기능 소식, '
+                      '커넥션센스(크림하우스 주식회사)가 보내는 새 기능 소식, '
                       '이벤트·할인 안내 등 광고성 정보를 받으시겠어요?',
                       style: TextStyle(
                         fontSize: 13,

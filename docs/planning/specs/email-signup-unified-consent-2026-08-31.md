@@ -340,7 +340,7 @@ class SignupConsentView extends StatefulWidget {
   **`login_view.dart`를 집중적으로 고쳤다** — 만 14세 강조 로직, 애플 버튼
   `onBlockedTap` 등. 이번 스펙은 그 로직의 상당 부분(나이 체크 UI 전체)을
   **제거**한다. 착수 전 PM이 HANDOFF.md에 점유를 공지했다(아래 §10).
-  ⚠️ **구현 담당자는 착수 직전 `git -C /Volumes/X31/Claude/ct-geo-notice
+  ⚠️ **구현 담당자는 착수 직전 `git -C /Volumes/Work/Claude/ct-geo-notice
   status`로 그 워크트리가 비어 있는지 다시 확인할 것** — 이 스펙 작성
   시점(2026-08-31 저녁) 기준으로는 clean/detached였다.
 - `ct-phone-otp`(feat/phone-otp)는 main보다 한참 뒤처진 상태이고 이번

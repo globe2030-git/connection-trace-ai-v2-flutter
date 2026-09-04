@@ -39,7 +39,7 @@
 
 - **`ocrStats`** — 인식 결과 통계가 서버에 쌓이고 있다
 - **명함 검수 자료** — 검수용 촬영본 99장은
-  `/Volumes/X31/Claude/connection-sense-assets/명함데이터/명함검수/이미지/`,
+  `/Volumes/Work/Claude/connection-sense-assets/명함데이터/명함검수/이미지/`,
   정답지는 `~/card-ocr-data/ocr_truth.tsv`(권한 700). 둘 다 저장소 밖이다
 
 → **착수 전에 "자동 크롭 실패율"을 실제 촬영본으로 재 보는 것**을 권한다.

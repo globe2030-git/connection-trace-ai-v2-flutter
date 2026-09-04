@@ -45,7 +45,7 @@ $ADB devices
 ## 2. 실행
 
 ```bash
-cd "/Volumes/X31/Codex/connection-trace-ai-v2-flutter"
+cd "/Volumes/Work/Codex/connection-trace-ai-v2-flutter"
 flutter run -d R3CY90SHN4F --debug
 ```
 

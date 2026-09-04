@@ -373,7 +373,7 @@ F-15는 머리글 숫자까지 정확했고, F-10은 규칙 테스트가 촘촘�
 
 코드가 아닌 산출물 — 회의·논의 자료, 피드백 정리, 점검 보고서, 명함/OCR 데이터,
 앱 스크린샷, 빌드 결과물, 영상 — 은 다운로드 폴더에 흩뿌리지 말고
-`/Volumes/X31/Claude/connection-sense-assets/` 아래 해당 하위 폴더에 만든다
+`/Volumes/Work/Claude/connection-sense-assets/` 아래 해당 하위 폴더에 만든다
 (`문서/`, `명함데이터/`(권한 700, 제3자 개인정보), `화면캡처/`, `빌드/`, `미디어/`).
 파일명 기본형은 `커넥션센스_<주제>_<YYYY-MM-DD>.<확장자>`.
 `~/Downloads/커넥션센스`는 이 폴더를 가리키는 심볼릭 링크다.
@@ -649,7 +649,7 @@ PM 에게 묻고 답을 기다리느니, **한 줄 알리고 시작하는 편이
 수 없다.** 작업을 끝내고 브랜치를 반납할 때 이렇게 막힌다.
 
 ```
-fatal: 'main' is already used by worktree at '/Volumes/X31/Claude/connection-trace-ai-v2-flutter'
+fatal: 'main' is already used by worktree at '/Volumes/Work/Claude/connection-trace-ai-v2-flutter'
 ```
 
 **반납은 분리 상태로 한다:**

@@ -227,7 +227,7 @@ void main() {
     testWidgets('전송자 명칭을 밝힌다', (tester) async {
       await pump(tester);
       expect(
-        find.textContaining('크림하우스주식회사'),
+        find.textContaining('크림하우스 주식회사'),
         findsOneWidget,
         reason: '누가 보내는지 화면에 없으면 명시적 동의로 보기 어렵다(안내서 p.12)',
       );
