@@ -3776,9 +3776,21 @@ JIT라 디버그 호스트를 요구하는데 `flutter run`이 이미 떨어져 
    빌드 실패라 코드를 의심하기 쉽다. `ios/Pods/{gRPC-Core,gRPC-C++,BoringSSL-GRPC}`와
    `~/Library/Caches/CocoaPods/Pods/Release/`의 같은 셋을 지우고 다시 깐다.
    ⚠️ `pod cache clean`은 이 환경에서 듣지 않는다(폴더를 직접 지워야 한다).
-2. **`flutter run`이 아이폰에서 앱에 못 붙는다**(`Dart VM Service was not
-   discovered`). 로그로 확인할 생각은 접는 게 빠르다. 대신 **`devicectl`로 기기
-   실물을 직접 읽을 수 있다** — 앱 데이터 컨테이너, crash 리포트까지.
+2. ✅ **[2026-09-03 정정] 이 항목은 풀렸다 — Xcode 를 업데이트하니 `flutter run`
+   으로 앱이 떴다**(globe2030님 실기기). 아래 옛 서술은 **낡았다.**
+
+   > ~~**`flutter run`이 아이폰에서 앱에 못 붙는다**(`Dart VM Service was not
+   > discovered`). 로그로 확인할 생각은 접는 게 빠르다.~~
+
+   후보를 지운 순서: **기기 잠금 ❌**(화면 안 잠김) → **무선 ❌**(유선 USB) →
+   **Xcode 버전 ✅**. 같은 명령이 **빌드 376초 → 16.5초 · 설치 628초 → 23.3초**가
+   됐다. ⚠️ **잰 것은 「Xcode 를 올리니 됐다」 하나이고**, *"Xcode 가 기기 iOS 를
+   지원하지 못해서"* 는 그 설명이다 — 기제를 직접 재지는 않았다. 📌 **또 막히면
+   Xcode 버전과 기기 iOS 버전을 먼저 맞춰 본다.** 자세한 것은 추가 475 ② 와
+   `.claude/skills/run-app/SKILL.md` §2-1.
+
+   그래도 남는 것: **`devicectl`로 기기 실물을 직접 읽을 수 있다** — 앱 데이터
+   컨테이너, crash 리포트까지. 이건 `flutter run` 이 되든 안 되든 쓸모가 있다.
    ⚠️ 플래그가 명령마다 다르다: `info files`는 `--username`, `copy from`은 `--user`.
 
 ### 지갑을 켜기까지 남은 것 (전부 사용자 결정)
