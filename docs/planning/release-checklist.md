@@ -259,9 +259,32 @@ KAKAO_REST_KEY · KAKAO_CLIENT_SECRET · NAVER_CLIENT_ID · NAVER_CLIENT_SECRET
 **매번 새로 쓰지 말고 그 문서를 고쳐 쓸 것** — 새로 쓰면 "지금 안 되는 기능"
 목록이 빠져 정상 동작을 결함으로 제보받는다.
 
+🚨 **앱 ID 를 확인하고 쓴다 — 이 줄이 한 번 낡아 있었다** (2026-09-04)
+
+`google-services.json` 에는 **안드로이드 앱이 둘** 들어 있다. 08-30 에 패키지
+ID 를 바꾸면서([추가 618]) 새 앱을 등록했고, **옛 항목은 아직 쓰는 테스터가
+있어 일부러 남겨 뒀다**(1-5 절 ④ 없이 ⑤로 가지 마라).
+
+```
+1:79345379389:android:1fd86a4b95f44c10182254   com.creamhouse.connectionsense                   ← 지금 빌드되는 것
+1:79345379389:android:24e13cbaadaf82ac182254   com.connectiontrace.connection_trace_ai_flutter  ← 옛 패키지
+```
+
+⚠️ **이 문서에는 08-30 이후로도 옛 쪽이 적혀 있었다.** 패키지를 바꾼 커밋이
+이 줄까지 오지 않았다 — **낡은 기준선이 조용히 사람을 속인다**(CLAUDE.md 3장).
+
+📌 **외우지 말고 재서 쓴다.** 아래 한 줄이면 실물에서 뽑힌다.
+
 ```bash
+APP_ID=$(python3 -c "
+import json
+d=json.load(open('android/app/google-services.json'))
+print(next(c['client_info']['mobilesdk_app_id'] for c in d['client']
+           if c['client_info']['android_client_info']['package_name']
+              == 'com.creamhouse.connectionsense'))")
+
 firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk \
-  --app 1:79345379389:android:24e13cbaadaf82ac182254 \
+  --app "$APP_ID" \
   --project connection-sense \
   --release-notes "..." \
   --testers "..."      # 지정하지 않으면 아무에게도 안 간다
