@@ -20,6 +20,7 @@ import '../features/auth/views/phone_verify_view.dart';
 import '../../core/services/phone_verification_service.dart';
 import '../../core/services/card_photo_backup_state.dart';
 import '../../core/services/carried_over_contacts.dart';
+import '../../core/services/leftover_account_purge_service.dart';
 
 /// 계정 전환 안전장치(backlog #50)에서 "이 기기에 마지막으로 로그인했던
 /// uid"를 기억해두는 shared_preferences 키. 앱 재시작에도 유지되어야 해서
@@ -142,6 +143,20 @@ class _AuthGateState extends State<AuthGate> {
       );
       return;
     }
+    // 이전 계정의 기기 잔존물 정리(추가 522). **이 한 줄이 둘을 한다.**
+    //
+    //   · 만기(30일)가 지난 예약을 실행한다
+    //   · 🚨 **지금 로그인한 계정의 예약은 무조건 취소한다** — 돌아온
+    //     사람이므로 지울 이유가 없어졌다. 「로그인 자체가 취소 행위」라는
+    //     것이 이 유예의 실질이다(설계 문서 4-3).
+    //
+    // ⚠️ **계정 전환 판정보다 먼저 부른다.** 뒤에 부르면 아래에서 방금 잡은
+    //    예약을 도로 지운다.
+    //
+    // 실패해도 로그인을 막지 않는다 — 서비스 안에서 예외를 흡수하고, 못
+    // 지웠으면 다음 실행에 다시 기회가 온다.
+    await LeftoverAccountPurgeService().runDue(currentUid: uid);
+
     final lastUid = prefs.getString(kLastSignedInUidPrefsKey);
     // 그룹(추가 427)도 여기 넣는다 — 안 넣으면 명함·프로필은 비어 있고
     // 그룹만 남은 상태로 계정을 바꿨을 때 전환 확인 없이 새 계정 문맥으로
@@ -155,77 +170,71 @@ class _AuthGateState extends State<AuthGate> {
 
     if (lastUid != null && lastUid != uid && hasLocalData) {
       if (!context.mounted) return;
-      final replace = await _showAccountSwitchDialog(context);
-      if (replace == true) {
-        // ⚠️ **이전 계정의 기기 잔존물(명함 사진 암호문·로컬 암호화 키)은
-        // 일부러 지우지 않는다.** clearLocal은 shared_preferences만 비운다.
-        //
-        // 서버 사진 백업이 꺼져 있어(kCardPhotoBackupEnabled = false)
-        // **지우면 되살릴 방법이 없다.** 개인정보 최소화와 데이터 보전이
-        // 정면으로 부딪히는 자리라, 지금은 보전을 택한다(법무 회신 질문 9-④6).
-        // 사진 서버 백업을 켤 때 이 판단을 다시 봐야 한다.
-        await contactsRepo.clearLocal();
-        await profileRepo.clearLocal();
-        await groupsRepo.clearLocal();
-        // 🚨 사진 백업 장부도 비운다 (추가 518).
-        //
-        // 이 장부는 **앞 계정이 무엇을 백업했는지**를 기록한다. 안 비우면
-        // 새 계정 설정 화면에 **앞 사람 숫자가 그대로 뜬다** —
-        // `CardPhotoBackupStateService.clear()` 주석이 정확히 그 경우를
-        // 위해 만들어졌다고 적고 있는데, **부르는 곳이 0건이었다**(추가 79와
-        // 같은 모양).
-        //
-        // ⚠️ 위 주석대로 **기기의 사진 파일 자체는 여기서 안 지운다.** 그건
-        //    개인정보 최소화와 데이터 보전이 부딪히는 별개 판단이고,
-        //    사진 서버 백업이 켜진 지금 다시 봐야 한다(아래 ⚠️ 참고).
-        await CardPhotoBackupStateService().clear();
-        // 「교체」는 로컬을 이 계정 것으로 갈아 끼운다 — 넘어온 명함 표시가
-        // 남으면 **자기 명함을 서버에 안 올리게 된다**(추가 556).
-        await CarriedOverContactsService().clear();
-        await contactsRepo.forceRestoreFromServer(uid);
-        await profileRepo.forceRestoreFromServer(uid);
-        await groupsRepo.forceRestoreFromServer(uid);
+      // 🚨 **「유지하고 계속 쓰기」를 없앴다**(globe2030님 결정 2026-09-04).
+      //
+      // 종전에는 *"기존 데이터를 유지할까요, 교체할까요"*를 물었다. 그런데
+      // A 계정으로 등록하고 로그아웃한 뒤 B 계정으로 들어온 자리에서
+      // **「유지」가 무슨 의미냐**는 것이 결정의 요지였다 — 로그인한 계정의
+      // 데이터를 보여주는 것이 맞다. 계정마다 데이터가 유일해야 한다.
+      //
+      // 📌 그래서 이 화면은 **선택이 아니라 안내**가 됐다. 무엇이 일어나는지
+      //    말하고, 되돌리는 길(원래 계정으로 다시 로그인)을 함께 준다.
+      //
+      // ⚠️ **잃는 것도 적어 둔다** — 「유지」는 *"같은 사람이 로그인 수단을
+      //    바꿨을 때 명함을 새 계정으로 옮기는 유일한 통로"*이기도 했다
+      //    (backlog 4887행). 그 통로는 이 결정으로 닫힌다. 대신 이전 계정의
+      //    **서버 백업은 그대로 살아 있어** 그 계정으로 로그인하면 복원된다.
+      final purgeNow = await _showAccountSwitchNotice(context);
+
+      // 🚨 **지우기 전에 id를 캡처한다.** clearLocal 뒤에는 목록이 비어
+      //    무엇을 지워야 할지 알 수 없다. UUID뿐이라 개인정보가 아니다.
+      final leftoverIds = contactsRepo.contacts.map((c) => c.id).toList();
+
+      await contactsRepo.clearLocal();
+      await profileRepo.clearLocal();
+      await groupsRepo.clearLocal();
+      // 🚨 사진 백업 장부도 비운다 (추가 518).
+      //
+      // 이 장부는 **앞 계정이 무엇을 백업했는지**를 기록한다. 안 비우면
+      // 새 계정 설정 화면에 **앞 사람 숫자가 그대로 뜬다.**
+      await CardPhotoBackupStateService().clear();
+      // 로컬을 이 계정 것으로 갈아 끼운다 — 넘어온 명함 표시가 남으면
+      // **자기 명함을 서버에 안 올리게 된다**(추가 556).
+      await CarriedOverContactsService().clear();
+      await contactsRepo.forceRestoreFromServer(uid);
+      await profileRepo.forceRestoreFromServer(uid);
+      await groupsRepo.forceRestoreFromServer(uid);
+
+      // 이전 계정의 기기 잔존물(명함 사진 `.enc` · 로컬 암호화 키)을 30일 뒤에
+      // 지운다(추가 522).
+      //
+      // ⚠️ **예전에는 이것을 일부러 남겼다** — 사진 서버 백업이 꺼져 있어
+      //    (`kCardPhotoBackupEnabled = false`) 지우면 되살릴 방법이 없었기
+      //    때문이다(법무 회신 질문 9-④6). **2026-08-26에 백업이 켜지면서 그
+      //    전제가 사라졌고**, 그때 이 자리 주석이 *"다시 봐야 한다"*고
+      //    예고했던 그 시점이다.
+      //
+      // 🚨 지우는 것은 **이 기기의 사본뿐**이다. 이전 계정의 서버 백업
+      //    (Firestore·Cloud Storage)은 건드리지 않는다 — 그건 A 몰래 A의
+      //    계정을 건드리는 일이 된다.
+      final purgeService = LeftoverAccountPurgeService();
+      if (purgeNow == true) {
+        await purgeService.purgeNow(uid: lastUid, contactIds: leftoverIds);
       } else {
-        // 🚨 "유지"를 골랐다 — 이 명함들의 사진은 **이 계정으로 올리지
-        //    않는다.** 그런데 장부에는 앞 계정이 남긴 「백업됨」이 그대로
-        //    남아 있다(같은 기기, 같은 contactId). 그래서 설정 화면이
-        //    **한 장도 안 올라간 명함을 「백업됨」이라고 말한다.**
-        //
-        // ✅ 실물(2026-08-28, 추가 555): 아이폰 장부 130장 · 새 계정 서버
-        //    0장이었고, 그 130은 **앞 계정 서버의 사진 수와 정확히 같았다.**
-        //    기기에 기록된 계정 전환 이력도 `choice: keep` 두 건이었다.
-        //
-        // ⚠️ **처음에는 "장부를 비워 다시 올리게 하자"고 했는데 그것이
-        //    틀렸다.** 명함 본문을 일부러 안 올리는 자리에서 사진만 올리는
-        //    꼴이 되고(바로 아래 주석), 사진에도 이름·전화·회사가 인쇄돼
-        //    있으니 실질은 같은 개인정보다. 게다가 **암호화 키가 계정마다
-        //    달라** 새 계정은 그 파일을 열지도 못한다 — 못 여는 개인정보만
-        //    한 벌 더 쌓인다.
-        //
-        // 📌 그래서 **올리는 쪽이 아니라 말하는 쪽을 고친다.** 여기서는
-        //    장부만 사실에 맞게 적고, 서버는 부르지 않는다.
-        await CardPhotoBackupStateService().markCarriedOverAll(
-          contactsRepo.contacts.map((c) => c.id),
-        );
-        // 🚨 **본문도 같이 표시한다**(추가 556). 위 사진 장부만으로는
-        //    부족했다 — 명함 본문은 다음 로그인의 `syncWithServer`가
-        //    올려 버렸고, 그 함수는 사진 장부를 보지 않는다.
-        await CarriedOverContactsService().markAll(
-          contactsRepo.contacts.map((c) => c.id),
-        );
+        await purgeService.schedule(uid: lastUid, contactIds: leftoverIds);
       }
+
       // ⚠️ **여기서 처음으로 서버 쓰기가 허용된다.** 선택이 끝났기 때문이다.
       //
-      // "유지"를 골랐으면 일회성 마이그레이션을 **건너뛴다** — 그 명함들은
-      // 이 계정이 수집한 것이 아니라 이 기기에 남아 있던 것이고, 통째로
-      // 이 계정의 서버 백업에 올리면 **제3자 개인정보가 두 계정에 이중으로
-      // 존재하게 된다.** ("교체"를 고른 경우는 위에서 이미 이 계정 자신의
-      // 데이터로 갈아 끼운 뒤라 올려도 자기 것이다.)
+      // 이 계정 자신의 데이터로 이미 갈아 끼운 뒤라 서버에 올려도 자기
+      // 것이다. ⚠️ `replaced: false`(옛 「유지」)는 이제 이 경로로 오지
+      // 않지만, `mayMigrateToServer`의 분기는 지우지 않고 남긴다 — 규칙이
+      // 왜 있는지가 그 함수와 테스트에 적혀 있다.
       await contactsRepo.runPostSyncMaintenance(
         skipServerMigration: !mayMigrateToServer(
           lastUidKnown: true,
           isAccountSwitch: true,
-          replaced: replace == true,
+          replaced: true,
         ),
       );
       // ⚠️ 무엇을 골랐는지 남긴다. 나중에 "이 명함들이 왜 이 계정에 있느냐"는
@@ -234,11 +243,10 @@ class _AuthGateState extends State<AuthGate> {
       await DataBackupService.recordAccountSwitch(
         uid,
         previousUid: lastUid,
-        replaced: replace == true,
+        replaced: true,
       );
-      // "유지하고 계속 쓰기"를 선택했어도(또는 다이얼로그가 그대로 닫혀도)
-      // uid는 갱신해둔다 — 사용자가 이미 한 번 명시적으로 다룬 상태이므로
-      // 다음부터는 다시 묻지 않는다.
+      // 안내를 닫았으면(뒤로가기 포함) uid를 갱신해 둔다 — 이미 교체가
+      // 끝났으므로 다음부터는 다시 안내하지 않는다.
       await prefs.setString(kLastSignedInUidPrefsKey, uid);
       return;
     }
@@ -397,37 +405,86 @@ class _AuthGateState extends State<AuthGate> {
     await service.markNotified(uid);
   }
 
-  Future<bool?> _showAccountSwitchDialog(BuildContext context) {
+  /// 계정이 바뀌었음을 **알린다.** 선택을 받지 않는다.
+  ///
+  /// 🚨 종전에는 「유지하고 계속 쓰기」/「현재 계정 데이터로 교체」를 골라야
+  /// 했는데, 2026-09-04에 globe2030님이 **「유지」를 없애기로** 결정했다 —
+  /// *"A 계정으로 등록하고 로그아웃한 뒤 B 계정으로 로그인할 때 「유지하고
+  /// 계속 쓰기」가 의미가 있느냐. 로그인한 계정으로 데이터를 보이는 게 맞지
+  /// 않냐"*. 계정마다 데이터가 유일해야 한다는 것이 요지다.
+  ///
+  /// 반환값은 **「지금 바로 삭제」를 골랐는지**다(`true`면 즉시 삭제).
+  /// 그대로 닫거나 뒤로 가면 `null` — 교체는 이미 확정이고 **사진만 30일
+  /// 뒤에 지워진다.**
+  ///
+  /// ## 문구에 반드시 들어가야 하는 것 (법무 검토 2026-08-27 ③ 요소 여섯)
+  ///
+  /// 1. **무엇이** 지워지는지 — 이 기기의 명함 사진
+  /// 2. **서버 백업은 안 지운다**는 사실 ← 이게 빠지면 과장이 된다
+  /// 3. **언제** — 30일 뒤
+  /// 4. **되돌리는 방법** — 그 전에 이전 계정으로 다시 로그인
+  /// 5. 30일이 지나면 어떻게 되는지
+  /// 6. **지금 바로 지우는 길** — §36(삭제 요구)의 실질적 통로
+  ///
+  /// ⚠️ **버튼에 「확인」·「취소」를 쓰지 않는다** — 무엇이 확인되고 무엇이
+  /// 취소되는지 말하지 않는다(같은 검토).
+  Future<bool?> _showAccountSwitchNotice(BuildContext context) {
     return showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('다른 계정으로 로그인했습니다'),
-        // ⚠️ 문구가 이 화면의 핵심이다. 예전에는 "기존 데이터를 유지한 채
-        // 계속 쓸까요?" 였는데, **유지가 무슨 일인지 말하지 않았다** — 그
-        // 명함들이 지금 계정의 데이터가 되어 지금 계정의 서버 백업에
-        // 올라간다는 사실이 빠져 있었다.
-        //
-        // 📌 "교체해도 이전 계정 백업은 남는다"도 반드시 함께 말한다.
-        // 이 한 줄이 없으면 이용자는 잃을까 봐 **안전한 쪽(교체)을 못 고른다.**
-        // 실물 확인 결과 clearLocal 은 서버를 건드리지 않는다.
+        title: const Text('지금 로그인한 계정의 명함을 보여드립니다'),
         content: const Text(
-          '이 기기에는 이전에 쓰던 계정의 명함·프로필 데이터가 남아 있습니다.\n\n'
-          '유지하면 이 기기의 명함이 지금 로그인한 계정의 데이터가 되고, '
-          '이후 저장·수정할 때 지금 계정의 서버 백업에 함께 저장됩니다. '
-          '이전 계정과 지금 계정이 같은 분이 아니라면 교체를 선택해 주세요.\n\n'
-          '교체해도 이전 계정에 백업된 명함은 지워지지 않으며, '
-          '그 계정으로 다시 로그인하면 복원됩니다.',
+          '이 기기에는 이전에 쓰시던 계정의 명함·프로필이 남아 있었습니다. '
+          '계정마다 데이터를 따로 두므로, 이 기기의 화면은 지금 로그인하신 '
+          '계정의 데이터로 바뀝니다.\n\n'
+          '이전 계정의 명함은 그 계정의 서버 백업에 그대로 있습니다. '
+          '그 계정으로 다시 로그인하시면 복원됩니다.\n\n'
+          '이 기기에 남아 있는 이전 계정의 명함 사진은 30일 뒤 이 기기에서 '
+          '삭제됩니다. 그 전에 이전 계정으로 다시 로그인하시면 삭제되지 '
+          '않습니다.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('유지하고 계속 쓰기'),
+            child: const Text('알겠습니다'),
           ),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () async {
+              // 🚨 되돌릴 수 없으므로 한 번 더 확인한다(법무 검토 ③).
+              final sure = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('이전 계정의 사진을 지금 지울까요?'),
+                  content: const Text(
+                    '이 기기에 남은 이전 계정의 명함 사진을 지금 삭제합니다. '
+                    '되돌릴 수 없습니다.\n\n'
+                    '이전 계정의 서버 백업은 지우지 않으므로, 그 계정으로 '
+                    '로그인하면 서버에 저장된 사진은 다시 받아옵니다. '
+                    '다만 아직 서버에 올라가지 못한 사진은 복구되지 않습니다.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('그만두기'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text(
+                        '지금 삭제',
+                        style: TextStyle(color: AppColors.destructive),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+              if (!context.mounted) return;
+              if (sure == true) {
+                Navigator.of(context).pop(true);
+              }
+            },
             child: const Text(
-              '현재 계정 데이터로 교체',
+              '지금 바로 삭제',
               style: TextStyle(color: AppColors.destructive),
             ),
           ),

@@ -111,13 +111,29 @@ void main() {
   });
 
   group('부르는 곳이 있나 — 규칙만 맞고 아무도 안 부르면 소용이 없다', () {
-    test('계정 전환에서 "유지" 갈래가 표시를 고친다', () {
-      final src = File('lib/presentation/common/auth_gate.dart')
+    // 🚨 **2026-09-04: 「유지하고 계속 쓰기」가 없어졌다**(globe2030님 결정).
+    //    표시를 붙이는 자리가 `auth_gate` 에서 `contacts_repository` 의 소급
+    //    표시 하나로 줄었다.
+    //
+    // ⚠️ **보호가 사라진 것이 아니다.** 이미 「유지」로 넘어온 명함을 가진
+    //    기기가 실물로 있고(2026-08-28 실측), 그 사진이 새 계정 서버로 올라가면
+    //    안 된다. 그래서 **없어졌는지**와 **남아 있는지**를 함께 잠근다 —
+    //    한쪽만 보면 통째로 걷어내도 통과한다.
+    test('🚨 표시하는 자리가 소급 표시 하나로 줄었다 — 사라진 것은 아니다', () {
+      final gate = File('lib/presentation/common/auth_gate.dart')
           .readAsStringSync();
       expect(
-        src.contains('markCarriedOverAll'),
+        gate.contains('markCarriedOverAll'),
+        isFalse,
+        reason: '「유지」 갈래가 없으므로 전환 시점에 붙일 표시가 없다',
+      );
+
+      final repo = File('lib/data/repositories/contacts_repository.dart')
+          .readAsStringSync();
+      expect(
+        repo.contains('markCarriedOverAll'),
         isTrue,
-        reason: '"유지"를 골랐을 때 장부를 사실에 맞게 적어야 한다',
+        reason: '이미 넘어온 명함을 가진 기기의 사진이 새 계정으로 올라간다',
       );
     });
 
