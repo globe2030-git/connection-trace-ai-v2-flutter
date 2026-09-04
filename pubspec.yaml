@@ -26,7 +26,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # 로 바꾸면서 올렸다(추가 608). 새 패키지는 **기기에서 별개 앱**이라 빌드 번호를
 # 안 올려도 설치는 되지만, 그러면 **옛 앱과 새 앱이 둘 다 `1.0.0+10`** 이 되어
 # 로그와 문의에서 어느 쪽인지 갈리지 않는다. 이름·아이콘도 같다.
-version: 1.0.0+11
+version: 1.0.0+12
 
 environment:
   sdk: ^3.12.2
