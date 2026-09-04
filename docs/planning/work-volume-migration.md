@@ -6,7 +6,7 @@
 | **대상** | `/Volumes/X31/Claude/` 아래 전부 → `/Volumes/Work/Claude/` |
 | **도구** | [`tool/migrate_to_work_volume.sh`](../../tool/migrate_to_work_volume.sh) |
 | **작성** | 2026-09-03 |
-| **상태** | ✅ **2026-09-04 실물 이전 완료**(49.9GB · 저장소 15개 · 워크트리 5개). 유실 0건 |
+| **상태** | ✅ **2026-09-04 완료** — 이전(49.9GB · 저장소 15개 · 워크트리 5개, 유실 0건) · GitHub 동기화 · 브랜치 정리까지 |
 
 ---
 
@@ -35,10 +35,13 @@ tool/migrate_to_work_volume.sh copy --yes    # ② 복사 (X31 은 그대로 둔
 tool/migrate_to_work_volume.sh repair        # ③ 옮겨서 깨진 절대경로 고치기
 tool/migrate_to_work_volume.sh verify        # ④ 원본과 대조
 tool/migrate_to_work_volume.sh sync          # ⑤ GitHub 과 맞춘다(계획만)
+tool/migrate_to_work_volume.sh prune-branches  # ⑥ 병합된 로컬 브랜치 정리(계획만)
 
 # 나중에 **같은 볼륨 안에서** 폴더를 옮겼다면(예: Work/* → Work/Claude/*)
 tool/migrate_to_work_volume.sh relocate --root=/Volumes/Work/Claude
 ```
+
+⚠️ ⑤·⑥ 은 **기본이 계획만**이다. `--yes` 를 붙일 때만 push 하고 지운다.
 
 🚨 **이 스크립트는 아무것도 지우지 않는다.** X31 은 손대지 않는다. 정리는
 ④가 통과하고, 새 경로에서 `flutter test` 와 실기기 빌드까지 한 번 돌려 본
@@ -110,10 +113,10 @@ tool/migrate_to_work_volume.sh relocate --root=/Volumes/Work/Claude
 
 ---
 
-## 🚨 실물에서 결함이 다섯 건 나왔다 — 시험 트리에서는 안 나온 것들
+## 🚨 실물에서 결함이 여덟 건 나왔다 — 시험 트리에서는 안 나온 것들
 
-전 단계가 흉내낸 시험 트리를 통과한 뒤에 실물을 돌렸는데, **거기서 다섯 건이
-더 나왔다.** 다섯 건의 뿌리가 전부 같다.
+전 단계가 흉내낸 시험 트리를 통과한 뒤에 실물을 돌렸는데, **거기서 여덟 건이
+더 나왔다.** 여덟 건의 뿌리가 대체로 같다.
 
 > **잴 것이 없어진 것을 「통과」로 읽었다.**
 
@@ -124,8 +127,11 @@ tool/migrate_to_work_volume.sh relocate --root=/Volumes/Work/Claude
 | 3 | `verify` 가 **「복사본에 더 있는 것」을 유실로 판정**했다 | 🚨 7건이 떴는데 같은 출력의 판정선은 「유실 0건」이었다 |
 | 4 | `repair` 의 `pub get` 이 **추적 파일 `analysis_options.yaml` 을 고치고 말하지 않았다** | 나중에 `analyze` 가 warning 을 내자 **이전 탓인가부터 의심**하게 됐다(아니었다) |
 | 5 | `repair` 가 **같은 볼륨 안 이동에는 못 쓴다** | 이전을 마친 뒤 `Work/*` 를 `Work/Claude/` 로 옮기자 절대경로가 전부 다시 틀어졌다 |
+| 6 | `sync` 이 **업스트림과 비교**했다 | topic 브랜치들의 업스트림이 `origin/main` 이라, main 을 pull 하면 **전부 「원격이 앞서 있다」로 막힌다** |
+| 7 | `sync` 이 **인증을 물으며 멈춰 섰다** | 실패 처리 코드가 있어도 **거기 닿지 못한다**. 저장소마다 여덟 번 넘게 물었을 것이다 |
+| 8 | 🚨 `sync` 이 **병합하고 지운 브랜치 27개를 되살릴 뻔했다** | 위 절 참고 — 이번 이전에서 가장 위험했던 자리다 |
 
-⭐ **1·2·3 은 「틀린 값」이 아니라 「없어진 정보」다.** 틀린 값은 눈에 띄는데,
+⭐ **1·2·3·7 은 「틀린 값」이 아니라 「없어진 정보」다.** 틀린 값은 눈에 띄는데,
 없어진 정보는 **통과처럼 보인다.** verify·sync 에는 그 안전장치를 미리 넣어
 두었는데 **copy 에만 빠져 있었다** — 규약을 아는 것과 빠짐없이 적용하는 것은
 다른 일이다.
@@ -163,9 +169,43 @@ tool/migrate_to_work_volume.sh relocate --root=/Volumes/Work/Claude
 | 정적 분석 | info **11건** — 기준선과 일치 |
 | 서명 키 | `~/keys/` 에 있어 X31 정리와 무관했다(survey 가 실물로 확인) |
 | GitLab | **1개뿐**이었다(`Proposal-System-Streamlit`). 나머지는 GitHub 이거나 원격 없음 |
+| ⑤ 동기화 | 올릴 것은 **하나뿐**이었다(`exp/confidence-measure`). 나머지는 이미 올라가 병합돼 있었다 |
+| ⑥ 브랜치 정리 | **30개 삭제**(전부 PR 번호로 확인) · 1개 보존 · 1개는 워크트리가 잡고 있어 보류 |
 
 ⚠️ **survey 는 「원격보다 앞선 것」만 본다 — 「뒤처진 것」은 안 본다.** 옮긴 뒤에
 `main` 이 origin/main 보다 **13 커밋 뒤처져** 있는 것을 따로 발견했다.
+
+## 🚨 ⑤에서 가장 위험한 것이 나왔다 — 지운 브랜치를 되살릴 뻔했다
+
+sync 계획에 브랜치 **29개**가 「원격에 **같은 이름이 없다** ⇒ push -u」로 나왔다.
+GitHub 에서 하나씩 대조하니 **27개가 이미 병합된 것**이었다.
+
+```
+docs/claude-md-counting-rule  → PR #812    feat/phone-otp        → PR #667
+docs/backlog-666-no-reconsent → PR #808    fix/tap-target-48     → PR #797
+docs/trademark-similarity-550 → PR #643    … 그리고 스무 개 더
+```
+
+진짜로 안 올라간 것은 **하나뿐**이었다(`exp/confidence-measure` — 테스트 파일 96줄).
+`--yes` 를 붙였으면 **지운 브랜치 27개가 GitHub 에 되살아났을 것이다.**
+
+📌 원인은 하나다. **이 저장소는 `gh pr merge --squash --delete-branch` 를 쓴다**
+(CLAUDE.md 4-2). 병합하면 원격 브랜치가 지워지고 **로컬 브랜치만 껍데기로 남는다** —
+그 모양이 「한 번도 안 올린 브랜치」와 **똑같다.**
+
+> **「원격에 없다」는 「안 올라갔다」가 아니다.**
+> CLAUDE.md 의 *「grep 은 있는 것만 찾는다 — 없다를 grep 으로 말하지 마라」* 가
+> 브랜치에도 그대로 적용된다.
+
+그래서 sync·prune-branches 는 셋으로 가른다.
+
+```
+① 브랜치 끝이 원격 기본 브랜치의 조상인가   → 병합됨
+② squash 병합은 ①로 안 잡힌다 → gh 로 PR 조회 → 병합됨
+③ 둘 다 안 되면 **모르는 것이다. 손대지 않는다 — --yes 여도**
+```
+
+🚨 **③이 핵심이다.** 예전 코드는 「모르면 올린다」였다.
 
 ## 옮긴 뒤에 남는 두 가지 — 볼륨이 둘이 됐다
 
@@ -178,9 +218,15 @@ tool/migrate_to_work_volume.sh relocate --root=/Volumes/Work/Claude
 
 ## 아직 안 한 것
 
-- **⑤ `sync` 를 안 돌렸다.** push 안 된 브랜치가 **12개**(그중 2개는 업스트림조차
-  없음) 있어서, 어느 것을 올릴지 정하는 것이 먼저다. 파일은 이미 옮겨져 있으므로
-  급하지 않다.
+- **`docs/privacy-policy-v2.7-phone` 은 PR 이 없다.** ⑥이 「병합을 확인하지 못했다」로
+  남긴 하나다 — GitHub 에 브랜치는 있는데 **열린 PR 도 병합된 PR 도 없다.** 내용이
+  개인정보처리방침 v2.7 문안(휴대전화번호 확인, 게시 전)이라 **지울 자리가 아니라
+  PR 을 올릴지 정할 자리**다. 이전 작업과는 별개로 남았다.
+- **`exp/confidence-measure` 는 로컬 브랜치가 남아 있다** — `ct-confidence` 워크트리가
+  잡고 있어서다. 원격에는 올렸으므로 잃을 위험은 없다.
+- **GitHub 에 로컬에 없는 브랜치가 다섯 개 있다**(`build/pkg-and-oauth` ·
+  `feat/duplicate-confirm-merge` · `fix/fab-endfloat-0828` · `fix/ocr-english-bleed` ·
+  `claude/work-review-checklist-ubw7o6`). 이번 이전과 무관하고 원격에 있으니 안전하다.
 - **X31 을 안 지웠다.** 그리고 당분간 지우지 않는다 — 새 볼륨에서 며칠 써 본 뒤에
   사람이 직접 정리한다. 스크립트는 어느 단계에서도 X31 을 건드리지 않았고,
   `repair` 가 매번 **원본 무개변을 체크섬으로 재서** ✅ 를 찍었다.
