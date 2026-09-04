@@ -906,7 +906,7 @@ EOS
   #    GitHub 원격이 없어 전부 건너뛴 것이 「✅ 올릴 것이 없다」로 끝났다 —
   #    통과한 것이 아니라 **잴 것이 없었던 것**이다(CLAUDE.md).
   local p name rname rurl kind ghremote br up ahead behind
-  local planned=0 pushed=0 failed=0 checked=0 skipped=0
+  local planned=0 pushed=0 failed=0 checked=0 skipped=0 auth_fail=0
   while read -r p; do
     [ -z "$p" ] && continue
     [ -d "$p/.git" ] || continue                 # 본체에서만 — 워크트리는 refs 를 공유한다
@@ -942,10 +942,16 @@ EOS
 
     # 🚨 fetch 없이 비교하면 **마지막으로 받아 둔 상태**와 비교하게 된다.
     #    그 값은 남이 그 사이 올린 것을 못 본다(CLAUDE.md 「본 순간의 상태」).
-    if git -C "$p" fetch --quiet "$ghremote" 2>/dev/null; then
+    # 🚨 프롬프트를 끈다. 인증 정보가 없으면 git 은 「Username for 'https://github.com':」
+    #    으로 **멈춰 서서 사람을 기다린다.** 아래 실패 처리 코드가 있어도 거기 닿지
+    #    못한다 — 2026-09-04 에 실제로 그렇게 멈췄고, 저장소마다 한 번씩 물었을 것이다.
+    #    ⇒ 물어보지 말고 **빠르게 실패**시켜서, 무엇을 해야 하는지 한 번에 알린다.
+    if GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -oBatchMode=yes' \
+       git -C "$p" fetch --quiet "$ghremote" 2>/dev/null; then
       echo "   fetch     : 방금 갱신함"
     else
-      red "   fetch     : 🚨 실패(네트워크·인증) — 아래 비교는 낡은 값이다. 먼저 해결한다."
+      red "   fetch     : 🚨 실패 — 네트워크나 **인증**이다. 아래 비교는 낡은 값이라 건너뛴다."
+      auth_fail=1
       failed=1
       checked=$((checked-1))
       continue
@@ -1006,6 +1012,22 @@ EOS
 
   hdr "판정"
   echo "   검사한 저장소 $checked 개 · 건너뛴 저장소 $skipped 개"
+  if [ "$auth_fail" -eq 1 ]; then
+    cat <<'EOS'
+
+   🚨 fetch 가 실패했다. GitHub 인증이 없을 때 이렇게 된다.
+      이 스크립트는 **묻지 않고 실패**시킨다 — 안 그러면 저장소마다 멈춰 서서 묻는다.
+
+   고치는 법 (셋 중 하나, 한 번만 하면 된다):
+     ① gh 가 있으면   gh auth login  →  gh auth setup-git
+     ② macOS 키체인    git config --global credential.helper osxkeychain
+                       (다음 fetch 에서 한 번 묻고 그 뒤로 기억한다.
+                        비밀번호가 아니라 **개인 액세스 토큰**을 넣는다)
+     ③ SSH 를 쓴다     git remote set-url origin git@github.com:<소유자>/<저장소>.git
+
+   확인:  git -C <저장소> ls-remote origin >/dev/null && echo OK
+EOS
+  fi
   if [ "$failed" -eq 1 ]; then
     red "   🚨 손대지 못한 것이 있다. 위의 🚨 를 먼저 해결한다."
     return 1
