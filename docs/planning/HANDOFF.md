@@ -293,6 +293,16 @@ Firestore TTL 정책        🚨 소급이 안 되니 functions 배포보다 먼
 ⑥ 실기기에서 실제 수신 확인      ⬜ 알리고가 testMode 를 주므로 발송 직전까지 실물로 본다
 ```
 
+📕 **⑤⑥의 절차는 런북에 있다 —
+[`phone-otp-deploy-runbook-2026-09-04.md`](./phone-otp-deploy-runbook-2026-09-04.md)**
+(0단계 TTL → 시크릿 → 좁혀서 배포 → testMode 확인 → 발송 개시 → 게이트).
+🚨 **0단계가 0단계인 이유가 거기 있다** — TTL 은 소급이 안 돼 함수를 먼저
+배포하면 그 사이 장부가 영영 안 지워진다.
+
+⭐ **코드는 이미 다 있다**(2026-09-04 실물 확인) — 서버 `phoneOtp.ts`·
+`phoneOtpSender.ts`, 앱 `phone_verify_view.dart`, 게이트
+`phone_verification_service.dart`, 테스트까지. **남은 것은 배포와 스위치뿐이다.**
+
 🚨 **⑤를 하기 전에 순서를 하나 봐야 한다 — 게시본 방침이 「재위탁은 없습니다」라고 말한다.**
 
 ```
