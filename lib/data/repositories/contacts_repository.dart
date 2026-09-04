@@ -1,4 +1,5 @@
 import '../../core/services/card_photo_backup_state.dart';
+import '../../core/utils/identical_contacts.dart';
 import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -291,8 +292,51 @@ class ContactsRepository extends ChangeNotifier {
       if (fromLocal) toPush.add(candidate);
     }
 
-    merged.sort((a, b) => _updatedAtOf(b).compareTo(_updatedAtOf(a)));
-    return (merged: merged, toPush: toPush);
+    final folded = _foldIdentical(merged);
+    folded.sort((a, b) => _updatedAtOf(b).compareTo(_updatedAtOf(a)));
+    return (merged: folded, toPush: toPush);
+  }
+
+  /// **두 기기가 같은 사람을 각각 등록한 것**을 하나로 접는다 (추가 572 판정기 연결).
+  ///
+  /// ## 왜 여기인가
+  ///
+  /// 위 병합은 **id로만** 맞춘다. 기기마다 등록하면 id가 달라 **둘 다
+  /// 살아남는다.** 삭제 전파(tombstone)는 제대로 있는데 **중복 합치기가
+  /// 없었다** — 판정기([isSafeToMergeAutomatically])는 2026-08-29에 만들어져
+  /// 있었지만 **`lib/` 안에서 부르는 곳이 0건**이었다(2026-09-04 실측).
+  ///
+  /// 📌 **사고가 아니라 정상 경로다** — 폰과 태블릿을 같이 쓰면 그냥 일어난다.
+  ///
+  /// ## 🚨 서버는 건드리지 않는다 — 접는 것은 **이 기기가 보는 목록**뿐이다
+  ///
+  /// 판정기 머리말이 정확히 경고한다: *"동기화는 아무도 안 보는 자리다 —
+  /// 거기서 자동으로 합치면 잃어도 모른다."* 그래서 [toPush]에 손대지 않는다.
+  ///
+  /// ```
+  /// 서버        원본 둘이 그대로 남는다   → 판정이 틀렸어도 되돌릴 수 있다
+  /// 이 기기      하나로 접혀 보인다
+  /// 다른 기기    각자 같은 규칙으로 접는다 → 결과가 같다(사전순이라 결정적)
+  /// ```
+  ///
+  /// ⭐ **멱등하다.** 다음 동기화에서 서버 원본이 다시 내려와도 또 접힌다.
+  ///
+  /// ⚠️ **지우는 것은 사람이 보는 화면에서 해야 한다.** 여기서 지우면 판정이
+  /// 틀렸을 때 되돌릴 방법이 없다.
+  static List<ContactModel> _foldIdentical(List<ContactModel> items) {
+    final out = <ContactModel>[];
+    for (final c in items) {
+      var foldedInto = false;
+      for (var i = 0; i < out.length; i++) {
+        if (isSafeToMergeAutomatically(out[i], c)) {
+          out[i] = mergeIdentical(out[i], c);
+          foldedInto = true;
+          break;
+        }
+      }
+      if (!foldedInto) out.add(c);
+    }
+    return out;
   }
 
   /// 다기기 동기화(P1-39 A안) — [mergeSync]를 서버 데이터에 적용한다.
