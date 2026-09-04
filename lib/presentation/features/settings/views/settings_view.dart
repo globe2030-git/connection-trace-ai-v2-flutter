@@ -18,6 +18,7 @@ import '../../../../core/services/ai_briefing_service.dart';
 import '../../../../core/services/card_photo_backup_state.dart';
 import '../../../../core/services/app_lock_service.dart';
 import '../../../../core/services/carried_over_contacts.dart';
+import '../../../../core/services/leftover_account_purge_service.dart';
 import '../../../../core/services/card_photo_quota_service.dart';
 import '../../../../core/services/card_photo_backup_service.dart';
 import '../../../../core/services/contact_image_service.dart';
@@ -142,6 +143,7 @@ class _SettingsViewState extends State<SettingsView> {
                   // 보인다(추가 632 §7). 소셜 로그인은 제공자가 이미 소유를
                   // 확인한 주소를 주므로 이 행 자체가 안 뜬다.
                   if (auth.needsEmailVerification) _EmailVerificationRow(auth: auth),
+                  const _LeftoverAccountRow(),
                   _SettingsRow(
                     icon: const AppIcon(
                       AppIconId.logout,
@@ -1083,6 +1085,145 @@ class _EmailVerificationRowState extends State<_EmailVerificationRow> {
                 color: AppColors.accentText,
               ),
             ),
+    );
+  }
+}
+
+/// 계정을 바꾼 뒤 이 기기에 남아 있는 **이전 계정의 명함 사진**을 보여준다
+/// (추가 675, 법무 검토 2026-08-27 ③-(나)).
+///
+/// 🚨 **이 행이 있어야 「지금 바로 지우는 길」이 실재한다.** 계정 전환 안내
+/// 다이얼로그에도 「지금 바로 삭제」가 있지만, **다이얼로그는 한 번 지나가면
+/// 다시 볼 수 없다.** 개인정보 보호법 §36(삭제 요구)의 통로가 그 한 번뿐이면
+/// *"왜 30일이나 붙잡느냐"*에 답할 수단이 없다.
+///
+/// ⚠️ **예약이 없으면 아무것도 그리지 않는다.** 대부분의 이용자는 계정을 바꾼
+/// 적이 없고, 그런 사람에게 이 행이 보이면 **무슨 일이 있었나 하고 놀란다.**
+class _LeftoverAccountRow extends StatefulWidget {
+  const _LeftoverAccountRow();
+
+  @override
+  State<_LeftoverAccountRow> createState() => _LeftoverAccountRowState();
+}
+
+class _LeftoverAccountRowState extends State<_LeftoverAccountRow> {
+  final _service = LeftoverAccountPurgeService();
+  List<PendingLeftoverPurge> _pending = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final pending = await _service.pending();
+    if (!mounted) return;
+    setState(() => _pending = pending);
+  }
+
+  /// 「30일 뒤」가 아니라 **날짜**로 적는다 — 법무 검토 ③ 요소 3.
+  /// *"30일보다 10월 3일이 정확하다."*
+  ///
+  /// ⚠️ 저장은 UTC 라 반드시 [DateTime.toLocal] 을 거친다. 안 그러면 한국에서
+  /// 하루 어긋나 보인다.
+  String _dateLabel(DateTime utc) {
+    final d = utc.toLocal();
+    return '${d.month}월 ${d.day}일';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_pending.isEmpty) return const SizedBox.shrink();
+
+    final photos = _pending.fold<int>(0, (sum, p) => sum + p.photoCount);
+    final soonest = _pending.first.scheduledAt;
+
+    return _SettingsRow(
+      icon: const AppIcon(
+        AppIconId.cardData,
+        size: 22,
+        color: AppColors.accentText,
+      ),
+      title: '이전 계정 데이터',
+      subtitle: '명함 사진 $photos장 · ${_dateLabel(soonest)} 삭제 예정',
+      onTap: () => _openDetail(context, photos, soonest),
+    );
+  }
+
+  Future<void> _openDetail(
+    BuildContext context,
+    int photos,
+    DateTime soonest,
+  ) async {
+    final purgeNow = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('이전 계정의 명함 사진'),
+        // 🚨 들어가야 하는 것 여섯(법무 검토 ③): 무엇이 · 서버는 안 지운다 ·
+        //    언제 · 되돌리는 법 · 지난 뒤 어떻게 되나 · 지금 지우는 길.
+        //    ⚠️ **어느 계정인지는 적지 않는다** — 우리가 가진 것은 uid 뿐이라
+        //    이용자에게 아무 의미가 없고, 이메일은 애초에 없다.
+        content: Text(
+          '다른 계정으로 로그인하시면서 이 기기에 남은 명함 사진 $photos장이 '
+          '있습니다. 지금 로그인하신 계정에서는 보이지 않습니다.\n\n'
+          '${_dateLabel(soonest)}에 이 기기에서 삭제됩니다. 그 전에 이전 '
+          '계정으로 다시 로그인하시면 삭제되지 않고 그대로 쓰실 수 있습니다.\n\n'
+          '이전 계정으로 서버에 백업된 명함은 이 절차로 지워지지 않으며, 그 '
+          '계정으로 로그인하시면 복원됩니다. 다만 아직 서버에 올라가지 못한 '
+          '사진은 삭제 후 복구되지 않습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('닫기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              '지금 삭제',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (purgeNow != true || !context.mounted) return;
+
+    // 🚨 되돌릴 수 없으므로 한 번 더 확인한다.
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('지금 삭제할까요?'),
+        content: const Text(
+          '기다리지 않고 지금 삭제합니다. 되돌릴 수 없습니다.\n\n'
+          '이전 계정으로 다시 로그인해도 이 기기에 남아 있던 사진은 돌아오지 '
+          '않습니다. 서버에 백업된 사진은 그때 다시 받아옵니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('그만두기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text(
+              '삭제',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (sure != true) return;
+
+    for (final p in _pending) {
+      await _service.purgeNow(uid: p.uid, contactIds: p.contactIds);
+    }
+    await _load();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('이전 계정의 명함 사진을 삭제했습니다')),
     );
   }
 }

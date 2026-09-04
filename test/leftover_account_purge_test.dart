@@ -10,6 +10,8 @@
 //   ② 서버는 절대 안 건드린다 (deleteCardImage 에 uid 를 안 넘긴다)
 //   ③ 내 프로필 사진(`_my_profile_card`)은 대상이 아니다 — A·B 공용 파일이다
 //   ④ 만기 전에는 안 지운다
+import 'dart:io';
+
 import 'package:connection_trace_ai_flutter/core/services/contact_image_service.dart';
 import 'package:connection_trace_ai_flutter/core/services/encryption_key_service.dart';
 import 'package:connection_trace_ai_flutter/core/services/leftover_account_purge_service.dart';
@@ -205,6 +207,40 @@ void main() {
 
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(LeftoverAccountPurgeService.prefsKey), isNull);
+  });
+
+  test('pending 은 장수까지 돌려주고 이른 것부터 정렬한다', () async {
+    // 「데이터가 있습니다」로는 이용자가 무엇을 잃는지 가늠할 수 없다 —
+    // 법무 검토 ③ 요소 2 가 "이 기기의 명함 N장"을 요구한다.
+    await service.schedule(
+      uid: 'uid-늦음',
+      contactIds: ['c1'],
+      now: DateTime.utc(2026, 9, 10),
+    );
+    await service.schedule(
+      uid: 'uid-이름',
+      contactIds: ['c1', 'c2', 'c3'],
+      now: DateTime.utc(2026, 9, 4),
+    );
+
+    final pending = await service.pending();
+    expect(pending.map((p) => p.uid), ['uid-이름', 'uid-늦음']);
+    expect(pending.first.photoCount, 3);
+    expect(pending.first.scheduledAt, DateTime.utc(2026, 10, 4));
+  });
+
+  test('🚨 설정 화면에 「이전 계정 데이터」 행이 있다 — 없으면 「지금 지우는 길」이 한 번뿐이다', () {
+    // 계정 전환 안내에도 「지금 바로 삭제」가 있지만 **다이얼로그는 한 번
+    // 지나가면 다시 볼 수 없다.** §36(삭제 요구)의 통로가 그 한 번뿐이면
+    // "왜 30일이나 붙잡느냐"에 답할 수단이 없다(법무 검토 ③-(나)).
+    final src = File(
+      'lib/presentation/features/settings/views/settings_view.dart',
+    ).readAsStringSync();
+    expect(src.contains('_LeftoverAccountRow'), isTrue);
+    expect(src.contains('LeftoverAccountPurgeService'), isTrue);
+    // 방침 문구가 "설정 화면에서 즉시 삭제하실 수도 있습니다"라고 적으므로,
+    // 그 통로가 실제로 있어야 방침과 실물이 어긋나지 않는다.
+    expect(src.contains('purgeNow'), isTrue);
   });
 
   test('장부가 깨져 있으면 조용히 비운다 — 못 읽는 채로 자라게 두지 않는다', () async {
