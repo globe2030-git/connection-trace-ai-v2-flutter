@@ -116,6 +116,7 @@ import {
 } from "./purchases";
 import {deleteUserCardPhotos} from "./cardPhotoCleanup";
 import {deleteTombstones} from "./tombstoneCleanup";
+import {purgeUidScopedData, type UserPurgeDeps} from "./userPurge";
 import {deletePhoneRecords} from "./phoneRecordCleanup";
 import {
   firebaseUserFields,
@@ -132,6 +133,28 @@ import {
 } from "./socialAuth";
 
 initializeApp();
+
+/**
+ * `purgeUidScopedData` 가 쓸 Firestore 손잡이.
+ *
+ * 🚨 **탈퇴와 연결 해제가 이것을 함께 쓴다.** 두 경로가 각자 지울 것을
+ * 나열하다 `users/{uid}/cardSources` 와 `ocrStats/{uid}` 가 탈퇴 쪽에서만
+ * 빠졌다(2026-09-05). 무엇을 지울지는 `userPurge.ts` 한 곳에만 둔다.
+ */
+function firestorePurgeDeps(
+  db: FirebaseFirestore.Firestore,
+): UserPurgeDeps {
+  return {
+    deleteTombstones: (path) =>
+      deleteTombstones(db.collection(path), () => db.batch(), chunkArray),
+    recursiveDelete: async (path) => {
+      await db.recursiveDelete(db.doc(path));
+    },
+    deleteTopLevelDoc: async (collection, uid) => {
+      await db.collection(collection).doc(uid).delete();
+    },
+  };
+}
 
 // Sign in with Apple 토큰 폐기(P1-38)에 쓰는 Apple 개인키(.p8) 원문.
 // `firebase functions:secrets:set APPLE_SIGNIN_KEY`로 .p8 파일 내용을 넣는다
@@ -1645,10 +1668,16 @@ export const onSocialUnlinkRequested = onDocumentCreated(
         // 남긴다 — 조용히 넘어가면 남은 감사 로그를 아무도 못 찾는다.
         logger.warn("연결 해제 파기: users 문서가 이미 없음", {uid});
       }
-      await db.recursiveDelete(userRef);
-
-      // uid 스코프인데 위 정리가 안 건드리는 것.
-      await db.collection("ocrStats").doc(uid).delete();
+      // 🚨 탈퇴 경로와 **같은 함수**를 쓴다(`userPurge.ts`). 예전에는 여기만
+      // recursiveDelete 를 쓰고 탈퇴 쪽은 낱개로 나열해, cardSources 와
+      // ocrStats 가 탈퇴 후 서버에 남았다.
+      const purge = await purgeUidScopedData(uid, firestorePurgeDeps(db));
+      if (purge.tombstoneErrorType) {
+        logger.warn("연결 해제 파기: 삭제 기록 정리 실패", {
+          uid,
+          errorType: purge.tombstoneErrorType,
+        });
+      }
 
       try {
         await getAuth().deleteUser(uid);
@@ -1814,38 +1843,38 @@ export const onUserDeletedCleanup = onDocumentDeleted(
     }
     // ────────── [명함 사진 서버 사본 정리] 끝 ──────────
 
-    // ────────── [삭제 기록(묘비) 정리] 시작 ──────────
-    // 이 블록만 2026-08-15에 추가됐다. 로직 본체는 tombstoneCleanup.ts에 있다.
+    // ────────── [uid 스코프 자료 파기] 시작 ──────────
+    // 2026-08-15에 묘비(deletedContacts)만 지우는 블록으로 시작했고,
+    // 2026-09-05에 연결 해제 경로와 **같은 함수**를 쓰도록 합쳤다.
     //
-    // 왜 필요한가: **Firestore는 문서를 지워도 하위 컬렉션을 지우지 않는다.**
-    // 앱의 deleteAllUserData는 contacts 문서들과 users/{uid} 문서를 지우지만
-    // users/{uid}/deletedContacts/ 는 그대로 남는다 — 지우는 코드가 앱에도
-    // 서버에도 없었다. 방침 14번은 "명함 데이터 전체가 삭제된다"고 단언한다.
+    // 🚨 왜 합쳤나: 같은 "그 사람 것을 다 지운다"를 두 곳이 다르게 하고 있었다.
+    // 연결 해제는 recursiveDelete(users/{uid}) + ocrStats 였고, 탈퇴는 묘비만
+    // 낱개로 지우고 ocrStats 는 아예 없었다. 그래서 **users/{uid}/cardSources
+    // (명함 파싱 원문 — 제3자의 이름·전화·주소)와 ocrStats/{uid} 가 탈퇴 후
+    // 서버에 남았다.** 방침 §14는 "명함 데이터 전체가 삭제되며", 594행은
+    // "이 통계는 … 회원 탈퇴 시 함께 파기됩니다"라고 단언한다.
     //
-    // 값은 deletedAt 시각뿐이지만 문서 ID가 contactId이고 경로에 uid가 있다.
-    // 개수만 로그에 남기고 문서 ID는 남기지 않는다.
+    // ⚠️ 이 함수 위쪽(1613행 부근) 주석이 **이미 예고하고 있었다** —
+    // "파기 대상이 두 벌로 갈라지면 한쪽만 고쳐지는 날이 온다". 그날이 왔으므로
+    // 한 줄을 더하지 않고 **무엇을 지울지를 userPurge.ts 한 곳에** 뒀다.
     //
-    // ⚠️ 위 사진 블록과 같은 이유로 경계 주석을 둔다 —
-    // feat/ai-credit-wallet이 이 함수를 크게 고쳐 놔서, rebase 하는 사람이
-    // 어디까지가 이번 변경인지 한눈에 보게 한다.
-    const tombstoneCleanup = await deleteTombstones(
-      db.collection(`users/${uid}/deletedContacts`),
-      () => db.batch(),
-      chunkArray,
-    );
-    if (tombstoneCleanup.errorType) {
+    // 📌 Firestore는 문서를 지워도 하위 컬렉션을 안 지운다. 나열하는 대신
+    // recursiveDelete로 덮는 이유다 — 나열은 새 컬렉션이 생길 때마다 낡고,
+    // **낡아도 조용하다.** 다만 파기는 기록이 남아야 해서 묘비는 세면서 지운다.
+    const purge = await purgeUidScopedData(uid, firestorePurgeDeps(db));
+    if (purge.tombstoneErrorType) {
       logger.warn("탈퇴 사용자 삭제 기록 정리 실패", {
         uid,
-        errorType: tombstoneCleanup.errorType,
-        deleted: tombstoneCleanup.deleted,
+        errorType: purge.tombstoneErrorType,
+        deleted: purge.tombstonesDeleted,
       });
-    } else if (tombstoneCleanup.deleted > 0) {
+    } else if (purge.tombstonesDeleted > 0) {
       logger.info("탈퇴 사용자 삭제 기록 정리", {
         uid,
-        deleted: tombstoneCleanup.deleted,
+        deleted: purge.tombstonesDeleted,
       });
     }
-    // ────────── [삭제 기록(묘비) 정리] 끝 ──────────
+    // ────────── [uid 스코프 자료 파기] 끝 ──────────
 
     // ────────── [번호 확인 기록 정리] 시작 ──────────
     // 이 블록만 2026-09-01에 추가됐다. 로직 본체는 phoneRecordCleanup.ts에 있다.
