@@ -103,13 +103,16 @@
     },
     {
       "target": "site",
-      "public": "docs/site",
+      "public": "build/site",
       "cleanUrls": true,
       "trailingSlash": false,
       "ignore": [
         "**/.*",
         "**/node_modules/**",
         "README.md"
+      ],
+      "predeploy": [
+        "bash tool/build_site.sh"
       ],
       "headers": [
         {
