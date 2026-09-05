@@ -166,16 +166,15 @@ void main() {
     // 릴리스에는 게스트 경로가 없지만(`kDebugMode` 가드), 개발·QA 기기에는
     // 실물 명함이 들어 있어 거기에 평문이 쌓였다.
     //
-    // 🚨 **아직 「옛 코드에서 깨지는지」를 확인하지 못했다.** 이 테스트를 쓴
-    // 세션은 원격 컨테이너라 flutter 가 없다. 이 저장소는 *"안 깨지면
-    // 아무것도 안 지키는 검사"* 로 두 번 데였으므로([추가 670·671]),
-    // **맥에서 아래를 한 번 돌려 확인할 것** — 확인하면 이 주석을 지운다.
+    // ⭐ **옛 코드에 대고 돌려 실제로 깨지는 것을 확인했다**(2026-09-05, 맥).
+    // 이 저장소는 *"통과만 하는 테스트"* 로 두 번 데였다([추가 670·671]).
     //
-    //   1. contacts_repository.dart 의 `if (uid == null) { return; }` 를
-    //      `await prefs.setString(_storageKey, jsonEncode(jsonList)); return;`
-    //      로 잠깐 되돌린다
-    //   2. flutter test test/data_encryption_test.dart → 이 건이 실패해야 한다
-    //   3. 원복한다
+    //   `if (uid == null) { return; }` 를 옛 코드로 되돌리고 돌리니
+    //   이 건이 실패했고, 실패 출력이 결함 자체를 그대로 보여 줬다:
+    //     Expected: not contains '문정순'
+    //     Actual:   '[{"id":"legacy-1","name":"문정순", … "phone":"010-…", …}]'
+    //   되돌린 뒤 다시 통과. 아래 「레거시 보호」 건은 옛 코드에서도 통과했다 —
+    //   그것이 지키는 동작은 이번 변경으로 바뀌지 않기 때문이고, 맞는 결과다.
     test('🚨 게스트(로그인 전)에 명함을 더해도 저장소에 평문이 안 남는다', () async {
       SharedPreferences.setMockInitialValues({});
       final repo = ContactsRepository();
