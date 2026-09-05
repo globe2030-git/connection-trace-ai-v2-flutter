@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/account_paths.dart';
 
 /// 약관·개인정보처리방침·만 14세 확인에 **동의한 사실**을 서버에 남긴다(P1-17).
 ///
@@ -128,7 +129,7 @@ class TermsConsentService {
   Future<bool> recordSignupConsent(String uid, {DateTime? consentedAtDevice}) async {
     if (uid.isEmpty) return false;
     try {
-      final doc = _db.collection('users').doc(uid);
+      final doc = AccountPaths.account(_db, uid);
       final snap = await doc.get();
       if (snap.data()?[fieldConsentAt] != null) {
         await _clearPending(uid);

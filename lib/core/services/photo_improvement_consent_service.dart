@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/account_paths.dart';
 
 /// "명함 사진을 인식 기능 개선에 써도 된다"는 **별도 동의**를 보관한다.
 ///
@@ -87,7 +88,7 @@ class PhotoImprovementConsentService {
     final previous = prefs.getBool(_prefsKey) ?? false;
     await prefs.setBool(_prefsKey, consented);
     try {
-      await _db.collection('users').doc(uid).set({
+      await AccountPaths.account(_db, uid).set({
         _fieldConsent: consented,
         // 언제 동의했는지가 증빙의 핵심이다. 철회하면 null로 지워 "지금은
         // 동의 상태가 아니다"를 분명히 한다.
@@ -112,7 +113,7 @@ class PhotoImprovementConsentService {
   /// 반영된 값을 반환한다.
   Future<bool> sync(String uid) async {
     try {
-      final snap = await _db.collection('users').doc(uid).get();
+      final snap = await AccountPaths.account(_db, uid).get();
       final remote = snap.data()?[_fieldConsent];
       if (remote is! bool) return await load();
       final prefs = await SharedPreferences.getInstance();

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../utils/account_paths.dart';
 
 /// 계정(uid)당 명함/프로필 데이터 암호화에 쓰는 AES-256 대칭키를 발급·보관한다.
 ///
@@ -82,7 +83,7 @@ class EncryptionKeyService {
         return null;
       }
     }
-    return db.collection('users').doc(uid);
+    return AccountPaths.account(db, uid);
   }
 
   // 로컬 키는 있는데 서버 사본이 없는 계정의 재점검을 세션당 한 번으로
