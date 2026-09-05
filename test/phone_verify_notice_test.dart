@@ -27,11 +27,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _beforeSend = '인증은 카카오톡으로만 보내집니다.';
-const _afterSend = '카카오톡을 확인하세요.';
+const _afterSend = '카카오톡을 확인해 주세요.';
 
-Future<void> _pump(WidgetTester tester) async {
+Future<void> _pump(WidgetTester tester, {bool codeSent = false}) async {
   await tester.pumpWidget(
-    MaterialApp(home: PhoneVerifyView(onVerified: () {})),
+    MaterialApp(
+      home: PhoneVerifyView(
+        onVerified: () {},
+        debugStartCodeSent: codeSent,
+      ),
+    ),
   );
   await tester.pump();
 }
@@ -77,5 +82,35 @@ void main() {
     // 🚨 부분 일치가 아니라 **완전 일치**로 잠근다. 말투를 다듬다가 조용히
     //    바뀌는 것을 막는 것이 이 검사의 목적이다.
     expect(find.text(_beforeSend), findsOneWidget);
+  });
+
+  // ────────────────────────────────────────────────────────────────────
+  // 🚨 **아래 둘은 2026-09-06에 「검사가 안 잡는 것」을 발견하고 더했다.**
+  //
+  // 그날 ② 문구를 「확인하세요」→「확인해 주세요」로 바꿨는데 **검사가 하나도
+  // 안 깨졌다.** 위 검사들이 ②를 보는 방식이 `findsNothing`(아직 안 보냈을 때
+  // 없다) 뿐이라, **어떤 문자열로 바꿔도 통과**했기 때문이다.
+  //
+  // ⭐ **「통과만 확인한 검사는 안 잡는 검사일 수 있다」가 그대로 나왔다.**
+  //    그래서 `debugStartCodeSent` 로 그 상태를 열어 실제로 잠근다.
+  // ────────────────────────────────────────────────────────────────────
+
+  testWidgets('🚨 인증번호를 받은 뒤에는 「카카오톡을 확인해 주세요」가 뜬다', (tester) async {
+    await _pump(tester, codeSent: true);
+
+    expect(
+      find.text(_afterSend),
+      findsOneWidget,
+      reason: '⭐ 여기가 실제로 기다리는 자리다. 앞의 안내는 그때 이미 잊는다',
+    );
+  });
+
+  testWidgets('🚨 ② 문안도 완전 일치로 잠근다 — 말투를 다듬어도 깨져야 한다', (tester) async {
+    await _pump(tester, codeSent: true);
+
+    // 이 화면의 다른 문구가 전부 「~해 주세요」체라서 그쪽으로 맞췄다
+    // (2026-09-06 확정). **바꾸려면 이 검사가 먼저 빨개져야 한다.**
+    final text = tester.widget<Text>(find.text(_afterSend));
+    expect(text.data, _afterSend);
   });
 }

@@ -32,10 +32,26 @@ import '../../settings/views/inquiry_view.dart';
 /// 남은 시간을 화면이 세지만 **막는 것은 서버다.** 기기 시계를 돌려도
 /// 서버가 거부한다. 타이머가 0이 되기 전에 눌러도 마찬가지다.
 class PhoneVerifyView extends StatefulWidget {
-  const PhoneVerifyView({super.key, required this.onVerified});
+  const PhoneVerifyView({
+    super.key,
+    required this.onVerified,
+    @visibleForTesting this.debugStartCodeSent = false,
+  });
 
   /// 인증이 끝났을 때. [AuthGate]가 이걸 받아 앱 본체로 넘어간다.
   final VoidCallback onVerified;
+
+  /// **검사에서만 쓴다** — 인증번호를 이미 받은 상태로 화면을 연다.
+  ///
+  /// 🚨 **왜 필요한가**: 「카카오톡을 확인해 주세요」는 [_codeSent]가 참일 때만
+  /// 그려지는데, 그 상태에 가려면 **서버가 실제로 발송에 성공**해야 한다
+  /// ([_requestCode]는 `PhoneOtpRequestResult.sent`에서만 참으로 만든다).
+  /// 검사에서는 그 경로를 탈 수 없어 **문구가 잠기지 않았다** — 실제로
+  /// 2026-09-06에 문구를 바꿨는데 검사가 하나도 안 깨졌다.
+  ///
+  /// ⚠️ **화면 동작은 한 글자도 안 바뀐다** — 기본값이 `false`이고 앱에서
+  /// 부르는 곳(`auth_gate.dart`)은 이 인자를 안 넘긴다.
+  final bool debugStartCodeSent;
 
   @override
   State<PhoneVerifyView> createState() => _PhoneVerifyViewState();
@@ -47,7 +63,7 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
 
   /// 인증번호를 한 번이라도 받았는가. 받기 전에는 코드 칸을 안 그린다
   /// (**빈 칸을 그리지 않는다** — 이 저장소 규칙).
-  bool _codeSent = false;
+  late bool _codeSent = widget.debugStartCodeSent;
   bool _busy = false;
   String? _error;
 
@@ -290,7 +306,7 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
                     // **카카오톡이 없는 사람에게 보이는 길이 없다** — 그것은
                     // 사실이고, 그 대가를 알고 고르신 것이다(추가 706).
                     child: const Text(
-                      '카카오톡을 확인하세요.',
+                      '카카오톡을 확인해 주세요.',
                       style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
