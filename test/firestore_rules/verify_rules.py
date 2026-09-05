@@ -637,6 +637,77 @@ SESSION_ON_CASES = [
          path="/databases/(default)/documents/legalDocs/privacy",
          before={"body": "before"}, after={"body": "after"},
          mocks=admin_session_mocks(NOW_MS + 1)),
+
+    # ── 🔒 켠 상태에서도 ①② 는 그대로 막는다 (추가 683 · #836) ────────────
+    #
+    # 🚨 **왜 켠 상태로도 재나.** ①② 를 넣을 때의 케이스는 전부 **꺼진
+    # 상태**에서 쟀다. 그런데 스위치를 켜면 `isAdmin()` 이 「허용목록 + 살아
+    # 있는 세션」으로 바뀌므로, **`isAdmin()` 을 쓰는 모든 규칙의 판정이
+    # 달라진다.** ①② 는 `if false` 라 안 바뀌어야 하는데, **안 바뀐다는
+    # 것을 아무도 재지 않았다.**
+    #
+    # ⚠️ 이 그물이 잡는 것은 「지금 뚫린 것」이 아니라 **나중에 누가 ①② 를
+    # `isAdmin()` 으로 「일관성 있게」 고치는 것**이다. 그러면 2차 인증을
+    # 통과한 관리자가 `config/admins` 를 열게 되고 — 그 문서를 고칠 수 있으면
+    # **다른 관리자의 인증 번호를 자기 것으로 바꿀 수 있다.** 즉 2차 인증을
+    # 켠 바로 그 순간에 2차 인증이 무의미해진다.
+    #
+    # 📌 **아래 대조군이 없으면 이 넷은 거저 통과한다** — 세션이 안 살아
+    # 있으면 무엇이든 DENY 이므로, 넷이 다 DENY 인 것이 「①② 가 막았다」인지
+    # 「세션이 죽었다」인지 구별되지 않는다. 오늘 이 저장소에서 배운 것이다.
+    #
+    # ## ⭐ 변조를 넣어 그물이 실제로 잡는지 봤다 (2026-09-05 실측)
+    #
+    # `config/admins` 를 `if false` → `if isAdmin()` 으로 바꿔 돌렸더니
+    # **93/93 → 89/93** 이 됐다. 빨개진 넷:
+    #
+    # ```
+    # ❌ 관리자여도 config/admins 를 읽을 수 없다        (꺼진 상태 · 기존)
+    # ❌ 관리자여도 config/admins 를 고칠 수 없다        (꺼진 상태 · 기존)
+    # ❌ 🔒 켜면+세션 살아 있어도: 읽을 수 없다           (여기 · 신규)
+    # ❌ 🔒 켜면+세션 살아 있어도: 고칠 수 없다           (여기 · 신규)
+    # ✅ 일반 로그인 사용자도 config/admins 를 읽을 수 없다  ← 🚨 **안 잡힌다**
+    # ```
+    #
+    # 🚨 **「일반 로그인 사용자」 케이스는 이 변조를 못 잡는다** — 비관리자는
+    # `isAdmin()` 에서 어차피 걸리기 때문이다. **DENY 를 재는 케이스가 다
+    # 같은 값을 하는 것이 아니다.**
+    #
+    # ⚠️ **그리고 이 변조에 한해서는 신규 넷이 기존 둘과 겹친다** — 정직하게
+    # 적어 둔다. **신규가 따로 값을 하는 것은 「세션 판정을 끌어들이는」
+    # 변조**다. 예: `allow read: if hasFreshAdminSession();` 으로 바꾸면
+    # **꺼진 상태 케이스는 mocks 를 안 주므로 `get()` 이 실패해 DENY 로
+    # 떨어져 통과해 버리고**, 살아 있는 세션 mocks 를 주는 여기서만 빨개진다.
+    #
+    # 📌 **통과하는 테스트는 아무것도 증명하지 않는다. 깨뜨려 봐야 안다.**
+    case("🔒 켜면+세션 살아 있어도: adminSessions 를 읽을 수 없다", "DENY",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN,
+         path=ADMIN_SESSION_PATH, before={"expiresAt": NOW_MS + 1},
+         mocks=admin_session_mocks(NOW_MS + 1)),
+    case("🔒 켜면+세션 살아 있어도: adminSessions 를 만들 수 없다", "DENY",
+         uid=ADMIN_UID, method="create", token=ADMIN_TOKEN,
+         path=ADMIN_SESSION_PATH, after={"expiresAt": NOW_MS + 10 ** 9},
+         mocks=admin_session_mocks(NOW_MS + 1)),
+    case("🔒 켜면+세션 살아 있어도: config/admins 를 읽을 수 없다", "DENY",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/admins",
+         before={"phoneHashes": ["deadbeef"]},
+         mocks=admin_session_mocks(NOW_MS + 1)),
+    case("🔒 켜면+세션 살아 있어도: config/admins 를 고칠 수 없다", "DENY",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/admins",
+         before={"phoneHashes": ["deadbeef"]},
+         after={"phoneHashes": ["c0ffee"]},
+         mocks=admin_session_mocks(NOW_MS + 1)),
+    # ⭐ 대조군(양성) — 위 넷이 「세션이 죽어서」 막힌 것이 아님을 보인다.
+    # 같은 스위치·같은 세션으로 config/testers 는 **열려야** 한다.
+    # 🚨 이 줄이 ALLOW 가 아니게 되면 위 넷의 DENY 는 아무것도 증명하지 않는다.
+    case("🔒 대조군: 같은 스위치·같은 세션에서 config/testers 는 열린다",
+         "ALLOW",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/testers",
+         before={"emails": ["a@example.com"]},
+         mocks=admin_session_mocks(NOW_MS + 1)),
 ]
 
 
