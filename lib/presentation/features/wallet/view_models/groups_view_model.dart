@@ -19,8 +19,8 @@ class GroupsViewModel extends ChangeNotifier {
   // 매개변수 이름이 `_groupsRepository`/`_contactsRepository`가 되어 버려
   // main.dart 등 호출부의 named-argument 이름(groupsRepository,
   // contactsRepository)이 깨진다 — 이 저장소의 기존 관례를 그대로 따른다
-  // (card_photo_backup_service.dart·photo_improvement_consent_service.dart도
-  // 같은 이유로 이 lint를 무시한다). `ignore:` 주석은 바로 다음 줄에만
+  // (card_photo_backup_service.dart도 같은 이유로 이 lint를 무시한다).
+  // `ignore:` 주석은 바로 다음 줄에만
   // 적용되므로 초기화 목록 각 줄마다 붙인다.
   GroupsViewModel({
     required GroupsRepository groupsRepository,
