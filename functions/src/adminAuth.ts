@@ -144,3 +144,45 @@ export function adminSessionMessage(
     return "인증한 지 12시간이 지났습니다. 휴대폰 인증을 다시 해 주세요.";
   }
 }
+
+/**
+ * 이 세션이 **언제 죽는가** — 두 만료를 한 시각으로 합친다 (2026-09-05, 2단계).
+ *
+ * ## 🚨 왜 이것을 저장하는가 — rules 에 숫자를 안 두려고
+ *
+ * 관리자 콘솔의 기존 조작(공지·문의·과금 설정)에도 20분 만료가 걸려야 한다.
+ * 그러려면 `firestore.rules` 도 "지금 세션이 살아 있나"를 알아야 하는데,
+ * **rules 가 스스로 계산하면 20분·12시간이 두 곳에 생긴다** — 관리자 이메일
+ * 목록이 두 곳에 있어 사고가 났던 ADMIN-VULN-001 과 **정확히 같은 구조**다.
+ *
+ * ⭐ **그래서 계산은 여기서만 하고 결과만 문서에 넣는다.** rules 는
+ * `request.time < expiresAt` 한 줄로 비교만 한다 — **숫자를 모른다.**
+ * 20분을 30분으로 바꿔도 rules 는 한 글자도 안 고친다.
+ *
+ * ⚠️ **이 값은 「그때까지 산다」가 아니라 「그때는 확실히 죽는다」다.**
+ * 활동이 없으면 그전에도 죽을 수 있고, 활동하면 하트비트가 이 값을 뒤로
+ * 민다. 판정의 정답은 언제나 [checkAdminSession] 이고, 이 값은 **rules 에게
+ * 건네는 사본**이다.
+ */
+export function adminSessionExpiresAt(session: AdminSession): number {
+  const idleDeadline = session.lastActiveAt + ADMIN_IDLE_TIMEOUT_MS;
+  const absoluteDeadline = session.otpVerifiedAt + ADMIN_SESSION_MAX_AGE_MS;
+  return Math.min(idleDeadline, absoluteDeadline);
+}
+
+/**
+ * 하트비트가 만든 **다음 세션 상태**. 연장할 수 없으면 `null`.
+ *
+ * 🚨 **되살리기를 여기서 막는다.** [canExtendAdminSession] 을 그대로 쓰므로
+ * 죽은 세션은 절대 연장되지 않는다 — 조건을 다시 적으면 두 판정이 갈라진다.
+ *
+ * 📌 **`otpVerifiedAt` 은 안 건드린다.** 그것이 절대 상한의 기준점이라,
+ * 하트비트가 함께 밀면 **상한이 없는 것과 같아진다.**
+ */
+export function nextAdminSessionAfterHeartbeat(
+  session: AdminSession | null,
+  now: number,
+): AdminSession | null {
+  if (!canExtendAdminSession(session, now)) return null;
+  return {otpVerifiedAt: session!.otpVerifiedAt, lastActiveAt: now};
+}
