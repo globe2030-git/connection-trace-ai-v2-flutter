@@ -8,6 +8,7 @@ import '../models/card_source_model.dart';
 import '../models/contact_model.dart';
 import '../models/group_model.dart';
 import '../models/my_profile_model.dart';
+import '../../core/utils/account_paths.dart';
 
 /// 명함/프로필 데이터를 Cloud Firestore에 백업·복원한다.
 ///
@@ -36,11 +37,11 @@ class DataBackupService {
       EncryptionKeyService();
 
   static DocumentReference<Map<String, dynamic>> _userDoc(String uid) =>
-      _db.collection('users').doc(uid);
+      AccountPaths.account(_db, uid);
 
   static CollectionReference<Map<String, dynamic>> _contactsCollection(
     String uid,
-  ) => _userDoc(uid).collection('contacts');
+  ) => AccountPaths.contacts(_db, uid);
 
   /// 명함 1건을 암호화해서 서버에 백업한다. 실패해도 로컬 저장은 이미 끝난
   /// 뒤라 사용자 작업을 막지 않는다 — 조용히 실패하고 다음 저장 때 다시
@@ -67,7 +68,7 @@ class DataBackupService {
 
   static CollectionReference<Map<String, dynamic>> _cardSourcesCollection(
     String uid,
-  ) => _userDoc(uid).collection('cardSources');
+  ) => AccountPaths.cardSources(_db, uid);
 
   /// **파싱 원본**을 암호화해 남긴다 (2026-09-05, globe2030님 지적).
   ///
@@ -170,7 +171,7 @@ class DataBackupService {
   /// 같은 기준으로 비교한다.
   static Future<void> writeTombstone(String uid, String contactId) async {
     try {
-      await _userDoc(uid).collection('deletedContacts').doc(contactId).set({
+      await AccountPaths.deletedContacts(_db, uid).doc(contactId).set({
         'deletedAt': DateTime.now().toIso8601String(),
       });
     } catch (e) {
@@ -181,7 +182,7 @@ class DataBackupService {
   /// 서버의 삭제 기록 전체를 `{contactId: deletedAt}`로 내려받는다.
   static Future<Map<String, DateTime>> fetchTombstones(String uid) async {
     try {
-      final snap = await _userDoc(uid).collection('deletedContacts').get();
+      final snap = await AccountPaths.deletedContacts(_db, uid).get();
       final result = <String, DateTime>{};
       for (final doc in snap.docs) {
         final raw = doc.data()['deletedAt'];

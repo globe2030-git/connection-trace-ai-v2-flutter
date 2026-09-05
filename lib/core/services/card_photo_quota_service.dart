@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/card_photo_quota.dart';
+import '../utils/account_paths.dart';
 
 /// 이 이용자의 **명함 사진 서버 백업 한도**를 읽어 온다(2026-08-16).
 ///
@@ -45,7 +46,7 @@ class CardPhotoQuotaService {
   /// 기본값([kCardPhotoQuota]).
   Future<int> fetch(String uid) async {
     try {
-      final snap = await _db.collection('users').doc(uid).get();
+      final snap = await AccountPaths.account(_db, uid).get();
       final raw = snap.data()?[_fieldQuota];
       if (raw is int) {
         final quota = resolveQuota(raw);
