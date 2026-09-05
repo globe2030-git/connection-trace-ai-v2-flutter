@@ -1,15 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ⚠️ 지금 이 사이트에는 페이지가 하나뿐이다(index.html). 없는 주소를 미리
-  적으면 검색엔진이 404 를 받고, 그것이 쌓이면 사이트 평가가 내려간다.
-  **있는 것만 적는다.**
+  ⚠️ 없는 주소를 미리 적으면 검색엔진이 404 를 받고, 그것이 쌓이면 사이트
+  평가가 내려간다. **있는 것만 적는다.**
 
-  📌 법적 고지 넷(/privacy-policy 등)은 아직 이 사이트가 아니라
-  connection-sense.web.app 에 있다. 대표 도메인으로 옮기기로 정해지면
-  (추가 651) 그때 여기에 더한다.
+  📌 법적 고지 다섯(/legal, /legal/privacy-policy 등)은 tool/build_site.sh 가
+  docs/legal 을 이 사이트의 legal/ 아래로 복사해 배포하므로 실제로 존재한다
+  (구 준비 문서 추가 651 이 이 배포 구조로 실행됐다). 각 문서의
+  <link rel="canonical"> 도 같은 대표 도메인 주소를 가리키게 맞춰 뒀다.
 
   ⚠️ lastmod 는 **내용이 실제로 바뀐 날**이어야 한다. 배포할 때마다 오늘로
-  바꾸면 검색엔진이 그 값을 믿지 않게 된다.
+  바꾸면 검색엔진이 그 값을 믿지 않게 된다. 법적 고지 넷의 lastmod 는 각
+  문서 <meta-row> 의 "최종 갱신"/"시행일" 날짜를 그대로 옮겼다 — 날짜를
+  다시 복사하지 않으려면(추가 498과 같은 이유) 이 값이 낡았을 때 각 문서를
+  다시 열어 대조할 것.
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
@@ -17,5 +20,35 @@
     <lastmod>2026-09-01</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://connectionsense.co.kr/legal</loc>
+    <lastmod>2026-08-12</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://connectionsense.co.kr/legal/privacy-policy</loc>
+    <lastmod>2026-09-02</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://connectionsense.co.kr/legal/terms-of-service</loc>
+    <lastmod>2026-08-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://connectionsense.co.kr/legal/app-permissions</loc>
+    <lastmod>2026-08-23</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://connectionsense.co.kr/legal/account-deletion</loc>
+    <lastmod>2026-08-16</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
   </url>
 </urlset>

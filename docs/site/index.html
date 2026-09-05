@@ -95,6 +95,7 @@
       <a href="#how">기능</a>
       <a href="#trust">안전</a>
       <a href="#faq">자주 묻는 질문</a>
+      <a href="/legal">법적 고지</a>
     </nav>
     <a class="btn primary sm" href="mailto:connectionsense@creamhouse.net?subject=%EC%BB%A4%EB%84%A5%EC%85%98%EC%84%BC%EC%8A%A4%20%EC%B6%9C%EC%8B%9C%20%EC%95%8C%EB%A6%BC%20%EC%8B%A0%EC%B2%AD">출시 알림 받기</a>
   </div>
@@ -240,7 +241,7 @@
         </article>
       </div>
 
-      <p class="trust-note">과장하지 않겠습니다. 암호화 키를 서버가 함께 보관하므로 “완전한 종단간 암호화”나 “제로 지식”이라고 말하지 않습니다. 자세한 처리 내용은 <a href="https://connection-sense.web.app/privacy-policy">개인정보처리방침</a>에 적어 두었습니다.</p>
+      <p class="trust-note">과장하지 않겠습니다. 암호화 키를 서버가 함께 보관하므로 “완전한 종단간 암호화”나 “제로 지식”이라고 말하지 않습니다. 자세한 처리 내용은 <a href="/legal/privacy-policy">개인정보처리방침</a>에 적어 두었습니다.</p>
     </div>
   </section>
 
@@ -269,7 +270,7 @@
         </details>
         <details>
           <summary>그만 쓰고 싶으면 어떻게 하나요?</summary>
-          <div class="a">앱 안 설정에서 계정을 삭제하면 서버에 백업된 명함·프로필·명함 사진과 기기에 저장된 사진·암호화 키가 함께 지워집니다. 앱을 열 수 없는 상황이라면 <a href="https://connection-sense.web.app/account-deletion">계정 및 데이터 삭제 요청 안내</a>를 참고해 주세요.</div>
+          <div class="a">앱 안 설정에서 계정을 삭제하면 서버에 백업된 명함·프로필·명함 사진과 기기에 저장된 사진·암호화 키가 함께 지워집니다. 앱을 열 수 없는 상황이라면 <a href="/legal/account-deletion">계정 및 데이터 삭제 요청 안내</a>를 참고해 주세요.</div>
         </details>
       </div>
     </div>
@@ -293,11 +294,16 @@
   <div class="wrap">
     <div class="foot-top">
       <a class="brand" href="#main"><span class="mark" aria-hidden="true"></span>커넥션센스</a>
+      <!-- 상대 경로다 — 법적 고지 원본(docs/legal)이 tool/build_site.sh 로
+           이 사이트 아래 legal/ 로 함께 배포되므로(추가 651 준비 문서 참고),
+           같은 도메인 안에서 돈다. connection-sense.web.app(옛 주소, 계속
+           살아 있다) 은 CLAUDE.md 4장에 따라 없애지 않았고, 이 페이지는
+           단지 그쪽으로 링크하지 않을 뿐이다. -->
       <nav class="foot-links" aria-label="법적 고지">
-        <a href="https://connection-sense.web.app/terms-of-service">이용약관</a>
-        <a href="https://connection-sense.web.app/privacy-policy">개인정보처리방침</a>
-        <a href="https://connection-sense.web.app/app-permissions">앱 접근권한 안내</a>
-        <a href="https://connection-sense.web.app/account-deletion">계정·데이터 삭제 안내</a>
+        <a href="/legal/terms-of-service">이용약관</a>
+        <a href="/legal/privacy-policy">개인정보처리방침</a>
+        <a href="/legal/app-permissions">앱 접근권한 안내</a>
+        <a href="/legal/account-deletion">계정·데이터 삭제 안내</a>
         <a href="mailto:connectionsense@creamhouse.net">문의</a>
       </nav>
     </div>
