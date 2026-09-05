@@ -53,6 +53,14 @@ import {getAuth} from "firebase-admin/auth";
 import {getStorage} from "firebase-admin/storage";
 import {nextKstMidnight, nextKstMonthStart} from "./usageReset";
 import {ADMIN_EMAILS} from "./adminEmails";
+import {
+  ADMIN_IDLE_TIMEOUT_MS,
+  AdminSession,
+  adminSessionExpiresAt,
+  adminSessionMessage,
+  checkAdminSession,
+  nextAdminSessionAfterHeartbeat,
+} from "./adminAuth";
 import {validateGrantAmount, validateGrantMetadata} from "./creditGrant";
 import {chunkArray} from "./chunk";
 import {
@@ -2907,5 +2915,281 @@ export const phoneOtpConfirm = onCall<OtpConfirmData>(
 
     logger.info("휴대전화번호 인증 완료", otpLogFields(key));
     return {verified: true};
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════════
+// 관리자 2차 인증 — 휴대폰 OTP 로 세션을 연다 (2026-09-05, 설계 2단계)
+//
+// 🚨 왜 필요한가: 관리자 콘솔은 이미 운영 중인데(connection-sense-admin.web.app)
+// 잠금장치가 "구글 계정 로그인 + 이메일 화이트리스트" 하나뿐이다. 계정 하나가
+// 뚫리면 전부 열리고, refresh token 이 계속 갱신되므로 브라우저를 닫아도
+// 세션이 안 끊긴다. 그 콘솔이 다루는 것은 제3자(명함 주인)의 개인정보다.
+//
+// 설계: docs/planning/specs/관리자-인증-강화와-명함-조회-설계-2026-09-05.md
+// ═══════════════════════════════════════════════════════════════════════
+
+/** `adminSessions/{uid}` 문서를 읽는다. 없거나 모양이 틀리면 `null`. */
+async function readAdminSession(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+): Promise<AdminSession | null> {
+  const snap = await db.collection("adminSessions").doc(uid).get();
+  const data = snap.data();
+  if (!data) return null;
+  const {otpVerifiedAt, lastActiveAt} = data;
+  if (typeof otpVerifiedAt !== "number" || typeof lastActiveAt !== "number") {
+    return null;
+  }
+  return {otpVerifiedAt, lastActiveAt};
+}
+
+/**
+ * 세션을 문서에 쓴다. **`expiresAt` 을 함께 넣는 것이 요점이다.**
+ *
+ * 🚨 `firestore.rules` 는 `request.time < expiresAt` 한 줄로만 비교한다 —
+ * 20분·12시간을 rules 가 모르게 하려는 것이다. 계산은 `adminAuth.ts` 에만 있다.
+ */
+async function writeAdminSession(
+  db: FirebaseFirestore.Firestore,
+  uid: string,
+  session: AdminSession,
+  phoneHashValue: string | null,
+): Promise<void> {
+  const doc: Record<string, unknown> = {
+    ...session,
+    expiresAt: adminSessionExpiresAt(session),
+  };
+  // 🚨 번호 원문이 아니라 해시만 남긴다 — 어느 번호로 인증했는지의 감사용이다.
+  if (phoneHashValue !== null) doc.phoneHash = phoneHashValue;
+  await db.collection("adminSessions").doc(uid).set(doc);
+}
+
+/**
+ * 이 관리자에게 등록된 **2차 인증용 번호 해시**를 읽는다.
+ *
+ * 🚨 `config/admins` 는 rules 에서 **읽기도 막혀 있다**(Admin SDK 전용).
+ * 관리자가 이 문서를 고칠 수 있으면 **다른 관리자의 2차 인증 번호를 자기
+ * 것으로 바꿀 수 있다** — 그러면 2차 인증이 아무것도 막지 못한다.
+ *
+ * ⚠️ 번호 **원문은 저장하지 않는다.** 해시만 두고, 들어온 번호를 같은 salt 로
+ * 해시해 맞춰 본다.
+ */
+async function adminPhoneHash(
+  db: FirebaseFirestore.Firestore,
+  email: string,
+): Promise<string | null> {
+  const snap = await db.collection("config").doc("admins").get();
+  const value = snap.data()?.[email];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+interface AdminOtpRequestData {
+  phone?: unknown;
+}
+
+/**
+ * 관리자 2차 인증 — 인증번호를 보낸다.
+ *
+ * ⭐ **발송·상한 판정은 `phoneOtpRequest` 와 같은 장부를 쓴다** — 상한을 따로
+ * 두면 관리자 경로가 우회로가 된다.
+ *
+ * 🚨 **등록된 번호와 다르면 보내지 않는다.** 아무 번호나 받아 주면 계정을
+ * 탈취한 사람이 자기 번호로 2차 인증을 통과한다.
+ */
+export const adminOtpRequest = onCall<AdminOtpRequestData>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  async (request) => {
+    if (!isAdminRequest(request.auth)) {
+      throw new HttpsError("permission-denied", "관리자만 쓸 수 있어요.");
+    }
+    const email = request.auth!.token.email as string;
+
+    const e164 = normalizePhoneKr(
+      typeof request.data?.phone === "string" ? request.data.phone : null,
+    );
+    if (e164 === null) {
+      throw new HttpsError("invalid-argument", "휴대전화번호를 다시 확인해 주세요.");
+    }
+
+    const db = getFirestore();
+    const salt = phoneHashSalt.value();
+    const key = phoneHash(e164, salt);
+
+    const registered = await adminPhoneHash(db, email);
+    if (registered === null) {
+      // ⚠️ "등록된 번호가 없다"와 "번호가 다르다"를 화면에서는 가르지 않는다 —
+      //    가르면 어느 번호가 등록돼 있는지를 떠보는 데 쓸 수 있다.
+      logger.warn("관리자 2차 인증 번호 미등록", {email});
+      throw new HttpsError("failed-precondition", "등록된 번호가 아니에요.");
+    }
+    if (registered !== key) {
+      logger.warn("관리자 2차 인증 번호 불일치", {email, ...otpLogFields(key)});
+      throw new HttpsError("failed-precondition", "등록된 번호가 아니에요.");
+    }
+
+    const now = Date.now();
+    const ledgerRef = db.collection("phoneSendLedger").doc(key);
+    const challengeRef = db.collection("phoneOtpChallenges").doc(key);
+    const code = generateOtpCode();
+
+    const decision = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ledgerRef);
+      const d = decideSend(snap.exists ? (snap.data() as SendLedger) : null, now);
+      if (!d.allowed) return d;
+      tx.set(ledgerRef, {
+        ...d.nextLedger,
+        expiresAt: Timestamp.fromMillis(now + SEND_LEDGER_RETENTION_MS),
+      });
+      tx.set(challengeRef, {
+        codeHash: otpCodeHash(code, salt),
+        createdAt: now,
+        attempts: 0,
+      } satisfies Challenge);
+      return d;
+    });
+
+    if (!decision.allowed) {
+      logger.info("관리자 인증번호 요청 거부", {
+        ...otpLogFields(key),
+        reason: decision.reason,
+      });
+      throw new HttpsError(
+        "resource-exhausted",
+        decision.reason === "resend-too-soon" ?
+          "조금 뒤에 다시 받을 수 있어요." :
+          "오늘 받을 수 있는 횟수를 다 썼어요.",
+        {reason: decision.reason, retryAfterMs: decision.retryAfterMs},
+      );
+    }
+
+    const outcome = await pickSender().send(e164, code);
+    if (!outcome.sent) {
+      logger.error("관리자 인증번호 발송 실패", {
+        ...otpLogFields(key),
+        reason: outcome.reason,
+      });
+      throw new HttpsError("unavailable", "인증번호를 보내지 못했어요.");
+    }
+
+    logger.info("관리자 인증번호 발송", {...otpLogFields(key), via: outcome.via});
+    return {sent: true};
+  },
+);
+
+interface AdminOtpConfirmData {
+  phone?: unknown;
+  code?: unknown;
+}
+
+/**
+ * 관리자 2차 인증 — 인증번호를 확인하고 **세션을 연다.**
+ *
+ * 성공하면 `adminSessions/{uid}` 가 생기고, 그때부터 `firestore.rules` 의
+ * `isAdmin()` 이 통과한다. 그전까지는 이메일이 허용목록에 있어도 막힌다.
+ */
+export const adminOtpConfirm = onCall<AdminOtpConfirmData>(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  async (request) => {
+    if (!isAdminRequest(request.auth)) {
+      throw new HttpsError("permission-denied", "관리자만 쓸 수 있어요.");
+    }
+    const uid = request.auth!.uid;
+    const email = request.auth!.token.email as string;
+
+    const e164 = normalizePhoneKr(
+      typeof request.data?.phone === "string" ? request.data.phone : null,
+    );
+    const inputCode =
+      typeof request.data?.code === "string" ? request.data.code : "";
+    if (e164 === null || inputCode.length === 0) {
+      throw new HttpsError("invalid-argument", "인증번호를 다시 확인해 주세요.");
+    }
+
+    const db = getFirestore();
+    const salt = phoneHashSalt.value();
+    const key = phoneHash(e164, salt);
+    const now = Date.now();
+
+    const registered = await adminPhoneHash(db, email);
+    if (registered !== key) {
+      logger.warn("관리자 2차 인증 번호 불일치(확인)", {email});
+      throw new HttpsError("failed-precondition", "등록된 번호가 아니에요.");
+    }
+
+    const challengeRef = db.collection("phoneOtpChallenges").doc(key);
+    const result = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(challengeRef);
+      const challenge = snap.exists ? (snap.data() as Challenge) : null;
+      const v = verifyOtp(challenge, inputCode, salt, now);
+      if (!v.ok) {
+        if (v.reason === "mismatch") tx.update(challengeRef, {attempts: v.nextAttempts});
+        return v;
+      }
+      // 맞았다. 코드는 즉시 버린다 — 재사용을 막는다.
+      tx.delete(challengeRef);
+      return v;
+    });
+
+    if (!result.ok) {
+      logger.info("관리자 인증번호 확인 실패", {
+        ...otpLogFields(key),
+        reason: result.reason,
+      });
+      throw new HttpsError("permission-denied", "인증번호가 맞지 않아요.", {
+        reason: result.reason,
+      });
+    }
+
+    const session: AdminSession = {otpVerifiedAt: now, lastActiveAt: now};
+    await writeAdminSession(db, uid, session, key);
+
+    logger.info("관리자 2차 인증 완료", {email, ...otpLogFields(key)});
+    return {
+      verified: true,
+      expiresAt: adminSessionExpiresAt(session),
+      idleTimeoutMs: ADMIN_IDLE_TIMEOUT_MS,
+    };
+  },
+);
+
+/**
+ * 관리자 세션 하트비트 — 활동 중임을 알려 유휴 만료를 뒤로 민다.
+ *
+ * 🚨 **클라이언트가 `adminSessions` 를 직접 못 쓰기 때문에 이것이 필요하다.**
+ * 그렇게 만든 이유는 만료 계산을 한 곳에 두려는 것이다(설계 §3-2) — 직접
+ * 쓰게 하면 rules 가 스스로 판정해야 하고 상수가 두 곳에 생긴다.
+ *
+ * 📌 **죽은 세션은 여기서 되살아나지 않는다** — `nextAdminSessionAfterHeartbeat`
+ * 가 `canExtendAdminSession` 을 그대로 쓴다.
+ */
+export const adminSessionHeartbeat = onCall(
+  {region: "asia-northeast3", maxInstances: MAX_INSTANCES},
+  async (request) => {
+    if (!isAdminRequest(request.auth)) {
+      throw new HttpsError("permission-denied", "관리자만 쓸 수 있어요.");
+    }
+    const uid = request.auth!.uid;
+    const db = getFirestore();
+    const now = Date.now();
+
+    const current = await readAdminSession(db, uid);
+    const next = nextAdminSessionAfterHeartbeat(current, now);
+    if (next === null) {
+      const state = checkAdminSession(current, now);
+      const reason = state.ok ? "no-session" : state.reason;
+      logger.info("관리자 세션 만료", {uid, reason});
+      throw new HttpsError("permission-denied", adminSessionMessage(reason), {
+        reason,
+      });
+    }
+
+    await writeAdminSession(db, uid, next, null);
+    const state = checkAdminSession(next, now);
+    return {
+      alive: true,
+      expiresAt: adminSessionExpiresAt(next),
+      idleMsLeft: state.ok ? state.idleMsLeft : 0,
+    };
   },
 );
