@@ -140,6 +140,7 @@ class _WalletViewState extends State<WalletView> {
                 child: contacts.isEmpty
                     ? _WalletEmptyState(
                         hasSavedContacts: viewModel.contacts.isNotEmpty,
+                        readFailed: viewModel.localReadFailed,
                         onAdd: () => _openCardEditor(context),
                       )
                     // 목록 자체의 스크롤 알림만 여기서 받는다 — 아래
@@ -1094,10 +1095,22 @@ class _LocationWarnIcon extends StatelessWidget {
 
 class _WalletEmptyState extends StatelessWidget {
   final bool hasSavedContacts;
+
+  /// 🚨 **저장된 명함을 열지 못했다** — 「없다」와 다르다(2026-09-04).
+  ///
+  /// 이 둘을 같은 화면으로 보여주면 이용자는 *"명함이 다 사라졌다"* 고
+  /// 읽는다. 그리고 그렇게 읽으면 **앱을 지운다** — 그러면 기기에 남아
+  /// 있던 암호문까지 사라져 **정말로 복구가 불가능해진다.**
+  ///
+  /// 📌 그래서 이 화면이 말해야 하는 것은 위로가 아니라 **「지우지
+  /// 마세요」** 다.
+  final bool readFailed;
+
   final VoidCallback onAdd;
 
   const _WalletEmptyState({
     required this.hasSavedContacts,
+    required this.readFailed,
     required this.onAdd,
   });
 
@@ -1118,14 +1131,22 @@ class _WalletEmptyState extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                hasSavedContacts ? Icons.search_off : Icons.badge_outlined,
+                readFailed
+                    ? Icons.lock_outline
+                    : hasSavedContacts
+                    ? Icons.search_off
+                    : Icons.badge_outlined,
                 size: 34,
                 color: AppColors.accentText,
               ),
             ),
             const SizedBox(height: 18),
             Text(
-              hasSavedContacts ? '검색 결과가 없습니다' : '아직 등록된 명함이 없습니다',
+              readFailed
+                  ? '명함을 열지 못했어요'
+                  : hasSavedContacts
+                  ? '검색 결과가 없습니다'
+                  : '아직 등록된 명함이 없습니다',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 fontSize: 18,
@@ -1135,7 +1156,14 @@ class _WalletEmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              hasSavedContacts
+              readFailed
+                  // 🚨 「지우지 마세요」가 이 문구의 핵심이다 — 사라진 줄 알고
+                  // 앱을 지우면 기기에 남은 암호문까지 없어져 정말로 복구가
+                  // 불가능해진다. 위로보다 이 한 줄이 먼저다.
+                  ? '명함은 기기에 그대로 있지만 지금은 열 수 없습니다.\n'
+                        '앱을 지우면 복구할 수 없으니 지우지 마시고, '
+                        '설정 → 1:1 문의로 알려 주세요.'
+                  : hasSavedContacts
                   ? '다른 이름이나 회사명으로 검색해 보세요.'
                   : '실제 명함을 촬영하거나 직접 입력해 첫 인맥을 등록해 보세요.',
               textAlign: TextAlign.center,
@@ -1145,7 +1173,7 @@ class _WalletEmptyState extends StatelessWidget {
                 color: AppColors.textSecondary,
               ),
             ),
-            if (!hasSavedContacts) ...[
+            if (!hasSavedContacts && !readFailed) ...[
               const SizedBox(height: 18),
               OutlinedButton.icon(
                 onPressed: onAdd,

@@ -35,6 +35,31 @@ set -e
 # 이 줄도 함께 올린다 — 안 맞으면 CI만 다른 SDK로 빌드된다.
 FLUTTER_VERSION=3.44.8
 
+# 🚨 cmake 를 먼저 설치한다 — **이것이 2026-09-04 실패의 원인이었다.**
+#
+# `dartcv4`(명함 테두리 검출, 추가 273)는 네이티브 자산을 빌드할 때 cmake 를
+# 부른다. 없으면 archive 가 이렇게 죽는다:
+#
+#   Exception: Failed to find cmake version: latest
+#     #0 _CmakeResolver.resolve (package:native_toolchain_cmake/…)
+#     Building assets for package:dartcv4 failed.
+#   Command PhaseScriptExecution failed with a nonzero exit code
+#
+# ⚠️ **CLAUDE.md 3장에 이미 적혀 있던 것이다** — *"처음 받은 기계라면 cmake
+# 부터 설치한다 — brew install cmake."* 그 문장이 사람 노트북 이야기로만
+# 읽혔는데, **Xcode Cloud 머신은 빌드마다 「처음 받은 기계」다.**
+#
+# 📌 로컬에서 아무리 재현해도 안 나오는 종류였다 — 개발 노트북에는 cmake 가
+# 이미 있어서, 같은 명령·같은 SDK·같은 설치 방식으로 돌려도 전부 성공했다.
+#
+# Xcode Cloud 이미지에는 Homebrew 가 들어 있다. 이미 있으면 건너뛴다.
+if command -v cmake >/dev/null 2>&1; then
+  echo "▶ cmake: 이미 있음 ($(cmake --version | head -1))"
+else
+  echo "▶ cmake 설치 — dartcv4 네이티브 자산 빌드에 필요하다"
+  brew install cmake
+fi
+
 echo "▶ Flutter $FLUTTER_VERSION 설치"
 git clone https://github.com/flutter/flutter.git --depth 1 -b "$FLUTTER_VERSION" "$HOME/flutter"
 export PATH="$HOME/flutter/bin:$PATH"
@@ -99,6 +124,11 @@ flutter build ios --release --no-codesign --config-only \
 # ⚠️ `set -e` 아래이므로 실패해도 빌드를 멈추지 않게 `|| true` 를 붙인다 —
 #    진단이 빌드를 죽이면 본말이 뒤집힌다.
 echo "── 진단 ─────────────────────────────"
+if command -v cmake >/dev/null 2>&1; then
+  echo "cmake: ✅ $(cmake --version | head -1)"
+else
+  echo "cmake: 🚨 없음 — dartcv4 네이티브 빌드가 여기서 죽는다"
+fi
 echo "FLUTTER_ROOT(기록된 값): $(grep '^FLUTTER_ROOT=' ios/Flutter/Generated.xcconfig || echo '🚨 없음')"
 
 if [ -d ios/Flutter/ephemeral/Packages/FlutterGeneratedPluginSwiftPackage ]; then

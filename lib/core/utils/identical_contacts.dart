@@ -97,8 +97,32 @@ bool isSafeToMergeAutomatically(ContactModel a, ContactModel b) {
   if (_clashesList(a.groupIds, b.groupIds)) return false;
   if (_clashesList(a.interests, b.interests)) return false;
   if (_clashesList(a.talkingPoints, b.talkingPoints)) return false;
+  if (_clashesLogs(a.commLogs, b.commLogs)) return false;
   if (_geoClashes(a.geo, b.geo)) return false;
   return true;
+}
+
+/// 🚨 **소통 기록은 이 판정에 원래 빠져 있었다** (2026-09-04에 찾음).
+///
+/// 위 목록이 메모·태그·그룹·관심사·대화거리는 보는데 `commLogs`만 안 봤다.
+/// 그런데 **두 기기에서 각자 연락을 기록하면 서로 다른 기록이 쌓인다** —
+/// 그 상태로 합치면 한쪽 이력이 사라진다.
+///
+/// 📌 **이 파일 머리말이 경고한 바로 그 자리다** — *"이력을 버렸다(추가 553)"*.
+/// 판정에 넣지 않으면 그 사고가 **동기화라는 아무도 안 보는 자리**에서 난다.
+///
+/// ⚠️ **합집합으로 섞지 않는다.** 목록 규칙([_clashesList])과 같은 판단이다 —
+/// 섞으면 이용자가 만든 적 없는 이력이 된다. 둘 다 값이 있으면 **합치지
+/// 않고 사람에게 남긴다.**
+bool _clashesLogs(
+  List<CommunicationLogModel> a,
+  List<CommunicationLogModel> b,
+) {
+  if (a.isEmpty || b.isEmpty) return false;
+  // 기기가 달라도 같은 기록이면 id가 같다(서버에서 내려온 같은 원본).
+  final ida = a.map((e) => e.id).toSet();
+  final idb = b.map((e) => e.id).toSet();
+  return ida.length != idb.length || !ida.containsAll(idb);
 }
 
 /// 좌표는 **값으로** 비교한다.
@@ -146,5 +170,59 @@ List<String> oneSidedFields(ContactModel a, ContactModel b) {
   chk('그룹', a.groupIds, b.groupIds);
   chk('관심사', a.interests, b.interests);
   chk('대화거리', a.talkingPoints, b.talkingPoints);
+  chk('소통 기록', a.commLogs, b.commLogs);
   return out;
+}
+
+/// [isSafeToMergeAutomatically]가 참인 두 명함을 **하나로 접는다.**
+///
+/// ## 🚨 이 함수가 없어서 판정기가 놀고 있었다
+///
+/// 판정기는 2026-08-29에 만들어졌는데(추가 572), **`lib/` 안에서 부르는 곳이
+/// 0건**이었다(2026-09-04 실측 — 테스트만 불렀다). 판정만 있고 **합치는 손이
+/// 없었다.** 이 저장소가 반복해서 겪은 모양이다(추가 79 — 서비스는 정상,
+/// 부르는 쪽이 없음).
+///
+/// ## 어느 쪽을 남기나 — **id 사전순으로 작은 쪽**
+///
+/// 🚨 **기기마다 같은 답이 나와야 한다.** 「최신 것」으로 정하면 기기마다
+/// `updatedAt`이 달라 **폰과 태블릿이 서로 다른 쪽을 남긴다** — 그러면 접어도
+/// 중복이 안 없어진다. 사전순은 어디서 재도 같다.
+///
+/// 📌 **어느 쪽을 남겨도 내용은 같다** — 판정기가 *"사람이 읽는 칸이 전부
+/// 같다"*를 이미 보장한다. 다른 것은 **한쪽에만 있는 값**뿐이고, 그것을 여기서
+/// 살린다.
+///
+/// ⚠️ **`??`가 아니라 「빈 값이면 채운다」로 판단한다** — 빈 문자열은 `null`이
+/// 아니라서 `??`로는 안 걸린다.
+ContactModel mergeIdentical(ContactModel a, ContactModel b) {
+  final (keep, drop) = a.id.compareTo(b.id) <= 0 ? (a, b) : (b, a);
+
+  bool blank(Object? v) =>
+      v == null || (v is String && v.trim().isEmpty) || (v is List && v.isEmpty);
+
+  return keep.copyWith(
+    cardImagePath:
+        blank(keep.cardImagePath) ? drop.cardImagePath : keep.cardImagePath,
+    memo: blank(keep.memo) ? drop.memo : keep.memo,
+    geo: keep.geo ?? drop.geo,
+    tags: blank(keep.tags) ? drop.tags : keep.tags,
+    groupIds: blank(keep.groupIds) ? drop.groupIds : keep.groupIds,
+    interests: blank(keep.interests) ? drop.interests : keep.interests,
+    talkingPoints:
+        blank(keep.talkingPoints) ? drop.talkingPoints : keep.talkingPoints,
+    commLogs: blank(keep.commLogs) ? drop.commLogs : keep.commLogs,
+    // 내용이 같으므로 시각은 **더 최신**을 쓴다 — 다음 병합에서 이 결과가
+    // 옛것으로 밀리지 않게 한다.
+    //
+    // ⚠️ `updatedAt`은 nullable이다. 한쪽만 있으면 그것을 쓰고, 둘 다 없으면
+    // 그대로 둔다 — 없는 것을 지어내지 않는다.
+    updatedAt: _laterOf(keep.updatedAt, drop.updatedAt),
+  );
+}
+
+DateTime? _laterOf(DateTime? a, DateTime? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a.isAfter(b) ? a : b;
 }

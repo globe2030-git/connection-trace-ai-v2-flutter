@@ -58,6 +58,24 @@ post_install do |installer|
       # 엄격한 검사라서 끈다. 관련 키가 두 개라 둘 다 꺼야 함.
       config.build_settings['CLANG_ENABLE_MODULE_VERIFIER'] = 'NO'
       config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+
+      # pod 들의 최소 iOS 버전을 앱과 같은 15.5 로 통일한다(2026-09-05).
+      #
+      # 왜: abseil·gRPC·leveldb·Promises 등이 아직 iOS 9.0/10.0/11.0 을
+      # 선언하고 있어, 새 Xcode 가 매 빌드마다 **경고 24건**을 낸다:
+      #
+      #   The iOS deployment target 'IPHONEOS_DEPLOYMENT_TARGET' is set to
+      #   9.0, but the range of supported deployment target versions is
+      #   12.0 to 26.5.99.
+      #
+      # 📌 **경고를 방치하면 새 경고가 묻힌다**(globe2030님 지적). 이 앱은
+      # 어차피 `platform :ios, '15.5'` 라 그보다 낮은 타깃으로 빌드될 일이
+      # 없다 — 숫자를 실물에 맞추는 것뿐이고 동작은 그대로다.
+      #
+      # ⚠️ **내리는 것이 아니라 올리는 것이다.** 낮은 최소 버전을 요구하는
+      # pod 은 없다(있다면 그 pod 이 15.5 미만 API 를 쓴다는 뜻인데, 앱이
+      # 이미 15.5 이므로 그런 pod 은 애초에 못 쓴다).
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.5'
     end
   end
 end

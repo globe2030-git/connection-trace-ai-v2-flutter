@@ -156,6 +156,13 @@ class WalletViewModel extends ChangeNotifier {
   // 검사처럼 필터링된 filteredContacts로는 놓칠 수 있는 조회에 쓴다.
   List<ContactModel> get contacts => _contactsRepository.contacts;
 
+  /// **기기에 저장된 명함을 열지 못했다** — 없는 것이 아니다.
+  ///
+  /// 🚨 화면이 이 둘을 다르게 말해야 한다. 같은 빈 화면으로 보여주면
+  /// 이용자는 *"명함이 다 사라졌다"* 고 읽고, **앱을 지우면 암호문까지
+  /// 사라져 정말로 복구가 불가능해진다.**
+  bool get localReadFailed => _contactsRepository.localReadFailed;
+
   List<String> get allTags {
     final tagsSet = <String>{};
     for (var c in _contactsRepository.contacts) {
