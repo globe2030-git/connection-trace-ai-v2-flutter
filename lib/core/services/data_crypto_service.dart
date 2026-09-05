@@ -141,6 +141,54 @@ class DataCryptoService {
   /// 형식이 잘못된 입력이면 [DataDecryptionException]을 던진다. 절대 조용히
   /// 삼키지 않는다 — 호출자가 레거시 평문 폴백 등 명확한 정책을 적용해야
   /// 하기 때문.
+  /// **가진 키를 차례로 시도해** 여는 쪽(키링, 2026-09-04).
+  ///
+  /// ## 왜 「어느 키인지」를 안 적어도 되나
+  ///
+  /// 암호문 형식이 `nonce(12B) + ciphertext + MAC(16B)` 이라 **키 식별자가
+  /// 들어갈 자리가 없다.** 그런데 넣을 필요가 없다 — **AES-GCM 의 MAC 이
+  /// 틀린 키를 반드시 걸러 준다.** 맞는 키에서만 성공하므로 차례로 시도하면
+  /// 된다.
+  ///
+  /// ⭐ **그래서 형식을 안 바꿔도 되고, 기존 암호문이 그대로 열린다.**
+  ///
+  /// ## 왜 재암호화가 아니라 이 길인가
+  ///
+  /// 두 계정을 한 사람으로 이으면 명함이 **서로 다른 키로 잠긴 채** 한
+  /// 명함첩에 모인다. 한쪽을 전부 복호화해 다른 키로 다시 암호화하는 길도
+  /// 있지만, 그것은 **원본을 덮어쓴다** — 중간에 끊기면 반쯤 암호화된 상태가
+  /// 되고 되돌릴 수 없다.
+  ///
+  /// 📌 **이 함수는 아무것도 덮어쓰지 않는다. 읽는 방법만 늘린다.**
+  ///
+  /// ## 실패했을 때
+  ///
+  /// 🚨 **모든 키가 실패해야 실패다.** 그때는 마지막 예외를 그대로 던져
+  /// 부르는 쪽이 「없다」가 아니라 「못 읽었다」로 다룰 수 있게 한다 —
+  /// 그 구분이 없으면 빈 목록으로 시작했다가 원본을 덮어쓴다.
+  ///
+  /// [keys]가 비어 있어도 예외다. **키가 없는 것과 키가 안 맞는 것은 둘 다
+  /// 「지금은 못 읽는다」이고, 어느 쪽도 「명함이 없다」가 아니다.**
+  static Future<Map<String, dynamic>> decryptJsonWithAny(
+    String encoded,
+    List<SecretKey> keys,
+  ) async {
+    if (keys.isEmpty) {
+      throw DataDecryptionException('열 수 있는 키가 하나도 없음');
+    }
+    Object? lastError;
+    for (final key in keys) {
+      try {
+        return await decryptJson(encoded, key);
+      } on DataDecryptionException catch (e) {
+        // 이 키가 아니었다 — 다음 키를 시도한다. ⚠️ 여기서 삼키는 것은
+        // **개별 키의 실패**뿐이고, 전부 실패하면 아래에서 던진다.
+        lastError = e;
+      }
+    }
+    throw lastError! as DataDecryptionException;
+  }
+
   static Future<Map<String, dynamic>> decryptJson(
     String encoded,
     SecretKey key,
