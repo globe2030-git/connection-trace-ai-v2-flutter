@@ -28,9 +28,14 @@ import 'encryption_key_service.dart';
 /// [CardPhotoBackupService]가 Cloud Storage에도 올린다 — 기기를 바꾸면
 /// 명함 텍스트는 복원되는데 사진만 사라지던 문제를 없애기 위함이다. 여기서
 /// 복호화하지 않고 **암호문 그대로** 올리므로 서버는 사진을 열어볼 수 없다.
-/// ⚠️ 개인정보처리방침 v2.2 게시 전까지
-/// [CardPhotoBackupService.kCardPhotoBackupEnabled]가 `false`라 업로드는
-/// 실제로 일어나지 않는다.
+/// ✅ **2026-08-26부터 실제로 올라간다**
+/// ([CardPhotoBackupService.kCardPhotoBackupEnabled]가 `true`).
+///
+/// ⚠️ **그 전까지는 꺼져 있었다** — 개인정보처리방침 v2.2(사진의 서버 저장을
+/// 고지하는 개정)가 게시되기 전에 켜면 고지 없는 수집이 되기 때문이다.
+/// 🚨 **그런데 이 줄이 열흘 동안 「`false`라 업로드는 일어나지 않는다」로
+/// 남아 있었다**(추가 687). 여기만 읽은 사람은 **사진이 기기 밖으로 안
+/// 나간다고 읽는다** — 개인정보가 걸린 자리에서 가장 나쁜 종류의 거짓말이다.
 class ContactImageService {
   ContactImageService({
     EncryptionKeyService? keyService,
