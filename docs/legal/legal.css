@@ -70,6 +70,13 @@ body{margin:0; font-family:var(--font-ui); background:var(--bg); color:var(--ink
 .backlink{display:inline-block; font-size:12.5px; color:var(--ink-faint); text-decoration:none; margin-bottom:22px;}
 .backlink:hover{color:var(--brand-deep);}
 
+/* 대표 홈페이지(connectionsense.co.kr)로 가는 링크와, 법적 고지 안에서
+   오가는 기존 .backlink 를 한 줄에 나란히 둘 때 쓴다. .backlink 자체의
+   margin-bottom 은 건드리지 않는다 — 다른 곳에서 단독으로 쓸 때 깨지면
+   안 되므로, 줄 간격은 이 래퍼가 대신 잡는다. */
+.toplinks{display:flex; flex-wrap:wrap; gap:4px 18px; margin-bottom:22px;}
+.toplinks .backlink{margin-bottom:0;}
+
 .meta-row{display:flex; gap:18px; flex-wrap:wrap; margin:20px 0 32px; padding:14px 18px; background:var(--paper-2); border:1px solid var(--border); border-radius:10px; font-size:12.5px; color:var(--ink-dim);}
 .meta-row b{color:var(--ink); font-weight:700;}
 
