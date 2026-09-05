@@ -83,6 +83,32 @@ jobs:
       - name: 테스트
         run: flutter test --reporter expanded
 
+      - name: Node 설치
+        # functions/package.json이 `engines.node: 22`를 요구한다. 러너 기본
+        # 버전에 기대면 러너가 바뀌는 날 CI만 깨진다 — Flutter 버전을 3.44.8로
+        # 고정한 것과 같은 이유다.
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Cloud Functions 테스트
+        # 🚨 2026-09-05까지 이 단계가 없었다. `functions/`에 테스트가 17개
+        # 있고 `npm test`에 등록까지 돼 있었는데 **CI가 한 번도 안 돌렸다** —
+        # 즉 서버 쪽 로직(과금·지갑·OTP·소셜 로그인)은 누군가 손으로 돌려야만
+        # 검증됐다. 관리자 인증(adminAuth.ts)이 바로 그 자리에 들어가면서
+        # 드러났다.
+        #
+        # ⚠️ **`flutter test`가 이것을 대신해 주지 않는다** — 서로 다른 언어의
+        # 서로 다른 코드다. 통과 건수가 늘어도 서버 쪽은 그대로 0건이었다.
+        #
+        # `npm ci`는 lockfile 그대로 설치하므로 재현 가능하고, 스크립트가
+        # `tsc`를 먼저 돌려 **타입 오류도 여기서 걸린다**(functions 쪽에는
+        # `flutter analyze`에 해당하는 단계가 따로 없다).
+        working-directory: functions
+        run: npm ci --no-audit --no-fund && npm test
+
       - name: 관리자 이메일 동기화 검사
         # firestore.rules의 isAdmin()과 functions/src/adminEmails.ts의
         # ADMIN_EMAILS가 갈라지면 관리자 해제가 일부만 반영되는 사고가 난다
