@@ -802,14 +802,35 @@ class ContactsRepository extends ChangeNotifier {
       return;
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final jsonList = _contacts.map((c) => c.toJson()).toList();
       final uid = _uid;
       if (uid == null) {
-        // 로그인 전(게스트) — 암호화 키를 만들 수 없으므로 평문으로 저장.
-        await prefs.setString(_storageKey, jsonEncode(jsonList));
+        // 🚨 **로그인 전(게스트)에는 아예 저장하지 않는다.**
+        //
+        // 종전에는 여기서 `jsonEncode(jsonList)`를 그대로 넣었다 — 암호화
+        // 키를 만들 수 없다는 이유였다. 그런데 명함은 **이용자 본인이 아닌
+        // 제3자의 개인정보**이고, `shared_preferences`는 암호화되지 않는
+        // 저장소다. CLAUDE.md 4절이 *"암호화되지 않는 저장소에 개인정보
+        // 원문을 넣지 않는다"* 로 못박은 바로 그 자리였다.
+        //
+        // ⚠️ 릴리스에는 게스트 경로가 없다 — `login_view.dart`의 「로그인
+        // 건너뛰기」가 `kDebugMode`로 막혀 있고 `signInAsGuest()`를 부르는
+        // 곳은 거기 하나뿐이다. 그래서 이 변경으로 **이용자가 겪는 것은
+        // 바뀌지 않는다.** 실제로 막는 것은 **개발·QA 기기에 제3자 명함이
+        // 평문으로 남는 것**이고, 그 기기들에는 실물 명함이 들어 있다.
+        //
+        // 📌 **잃는 것**: 게스트로 넣은 명함이 앱을 다시 켜면 사라진다.
+        // 게스트는 QA 용 한 번짜리 세션이므로 그 편이 낫다고 봤다.
+        //
+        // 🚨 **이미 저장돼 있는 값은 지우지 않는다.** 암호화 도입 전에 쌓인
+        // 평문(레거시)이 남아 있을 수 있는데, `_loadFromDisk`가 그것을 읽어
+        // 로그인 시점에 **암호화해 다시 저장하는 마이그레이션**이 걸려 있다.
+        // 여기서 지우면 그 데이터가 마이그레이션 전에 사라진다.
         return;
       }
+      // 📌 uid 검사를 **맨 위**에 둔다 — 게스트일 때는 평문 JSON 을 메모리에
+      // 만들지도 않는다. 종전에는 위에서 먼저 만들고 아래에서 버렸다.
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _contacts.map((c) => c.toJson()).toList();
       final key = await _encryptionKeyService.getOrCreateUserKey(uid);
       final encoded = await DataCryptoService.encryptJson({
         'contacts': jsonList,
