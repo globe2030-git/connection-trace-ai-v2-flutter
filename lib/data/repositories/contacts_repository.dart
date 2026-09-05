@@ -1,5 +1,6 @@
 import '../../core/services/card_photo_backup_state.dart';
 import '../../core/utils/identical_contacts.dart';
+import '../models/card_source_model.dart';
 import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -969,7 +970,13 @@ class ContactsRepository extends ChangeNotifier {
   Future<bool> hasAddressGeocodingFailed(ContactModel c) =>
       _geoBackfillService.hasGivenUpGeo(c);
 
-  void addContact(ContactModel newContact) {
+  /// 명함을 더한다.
+  ///
+  /// [scanRawText] 는 이 명함을 만들어 낸 **OCR 원문**이다(2026-09-05).
+  /// 직접 입력한 명함이면 `null` 이고, 그때는 원본 기록을 만들지 않는다.
+  /// 🚨 **여기서 안 남기면 영영 못 남긴다** — 원본은 저장하는 순간에만
+  /// 남길 수 있다(설계 §2-3-3).
+  void addContact(ContactModel newContact, {String? scanRawText}) {
     // 다기기 병합의 최신본 판정(LWW) 기준을 지금 시각으로 찍는다(P1-39 A안).
     final stamped = newContact.updatedAt == null
         ? newContact.copyWith(updatedAt: DateTime.now())
@@ -978,9 +985,30 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
     _backup(stamped);
+    _backupSource(stamped.id, scanRawText);
   }
 
-  void updateContact(ContactModel updatedContact) {
+  /// 파싱 원본을 남긴다. 남길 것이 없으면 아무것도 안 한다.
+  ///
+  /// ⚠️ **덮어쓰지 않는다** — [scanRawText] 가 없으면(다시 스캔하지 않은 편집)
+  /// 기존 원본을 그대로 둔다. 그 명함을 만들어 낸 원문은 여전히 그것이다.
+  void _backupSource(String cardId, String? scanRawText) {
+    final uid = _uid;
+    if (uid == null) return;
+    final source = CardSourceModel.forScan(
+      cardId: cardId,
+      rawText: scanRawText,
+      scannedAt: DateTime.now(),
+    );
+    if (source == null) return;
+    DataBackupService.backupCardSource(uid, source);
+  }
+
+  /// 명함을 고친다.
+  ///
+  /// [scanRawText] 는 **편집 중에 다시 스캔했을 때만** 넘어온다. 안 넘어오면
+  /// 기존 원본을 그대로 둔다 — 그 명함을 만든 원문이 바뀐 것이 아니기 때문이다.
+  void updateContact(ContactModel updatedContact, {String? scanRawText}) {
     // 편집이 있었으므로 updatedAt을 지금으로 갱신 — 이래야 다른 기기와 병합할 때
     // 이 편집이 최신본으로 인식돼 전파된다(P1-39 A안).
     final stamped = updatedContact.copyWith(updatedAt: DateTime.now());
@@ -993,6 +1021,7 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
     _backup(stamped);
+    _backupSource(stamped.id, scanRawText);
   }
 
   void deleteContact(String id) {
@@ -1020,6 +1049,10 @@ class ContactsRepository extends ChangeNotifier {
     final uid = _uid;
     if (uid != null) {
       DataBackupService.deleteContactBackup(uid, id);
+      // 🚨 파싱 원본도 함께 지운다(2026-09-05). 안 지우면 **이용자는 지웠다고
+      // 아는데 이름·전화·주소 원문이 서버에 그대로 남는다** — 그것도 본인이
+      // 아니라 제3자(명함 주인)의 것이다.
+      DataBackupService.deleteCardSource(uid, id);
       // 삭제 기록(tombstone)을 남겨 다른 기기도 이 삭제를 반영하게 한다(P1-39 A안).
       // 안 남기면 다른 기기와 병합할 때 그 기기의 사본이 다시 살아난다.
       DataBackupService.writeTombstone(uid, id);

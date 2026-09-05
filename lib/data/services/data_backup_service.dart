@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/services/data_crypto_service.dart';
 import '../../core/services/encryption_key_service.dart';
+import '../models/card_source_model.dart';
 import '../models/contact_model.dart';
 import '../models/group_model.dart';
 import '../models/my_profile_model.dart';
@@ -61,6 +62,57 @@ class DataBackupService {
       });
     } catch (e) {
       debugPrint('명함 서버 백업 실패(${contact.id}): $e');
+    }
+  }
+
+  static CollectionReference<Map<String, dynamic>> _cardSourcesCollection(
+    String uid,
+  ) => _userDoc(uid).collection('cardSources');
+
+  /// **파싱 원본**을 암호화해 남긴다 (2026-09-05, globe2030님 지적).
+  ///
+  /// 파서를 고쳐도 이미 등록된 명함은 그대로였다 — 원본이 안 남았기 때문이다.
+  /// 이걸 남기면 **사진 없이 파싱만 다시 돌릴 수 있다**(설계 §2-3-3).
+  ///
+  /// 🚨 **미루면 되살릴 수 없는 데이터가 쌓인다.** 원본은 저장하는 순간에만
+  /// 남길 수 있다 — 그래서 「사람」 레이어(people)로 옮기기 전에 먼저 넣는다.
+  /// ⚠️ 지금은 `users/{uid}` 아래에 둔다. **명함 본문과 같은 곳이므로 나중에
+  /// 함께 옮겨 간다** — 따로 챙길 것이 늘지 않는다.
+  ///
+  /// 📌 **본문과 다른 문서에 둔다.** 같은 문서에 넣으면 평소 명함첩을 열
+  /// 때마다 안 쓰는 원본이 딸려온다.
+  ///
+  /// 실패해도 조용히 넘어간다 — [backupContact]와 같은 판단이고, 여기서는
+  /// 더 그렇다. **원본이 없다고 명함 등록이 막히면 안 된다.**
+  static Future<void> backupCardSource(
+    String uid,
+    CardSourceModel source,
+  ) async {
+    try {
+      final key = await _encryptionKeyService.getOrCreateUserKey(uid);
+      final encrypted = await DataCryptoService.encryptJson(
+        source.toJson(),
+        key,
+      );
+      await _cardSourcesCollection(uid).doc(source.cardId).set({
+        'encrypted': encrypted,
+        'schemaVersion': 1,
+      });
+    } catch (e) {
+      // 🚨 rawText 는 제3자 개인정보다. 내용은 절대 안 찍는다.
+      debugPrint('파싱 원본 백업 실패(${source.cardId}): ${e.runtimeType}');
+    }
+  }
+
+  /// 명함을 지울 때 그 원본도 함께 지운다.
+  ///
+  /// 🚨 **이걸 빠뜨리면 지운 명함의 개인정보 원문이 서버에 남는다.** 이용자는
+  /// 지웠다고 알고 있는데 이름·전화·주소가 그대로 있는 상태가 된다.
+  static Future<void> deleteCardSource(String uid, String cardId) async {
+    try {
+      await _cardSourcesCollection(uid).doc(cardId).delete();
+    } catch (e) {
+      debugPrint('파싱 원본 삭제 실패($cardId): ${e.runtimeType}');
     }
   }
 
