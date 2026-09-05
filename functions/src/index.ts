@@ -86,7 +86,11 @@ import {
   planActivation,
 } from "./pilotEvents";
 import {generateReferralCode} from "./referralCode";
-import {canGrantTrialToDevice, deviceHash} from "./deviceLedger";
+import {
+  canGrantTrialToDevice,
+  deviceHash,
+  deviceLedgerExpiresAtMs,
+} from "./deviceLedger";
 import {
   Challenge,
   OTP_MAX_ATTEMPTS,
@@ -1349,12 +1353,28 @@ export const bootstrapAccount = onCall<BootstrapAccountRequest>(
         // firstSeenAt은 문서가 처음 생길 때(trialGrantsIssued===0)만
         // 필드를 포함시킨다 — merge:true라 필드를 아예 안 보내면 기존값이
         // 보존된다(재작성해서 최초 시각을 덮어쓰지 않기 위함).
+        // 🚨 expiresAt은 **Firestore TTL 정책이 읽는 필드**다(2026-09-05,
+        // 보관 기간 30일 — globe2030님 결정). 이 장부는 탈퇴로 지우지
+        // 않으므로(지우면 재가입으로 무료체험 상한이 초기화된다) 파기는 이
+        // 시각으로만 일어난다 — 없으면 사실상 무기한이라 보호법 §21①과
+        // 부딪힌다. `phoneSendLedger`와 같은 방식·같은 기간이다.
+        //
+        // ⚠️ **TTL 정책을 켜기 전까지는 이 필드가 있어도 아무것도 안
+        // 지워진다.** 그리고 **TTL은 소급되지 않는다** — 정책을 켜기 전에
+        // 쌓인 문서는 이 필드가 없어 영영 안 지워진다(런북 0단계). 켜는
+        // 명령과 순서는 `docs/planning/device-ledger-ttl-2026-09-05.md`.
+        //
+        // ⚠️ 여기서 `now`(serverTimestamp 센티넬)를 못 쓴다 — 센티넬은
+        // 숫자가 아니라 더할 수 없다. 이 함수는 서버에서 도는 것이므로
+        // `Date.now()`가 곧 서버 시각이고, 30일 단위에서 쓰기 시각과의
+        // 밀리초 차이는 의미가 없다.
         tx.set(
           deviceLedgerRef,
           {
             deviceHash: deviceHashValue,
             trialGrantsIssued: trialGrantsIssued + 1,
             lastGrantAt: now,
+            expiresAt: Timestamp.fromMillis(deviceLedgerExpiresAtMs(Date.now())),
             ...(trialGrantsIssued === 0 ? {firstSeenAt: now} : {}),
           },
           {merge: true}
