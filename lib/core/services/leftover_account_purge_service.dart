@@ -182,6 +182,15 @@ class LeftoverAccountPurgeService {
   /// 📌 그때 [currentUid]는 **「같은 사람의 uid 집합」**이 되어야 한다.
   /// 경위는 `docs/planning/specs/account-switch-card-deletion-2026-08-27.md`
   /// 5-1 절에 있다.
+  ///
+  /// ⭐ **그 신호는 여기가 아니라 저쪽에서 먼저 온다** —
+  /// `EncryptionKeyService.knownKeysFor` 가 **키를 둘 이상 돌려주기 시작하는
+  /// 날**이다(키링, 2026-09-04에 자리만 미리 냈다). 그 함수에 두 번째 키가
+  /// 들어가면, 이 서비스는 그 키를 **「이전 계정 것」으로 보고 30일 뒤에
+  /// 지운다** — 그러면 잇기로 열리게 만든 명함이 다시 안 열린다.
+  ///
+  /// 🚨 **두 자리를 같은 날 고쳐야 한다.** 한쪽만 고치면 조용히 어긋나고,
+  /// **30일 뒤에야 드러난다.**
   Future<int> runDue({String? currentUid, DateTime? now}) async {
     final book = await _load();
     if (book.isEmpty) return 0;

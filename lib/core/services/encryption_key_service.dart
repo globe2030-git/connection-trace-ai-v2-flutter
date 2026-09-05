@@ -141,6 +141,22 @@ class EncryptionKeyService {
   /// 🚨 **키를 여기에 「더하는」 것은 잇기다.** 남의 키를 키링에 넣는 순간
   /// 그 사람의 명함이 열린다 — 번호 재활용 대비(계정·기기 방침 결정 ③)가
   /// 그래서 이 자리에도 걸린다. **아무 키나 넣으면 안 된다.**
+  ///
+  /// ## 🚨 키를 더하는 날, 지우는 쪽도 함께 봐야 한다 (추가 675·677)
+  ///
+  /// [LeftoverAccountPurgeService]가 계정 전환 30일 뒤에 **이전 계정의 로컬
+  /// 키(`enc_key_v1_<uid>`)를 지운다.** 지금은 부딪히지 않는다 — 이 함수가
+  /// 키 하나만 돌려주고, 그 삭제는 *"uid 가 다르면 남남"* 이라는 같은 전제
+  /// 위에 서 있기 때문이다.
+  ///
+  /// ⚠️ **그런데 여기에 두 번째 키를 넣는 순간 그 전제가 깨진다.** 잇기로
+  /// 키링에 올린 키를, 저쪽은 **「이전 계정 것」으로 보고 30일 뒤에 지운다.**
+  /// 그러면 그 키로 잠긴 명함이 열리지 않는다.
+  ///
+  /// 📌 **그때 함께 고칠 곳**: `LeftoverAccountPurgeService.runDue` 의
+  /// `currentUid` — 지금은 uid 하나인데, **「같은 사람의 uid 집합」**이 되어야
+  /// 한다. 경위는
+  /// `docs/planning/specs/account-switch-card-deletion-2026-08-27.md` 5-1 절.
   Future<List<SecretKey>> knownKeysFor(String uid) async {
     return [await getOrCreateUserKey(uid)];
   }
