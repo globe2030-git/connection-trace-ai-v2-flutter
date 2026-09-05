@@ -586,6 +586,20 @@ CASES = [
          path="/databases/(default)/documents/legalDocs/privacy",
          before={"body": "before"}, after={"body": "after"},
          mocks=admin_session_mocks(None)),
+
+    # ── ①② 를 rules 에 **명시**했다 (2026-09-05, 추가 683) ────────────────
+    # 🚨 위 551~568 행이 이미 같은 것을 덮고 있다 — 그때는 **catch-all** 이
+    # 막아서 통과했고, 지금은 **명시된 match 블록**이 막아서 통과한다.
+    # **겉보기 결과가 같으므로 테스트만 봐서는 무엇이 막고 있는지 모른다.**
+    # 그래서 여기서는 위와 겹치지 않는 것만 더한다 — 관리자가 아닌 평범한
+    # 로그인 사용자다. 위 넷은 전부 ADMIN_TOKEN 으로만 재고 있었다.
+    case("일반 로그인 사용자도 adminSessions 를 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path=ADMIN_SESSION_PATH, before={"expiresAt": NOW_MS}),
+    case("일반 로그인 사용자도 config/admins 를 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path="/databases/(default)/documents/config/admins",
+         before={"phoneHashes": ["deadbeef"]}),
 ]
 
 # ══════════════════════════════════════════════════════════════════════════
