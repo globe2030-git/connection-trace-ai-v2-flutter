@@ -26,7 +26,6 @@ import '../../../../core/services/encryption_key_service.dart';
 import '../../../../core/services/ad_consent_service.dart';
 import '../../auth/views/ad_consent_notice_dialog.dart';
 import '../../auth/views/ad_consent_view.dart';
-import '../../../../core/services/photo_improvement_consent_service.dart';
 import '../../../common/social_oauth_view.dart';
 import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/contacts_repository.dart';
@@ -376,21 +375,16 @@ class _SettingsViewState extends State<SettingsView> {
                   // 명함 데이터가 **앱 밖으로 나갈 때의 모양**을 정하기
                   // 때문이다.
                   const _ExportNameFormatRow(),
-                  // 사진 개선 동의는 **선택**이다 — 꺼도 명함 등록·복원·보정이
-                  // 전부 그대로 동작한다. 이 토글이 정하는 것은 "내 사진을
-                  // 인식 개선용 표본에 넣어도 되는가" 하나뿐이다(추가 218).
+                  // 백업이 꺼져 있으면 **올린 것이 없으므로** 이 줄도 보일
+                  // 이유가 없다. 켜져 있을 때만 「몇 장이 서버에 있는지」를
+                  // 말한다.
                   //
-                  // ⚠️ 사진 서버 저장이 꺼져 있으면 이 토글도 **보이지 않는다.**
-                  // 이유 둘:
-                  // 1) 저장하지 않는 사진에 대한 개선 동의는 **아무 뜻이 없다.**
-                  // 2) 동의 필드를 허용하는 `firestore.rules`가 아직 배포 전이라,
-                  //    켜면 서버 쓰기가 거부돼 "저장하지 못했어요"만 뜬다. 테스터
-                  //    빌드에 그대로 나가면 **고장난 기능으로 보인다**(2026-08-15,
-                  //    빌드 직전에 발견).
-                  // 플래그를 켤 때 rules 배포도 함께 해야 이 토글이 동작한다.
+                  // 📌 여기에 **사진 개선 동의 토글**이 함께 있었다(추가 218).
+                  // 걷어냈다 — 동의를 받아 두고 **읽어서 쓰는 곳이 한 군데도
+                  // 없었다**(추가 688). 제품 원칙 3절: *"쓰지 않을 개인정보를
+                  // 미리 모으지는 않는다."*
                   if (CardPhotoBackupService.kCardPhotoBackupEnabled) ...[
                     _CardPhotoBackupStatusRow(uid: auth.firebaseUid),
-                    _PhotoImprovementConsentRow(uid: auth.firebaseUid),
                   ],
                   _SettingsRow(
                     icon: const AppIcon(
@@ -1586,127 +1580,6 @@ class _CardPhotoBackupStatusRowState extends State<_CardPhotoBackupStatusRow> {
   }
 }
 
-class _PhotoImprovementConsentRow extends StatefulWidget {
-  const _PhotoImprovementConsentRow({required this.uid});
-
-  final String? uid;
-
-  @override
-  State<_PhotoImprovementConsentRow> createState() =>
-      _PhotoImprovementConsentRowState();
-}
-
-class _PhotoImprovementConsentRowState
-    extends State<_PhotoImprovementConsentRow> {
-  final _service = PhotoImprovementConsentService();
-  bool _consented = false;
-  bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    // 서버 값을 우선한다 — 기기를 바꾸면 로컬은 비어 있는데 서버에는 동의가
-    // 남아 있어, 이미 동의한 사용자에게 토글이 꺼진 것처럼 보인다.
-    final uid = widget.uid;
-    final value = uid == null
-        ? await _service.load()
-        : await _service.sync(uid);
-    if (!mounted) return;
-    setState(() => _consented = value);
-  }
-
-  Future<void> _toggle(bool next) async {
-    final uid = widget.uid;
-    if (uid == null || _busy) return;
-
-    // 낙관적으로 먼저 바꾼다 — 스위치가 손가락을 따라오지 않으면 고장으로
-    // 보인다. 실패하면 되돌리고 이유를 알린다.
-    setState(() {
-      _consented = next;
-      _busy = true;
-    });
-    final ok = await _service.setConsent(uid: uid, consented: next);
-    if (!mounted) return;
-    setState(() {
-      if (!ok) _consented = !next;
-      _busy = false;
-    });
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final signedIn = widget.uid != null;
-    final subtitle = signedIn ? '끄셔도 모든 기능을 그대로 쓰실 수 있어요' : '로그인하면 설정할 수 있어요';
-
-    return Semantics(
-      toggled: _consented,
-      label: '명함 인식 개선에 사진 제공. $subtitle',
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 76),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.accentSoft,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const AppIcon(
-                  AppIconId.scanCard,
-                  size: 22,
-                  color: AppColors.accentText,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '명함 인식 개선에 사진 제공',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Switch.adaptive(
-                value: _consented,
-                onChanged: signedIn && !_busy ? _toggle : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// 앱 잠금 토글(추가 570) — 켜면 앱을 열 때 본인 확인을 요구한다.
 ///
 /// ## 🚨 켜기 전에 이 기기가 할 수 있는지 확인한다
@@ -2131,10 +2004,6 @@ Future<bool> _cleanUpLocalArtifacts(
     uid: uid,
   );
   if (failedImages > 0) hadFailure = true;
-
-  // 1-1) 사진 개선 동의(기기 캐시). 남으면 같은 기기에서 다음 계정이 앞
-  //      사람의 동의를 물려받는다.
-  await PhotoImprovementConsentService().clearLocal();
 
   // 1-1) 명함 사진 백업 상태(2026-08-16). contactId와 상태뿐이라 개인정보는
   //      아니지만, 남겨 두면 **다른 계정으로 로그인했을 때 앞 사람의
