@@ -91,6 +91,24 @@ class MyProfileRepository extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_storageKey);
+      // 🚨 **여기서 「못 읽었다」를 내린다 — 그리고 「지운 뒤에」여야 한다**
+      // (2026-09-05).
+      //
+      // 이 플래그가 참이면 저장이 아무것도 쓰지 않는다(`localReadFailed`).
+      // 열지 못한 암호문을 덮지 않기 위한 장치인데, **지운 뒤에는 덮을
+      // 암호문 자체가 없다.** 그런데 플래그가 남아 있으면 그다음 저장이
+      // 계속 막혀 **계정 전환의 「현재 계정 데이터로 교체」가 조용히
+      // 실패한다** — 서버에서 받아온 것이 로컬에 안 남고, 앱을 껐다 켜면
+      // 다시 비어 있다(`auth_gate.dart` 의 clearLocal → forceRestoreFromServer).
+      //
+      // ⚠️ **`remove` 앞이 아니라 뒤인 것이 요점이다.** 위 `remove` 가
+      // 실패하면 암호문이 그대로 남는데, 그때 플래그를 내리면 **저장 차단이
+      // 풀려 원본을 덮어쓴다** — 지금 막으려는 바로 그 사고다. 실패하면
+      // 예외가 나 이 줄에 오지 않으므로, 플래그는 참으로 남아 계속 막는다.
+      if (_localReadFailed) {
+        _localReadFailed = false;
+        notifyListeners();
+      }
     } catch (e) {
       debugPrint('Error clearing my profile: $e');
     }
