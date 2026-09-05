@@ -1,5 +1,6 @@
 import '../../core/services/card_photo_backup_state.dart';
 import '../../core/utils/identical_contacts.dart';
+import '../models/card_source_model.dart';
 import '../../core/services/carried_over_contacts.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -801,14 +802,35 @@ class ContactsRepository extends ChangeNotifier {
       return;
     }
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final jsonList = _contacts.map((c) => c.toJson()).toList();
       final uid = _uid;
       if (uid == null) {
-        // 로그인 전(게스트) — 암호화 키를 만들 수 없으므로 평문으로 저장.
-        await prefs.setString(_storageKey, jsonEncode(jsonList));
+        // 🚨 **로그인 전(게스트)에는 아예 저장하지 않는다.**
+        //
+        // 종전에는 여기서 `jsonEncode(jsonList)`를 그대로 넣었다 — 암호화
+        // 키를 만들 수 없다는 이유였다. 그런데 명함은 **이용자 본인이 아닌
+        // 제3자의 개인정보**이고, `shared_preferences`는 암호화되지 않는
+        // 저장소다. CLAUDE.md 4절이 *"암호화되지 않는 저장소에 개인정보
+        // 원문을 넣지 않는다"* 로 못박은 바로 그 자리였다.
+        //
+        // ⚠️ 릴리스에는 게스트 경로가 없다 — `login_view.dart`의 「로그인
+        // 건너뛰기」가 `kDebugMode`로 막혀 있고 `signInAsGuest()`를 부르는
+        // 곳은 거기 하나뿐이다. 그래서 이 변경으로 **이용자가 겪는 것은
+        // 바뀌지 않는다.** 실제로 막는 것은 **개발·QA 기기에 제3자 명함이
+        // 평문으로 남는 것**이고, 그 기기들에는 실물 명함이 들어 있다.
+        //
+        // 📌 **잃는 것**: 게스트로 넣은 명함이 앱을 다시 켜면 사라진다.
+        // 게스트는 QA 용 한 번짜리 세션이므로 그 편이 낫다고 봤다.
+        //
+        // 🚨 **이미 저장돼 있는 값은 지우지 않는다.** 암호화 도입 전에 쌓인
+        // 평문(레거시)이 남아 있을 수 있는데, `_loadFromDisk`가 그것을 읽어
+        // 로그인 시점에 **암호화해 다시 저장하는 마이그레이션**이 걸려 있다.
+        // 여기서 지우면 그 데이터가 마이그레이션 전에 사라진다.
         return;
       }
+      // 📌 uid 검사를 **맨 위**에 둔다 — 게스트일 때는 평문 JSON 을 메모리에
+      // 만들지도 않는다. 종전에는 위에서 먼저 만들고 아래에서 버렸다.
+      final prefs = await SharedPreferences.getInstance();
+      final jsonList = _contacts.map((c) => c.toJson()).toList();
       final key = await _encryptionKeyService.getOrCreateUserKey(uid);
       final encoded = await DataCryptoService.encryptJson({
         'contacts': jsonList,
@@ -969,7 +991,13 @@ class ContactsRepository extends ChangeNotifier {
   Future<bool> hasAddressGeocodingFailed(ContactModel c) =>
       _geoBackfillService.hasGivenUpGeo(c);
 
-  void addContact(ContactModel newContact) {
+  /// 명함을 더한다.
+  ///
+  /// [scanRawText] 는 이 명함을 만들어 낸 **OCR 원문**이다(2026-09-05).
+  /// 직접 입력한 명함이면 `null` 이고, 그때는 원본 기록을 만들지 않는다.
+  /// 🚨 **여기서 안 남기면 영영 못 남긴다** — 원본은 저장하는 순간에만
+  /// 남길 수 있다(설계 §2-3-3).
+  void addContact(ContactModel newContact, {String? scanRawText}) {
     // 다기기 병합의 최신본 판정(LWW) 기준을 지금 시각으로 찍는다(P1-39 A안).
     final stamped = newContact.updatedAt == null
         ? newContact.copyWith(updatedAt: DateTime.now())
@@ -978,9 +1006,30 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
     _backup(stamped);
+    _backupSource(stamped.id, scanRawText);
   }
 
-  void updateContact(ContactModel updatedContact) {
+  /// 파싱 원본을 남긴다. 남길 것이 없으면 아무것도 안 한다.
+  ///
+  /// ⚠️ **덮어쓰지 않는다** — [scanRawText] 가 없으면(다시 스캔하지 않은 편집)
+  /// 기존 원본을 그대로 둔다. 그 명함을 만들어 낸 원문은 여전히 그것이다.
+  void _backupSource(String cardId, String? scanRawText) {
+    final uid = _uid;
+    if (uid == null) return;
+    final source = CardSourceModel.forScan(
+      cardId: cardId,
+      rawText: scanRawText,
+      scannedAt: DateTime.now(),
+    );
+    if (source == null) return;
+    DataBackupService.backupCardSource(uid, source);
+  }
+
+  /// 명함을 고친다.
+  ///
+  /// [scanRawText] 는 **편집 중에 다시 스캔했을 때만** 넘어온다. 안 넘어오면
+  /// 기존 원본을 그대로 둔다 — 그 명함을 만든 원문이 바뀐 것이 아니기 때문이다.
+  void updateContact(ContactModel updatedContact, {String? scanRawText}) {
     // 편집이 있었으므로 updatedAt을 지금으로 갱신 — 이래야 다른 기기와 병합할 때
     // 이 편집이 최신본으로 인식돼 전파된다(P1-39 A안).
     final stamped = updatedContact.copyWith(updatedAt: DateTime.now());
@@ -993,6 +1042,7 @@ class ContactsRepository extends ChangeNotifier {
     notifyListeners();
     _saveToDisk();
     _backup(stamped);
+    _backupSource(stamped.id, scanRawText);
   }
 
   void deleteContact(String id) {
@@ -1020,6 +1070,10 @@ class ContactsRepository extends ChangeNotifier {
     final uid = _uid;
     if (uid != null) {
       DataBackupService.deleteContactBackup(uid, id);
+      // 🚨 파싱 원본도 함께 지운다(2026-09-05). 안 지우면 **이용자는 지웠다고
+      // 아는데 이름·전화·주소 원문이 서버에 그대로 남는다** — 그것도 본인이
+      // 아니라 제3자(명함 주인)의 것이다.
+      DataBackupService.deleteCardSource(uid, id);
       // 삭제 기록(tombstone)을 남겨 다른 기기도 이 삭제를 반영하게 한다(P1-39 A안).
       // 안 남기면 다른 기기와 병합할 때 그 기기의 사본이 다시 살아난다.
       DataBackupService.writeTombstone(uid, id);

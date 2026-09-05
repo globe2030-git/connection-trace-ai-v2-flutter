@@ -3153,10 +3153,22 @@ class _AddCardModalViewState extends State<AddCardModalView> {
       useCardAsAvatar: _useCardAsAvatar && cardImagePath != null,
     );
 
+    // 🚨 파싱 원본을 함께 넘긴다(2026-09-05). 여기서 안 넘기면 영영 못 남긴다 —
+    // 파서를 고쳐도 이 명함은 그대로가 되고, 되살리려면 사진에서 OCR 부터
+    // 다시 돌려야 한다(설계 §2-3-3).
+    //
+    // ⚠️ 직접 입력했으면 `null` 이고, 그때는 원본 기록을 안 만든다. 편집이라도
+    // 다시 스캔했으면 그 원문이 넘어간다.
     if (_isEditing) {
-      context.read<WalletViewModel>().updateContact(contact);
+      context.read<WalletViewModel>().updateContact(
+        contact,
+        scanRawText: _scannedRawText,
+      );
     } else {
-      context.read<WalletViewModel>().addContact(contact);
+      context.read<WalletViewModel>().addContact(
+        contact,
+        scanRawText: _scannedRawText,
+      );
     }
 
     // 새 명함을 등록한 직후에만 "계속 찍을지"를 묻는다(연속 등록).

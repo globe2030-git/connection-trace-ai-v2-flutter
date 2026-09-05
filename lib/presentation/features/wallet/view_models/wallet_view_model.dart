@@ -370,12 +370,17 @@ class WalletViewModel extends ChangeNotifier {
     excludeId: excludeId,
   );
 
-  void addContact(ContactModel contact) {
-    _contactsRepository.addContact(contact);
+  /// [scanRawText] — 이 명함을 만들어 낸 OCR 원문(2026-09-05). 직접 입력이면
+  /// `null` 이고, 그때는 원본 기록을 만들지 않는다. 파서를 고쳤을 때 사진 없이
+  /// 다시 파싱하기 위한 것이다(설계 §2-3-3).
+  void addContact(ContactModel contact, {String? scanRawText}) {
+    _contactsRepository.addContact(contact, scanRawText: scanRawText);
   }
 
-  void updateContact(ContactModel contact) {
-    _contactsRepository.updateContact(contact);
+  /// [scanRawText] — **편집 중에 다시 스캔했을 때만** 넘긴다. 안 넘기면 기존
+  /// 원본을 그대로 둔다.
+  void updateContact(ContactModel contact, {String? scanRawText}) {
+    _contactsRepository.updateContact(contact, scanRawText: scanRawText);
   }
 
   void deleteContact(String id) {
