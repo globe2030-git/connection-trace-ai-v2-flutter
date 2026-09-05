@@ -2702,6 +2702,59 @@ export const revokeMySessions = onCall(
 // uid 형식(A안/B안)이 안 정해졌고, 그것은 되돌릴 수 없는 결정이다.
 // ─────────────────────────────────────────────────────────────────────────
 
+/**
+ * 알리고로 **나가는** 함수에 붙이는 고정 IP 설정 (2026-09-06).
+ *
+ * ## 왜
+ *
+ * 알리고가 **발신 IP 허용목록**을 요구한다. Cloud Functions 는 기본적으로
+ * 나가는 주소가 매번 바뀌므로 목록에 올릴 주소가 없다. 그래서 globe2030님이
+ * Cloud NAT 를 만드셨고(고정 IP **34.50.29.174** · `otp-nat-ip` ·
+ * asia-northeast3), 이 설정이 함수의 나가는 길을 그 NAT 로 보낸다.
+ *
+ * ⚠️ **인프라만 있고 이 설정이 없으면 요금만 나가고 효과가 0이다.**
+ *
+ * ## 🚨 `ALL_TRAFFIC` 이어야 한다
+ *
+ * 기본값 `PRIVATE_RANGES_ONLY` 는 **사설 대역만** VPC 로 보낸다. 알리고는
+ * 공인 인터넷이므로 그 값이면 **그대로 나가고 IP 가 안 바뀐다** — 설정은
+ * 있는데 효과가 없는, 가장 알아채기 어려운 상태가 된다.
+ *
+ * ## 🚨 어디에 붙이나 — **`pickSender()` 를 부르는 함수**
+ *
+ * VPC egress 는 **함수별**이다(전역이 아니다). 지금 `pickSender()` 를 부르는
+ * 곳은 **둘뿐**이다 — `phoneOtpRequest`(:2844) · `adminOtpRequest`(:3115).
+ * `phoneOtpConfirm`·`adminOtpConfirm` 은 **확인만 하고 발송하지 않는다.**
+ *
+ * 🚨 **셋째가 생기면 그 함수에도 이것을 붙여야 한다.** 안 붙이면 그 함수만
+ * 다른 주소로 나가고, 알리고가 거부한다 — **왜 안 나가는지 찾는 데 며칠
+ * 걸리는 종류의 결함이다.**
+ *
+ * ⚠️ **전역(`setGlobalOptions`)에 넣지 마라.** 그러면 열세 함수가 전부 NAT 를
+ * 타고 Gemini·카카오·네이버·Apple·구글플레이 호출까지 그 길로 가서 데이터
+ * 처리 요금이 붙는다.
+ *
+ * ## 형태 — 라이브러리에서 직접 확인했다
+ *
+ * `firebase-functions` **7.3.2** `lib/v2/options.d.ts`:
+ * `NetworkInterface { network?, subnetwork?, tags? }` 이고 주석이
+ * *"\"default\" is an acceptable value"* 라고 적어 뒀다.
+ * `VpcEgressSetting = "PRIVATE_RANGES_ONLY" | "ALL_TRAFFIC"`.
+ *
+ * ⚠️ `networkInterface` 와 `vpcConnector` 는 **상호 배타**다(같은 파일이 세 번
+ * 적어 뒀다). 여기서는 커넥터를 안 쓰는 **Direct VPC egress** 쪽으로 간다 —
+ * 근거는 `docs/planning/functions-static-egress-ip-2026-09-06.md` §1.
+ *
+ * ## ⬜ 자동 테스트가 못 보는 것
+ *
+ * **이 설정이 있다**까지는 코드에서 보이지만 **정말 그 IP 로 나가는지**는
+ * 배포 뒤 알리고 응답으로만 안다. 「설정했다」가 「그 IP 로 나간다」가 아니다.
+ */
+const OTP_STATIC_EGRESS = {
+  networkInterface: {network: "default", subnetwork: "default"},
+  vpcEgress: "ALL_TRAFFIC",
+} as const;
+
 /** OTP 관련 시크릿을 함수 하나에 묶어 선언한다. */
 const OTP_SECRETS = [
   phoneHashSalt,
@@ -2766,7 +2819,13 @@ interface OtpRequestData {
  * 테스트 번호는 고정 코드(`000000`)라 애초에 알려 줄 필요가 없다.
  */
 export const phoneOtpRequest = onCall<OtpRequestData>(
-  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: OTP_SECRETS,
+    // 🚨 알리고로 나가므로 고정 IP 를 탄다 — 위 [OTP_STATIC_EGRESS] 주석 참고.
+    ...OTP_STATIC_EGRESS,
+  },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) {
@@ -3047,7 +3106,13 @@ interface AdminOtpRequestData {
  * 탈취한 사람이 자기 번호로 2차 인증을 통과한다.
  */
 export const adminOtpRequest = onCall<AdminOtpRequestData>(
-  {region: "asia-northeast3", maxInstances: MAX_INSTANCES, secrets: OTP_SECRETS},
+  {
+    region: "asia-northeast3",
+    maxInstances: MAX_INSTANCES,
+    secrets: OTP_SECRETS,
+    // 🚨 알리고로 나가므로 고정 IP 를 탄다 — 위 [OTP_STATIC_EGRESS] 주석 참고.
+    ...OTP_STATIC_EGRESS,
+  },
   async (request) => {
     if (!isAdminRequest(request.auth)) {
       throw new HttpsError("permission-denied", "관리자만 쓸 수 있어요.");
