@@ -10,6 +10,48 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // ── 관리자 2차 인증 세션 (2026-09-05, 설계 2단계) ────────────────────
+    //
+    // 🚨 **이 스위치가 켜지는 순간 기존 관리자 조작이 전부 2차 인증을 요구한다.**
+    // 콘솔의 인증 화면(설계 4단계)이 없는 상태로 켜면 **관리자가 아무것도 못
+    // 하게 된다** — 인증할 화면이 없기 때문이다.
+    //
+    // 🚨 **그래서 주석으로 "배포하지 마라"라고 적는 것으로는 못 막는다.**
+    // `firebase deploy --only firestore:rules` 는 이 파일을 **통째로** 올린다.
+    // 다른 세션이 자기 변경(예: cardSources)을 배포하면 이것도 함께 나간다.
+    // 「안 나가게」는 지킬 수 없으므로 **「나가도 안 켜지게」** 만든다.
+    //
+    // 켜는 법: 아래를 `true` 로 바꾼다. **4단계 화면 배포와 같은 배포**여야 한다.
+    // 설계: docs/planning/specs/관리자-인증-강화와-명함-조회-설계-2026-09-05.md §5
+    function adminSessionRequired() {
+      return false;
+    }
+
+    // 2차 인증 세션이 살아 있나. `adminOtpConfirm` 이 만들고
+    // `adminSessionHeartbeat` 가 갱신하는 `adminSessions/{uid}` 를 본다.
+    //
+    // 📌 **만료 숫자(유휴 20분 · 절대 상한 12시간)를 여기 두지 않는 것은 의도다.**
+    // `functions/src/adminAuth.ts` 의 `adminSessionExpiresAt` 가 min() 으로
+    // 계산해 `expiresAt` 한 필드에 담고, 여기서는 그 필드와 **비교만** 한다.
+    // 상수를 두 곳에 두면 ADMIN-VULN-001(허용목록이 두 곳)과 같은 구조가 된다
+    // — 한쪽만 고쳐도 아무도 모른다. 20분을 30분으로 바꿔도 이 파일은 안 고친다.
+    //
+    // ⚠️ **`toMillis()` 를 쓰는 것은 실물을 재서 정한 것이다.** 인수인계 문서에는
+    // `request.time < expiresAt` 로 적혀 있었는데, `expiresAt` 은 Timestamp 가
+    // 아니라 **epoch 밀리초 숫자**로 저장된다(`index.ts` 의 `writeAdminSession`
+    // 이 `adminSessionExpiresAt` 의 `number` 를 그대로 넣는다). 그대로 적으면
+    // 타입이 달라 비교가 **오류**가 되고, rules 의 오류는 곧 거부라 **관리자가
+    // 조용히 잠긴다.**
+    //
+    // ⚠️ `exists()` 를 먼저 보는 이유: 문서가 없을 때 `get(...)` 은 `null` 이라
+    // `.data` 에서 오류가 난다. 결과는 어차피 거부지만, **거부와 오류를 가르지
+    // 못하면 4단계에서 화면이 왜 막혔는지 못 찾는다.**
+    function hasFreshAdminSession() {
+      return exists(/databases/$(database)/documents/adminSessions/$(request.auth.uid)) &&
+        request.time.toMillis() <
+          get(/databases/$(database)/documents/adminSessions/$(request.auth.uid)).data.expiresAt;
+    }
+
     // 관리자 화이트리스트 — Firebase 콘솔에 들어가 Authentication 계정을
     // 수동으로 만들거나 Firestore에 admins/{uid} 문서를 손으로 추가할 필요 없이,
     // 관리자 콘솔 페이지에서 이 이메일로 직접 회원가입하면 그대로 관리자가 되게
@@ -36,7 +78,10 @@ service cloud.firestore {
           // Firebase 인증 메일을 못 받아(2026-08-06 확인) 개인 메일도
           // 같이 허용. 그룹메일 수신 문제를 나중에 해결하면 지워도 됨.
           'globe@creamhouse.net'
-        ];
+        ] &&
+        // 🚨 스위치가 꺼져 있으면 `||` 가 앞에서 끊겨 get() 이 아예 안 돈다 —
+        // 켜기 전까지는 문서 조회 비용도 0이다.
+        (!adminSessionRequired() || hasFreshAdminSession());
     }
 
     // 개인정보처리방침 등 법적 문서 — 누구나 읽을 수 있어야 하고(로그인 전
