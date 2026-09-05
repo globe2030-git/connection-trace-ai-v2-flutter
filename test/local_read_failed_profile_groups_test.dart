@@ -42,6 +42,32 @@ const _groupsKey = 'saved_groups_v1';
 const _unreadable = 'bm90LWEtdmFsaWQtY2lwaGVydGV4dA==';
 
 /// 로드는 생성자·`setCurrentUid` 안에서 비동기로 돈다. 끝날 때까지 기다린다.
+/// 🚨 **고정 시간으로 기다리지 않는다** (2026-09-06, 깜빡임 수정).
+///
+/// 자매 검사(`clear_local_resets_read_failed_test.dart`)가 **CI 에서 깜빡였고**
+/// 원인이 고정 `Future.delayed(50ms)` 였다 — 로드도 저장도 비동기인데 「50ms
+/// 안에 끝난다」가 **러너가 한가할 때만 참**이었다. 여기도 같은 모양이라 함께
+/// 고친다(둘 다 같은 날 같은 세션이 썼다).
+const _limit = Duration(seconds: 5);
+const _tick = Duration(milliseconds: 5);
+
+Future<void> _until(bool Function() check) async {
+  final deadline = DateTime.now().add(_limit);
+  while (!check() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(_tick);
+  }
+}
+
+/// 🚨 **아래 「저장이 원본을 덮지 않는다」 검사에는 이 방식이 안 먹는다.**
+///
+/// 「일어나지 않는 일」은 조건으로 기다릴 수 없다 — 아무리 기다려도 「아직 안
+/// 일어난 것」과 「영영 안 일어날 것」이 구분되지 않는다. 그래서 그쪽은 **짧게
+/// 기다리고 원본이 그대로인지**만 본다.
+///
+/// ⚠️ **그 검사는 「거짓 통과」가 가능하다** — 저장이 느려서 아직 안 덮인 것을
+/// 「안 덮는다」로 읽을 수 있다. 그것을 메우는 것이 자매 검사의 **「clearLocal
+/// 뒤에는 저장이 실제로 된다」**이다: 그쪽이 **쓰기 경로가 살아 있음**을 잠그므로,
+/// 여기서 안 덮이는 것은 「느려서」가 아니라 「막혀서」가 된다. **둘은 짝이다.**
 Future<void> _settle() =>
     Future<void>.delayed(const Duration(milliseconds: 50));
 
@@ -56,7 +82,7 @@ void main() {
 
       // uid 가 생겨야 복호화를 시도한다(그 전에는 판단을 미룬다).
       await repo.setCurrentUid('uid_test');
-      await _settle();
+      await _until(() => repo.localReadFailed);
 
       expect(
         repo.localReadFailed,
@@ -76,7 +102,7 @@ void main() {
       final repo = MyProfileRepository();
       await _settle();
       await repo.setCurrentUid('uid_test');
-      await _settle();
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       // ⭐ 이용자가 프로필을 고치는 것과 같은 경로다. `_persistToDisk` 가
@@ -139,7 +165,7 @@ void main() {
       final repo = GroupsRepository();
       await _settle();
       await repo.setCurrentUid('uid_test');
-      await _settle();
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       // ⭐ 이용자가 그룹을 하나 만드는 것과 같은 경로다(`_persist` → `_saveToDisk`).
