@@ -169,11 +169,66 @@ class GroupsRepository extends ChangeNotifier {
       _generation++;
       notifyListeners();
     } catch (e) {
+      // 복호화 실패(위변조/키 불일치 등)를 포함해 어떤 이유로든 로드에
+      // 실패하면 크래시하지 않고 빈 목록으로 시작한다.
       debugPrint('Error loading groups: $e');
+      // 🚨 **여기서 멈춰 있었다** (2026-09-05에 찾음).
+      //
+      // `debugPrint` 는 **릴리스에서 아무 데도 안 나온다.** 화면은 그냥 그룹이
+      // 없는 것처럼 보이고 아무 말도 하지 않는다.
+      //
+      // 🚨 **그리고 오해로 끝나지 않는다.** 빈 목록인 채로 저장이 한 번 돌면
+      // [_saveToDisk]가 **못 읽은 암호문을 덮어쓴다.**
+      //
+      // ```
+      // ① 재설치 등으로 기기의 키가 없다
+      // ② 서버에서 키를 못 받는다(네트워크) → 새 키가 발급된다
+      // ③ 기존 암호문이 안 열린다 → 빈 목록
+      // ④ 그룹을 하나 만든다 → 저장이 돌아 새 키로 덮어쓴다
+      // ⑤ 🚨 그룹이 진짜로 사라진다
+      // ```
+      //
+      // 📌 **그룹명은 「작은 데이터」가 아니다.** 이용자가 자유롭게 적는 값이라
+      // **제3자를 특정할 수 있고**, 그래서 이 파일 머리말이 프로필과 같은
+      // 취급을 받는다고 적어 뒀다(법무 스팟 확인).
+      //
+      // 📌 `ContactsRepository` 가 2026-09-04에 같은 자리를 먼저 막았는데
+      // (`localReadFailed`) **셋 중 하나만 고쳐져 있었다.** 같은 모양으로
+      // 맞춘다 — 갈라지면 다음에 또 한쪽만 고쳐진다.
+      _localReadFailed = true;
+      notifyListeners();
     }
   }
 
+  // 로컬 저장분을 못 읽었다 — 위 catch 참고. 화면이 이 사실을 말해야 하고,
+  // 그동안 저장이 원본을 덮어쓰면 안 된다.
+  bool _localReadFailed = false;
+
+  /// **기기에 저장된 그룹을 열지 못했다.**
+  ///
+  /// 🚨 참이면 **그룹이 없는 것이 아니라 못 읽은 것**이다. 화면은 둘을
+  /// 다르게 말해야 한다.
+  ///
+  /// 📌 이 상태에서는 [_saveToDisk]가 **아무것도 쓰지 않는다.** 암호문을
+  /// 그대로 남겨 둬야 나중에 키가 돌아왔을 때 열 수 있다.
+  ///
+  /// ⚠️ `ContactsRepository.localReadFailed`·`MyProfileRepository.localReadFailed`
+  /// 와 **같은 계약**이다. 하나를 고치면 셋을 함께 본다.
+  bool get localReadFailed => _localReadFailed;
+
   Future<void> _saveToDisk() async {
+    // 🚨 **못 읽은 상태에서는 쓰지 않는다** (2026-09-05, [localReadFailed]).
+    //
+    // 여기서 쓰면 **열지 못한 암호문을 덮어쓴다.** 지금 `_groups` 는 빈
+    // 목록이거나 그 뒤에 더한 몇 개뿐이라, 덮는 순간 원래 그룹이 사라진다.
+    // 못 읽은 채로 두면 다음에 키가 돌아왔을 때 열린다.
+    //
+    // ⚠️ **조용히 넘어가지 않는다** — 화면이 [localReadFailed]로 그 사실을
+    // 말하고 있어야 한다. 안 그러면 "저장했는데 안 남는" 것으로 보인다.
+    if (_localReadFailed) {
+      debugPrint('로컬 그룹을 못 읽은 상태라 저장을 건너뛴다 — 덮어쓰기 방지');
+      return;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonList = _groups.map((g) => g.toJson()).toList();
