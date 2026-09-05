@@ -370,11 +370,59 @@ PM → 클라우드 세션   ✅ 된다. 오늘 빌드(터미널) 세션이 실�
 클라우드 세션 → PM   ❌ 막힌다
 ```
 
-실제 거부 문구:
+#### 무엇을 불렀나 (2026-09-05)
 
 ```
-auth: this cloud session cannot message other sessions yet
+SendMessage({
+  to: "bridge:session_013QGj2WPa6UQ2V3DCeTXnDM",   ← 그 세션이 보내온 from 값 그대로
+  summary: "679 기록 완료 + ci.yml 변경 사전 통보",
+  message: "…"
+})
 ```
+
+#### 🚨 돌아온 것 — **전문**
+
+⚠️ **줄여 적지 않는다.** 처음에 앞 한 줄만 적었다가 고쳤다 — 원인을 좇으려면
+**뒷부분이 더 중요하다**(어디까지 되고 어디부터 막히는지가 거기 있다).
+
+```json
+{
+  "success": false,
+  "message": "Failed to send to bridge:session_013QGj2WPa6UQ2V3DCeTXnDM: auth: this cloud session cannot message other sessions yet — its credential is accepted for its own work but not for delivering to another session, so a reply from here is not possible; say so in your response instead of retrying"
+}
+```
+
+옮기면: *"이 클라우드 세션은 아직 다른 세션에 메시지를 보낼 수 없다. **이 세션의
+자격증명은 자기 작업에는 받아들여지지만 다른 세션으로의 전달에는 받아들여지지
+않는다.** 그래서 여기서 답장하는 것은 불가능하다. 재시도하지 말고 그 사실을
+응답에 밝혀라."*
+
+#### 이 문구가 **실제로 말하는 것**
+
+```
+분류      auth        인증·권한 문제다. 네트워크나 주소 오류가 아니다
+경계      자기 작업 ✅ / 남에게 전달 ❌     ← 자격증명 자체는 유효하다
+범위      this cloud session               세션 종류에 걸린 제약으로 읽힌다
+지시      재시도하지 말라
+"yet"                                     나중에는 될 수 있다는 뉘앙스
+```
+
+#### ⚠️ 이 문구가 **말하지 않는 것** — 짐작으로 채우지 않는다
+
+```
+⬜ 계정·워크스페이스 설정으로 켤 수 있는 것인지
+⬜ Claude Code 버전이나 환경(anthropic_cloud) 때문인지
+⬜ 상대가 bridge 세션이라 그런지, 아무 세션에나 그런지
+⬜ 언제 풀리는지
+```
+
+📌 **실측으로 아는 것은 하나뿐이다 — 받는 것은 된다.** 같은 날 빌드(터미널)
+세션이 보낸 메시지가 실제로 도착했다. **채널은 살아 있고 방향만 막혀 있다.**
+
+⚠️ **한 번만 시도했고 재시도하지 않았다.** 오류가 그렇게 지시했고 `auth` 라
+반복해도 같을 종류다. 🚨 **다른 상대(bridge 가 아닌 세션)로는 시험하지 않았다**
+— 시험하려면 남의 세션에 시험용 메시지를 넣어야 해서 그냥 하지 않았다.
+**그래서 위 셋째 줄(⬜)이 아직 안 갈렸다.**
 
 📌 **그래서 클라우드 세션의 보고는 이 문서(와 커밋)로 온다.** 안 보내는 것이
 아니라 못 보내는 것이다 — **PM 이 먼저 물어야 답이 온다.**
