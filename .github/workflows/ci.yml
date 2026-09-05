@@ -73,11 +73,20 @@ jobs:
       - name: 의존성 내려받기
         run: flutter pub get
 
+      - name: pubspec.lock 이 이 SDK 와 맞나
+        # 🚨 걸리는 것은 「다른 Flutter 로 만든 lock 이 커밋된 것」 하나다.
+        # 2026-09-05 에 실제로 났고, 세 세션이 각자 다른 원인을 짚었다.
+        # 경위와 왜 `pub get` 에 기대면 안 되는지는 스크립트 머리에 적어 뒀다.
+        run: python3 tool/check_lock_sdk_pins.py
+
       - name: 정적 분석
-        # --no-fatal-infos: 현재 info 19건(스타일 지적, 웹 전용 코드 경고 등)이
+        # --no-fatal-infos: 현재 info 11건(스타일 지적, 웹 전용 코드 경고 등)이
         # 남아 있어 그대로 두면 CI가 항상 빨간불이 된다. error·warning은
         # 여전히 실패로 처리되므로 진짜 문제는 걸린다.
         # info 정리는 별도 항목(P2-8 등)으로 진행한다.
+        #
+        # ⚠️ 「19건」이라고 적혀 있던 것을 2026-09-05 에 11건으로 고쳤다 —
+        # 실물과 여덟 건 차이가 났다. CLAUDE.md 3장이 경고한 「낡은 기준선」이다.
         run: flutter analyze --no-fatal-infos
 
       - name: 테스트
