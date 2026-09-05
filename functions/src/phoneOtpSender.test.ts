@@ -135,12 +135,24 @@ test("buildAligoSendPayload: 수신번호를 국내 모양으로 넣는다", () 
   assert.equal(p.receiver_1, "01012345678");
 });
 
-test("buildAligoSendPayload: ⚠️ failover를 항상 Y로 준다", () => {
-  // 공식 예제 주석: "템플릿 신청시 대체문자 발송으로 설정하였더라도
-  // Y로 입력해야합니다." — 둘 다 해야 한다.
+test("buildAligoSendPayload: 🚨 대체문자를 끈다 — 인증은 카카오톡으로만 간다", () => {
+  // 2026-09-06 globe2030님 결정. 카카오톡 MAU 5,534만(인터넷 이용자의 97.1%)이
+  // 근거이고, 얻는 것은 발신번호 사전등록(서류 + 심사)이 통째로 사라지는 것이다.
+  //
+  // 🚨 **이 검사가 그 결정을 잠근다.** 없으면 다음 사람이 "공식 예제가 Y라던데"
+  // 하고 되돌려 놓아도 아무것도 안 깨진다 — 그러면 **문자가 조용히 나가고,
+  // 발신번호 사전등록이 안 된 번호로 나간다.**
   const p = buildAligoSendPayload(CONFIG, "tok", "+821012345678", "123456");
-  assert.equal(p.failover, "Y");
-  assert.ok(p.fmessage_1.includes("123456"));
+  assert.equal(p.failover, "N");
+});
+
+test("buildAligoSendPayload: 껐지 지우지 않았다 — 대체문자 필드는 그대로 채운다", () => {
+  // ⭐ 되돌리는 비용을 낮게 두는 것이 결정의 절반이다. `failover` 한 줄만
+  //    "Y" 로 바꾸면 켜지도록 본문·제목을 계속 채워 보낸다.
+  //    필드를 비우면 되돌릴 때 만들 것이 늘어난다.
+  const p = buildAligoSendPayload(CONFIG, "tok", "+821012345678", "123456");
+  assert.ok(p.fmessage_1.includes("123456"), "인증번호가 끼워져 있어야 한다");
+  assert.ok(p.fsubject_1.length > 0, "제목도 비우지 않는다");
 });
 
 test("buildAligoSendPayload: testMode가 설정을 그대로 따른다", () => {
