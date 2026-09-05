@@ -63,8 +63,57 @@ class _FixedKeyService extends EncryptionKeyService {
   Future<List<SecretKey>> knownKeysFor(String uid) async => [_key];
 }
 
-Future<void> _settle() =>
-    Future<void>.delayed(const Duration(milliseconds: 50));
+/// 🚨 **고정 시간으로 기다리지 않는다** (2026-09-06, 깜빡임 수정).
+///
+/// 처음에는 `Future.delayed(50ms)` 로 기다렸다. **CI 에서 깜빡였다** —
+/// 같은 커밋이 어떤 실행에서는 통과하고 어떤 실행에서는 실패했다.
+///
+/// ## 왜 그런가
+///
+/// `addContact`·`createGroup` 은 저장을 **`await` 없이** 부른다
+/// (`contacts_repository.dart` `_saveToDisk()` · `groups_repository.dart`
+/// `_persist()` 의 `unawaited`). 게다가 이 검사는 `_FixedKeyService` 로
+/// **진짜 AES-GCM 암호화**를 돌린다. 그래서 「50ms 안에 끝난다」는 **러너가
+/// 한가할 때만 참**이다.
+///
+/// 📌 **재현했다**: `_settle` 을 5ms 로 줄이면 `Expected: not null` ·
+/// `Actual: null` 로 깨진다(15ms 부터는 통과). CI 실패 메시지와 같은 모양이다.
+///
+/// ## 그래서 조건으로 기다린다
+///
+/// ⚠️ **넉넉히 기다리는 것이 검사를 무르게 만들지 않는다** — 차단이 안 풀리면
+/// 값은 **영영** 안 바뀌므로 제한 시간을 다 쓰고 그대로 실패한다. 바뀌는 것은
+/// **언제 성공을 알아채는가**뿐이다.
+const _limit = Duration(seconds: 5);
+const _tick = Duration(milliseconds: 5);
+
+/// [check] 가 참이 될 때까지 기다린다. 안 되면 그대로 두고 돌아온다(검사가 판정).
+Future<void> _until(bool Function() check) async {
+  final deadline = DateTime.now().add(_limit);
+  while (!check() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(_tick);
+  }
+}
+
+/// [key] 에 **새 값이 쓰일 때까지** 기다리고 그 값을 돌려준다.
+///
+/// [was] 는 쓰이기 전의 값이다 — 그대로면 아직 안 쓰인 것으로 본다.
+Future<String?> _waitSaved(String key, {required String was}) async {
+  String? v;
+  await _until(() {
+    v = _prefsCache?.getString(key);
+    return v != null && v != was;
+  });
+  return v;
+}
+
+/// `SharedPreferences.getInstance()` 는 비동기라 `_until` 안에서 못 쓴다.
+/// 한 번 받아 두고 쓴다 — 목 구현이라 같은 인스턴스를 돌려준다.
+SharedPreferences? _prefsCache;
+
+Future<void> _settle() async {
+  _prefsCache = await SharedPreferences.getInstance();
+}
 
 ContactModel _contact(String id) => ContactModel(
   id: id,
@@ -86,10 +135,11 @@ void main() {
       final repo = ContactsRepository(encryptionKeyService: _FixedKeyService());
       await repo.setCurrentUid('uid_test');
       await _settle();
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       await repo.clearLocal();
-      await _settle();
+      await _until(() => !repo.localReadFailed);
 
       expect(
         repo.localReadFailed,
@@ -103,16 +153,17 @@ void main() {
       final repo = ContactsRepository(encryptionKeyService: _FixedKeyService());
       await repo.setCurrentUid('uid_test');
       await _settle();
+      // 🚨 로드도 비동기다 — 여기서도 고정 시간으로 기다리지 않는다.
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       // auth_gate 의 순서 그대로다: clearLocal → (서버 복원) → 저장.
       await repo.clearLocal();
       repo.addContact(_contact('c1'));
-      await _settle();
 
-      final saved = (await SharedPreferences.getInstance()).getString(
-        _contactsKey,
-      );
+      // ⚠️ `addContact` 는 저장을 **await 없이** 부른다 — 고정 시간으로
+      //    기다리면 러너가 느린 날 깜빡인다(위 `_waitSaved` 주석).
+      final saved = await _waitSaved(_contactsKey, was: _unreadable);
       expect(saved, isNotNull, reason: '🚨 차단이 안 풀리면 여기가 null 이다');
       expect(saved, isNot(_unreadable), reason: '옛 암호문이 아니라 새로 쓴 것이어야 한다');
     });
@@ -126,10 +177,11 @@ void main() {
       );
       await repo.setCurrentUid('uid_test');
       await _settle();
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       await repo.clearLocal();
-      await _settle();
+      await _until(() => !repo.localReadFailed);
 
       expect(repo.localReadFailed, isFalse);
     });
@@ -141,17 +193,19 @@ void main() {
       );
       await repo.setCurrentUid('uid_test');
       await _settle();
+      // 🚨 로드도 비동기다 — 여기서도 고정 시간으로 기다리지 않는다.
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       await repo.clearLocal();
       await repo.updateProfile(
         MyProfileModel.defaultProfile.copyWith(name: '교체된 프로필'),
       );
-      await _settle();
 
-      final saved = (await SharedPreferences.getInstance()).getString(
-        _profileKey,
-      );
+      // 📌 프로필은 `updateProfile` 이 저장을 **await 한다** — 그래서 이쪽은
+      //    원래도 안 깜빡였다. 그래도 같은 방식으로 둔다: 셋이 다른 모양이면
+      //    다음 사람이 「왜 여기만 다르지」에 시간을 쓴다.
+      final saved = await _waitSaved(_profileKey, was: _unreadable);
       expect(saved, isNotNull, reason: '🚨 차단이 안 풀리면 여기가 null 이다');
       expect(saved, isNot(_unreadable));
     });
@@ -163,10 +217,11 @@ void main() {
       final repo = GroupsRepository(encryptionKeyService: _FixedKeyService());
       await repo.setCurrentUid('uid_test');
       await _settle();
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       await repo.clearLocal();
-      await _settle();
+      await _until(() => !repo.localReadFailed);
 
       expect(repo.localReadFailed, isFalse);
     });
@@ -176,15 +231,15 @@ void main() {
       final repo = GroupsRepository(encryptionKeyService: _FixedKeyService());
       await repo.setCurrentUid('uid_test');
       await _settle();
+      // 🚨 로드도 비동기다 — 여기서도 고정 시간으로 기다리지 않는다.
+      await _until(() => repo.localReadFailed);
       expect(repo.localReadFailed, isTrue, reason: '전제 — 못 읽은 상태여야 한다');
 
       await repo.clearLocal();
       repo.createGroup('교체된 그룹');
-      await _settle();
 
-      final saved = (await SharedPreferences.getInstance()).getString(
-        _groupsKey,
-      );
+      // ⚠️ `_persist()` 가 `unawaited(_saveToDisk())` 다 — contacts 와 같다.
+      final saved = await _waitSaved(_groupsKey, was: _unreadable);
       expect(saved, isNotNull, reason: '🚨 차단이 안 풀리면 여기가 null 이다');
       expect(saved, isNot(_unreadable));
     });
