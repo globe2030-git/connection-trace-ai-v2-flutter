@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/sns_auth_provider.dart';
+import '../utils/account_paths.dart';
 
 /// 광고성 정보 수신 동의를 보관한다(추가 472 · 방침 v2.4 시행 후 유효).
 ///
@@ -122,7 +123,7 @@ class AdConsentService {
   /// [AdConsentState.none]은 *"물었고 둘 다 거부했다"*이다.
   Future<AdConsentState?> fetch(String uid) async {
     try {
-      final snap = await _db.collection('users').doc(uid).get();
+      final snap = await AccountPaths.account(_db, uid).get();
       final data = snap.data();
       if (data == null) return AdConsentState.unasked;
       final answeredAt = data[_fieldConsentAt];
@@ -245,7 +246,7 @@ class AdConsentService {
     await prefs.setBool(_prefsEmail, email);
     await prefs.setBool(_prefsPush, push);
     try {
-      await _db.collection('users').doc(uid).set({
+      await AccountPaths.account(_db, uid).set({
         _fieldEmail: email,
         _fieldPush: push,
         // 최초 응답에만 쓴다. 철회에서도 덮지 않는다.
@@ -279,7 +280,7 @@ class AdConsentService {
   /// `false`를 돌려주되, 부르는 쪽이 재시도할지는 판단에 맡긴다.
   Future<bool> markNotified(String uid) async {
     try {
-      await _db.collection('users').doc(uid).set({
+      await AccountPaths.account(_db, uid).set({
         _fieldNotifiedAt: FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
+import '../utils/account_paths.dart';
 
 /// 인증번호 요청 결과. 🚨 **인증번호는 여기 없다** — 서버가 응답에 싣지 않는다.
 enum PhoneOtpRequestResult {
@@ -211,9 +212,10 @@ class PhoneVerificationService {
   /// 부르는 쪽이 그 구분을 보고 정한다.
   static Future<bool?> isVerified(String uid) async {
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
+      final snap = await AccountPaths.account(
+        FirebaseFirestore.instance,
+        uid,
+      )
           .get();
       final data = snap.data();
       if (data == null) return false;

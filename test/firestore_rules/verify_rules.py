@@ -104,6 +104,37 @@ NON_ADMIN_TOKEN = {
     "email": "someone@example.com",
     "email_verified": True,
 }
+
+# `request.time`(NOW)을 epoch 밀리초로 옮긴 값. 관리자 2차 인증 세션의
+# `expiresAt` 이 Timestamp 가 아니라 **숫자**로 저장되기 때문에 필요하다
+# (functions/src/index.ts 의 writeAdminSession → adminAuth.ts 의
+# adminSessionExpiresAt 가 number 를 돌려준다). firestore.rules 는
+# `request.time.toMillis()` 로 맞춰 비교한다.
+NOW_MS = 1785974400000  # 2026-08-06T00:00:00Z
+ADMIN_UID = "admin1"
+ADMIN_SESSION_PATH = f"/databases/(default)/documents/adminSessions/{ADMIN_UID}"
+
+
+def admin_session_mocks(expires_at_ms):
+    """관리자 2차 인증 세션 문서를 가짜로 세워 준다.
+
+    `expires_at_ms=None` 이면 **문서가 없는 상태**다 — exists() 가 False 를
+    돌려주고 rules 의 `&&` 가 거기서 끊긴다.
+    """
+    if expires_at_ms is None:
+        return [{
+            "function": "exists",
+            "args": [{"exactValue": ADMIN_SESSION_PATH}],
+            "result": {"value": False},
+        }]
+    return [
+        {
+            "function": "exists",
+            "args": [{"exactValue": ADMIN_SESSION_PATH}],
+            "result": {"value": True},
+        },
+        get_mock(ADMIN_SESSION_PATH, {"expiresAt": expires_at_ms}),
+    ]
 APP_UPDATE_PATH = "/databases/(default)/documents/config/appUpdate"
 
 
@@ -512,43 +543,181 @@ CASES = [
          uid=OWNER, method="update",
          before={"encryptionKeyB64": KEY},
          after={"encryptionKeyB64": KEY, "pilotActivatedAt": NOW}),
+
+    # ── 관리자 2차 인증 잠금 (2026-09-05, 설계 2단계) ─────────────────────
+    # adminSessions·config/admins 는 Admin SDK 전용이다. 🚨 쓰기를 열면 2차
+    # 인증이 통째로 무의미해진다 — 클라이언트가 세션 문서를 스스로 만들면
+    # 인증번호를 한 번도 안 받고 관리자 조작을 할 수 있다.
+    case("🚨 관리자여도 adminSessions 를 읽을 수 없다", "DENY",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN, path=ADMIN_SESSION_PATH,
+         before={"otpVerifiedAt": NOW_MS, "lastActiveAt": NOW_MS,
+                 "expiresAt": NOW_MS + 1200000}),
+    case("🚨 본인 uid 여도 adminSessions 를 만들 수 없다 — 이게 열리면 2차 "
+         "인증이 통째로 무의미해진다", "DENY",
+         uid=ADMIN_UID, method="create", token=ADMIN_TOKEN, path=ADMIN_SESSION_PATH,
+         after={"otpVerifiedAt": NOW_MS, "lastActiveAt": NOW_MS,
+                "expiresAt": NOW_MS + 999999999}),
+    case("🚨 관리자여도 config/admins 를 **읽을** 수 없다 — 번호 해시 자체가 "
+         "관리자의 전화번호다", "DENY",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/admins",
+         before={"connectionsense@creamhouse.net": "hash"}),
+    case("🚨 관리자여도 config/admins 를 고칠 수 없다 — 고칠 수 있으면 다른 "
+         "관리자의 인증 번호를 자기 것으로 바꿀 수 있다", "DENY",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/admins",
+         before={"connectionsense@creamhouse.net": "hash"},
+         after={"connectionsense@creamhouse.net": "attacker-hash"}),
+    # ⚠️ 대조군 — config 아래 **다른** 문서는 관리자에게 열려 있다. 위 넷만
+    # 닫은 것이 의도된 차이라는 것을 여기서 고정한다. 「일관성」을 이유로
+    # 나중에 config/admins 를 열지 말 것.
+    case("대조군: config/testers 는 관리자에게 열려 있다(의도된 차이)", "ALLOW",
+         uid=ADMIN_UID, method="get", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/config/testers",
+         before={"emails": ["a@example.com"]}),
+
+    # ── ③ 스위치가 **꺼져 있는** 동안의 동작 ──────────────────────────────
+    # 🚨 이 케이스가 「지금 배포해도 안전하다」를 고정한다. 콘솔 인증 화면
+    # (설계 4단계)이 아직 없으므로, 세션 없이도 기존 관리자 조작이 되어야 한다.
+    # 이것이 DENY 로 바뀌면 **관리자가 아무것도 못 하게 된 것**이다.
+    case("⭐ adminSessionRequired() 가 꺼져 있는 동안은 세션 없이도 관리자 "
+         "조작이 된다", "ALLOW",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(None)),
+
+    # ── ①② 를 rules 에 **명시**했다 (2026-09-05, 추가 683) ────────────────
+    # 🚨 위 551~568 행이 이미 같은 것을 덮고 있다 — 그때는 **catch-all** 이
+    # 막아서 통과했고, 지금은 **명시된 match 블록**이 막아서 통과한다.
+    # **겉보기 결과가 같으므로 테스트만 봐서는 무엇이 막고 있는지 모른다.**
+    # 그래서 여기서는 위와 겹치지 않는 것만 더한다 — 관리자가 아닌 평범한
+    # 로그인 사용자다. 위 넷은 전부 ADMIN_TOKEN 으로만 재고 있었다.
+    case("일반 로그인 사용자도 adminSessions 를 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path=ADMIN_SESSION_PATH, before={"expiresAt": NOW_MS}),
+    case("일반 로그인 사용자도 config/admins 를 읽을 수 없다", "DENY",
+         uid=OWNER, method="get",
+         path="/databases/(default)/documents/config/admins",
+         before={"phoneHashes": ["deadbeef"]}),
+]
+
+# ══════════════════════════════════════════════════════════════════════════
+# 스위치를 **켠** 상태 (설계 4단계 배포 시점의 모습)
+#
+# 🚨 켜기 전까지 이 경로는 한 번도 안 돈다 — 그래서 여기서 미리 재 둔다.
+# 실제로 여기서 하나 잡혔다: 인수인계 문서는 `request.time < expiresAt` 이었는데
+# `expiresAt` 은 숫자라 그대로 적으면 타입이 달라 **오류**가 되고, rules 의
+# 오류는 곧 거부라 **관리자가 조용히 잠긴다.**
+# ══════════════════════════════════════════════════════════════════════════
+SESSION_ON_CASES = [
+    case("🔒 켜면: 세션 문서가 없으면 관리자 조작이 막힌다", "DENY",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(None)),
+    case("🔒 켜면: 살아 있는 세션이면 통과한다", "ALLOW",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(NOW_MS + 1)),
+    case("🔒 켜면: 만료된 세션은 막힌다", "DENY",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(NOW_MS - 1)),
+    case("🔒 켜면: 딱 그 순간(expiresAt == now)은 막힌다 — 경계", "DENY",
+         uid=ADMIN_UID, method="update", token=ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(NOW_MS)),
+    case("🔒 켜면: 세션이 살아 있어도 허용목록에 없는 이메일은 여전히 막힌다",
+         "DENY",
+         uid=ADMIN_UID, method="update", token=NON_ADMIN_TOKEN,
+         path="/databases/(default)/documents/legalDocs/privacy",
+         before={"body": "before"}, after={"body": "after"},
+         mocks=admin_session_mocks(NOW_MS + 1)),
 ]
 
 
-def main() -> int:
-    rules = open(RULES_PATH).read()
+SWITCH_OFF = """    function adminSessionRequired() {
+      return false;
+    }"""
+SWITCH_ON = SWITCH_OFF.replace("return false;", "return true;")
+
+
+def flip_switch_on(rules: str) -> str:
+    """`adminSessionRequired()` 를 켠 사본을 만든다.
+
+    🚨 **파일을 고치지 않는다.** 평가 API 에 보내는 문자열만 바꾼다 —
+    저장소의 `firestore.rules` 는 꺼진 채로 남아야 한다(설계 4단계 화면이
+    없는 상태로 켜지면 관리자가 아무것도 못 하게 된다).
+
+    ⚠️ 스위치의 모양이 바뀌면 여기서 바로 터진다. 조용히 「안 켜진 채」
+    통과하면 **켠 상태를 한 번도 안 잰 것**이 되므로 일부러 예외를 던진다.
+    """
+    if rules.count(SWITCH_OFF) != 1:
+        raise ValueError(
+            "firestore.rules 에서 adminSessionRequired() 의 `return false;` 를 "
+            "찾지 못했습니다 — 스위치 모양이 바뀌었으면 이 함수도 함께 고쳐야 "
+            "합니다. 안 고치면 「켠 상태」를 한 번도 안 재게 됩니다."
+        )
+    return rules.replace(SWITCH_OFF, SWITCH_ON)
+
+
+def run_suite(token: str, rules: str, cases: list) -> tuple[int, int]:
+    """케이스 묶음 하나를 평가해 (실패 수, 전체 수) 를 돌려준다."""
     body = {
         "source": {"files": [{"name": "firestore.rules", "content": rules}]},
-        "testSuite": {"testCases": [tc for _, tc in CASES]},
+        "testSuite": {"testCases": [tc for _, tc in cases]},
     }
     req = urllib.request.Request(
         f"https://firebaserules.googleapis.com/v1/projects/{PROJECT}:test",
         data=json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {access_token()}",
+        headers={"Authorization": f"Bearer {token}",
                  "Content-Type": "application/json"},
     )
     try:
         res = json.load(urllib.request.urlopen(req, timeout=90))
     except urllib.error.HTTPError as e:
         print("규칙 평가 요청 실패:", e.code, e.read().decode()[:500])
-        return 2
+        return -1, 0
 
     if "issues" in res:
         print("⚠️ 규칙 문법 문제:")
         for issue in res["issues"]:
             print("   ", issue.get("description"), issue.get("sourcePosition"))
-        return 2
+        return -1, 0
 
     results = res.get("testResults", [])
     failed = 0
-    for (name, tc), r in zip(CASES, results):
+    for (name, tc), r in zip(cases, results):
         ok = r.get("state") == "SUCCESS"
         if not ok:
             failed += 1
         suffix = "" if ok else f"  (기대: {tc['expectation']})"
         print(f"  {'✅' if ok else '❌'} {name}{suffix}")
+    return failed, len(results)
 
-    print(f"\n  {len(results) - failed}/{len(results)} 통과")
+
+def main() -> int:
+    rules = open(RULES_PATH).read()
+    token = access_token()
+
+    failed, total = run_suite(token, rules, CASES)
+    if failed < 0:
+        return 2
+
+    # 🚨 같은 파일을 스위치만 켠 사본으로 한 번 더 잰다. 켜기 전까지는 그 경로가
+    # 한 번도 안 돌기 때문에, 여기서 안 재면 설계 4단계에서야 드러난다.
+    print("\n  ── adminSessionRequired() 를 켠 사본 (파일은 안 고친다) ──")
+    on_failed, on_total = run_suite(token, flip_switch_on(rules), SESSION_ON_CASES)
+    if on_failed < 0:
+        return 2
+
+    failed += on_failed
+    total += on_total
+    print(f"\n  {total - failed}/{total} 통과")
     return 0 if failed == 0 else 1
 
 

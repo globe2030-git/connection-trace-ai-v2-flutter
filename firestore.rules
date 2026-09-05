@@ -10,6 +10,48 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
+    // ── 관리자 2차 인증 세션 (2026-09-05, 설계 2단계) ────────────────────
+    //
+    // 🚨 **이 스위치가 켜지는 순간 기존 관리자 조작이 전부 2차 인증을 요구한다.**
+    // 콘솔의 인증 화면(설계 4단계)이 없는 상태로 켜면 **관리자가 아무것도 못
+    // 하게 된다** — 인증할 화면이 없기 때문이다.
+    //
+    // 🚨 **그래서 주석으로 "배포하지 마라"라고 적는 것으로는 못 막는다.**
+    // `firebase deploy --only firestore:rules` 는 이 파일을 **통째로** 올린다.
+    // 다른 세션이 자기 변경(예: cardSources)을 배포하면 이것도 함께 나간다.
+    // 「안 나가게」는 지킬 수 없으므로 **「나가도 안 켜지게」** 만든다.
+    //
+    // 켜는 법: 아래를 `true` 로 바꾼다. **4단계 화면 배포와 같은 배포**여야 한다.
+    // 설계: docs/planning/specs/관리자-인증-강화와-명함-조회-설계-2026-09-05.md §5
+    function adminSessionRequired() {
+      return false;
+    }
+
+    // 2차 인증 세션이 살아 있나. `adminOtpConfirm` 이 만들고
+    // `adminSessionHeartbeat` 가 갱신하는 `adminSessions/{uid}` 를 본다.
+    //
+    // 📌 **만료 숫자(유휴 20분 · 절대 상한 12시간)를 여기 두지 않는 것은 의도다.**
+    // `functions/src/adminAuth.ts` 의 `adminSessionExpiresAt` 가 min() 으로
+    // 계산해 `expiresAt` 한 필드에 담고, 여기서는 그 필드와 **비교만** 한다.
+    // 상수를 두 곳에 두면 ADMIN-VULN-001(허용목록이 두 곳)과 같은 구조가 된다
+    // — 한쪽만 고쳐도 아무도 모른다. 20분을 30분으로 바꿔도 이 파일은 안 고친다.
+    //
+    // ⚠️ **`toMillis()` 를 쓰는 것은 실물을 재서 정한 것이다.** 인수인계 문서에는
+    // `request.time < expiresAt` 로 적혀 있었는데, `expiresAt` 은 Timestamp 가
+    // 아니라 **epoch 밀리초 숫자**로 저장된다(`index.ts` 의 `writeAdminSession`
+    // 이 `adminSessionExpiresAt` 의 `number` 를 그대로 넣는다). 그대로 적으면
+    // 타입이 달라 비교가 **오류**가 되고, rules 의 오류는 곧 거부라 **관리자가
+    // 조용히 잠긴다.**
+    //
+    // ⚠️ `exists()` 를 먼저 보는 이유: 문서가 없을 때 `get(...)` 은 `null` 이라
+    // `.data` 에서 오류가 난다. 결과는 어차피 거부지만, **거부와 오류를 가르지
+    // 못하면 4단계에서 화면이 왜 막혔는지 못 찾는다.**
+    function hasFreshAdminSession() {
+      return exists(/databases/$(database)/documents/adminSessions/$(request.auth.uid)) &&
+        request.time.toMillis() <
+          get(/databases/$(database)/documents/adminSessions/$(request.auth.uid)).data.expiresAt;
+    }
+
     // 관리자 화이트리스트 — Firebase 콘솔에 들어가 Authentication 계정을
     // 수동으로 만들거나 Firestore에 admins/{uid} 문서를 손으로 추가할 필요 없이,
     // 관리자 콘솔 페이지에서 이 이메일로 직접 회원가입하면 그대로 관리자가 되게
@@ -36,7 +78,10 @@ service cloud.firestore {
           // Firebase 인증 메일을 못 받아(2026-08-06 확인) 개인 메일도
           // 같이 허용. 그룹메일 수신 문제를 나중에 해결하면 지워도 됨.
           'globe@creamhouse.net'
-        ];
+        ] &&
+        // 🚨 스위치가 꺼져 있으면 `||` 가 앞에서 끊겨 get() 이 아예 안 돈다 —
+        // 켜기 전까지는 문서 조회 비용도 0이다.
+        (!adminSessionRequired() || hasFreshAdminSession());
     }
 
     // 개인정보처리방침 등 법적 문서 — 누구나 읽을 수 있어야 하고(로그인 전
@@ -265,6 +310,51 @@ service cloud.firestore {
         'target' in d && d.target is string && d.target.size() <= 200 &&
         'summary' in d && d.summary is string && d.summary.size() <= 500 &&
         'at' in d && d.at == request.time;
+    }
+
+    // ── 관리자 2차 인증이 기대는 두 컬렉션 (2026-09-05, 설계 2단계 마무리) ──
+    //
+    // 📌 **이 두 블록은 지금 동작을 바꾸지 않는다.** 맨 아래
+    // `match /{document=**} { allow read, write: if false; }` 가 이미 둘 다
+    // 거부하고 있다(`adminSessions` 는 최상위라 걸리는 상위 match 가 없고,
+    // `config/` 아래 명시된 것은 testers · phoneVerification · billing ·
+    // appUpdate 넷뿐이다). **그런데도 적는 이유**는, 나중에 누가
+    // `match /config/{doc}` 같은 넓은 규칙을 하나 넣는 순간 조용히 뚫리기
+    // 때문이다 — 그때 이 블록이 있으면 막히고, 없으면 아무도 모른다.
+    //
+    // ⚠️ 그러므로 "catch-all 이 있으니 중복이다" 를 이유로 지우지 말 것.
+    // 막는 것이 목적이 아니라 **막혀 있어야 한다는 것을 못 지우게 두는 것**이
+    // 목적이다.
+
+    // 관리자 2차 인증 세션 — `adminOtpConfirm` 이 만들고
+    // `adminSessionHeartbeat` 가 갱신한다. **Admin SDK(Cloud Functions)만
+    // 손댄다.**
+    //
+    // 🚨 쓰기를 열면 2차 인증이 통째로 무의미해진다 — 클라이언트가 세션
+    // 문서를 스스로 만들어 버리면 인증번호를 한 번도 안 받고 관리자 조작을
+    // 할 수 있다. 읽기는 앱이 쓸 일이 없어(자기 세션이 살아 있는지는 Callable
+    // 응답으로 안다) 함께 막는다.
+    //
+    // 📌 위 `hasFreshAdminSession()` 의 `get()` 은 이 블록과 무관하게 돈다 —
+    // rules 안의 `get()` 은 rules 평가를 다시 타지 않는다. 즉 **전면 차단이
+    // 신선도 검사를 막지 않는다.**
+    match /adminSessions/{uid} {
+      allow read, write: if false;
+    }
+
+    // 관리자 번호 해시 목록 — 2차 인증에서 "등록된 번호와 같은가" 를 판정하는
+    // 원본. Admin SDK 만 읽는다.
+    //
+    // 🚨 **쓰기뿐 아니라 읽기도 막는다.** 관리자가 이 문서를 고칠 수 있으면
+    // 다른 관리자의 인증 번호를 자기 것으로 바꿀 수 있고, 그러면 2차 인증이
+    // 아무것도 막지 못한다. 읽기를 막는 것은 번호 해시가 그 자체로 관리자의
+    // 전화번호이기 때문이다.
+    //
+    // ⚠️ config 아래 다른 문서(testers · billing · appUpdate ·
+    // phoneVerification)는 관리자에게 열려 있는데 이것만 닫는다 — 위 이유
+    // 때문에 **의도된 차이**다. "일관성" 을 이유로 나중에 열지 말 것.
+    match /config/admins {
+      allow read, write: if false;
     }
 
     // wallet(지갑형) 크레딧 잔액 변동 히스토리 — 무료 지급(가입 시 1회성)/
@@ -638,6 +728,20 @@ service cloud.firestore {
         match /commLogs/{logId} {
           allow read, write: if isOwner(uid);
         }
+      }
+
+      // 파싱 원본(2026-09-05) — 명함을 만들어 낸 OCR 원문. 파서를 고쳤을 때
+      // 사진 없이 다시 파싱하기 위해 남긴다.
+      //
+      // 🚨 **개인정보 무게는 명함 본문과 똑같다** — 이름·전화·주소 원문이
+      // 통째로 들어 있고, 그것도 이용자 본인이 아니라 제3자(명함 주인)의
+      // 것이다. 그래서 본문과 **같은 방식으로 암호화해** 넣고 **같은 규칙**을
+      // 건다. 「부가 데이터니까 느슨하게」가 되면 안 되는 자리다.
+      //
+      // ⚠️ 명함 본문과 나란히 두는 것은 의도다. 같은 문서에 넣으면 평소
+      // 명함첩을 열 때마다 안 쓰는 원본이 딸려온다.
+      match /cardSources/{contactId} {
+        allow read, write: if isOwner(uid);
       }
 
       // 삭제 기록(tombstone) — 다기기 동기화(P1-39 A안)에서 삭제 전파용.

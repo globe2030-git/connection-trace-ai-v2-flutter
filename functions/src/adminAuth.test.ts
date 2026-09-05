@@ -17,8 +17,10 @@ import {
   ADMIN_SESSION_MAX_AGE_MS,
   AdminSession,
   adminSessionMessage,
+  adminSessionExpiresAt,
   canExtendAdminSession,
   checkAdminSession,
+  nextAdminSessionAfterHeartbeat,
 } from "./adminAuth";
 
 const NOW = 1_800_000_000_000;
@@ -134,4 +136,103 @@ test("유휴 만료 문구는 20분이라고 말한다 — 상수와 문구가 �
 test("절대 상한 문구는 12시간이라고 말한다", () => {
   const hours = ADMIN_SESSION_MAX_AGE_MS / 3_600_000;
   assert.ok(adminSessionMessage("max-age-exceeded").includes(`${hours}시간`));
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 2단계 — rules 에 건네는 만료 시각과 하트비트 (2026-09-05)
+// ─────────────────────────────────────────────────────────────────────────
+
+test("⭐ 평소에는 유휴 20분이 먼저 온다 — 그때가 만료다", () => {
+  const s = freshSession();
+
+  assert.equal(
+    adminSessionExpiresAt(s),
+    NOW + ADMIN_IDLE_TIMEOUT_MS,
+    "인증 직후에는 12시간보다 20분이 훨씬 가깝다",
+  );
+});
+
+test("⭐ 11시간 50분째 활동 중이면 절대 상한이 먼저 온다", () => {
+  const s: AdminSession = {
+    otpVerifiedAt: NOW - (ADMIN_SESSION_MAX_AGE_MS - 10 * 60 * 1000),
+    lastActiveAt: NOW, // 방금까지 일하고 있었다
+  };
+
+  assert.equal(
+    adminSessionExpiresAt(s),
+    NOW + 10 * 60 * 1000,
+    "남은 10분이 답이다 — 활동해도 상한 너머로는 못 간다",
+  );
+});
+
+test("🚨 만료 시각은 둘 중 이른 쪽이다 — 늦은 쪽을 고르면 상한이 새어 나간다", () => {
+  const s: AdminSession = {
+    otpVerifiedAt: NOW - ADMIN_SESSION_MAX_AGE_MS + 1000,
+    lastActiveAt: NOW,
+  };
+
+  assert.ok(
+    adminSessionExpiresAt(s) < NOW + ADMIN_IDLE_TIMEOUT_MS,
+    "유휴 쪽(20분)을 골랐다면 상한을 19분 넘겨 살아 있게 된다",
+  );
+});
+
+test("⭐ 만료 시각과 checkAdminSession 의 판정이 어긋나지 않는다", () => {
+  const s = freshSession(NOW - 5 * 60 * 1000);
+  const expiresAt = adminSessionExpiresAt(s);
+
+  assert.equal(checkAdminSession(s, expiresAt - 1).ok, true, "1ms 전에는 살아 있다");
+  assert.equal(checkAdminSession(s, expiresAt).ok, false, "그 시각에는 죽는다");
+});
+
+test("하트비트는 활동 시각만 민다", () => {
+  const s = freshSession(NOW - 5 * 60 * 1000);
+
+  const next = nextAdminSessionAfterHeartbeat(s, NOW);
+
+  assert.equal(next?.lastActiveAt, NOW);
+  assert.equal(
+    next?.otpVerifiedAt,
+    s.otpVerifiedAt,
+    "🚨 인증 시각을 함께 밀면 절대 상한이 없는 것과 같아진다",
+  );
+});
+
+test("🚨 죽은 세션에 하트비트를 보내면 null 이다 — 되살아나지 않는다", () => {
+  const dead = freshSession(NOW - ADMIN_IDLE_TIMEOUT_MS - 1);
+
+  assert.equal(nextAdminSessionAfterHeartbeat(dead, NOW), null);
+});
+
+test("🚨 절대 상한이 지난 세션도 하트비트로 연장되지 않는다", () => {
+  const s: AdminSession = {
+    otpVerifiedAt: NOW - ADMIN_SESSION_MAX_AGE_MS,
+    lastActiveAt: NOW,
+  };
+
+  assert.equal(nextAdminSessionAfterHeartbeat(s, NOW), null);
+});
+
+test("🚨 세션이 없으면 하트비트로 만들 수 없다", () => {
+  assert.equal(nextAdminSessionAfterHeartbeat(null, NOW), null);
+});
+
+test("⭐ 하트비트를 반복해도 절대 상한은 그대로다 — 12시간 뒤 반드시 끊긴다", () => {
+  let s: AdminSession | null = freshSession(NOW);
+  const started = NOW;
+
+  // 10분마다 하트비트를 12시간 넘게 보낸다
+  for (let t = NOW; t <= NOW + ADMIN_SESSION_MAX_AGE_MS; t += 10 * 60 * 1000) {
+    const next: AdminSession | null = nextAdminSessionAfterHeartbeat(s, t);
+    if (next === null) {
+      assert.ok(
+        t - started >= ADMIN_SESSION_MAX_AGE_MS,
+        `12시간 전에 끊겼다 (${(t - started) / 60000}분)`,
+      );
+      return;
+    }
+    s = next;
+  }
+
+  assert.fail("12시간이 지나도 안 끊겼다 — 상한이 동작하지 않는다");
 });

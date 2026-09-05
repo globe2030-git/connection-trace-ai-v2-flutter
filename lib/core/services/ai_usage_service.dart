@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/billing_config_model.dart';
 import '../../data/repositories/billing_config_repository.dart';
 import 'ai_briefing_service.dart';
+import '../utils/account_paths.dart';
 
 /// AI 브리핑을 오늘/이번 달 몇 번 더 쓸 수 있는지.
 ///
@@ -169,9 +170,10 @@ class AiUsageService {
       // 겪음), 같은 일이 Firebase 초기화가 실패한 기기에서도 일어난다.
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid == null) return null;
-      final snap = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
+      final snap = await AccountPaths.account(
+        FirebaseFirestore.instance,
+        uid,
+      )
           .get();
       final isWalletMode = await _fetchIsWalletMode();
       final usage = snap.data()?['aiUsage'] as Map<String, dynamic>?;
