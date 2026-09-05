@@ -26,6 +26,59 @@ import {createHmac} from "crypto";
 export const DEVICE_TRIAL_GRANT_CAP = 1;
 
 /**
+ * `deviceLedger/{deviceHash}` 문서 보관 기간 — **30일**
+ * (2026-09-05 globe2030님 결정).
+ *
+ * ## 왜 기간이 필요한가
+ *
+ * 이 장부는 **탈퇴해도 지우지 않는다** — 지우면 재가입으로 무료체험 상한이
+ * 초기화돼 장부를 둔 의미가 사라진다(`onUserDeletedCleanup` 이 일부러 안
+ * 건드린다, 스펙 §4-2). 그런데 지우는 사유가 하나도 없으면 **사실상
+ * 무기한 보관**이 되고, 개인정보 보호법 §21①(목적 달성 시 지체 없이 파기)과
+ * 부딪힌다. 그래서 `phoneSendLedger` 와 **같은 방식**으로 보관 기간을 둔다.
+ *
+ * ## 🚨 대가 — 30일마다 상한이 풀린다
+ *
+ * [DEVICE_TRIAL_GRANT_CAP] 은 **「이 기기에 영구히 1회」**를 전제로 설계된
+ * 값이다. 보관 기간이 생기면 문서가 사라진 뒤 `trialGrantsIssued` 가 0으로
+ * 읽혀, **같은 기기에서 30일마다 무료체험을 다시 받을 수 있다**
+ * (`DEFAULT_FREE_CREDITS` 만큼 · `freeGrant.ts`).
+ *
+ * 📌 **globe2030님이 그 대가를 알고 고르셨다.** 근거는 지금 과금이 꺼져
+ * 있다는 것이다 — `config/billing.model` 필드가 없어 `reset` 으로 떨어지고
+ * (`walletCredits.ts`), `reset` 모드에서는 이 지급 블록 자체를 건너뛴다
+ * (`index.ts` `bootstrapAccount` 의 게이트 주석 참고). 즉 **지금은 장부에
+ * 문서가 쌓이지도 않는다.**
+ *
+ * 🚨 **과금을 켤 때 이 자리를 다시 봐야 한다.** 켜는 순간부터 「30일마다
+ * 1회」가 실제 비용이 된다. 그때의 선택지는 ① 기간을 늘린다 ② 상한을
+ * 「기간당」이 아니라 「누적」으로 바꾼다(해시 대신 카운터를 남긴다)
+ * ③ 그대로 둔다(비용을 감수한다) 셋이고, **결정은 globe2030님이다.**
+ *
+ * ⚠️ 값이 `phoneSendLedger` 와 같은 30일인 것은 **우연이 아니라 같은
+ * 이유**다(장부를 탈퇴로 못 지우니 기간으로 지운다). 다만 **상수는 따로
+ * 둔다** — 한쪽 정책이 바뀔 때 다른 쪽이 조용히 따라가면 안 된다.
+ */
+export const DEVICE_LEDGER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * 이번 쓰기로 문서가 언제 파기돼야 하는지(epoch ms).
+ *
+ * 🚨 **쓸 때마다 다시 계산한다 — 미끄러지는 창(sliding window)이다.**
+ * `phoneSendLedger` 가 그렇게 하고 있어(`index.ts` 의 `phoneOtpRequest`)
+ * 같은 쪽으로 맞췄다. 「처음 생길 때만」으로 하면 `firstSeenAt` 기준 고정
+ * 창이 되는데, 그러면 **마지막 지급 30일 뒤가 아니라 최초 지급 30일 뒤**에
+ * 지워져 방어 구간이 실제로는 더 짧아진다.
+ *
+ * ⚠️ 순수 함수로 뺀 이유: 실제 쓰기는 `index.ts` 의 트랜잭션 안에 있어
+ * 유닛테스트가 닿지 않는다(이 파일 머리말의 설계 취지). 계산만이라도
+ * 검사로 잠근다 — `adminAuth.ts` 의 `adminSessionExpiresAt` 과 같은 모양이다.
+ */
+export function deviceLedgerExpiresAtMs(nowMs: number): number {
+  return nowMs + DEVICE_LEDGER_RETENTION_MS;
+}
+
+/**
  * raw device id(iOS `identifierForVendor`, Android 기기 식별자 등)를 서버
  * 전용 salt와 함께 HMAC-SHA256 해시한 hex 다이제스트를 반환한다.
  *
