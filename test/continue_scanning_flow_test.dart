@@ -67,7 +67,12 @@ void main() {
 
   group('🚨 저장은 건드리지 않았다', () {
     test('⭐ 저장이 먼저, 묻는 것은 그다음', () {
-      final save = source.indexOf('.addContact(contact)');
+      // ⚠️ **인자까지 넣어 찾지 않는다** — 예전에는 `.addContact(contact)` 로
+      // 찾았는데, 2026-09-05에 파싱 원본을 함께 넘기면서 호출이 여러 줄로
+      // 바뀌자 **의도는 그대로인데 이 검사만 깨졌다.**
+      //
+      // 📌 이 테스트가 지키려는 것은 **순서**이지 인자 모양이 아니다.
+      final save = source.indexOf('.addContact(');
       final ask = source.indexOf('_askKeepScanning(contact.name)');
       expect(save, greaterThan(-1));
       expect(ask, greaterThan(-1));
