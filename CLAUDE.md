@@ -51,6 +51,30 @@ gh pr create --base main
 없으면 **테스트가 통째로 실패**하고, 그 원인이 코드가 아니라는 것을 알기까지
 시간이 걸린다. ✅ CI(`ubuntu-latest`)에는 기본으로 있다(2026-08-17 확인).
 
+🚨 **「처음 받은 기계」는 사람 노트북만이 아니다 — Xcode Cloud 머신이 매번
+그것이다**(2026-09-04에 하루를 여기에 썼다). Xcode Cloud 의 `Archive - iOS`
+가 계속 실패했는데, 로그를 받아 보니 원인이 **바로 이 줄**이었다:
+
+```
+Exception: Failed to find cmake version: latest
+  Building assets for package:dartcv4 failed.
+Command PhaseScriptExecution failed with a nonzero exit code
+```
+
+📌 **위 문장이 이미 답이었는데 아무도 그 연결을 안 했다.** *"처음 받은
+기계"* 가 **사람이 새로 산 노트북**으로만 읽혔기 때문이다. **빌드 머신은
+빌드마다 새것이다.**
+
+⚠️ **그리고 로컬에서는 절대 재현되지 않는 종류다.** 개발 노트북에는 cmake 가
+이미 있어서, 그날 **같은 `xcodebuild archive` 명령 · 같은 방식으로 설치한
+Flutter SDK · 같은 Xcode 버전**으로 돌린 재현이 **전부 성공했다.** 후보를
+다섯 개 지우고서야 로그를 받았다.
+
+⭐ **그래서 규칙은 「로컬에서 재현 안 되면 로그부터 받는다」다.** 재현은
+「환경이 같을 때만」 답을 준다 — 환경이 다른 것이 원인이면 재현은 **영원히
+조용하다.** 지금은 `ios/ci_scripts/ci_post_clone.sh` 가 cmake 를 깔고, 진단
+줄에 그 유무를 찍는다.
+
 **로컬에서 먼저 돌린다. 자동 검사는 안전망이지 1차 검사가 아니다.**
 
 ```
