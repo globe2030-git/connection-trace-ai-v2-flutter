@@ -20,7 +20,60 @@ import '../../../../data/repositories/auth_repository.dart';
 import '../../../../data/repositories/my_profile_repository.dart';
 import '../../../common/address_search_view.dart';
 import '../../wallet/views/camera_scan_modal_view.dart';
+
 import '../../wallet/views/file_picker_modal_view.dart';
+
+/// 프로필(아바타) 사진의 **고정 파일명**. 계정과 무관하게 한 파일을 쓴다.
+///
+/// ⚠️ 이름이 고정이라 **A와 B 계정이 같은 파일을 공유한다.** 그래서
+/// [LeftoverAccountPurgeService]의 30일 삭제 대상에서 빠져 있다 — 거기서
+/// 지우면 **뒷사람이 방금 넣은 사진을 지운다.**
+@visibleForTesting
+const String kProfileAvatarFileName = 'my_profile_avatar.jpg';
+
+/// 「사진 지우기」를 누르고 **저장했을 때** 명함 사진을 어디까지 지워야 하는가.
+enum ProfileCardPhotoDeletion {
+  /// 지울 것이 없다.
+  none,
+
+  /// 기기 파일과 **서버 사본**을 함께 지운다.
+  localAndServer,
+
+  /// 기기에는 파일이 없고 **서버 사본만** 지운다.
+  serverOnly,
+}
+
+/// [ProfileCardPhotoDeletion]을 정한다 — 화면과 떼어 놓아 **검사할 수 있게** 한다.
+///
+/// ## 🚨 왜 이 판정을 따로 내나
+///
+/// 2026-09-05까지 이 화면의 「사진 지우기」는 **아무것도 안 지웠다.**
+/// `_cardImageCleared = true`로 화면 상태만 바꿨고, 저장할 때 모델의 경로만
+/// 비웠다. 그래서 **기기의 `.enc` · Cloud Storage 사본 · 백업 장부의 「백업됨」
+/// 표시가 전부 남았다**(추가 687에서 찾고 695에서 고쳤다).
+///
+/// ⚠️ 그러면서 화면은 *"이 기기에만 있어 지우면 되돌릴 수 없어요"*라고 말하고
+/// 있었다 — **서버에도 있었고, 지워지지도 않았다.**
+///
+/// 📌 판정을 화면 안에 두면 **다시 사라져도 아무도 모른다.** 위젯 테스트 없이
+/// 확인할 수 있도록 순수 함수로 뺀다.
+///
+/// ## [serverOnly]가 따로 있는 이유
+///
+/// 서버에서 복원한 직후처럼 **경로가 끊긴 상태**가 있다. 그때 기기 파일이
+/// 없다고 넘어가면 **서버 사본을 나중에 지울 수도 없는 고아**로 만든다 —
+/// `ContactsRepository.deleteContact`가 같은 이유로 같은 갈래를 갖는다.
+ProfileCardPhotoDeletion profileCardPhotoDeletionFor({
+  required bool cleared,
+  required String? savedPath,
+  required String? uid,
+}) {
+  if (!cleared) return ProfileCardPhotoDeletion.none;
+  if (savedPath != null) return ProfileCardPhotoDeletion.localAndServer;
+  // 로그인하지 않았으면 서버에 지울 것도, 지울 권한도 없다.
+  if (uid != null) return ProfileCardPhotoDeletion.serverOnly;
+  return ProfileCardPhotoDeletion.none;
+}
 
 class MyProfileEditModalView extends StatefulWidget {
   const MyProfileEditModalView({super.key});
@@ -447,8 +500,17 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     );
   }
 
-  /// 사진 지우기 — **되돌릴 수 없다.** 서버 백업이 꺼져 있어 기기의 암호문이
-  /// 유일본이다. 그래서 무엇이 지워지고 무엇이 남는지 먼저 말한다.
+  /// 사진 지우기 — **되돌릴 수 없다.** 그래서 무엇이 지워지고 무엇이 남는지
+  /// 먼저 말한다.
+  ///
+  /// ⚠️ **여기서 바로 지우지 않는다.** 저장할 때 [_save]가 지운다 — 이 화면은
+  /// 나머지 항목도 전부 저장 시점에 반영하므로, 여기서만 즉시 지우면
+  /// **「취소하고 나갔는데 사진만 없어지는」** 일이 생긴다. 그래서 문구도
+  /// *"저장하면"*이라고 말한다.
+  ///
+  /// 🚨 **예전에는 이 주석이 *"서버 백업이 꺼져 있어 기기의 암호문이
+  /// 유일본이다"*라고 적혀 있었다.** 2026-08-26에 백업이 켜지면서 거짓이 됐고,
+  /// **화면 문구도 함께 거짓이었다**(추가 687·695).
   Future<void> _confirmRemoveCardImage() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -456,7 +518,8 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
         title: const Text('명함 사진을 지울까요?'),
         content: const Text(
           '사진만 지웁니다. 스캔해서 채운 이름·회사·연락처는 그대로 남습니다.\n\n'
-          '이 사진은 이 기기에만 있어 지우면 되돌릴 수 없어요 — 다시 찍어야 합니다.',
+          '저장하면 이 기기와 서버에서 모두 지워집니다 — 되돌릴 수 없어요. '
+          '다시 찍어야 합니다.',
         ),
         actions: [
           TextButton(
@@ -517,7 +580,7 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
       );
       if (picked == null) return;
       final docsDir = await getApplicationDocumentsDirectory();
-      final savedPath = '${docsDir.path}/my_profile_avatar.jpg';
+      final savedPath = '${docsDir.path}/$kProfileAvatarFileName';
       await File(picked.path).copy(savedPath);
       // 복사가 끝나면 고른 사본은 쓰임이 끝났다 — **평문이므로 지운다**
       // (추가 247). 실기기에서 이 사본이 그대로 남아 있었다
@@ -541,7 +604,40 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     }
   }
 
-  void _removeAvatarPhoto() {
+  /// 프로필 사진 지우기 — **되돌릴 수 없으므로 먼저 묻는다**(추가 695).
+  ///
+  /// 🚨 **예전에는 묻지 않고 바로 지웠다.** 바로 옆의 명함 사진에는 확인이
+  /// 있는데 여기만 없어서, **누르는 순간 사라졌다.** 되돌릴 수 없는 조작에는
+  /// 확인을 붙인다는 것이 이 저장소의 원칙이다.
+  ///
+  /// ⚠️ 아바타는 **암호화하지 않은 JPG**로 기기에만 있다
+  /// ([kProfileAvatarFileName]) — 서버로 올라가지 않는다. 그래서 명함 사진과
+  /// 달리 지울 곳이 기기 하나뿐이다.
+  Future<void> _removeAvatarPhoto() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('프로필 사진을 지울까요?'),
+        content: const Text(
+          '프로필 사진만 지웁니다. 이름·회사·연락처는 그대로 남습니다.\n\n'
+          '저장하면 이 기기에서 지워집니다 — 되돌릴 수 없어요.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('그대로 두기'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text(
+              '사진 지우기',
+              style: TextStyle(color: AppColors.destructive),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
     setState(() {
       _avatarPath = null;
       _avatarCleared = true;
@@ -565,6 +661,53 @@ class _MyProfileEditModalViewState extends State<MyProfileEditModalView> {
     // ⚠️ 로그인(uid)이 없으면 키가 없어 저장하지 않는다 — 등록 화면과 같다.
     var cardImagePath = _cardImageCleared ? null : _cardImagePath;
     final uid = context.read<AuthRepository>().firebaseUid;
+
+    // 🚨 「사진 지우기」를 눌렀으면 **여기서 실제로 지운다**(추가 695).
+    //
+    // 종전에는 모델의 경로만 비웠다. 그래서 **기기의 `.enc` · Cloud Storage
+    // 사본 · 백업 장부의 「백업됨」 표시가 전부 남았고**, 그 표시가 한도
+    // 2,000장을 계속 차지했다. 화면은 *"이 기기에만 있어 지우면 되돌릴 수
+    // 없어요"*라고 말하고 있었는데 **둘 다 사실이 아니었다.**
+    //
+    // 📌 [ContactImageService.deleteCardImage]가 셋을 함께 지운다 — 기기 파일,
+    //    서버 객체, 장부. 명함 삭제(`ContactsRepository.deleteContact`)가
+    //    이미 같은 방식이라 **그쪽을 그대로 따랐다.**
+    switch (profileCardPhotoDeletionFor(
+      cleared: _cardImageCleared,
+      savedPath: _cardImagePath,
+      uid: uid,
+    )) {
+      case ProfileCardPhotoDeletion.localAndServer:
+        await ContactImageService().deleteCardImage(
+          _cardImagePath!,
+          uid: uid,
+          contactId: ContactImageService.myProfileCardId,
+        );
+      case ProfileCardPhotoDeletion.serverOnly:
+        // 경로가 끊겨도 서버엔 사본이 있을 수 있다. 빈 경로는 "기기 파일은
+        // 없고 서버만 정리하라"는 뜻이다(deleteCardImage 문서 참고).
+        await ContactImageService().deleteCardImage(
+          '',
+          uid: uid,
+          contactId: ContactImageService.myProfileCardId,
+        );
+      case ProfileCardPhotoDeletion.none:
+        break;
+    }
+    if (!mounted) return;
+
+    // 아바타는 **암호화하지 않은 JPG**라 남으면 기기에서 그대로 열린다.
+    // 서버로는 안 올라가므로 지울 곳이 파일 하나뿐이다.
+    if (_avatarCleared) {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final avatarPath = '${docsDir.path}/$kProfileAvatarFileName';
+      unawaited(deleteQuietly(avatarPath));
+      // 경로가 고정이라 캐시를 비우지 않으면 **지운 사진이 계속 보인다**
+      // (통합본 E-07 — `_pickAvatarPhoto` 주석과 같은 이유).
+      await evictImageFileCache(avatarPath);
+      if (!mounted) return;
+    }
+
     final source = _scannedSourcePath;
     if (source != null && uid != null) {
       final saved = await ContactImageService().saveEncryptedCardImage(
