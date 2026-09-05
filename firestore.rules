@@ -312,6 +312,51 @@ service cloud.firestore {
         'at' in d && d.at == request.time;
     }
 
+    // ── 관리자 2차 인증이 기대는 두 컬렉션 (2026-09-05, 설계 2단계 마무리) ──
+    //
+    // 📌 **이 두 블록은 지금 동작을 바꾸지 않는다.** 맨 아래
+    // `match /{document=**} { allow read, write: if false; }` 가 이미 둘 다
+    // 거부하고 있다(`adminSessions` 는 최상위라 걸리는 상위 match 가 없고,
+    // `config/` 아래 명시된 것은 testers · phoneVerification · billing ·
+    // appUpdate 넷뿐이다). **그런데도 적는 이유**는, 나중에 누가
+    // `match /config/{doc}` 같은 넓은 규칙을 하나 넣는 순간 조용히 뚫리기
+    // 때문이다 — 그때 이 블록이 있으면 막히고, 없으면 아무도 모른다.
+    //
+    // ⚠️ 그러므로 "catch-all 이 있으니 중복이다" 를 이유로 지우지 말 것.
+    // 막는 것이 목적이 아니라 **막혀 있어야 한다는 것을 못 지우게 두는 것**이
+    // 목적이다.
+
+    // 관리자 2차 인증 세션 — `adminOtpConfirm` 이 만들고
+    // `adminSessionHeartbeat` 가 갱신한다. **Admin SDK(Cloud Functions)만
+    // 손댄다.**
+    //
+    // 🚨 쓰기를 열면 2차 인증이 통째로 무의미해진다 — 클라이언트가 세션
+    // 문서를 스스로 만들어 버리면 인증번호를 한 번도 안 받고 관리자 조작을
+    // 할 수 있다. 읽기는 앱이 쓸 일이 없어(자기 세션이 살아 있는지는 Callable
+    // 응답으로 안다) 함께 막는다.
+    //
+    // 📌 위 `hasFreshAdminSession()` 의 `get()` 은 이 블록과 무관하게 돈다 —
+    // rules 안의 `get()` 은 rules 평가를 다시 타지 않는다. 즉 **전면 차단이
+    // 신선도 검사를 막지 않는다.**
+    match /adminSessions/{uid} {
+      allow read, write: if false;
+    }
+
+    // 관리자 번호 해시 목록 — 2차 인증에서 "등록된 번호와 같은가" 를 판정하는
+    // 원본. Admin SDK 만 읽는다.
+    //
+    // 🚨 **쓰기뿐 아니라 읽기도 막는다.** 관리자가 이 문서를 고칠 수 있으면
+    // 다른 관리자의 인증 번호를 자기 것으로 바꿀 수 있고, 그러면 2차 인증이
+    // 아무것도 막지 못한다. 읽기를 막는 것은 번호 해시가 그 자체로 관리자의
+    // 전화번호이기 때문이다.
+    //
+    // ⚠️ config 아래 다른 문서(testers · billing · appUpdate ·
+    // phoneVerification)는 관리자에게 열려 있는데 이것만 닫는다 — 위 이유
+    // 때문에 **의도된 차이**다. "일관성" 을 이유로 나중에 열지 말 것.
+    match /config/admins {
+      allow read, write: if false;
+    }
+
     // wallet(지갑형) 크레딧 잔액 변동 히스토리 — 무료 지급(가입 시 1회성)/
     // 고객응대 무료 지급/충전 3종의 출처별 감사 추적(ai-credit-wallet-spec.md
     // §2-3, §2-5). purchases·aiAuditLogs와 같은 패턴: 서버(Admin SDK)만
