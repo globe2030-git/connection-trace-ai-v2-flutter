@@ -202,6 +202,37 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
                     color: AppColors.textSecondary,
                   ),
                 ),
+                const SizedBox(height: 10),
+                // 🚨 **어디로 오는지를 「보내기 전에」 말한다** (2026-09-06).
+                //
+                // 대체문자(SMS)를 끄면서(`phoneOtpSender.ts` `failover: "N"`)
+                // 인증번호가 **카카오톡으로만** 간다. 그런데 이 화면에는
+                // 카카오·알림톡 언급이 **한 글자도 없었다**(법무 실물 확인).
+                //
+                // ⚠️ 그러면 이용자는 **문자를 본다.** 안 오니 다시 보내고, 또
+                // 안 오니 포기한다 — 실제로는 카카오톡에 와 있다. 그리고
+                // **인증에 건너뛰기가 없어**(추가 560) 여기서 앱을 못 쓴다.
+                //
+                // 📌 ①이 여기 있는 이유: **보내기 전에 알아야 카카오톡을 열어
+                // 둔다.** 받은 뒤에 알려 주면 이미 문자함을 뒤진 뒤다.
+                //
+                // 🚨 **이 문장은 globe2030님이 직접 쓰셨다(2026-09-06).
+                // 한 글자도 바꾸지 않는다.** 지시: *"부정적인 말은 피하는게
+                // 좋겠어."*
+                //
+                // ⭐ **「카카오톡으로만」의 「만」이 ③을 대신한다** — 「없으면
+                // 못 받는다」를 말하지 않고 같은 사실을 전한다. 카카오톡이
+                // 없는 사람은 이 문장을 읽고 스스로 알고, 설치한 사람은 그냥
+                // 지나간다. 부정문으로 쓴 초안 셋(갑·을·병)은 그래서 탈락했다.
+                const Text(
+                  '인증은 카카오톡으로만 보내집니다.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.7,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
                 const SizedBox(height: 20),
                 _label('휴대전화번호'),
                 const SizedBox(height: 6),
@@ -228,6 +259,46 @@ class _PhoneVerifyViewState extends State<PhoneVerifyView> {
                   ],
                 ),
                 if (_codeSent) ...[
+                  const SizedBox(height: 15),
+                  // 🚨 **기다리는 화면에서 한 번 더 말한다** (2026-09-06).
+                  //
+                  // ⚠️ 위 ①만으로는 모자란다 — **번호를 넣고 기다리는 순간에는
+                  // 이미 잊는다.** 여기가 실제로 「안 온다」고 느끼는 자리다.
+                  //
+                  // 📌 화면은 하나이고 `_codeSent` 로 상태가 갈린다. 그래서
+                  // ①은 항상 보이고 ②는 보낸 뒤에만 보인다 — **억지로 화면을
+                  // 둘로 나누지 않았다.**
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.cardSurface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.borderSubtle),
+                    ),
+                    // 🚨 **이 문장도 globe2030님이 직접 쓰셨다. 한 글자도
+                    // 바꾸지 않는다.**
+                    //
+                    // ⚠️ 여기에 *"문자로는 가지 않습니다"* 를 덧붙여 뒀다가
+                    // 뺐다 — **부정문을 피하라는 지시**에 걸리고, 위 ①의
+                    // 「~으로만」이 이미 같은 사실을 말한다.
+                    //
+                    // ⚠️ **문의처(고객센터 번호)도 일부러 넣지 않았다.**
+                    // 간명하게 가는 쪽을 globe2030님이 고르셨다. 그러면
+                    // **카카오톡이 없는 사람에게 보이는 길이 없다** — 그것은
+                    // 사실이고, 그 대가를 알고 고르신 것이다(추가 706).
+                    child: const Text(
+                      '카카오톡을 확인하세요.',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        height: 1.6,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 15),
                   _label('인증번호'),
                   const SizedBox(height: 6),
